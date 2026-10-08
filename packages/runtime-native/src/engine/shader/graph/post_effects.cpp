@@ -320,8 +320,11 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
         code += "fn sampleDepth(coord: vec2<f32>) -> f32 { let size=vec2<i32>(textureDimensions(t_depth)); return "
                 "loadDepth(clamp(vec2<i32>(coord*vec2<f32>(size)),vec2<i32>(0),size-1)); }\n";
         code += kGeometry;
-        code += effect.normal ? "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { return "
-                                "normalize(textureSampleLevel(t_normal,smp_normal,coord,0.0).rgb); }\n"
+        // A pixel whose draw wrote no normal (an unlit material, the sky's edge) reads zero; normalize(0)
+        // is NaN, which three leaves to the driver. The depth-derived normal is the defined answer.
+        code += effect.normal ? "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { let n = "
+                                "textureSampleLevel(t_normal,smp_normal,coord,0.0).rgb; "
+                                "if (dot(n,n)==0.0) { return normalFromDepth(coord); } return normalize(n); }\n"
                               : "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n";
     }
     if (effect.kind == "DenoiseNode") {

@@ -350,7 +350,7 @@ async function runReference(name, plan = {}) {
  * imports "three" gets the facade staged as its `three` module and the Perry adapter as a package
  * it may import, because the corpus resolves both from beside the case itself.
  */
-async function stageProject({ entry, modules, tmp, three, bridge }) {
+export async function stageProject({ entry, modules, tmp, three, bridge }) {
   const src = path.join(tmp, "src");
   await fsp.mkdir(src, { recursive: true });
   for (const file of modules) {
@@ -420,7 +420,7 @@ async function stageProject({ entry, modules, tmp, three, bridge }) {
  * Compiles one case with Perry. A failure is named from its first error line, so a Perry refusal
  * (`eval` under strict controls, an unresolvable dynamic import) is reported as itself.
  */
-function compileWithPerry({ perry, project, out, env, extraFlags = [] }) {
+export function compileWithPerry({ perry, project, out, env, extraFlags = [] }) {
   const args = ["compile", project.entry, "-o", out, ...STRICT_FLAGS, ...extraFlags];
   const run = spawnSync(perry, args, {
     cwd: project.dir,

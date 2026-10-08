@@ -134,6 +134,16 @@
           "name": "js_tn_render",
           "params": ["i64", "i64"],
           "returns": "string"
+        },
+        {
+          "name": "js_tn_bench",
+          "params": ["string", "f64", "f64", "f64", "f64"],
+          "returns": "string"
+        },
+        {
+          "name": "js_tn_bench_config",
+          "params": ["string"],
+          "returns": "f64"
         }
       ],
       "targets": {

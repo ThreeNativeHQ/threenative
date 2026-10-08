@@ -110,7 +110,8 @@ std::string WgslEmitter::expr(ExprId id) const {
             }
             std::string out = e.op == Op::Call ? p_.names_[e.immediate] : type(e.type);
             if (out == "dFdx") out = "dpdx";
-            if (out == "dFdy") out = "dpdy";
+            // WGSL's dpdy grows downward the framebuffer; three emits `- dpdy` so dFdy grows upward.
+            if (out == "dFdy") out = "-dpdy";
             // TSL lets clamp and smoothstep take scalar bounds on a vector; WGSL has no such overload.
             const bool splat = e.op == Op::Call && e.type.isVector() &&
                                (p_.names_[e.immediate] == "clamp" || p_.names_[e.immediate] == "smoothstep");
@@ -251,7 +252,9 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         uint32_t location = 0;
         for (const auto& slot : program.outputs_) {
             const std::string& name = program.names_[slot.name];
-            if (name == "position") out += "  @builtin(position) position: vec4<f32>,\n";
+            // @invariant: two pipelines that share this vertex module (a normal pass drawn depth-Equal after
+            // the colour pass) are only guaranteed the same clip position when the output says so.
+            if (name == "position") out += "  @invariant @builtin(position) position: vec4<f32>,\n";
             else if (name == "color") out += "  @location(0) color: vec4<f32>,\n";
             else out += "  @location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
         }

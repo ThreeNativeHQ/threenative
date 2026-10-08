@@ -6,10 +6,13 @@
 
 namespace tn::engine::player {
 
-/** The example's 8×8 animated tube crowd, plus four individually drawn refusal cases. */
+/**
+ * The example's 8×8 animated tube crowd, plus four individually drawn refusal cases. Without the
+ * refusal cases it is exactly 64 identical rigs, the benchmark's presented crowd.
+ */
 class SkinnedCrowd {
   public:
-    SkinnedCrowd();
+    explicit SkinnedCrowd(bool refusalCases = true);
     Scene& scene() { return scene_; }
     PerspectiveCamera& camera() { return camera_; }
     void update(double dt);

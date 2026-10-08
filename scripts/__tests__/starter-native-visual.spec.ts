@@ -38,6 +38,8 @@ const snapshot = {
   ],
   tier: "high",
   shadowMap: true,
+  toneMapping: 4,
+  toneMappingExposure: 1,
   nodes: [{ name: "ground", castShadow: false, receiveShadow: true }],
   world: {
     textures: [
@@ -144,7 +146,15 @@ describe("starter native visual arm", () => {
   });
   it("keeps the actual camera/light values and uses the strict fixture path at gate size", () => {
     const fixture = starterSnapshotFixture(snapshot, "/tmp/starter.gltf");
-    expect(fixture.render).toMatchObject({ width: 1280, height: 720, toneMapping: "none" });
+    expect(fixture.render).toMatchObject({
+      width: 1280,
+      height: 720,
+      toneMapping: "aces",
+      toneMappingExposure: 1,
+    });
+    expect(() =>
+      starterSnapshotFixture({ ...snapshot, toneMapping: 5 }, "/tmp/starter.gltf"),
+    ).toThrow("TN_VISUAL_TONE_MAPPING_UNSUPPORTED");
     expect(fixture.ops).toContainEqual({ op: "gltf", id: "cooked", file: "/tmp/starter.gltf" });
     expect(fixture.ops).toContainEqual({ op: "set", id: "camera", path: "position.x", value: -3 });
     expect(fixture.ops).toContainEqual({

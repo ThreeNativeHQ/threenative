@@ -41,6 +41,8 @@ class RenderDatabase {
     /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
     std::vector<DrawItem> prepare(Object3D& scene, Camera& camera, LightState& lights);
 
+    /** Float32 copies of quantized attributes held for live sources (dead ones are swept). */
+    [[nodiscard]] std::size_t convertedCount() const { return converted_.size(); }
     /** Records rebuilt since construction; the invalidation test reads it. */
     [[nodiscard]] uint64_t rebuilds() const { return rebuilds_; }
     /** Why the last render left something out (TN_NATIVE_MATERIAL_UNSUPPORTED, TN_NATIVE_LIGHTS_UNSUPPORTED...). */
@@ -136,6 +138,16 @@ class RenderDatabase {
     std::vector<uint64_t> depthKeys_;
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
+    // A float32 copy per attribute. The source is held weakly: a freed store (or one whose address a
+    // new store took) reads as expired, so a stale copy is never served and a dead entry can be swept.
+    struct Converted {
+        std::shared_ptr<BufferStore> store;
+        uint32_t version = 0;
+        std::weak_ptr<BufferStore> source;
+    };
+    std::unordered_map<const BufferAttribute*, Converted> converted_;
+    std::size_t convertedSweepAt_ = 64;
+    BufferStore* floatStore(const BufferGeometry& g, const char* name);
     uint64_t frame_ = 0;
     std::size_t previousDrawCount_ = 0;
     std::array<double, 4> prepareMs_{};

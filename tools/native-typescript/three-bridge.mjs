@@ -77,8 +77,11 @@ export function buildEngineBridge({ outDir, engineBuild, render = false, tools =
     if (fs.existsSync(dir)) walk(dir);
     return latest;
   };
-  const renderSource = path.join(THREE, "tn_three_render.cpp");
-  if (render) sources.push(renderSource);
+  // The render build adds the one-shot frame dump and the benchmark session (PRD-533).
+  const renderSources = ["tn_three_render.cpp", "tn_three_bench.cpp"].map((name) =>
+    path.join(THREE, name),
+  );
+  if (render) sources.push(...renderSources);
   const stamp = Math.max(
     ...sources.map((file) => fs.statSync(file).mtimeMs),
     fs.statSync(fileURLToPath(import.meta.url)).mtimeMs,
@@ -123,18 +126,20 @@ export function buildEngineBridge({ outDir, engineBuild, render = false, tools =
     const flags = command.command
       .match(/-D\S+|-I\S+|-isystem\s+\S+/g)
       .flatMap((flag) => flag.split(/\s+/));
-    const object = path.join(outDir, "tn_three_render.o");
-    compile(tools.cxx, [
-      "-c",
-      "-fPIC",
-      "-std=c++20",
-      ...flags,
-      `-I${path.join(NATIVE, "src")}`,
-      renderSource,
-      "-o",
-      object,
-    ]);
-    objects.push(object);
+    for (const source of renderSources) {
+      const object = path.join(outDir, `${path.basename(source, ".cpp")}.o`);
+      compile(tools.cxx, [
+        "-c",
+        "-fPIC",
+        "-std=c++20",
+        ...flags,
+        `-I${path.join(NATIVE, "src")}`,
+        source,
+        "-o",
+        object,
+      ]);
+      objects.push(object);
+    }
   }
   compile(tools.ar, ["crs", archive, ...objects]);
   return archive;

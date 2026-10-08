@@ -32,7 +32,7 @@ pass dependencies and temporal-history requirements (§9.2); nothing native cons
 
 - Specific effects: VSM ([PRD-524](PRD-524-n14b-virtual-shadows-run-native.md)), probes
   ([PRD-525](PRD-525-n14c-probes-run-native.md)), post and chains
-  ([PRD-526](../../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md)).
+  ([PRD-526](PRD-526-n14d-post-effects-and-render-chains-run-native.md)).
 - Shader package generation (N08b).
 
 ## Execution Phases

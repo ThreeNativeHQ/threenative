@@ -6,7 +6,10 @@
 // device without timestamp-query. Presentation arrives with the desktop/Pixel verdict runs.
 //
 //   tn-native-engine-host <workload.js> [--objects N] [--frames N] [--warmup N] [--size WxH]
-//                         [--report out.json] [--cpp] [--identity manifest]
+//                         [--report out.json] [--cpp | --crowd] [--identity manifest]
+//
+// `--crowd` drives the C++ skinned crowd (player::SkinnedCrowd without its refusal cases: 64
+// identical animated rigs) instead of the L4 twin; the report's workload is `skinned-crowd`.
 //
 // The script defines `workload = { setup(objectCount, width, height) -> {scene, camera},
 // update(frameIndex) }`. Per measured frame the host records the update time (the game's work),
@@ -29,6 +32,7 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/identity.h"
 #include "engine/foundation/math/ieee754.h"
+#include "engine/player/skinned_crowd.h"
 #include "engine/renderer/render_database.h"
 #include "engine/scene/geometries.h"
 #include "mystral/webgpu/context.h"
@@ -43,6 +47,7 @@ struct Options {
     uint32_t objects = 4096, frames = 600, warmup = 120, width = 1280, height = 720;
     std::string report;
     bool cpp = false;
+    bool crowd = false;
     std::string identity;  // the artifact identity manifest checked at startup (PRD-530)
 };
 
@@ -245,11 +250,14 @@ int main(int argc, char** argv) {
         else if (a == "--size") { const std::string s = next(); o.width = uint32_t(std::stoul(s)); o.height = uint32_t(std::stoul(s.substr(s.find('x') + 1))); }
         else if (a == "--report") o.report = next();
         else if (a == "--cpp") o.cpp = true;
+        else if (a == "--crowd") o.crowd = true;
         else if (a == "--identity") o.identity = next();
         else if (o.script.empty() && a.rfind("--", 0) != 0) o.script = a;
         else return std::fprintf(stderr, "TN_HOST_ARGS: unknown argument %s\n", a.c_str()), 2;
     }
-    if (!o.cpp && o.script.empty()) return std::fprintf(stderr, "TN_HOST_ARGS: a workload script, or --cpp\n"), 2;
+    if (!o.cpp && !o.crowd && o.script.empty())
+        return std::fprintf(stderr, "TN_HOST_ARGS: a workload script, --cpp or --crowd\n"), 2;
+    if (o.cpp && o.crowd) return std::fprintf(stderr, "TN_HOST_ARGS: --cpp and --crowd are separate workloads\n"), 2;
     // PRD-530: an artifact built against another engine stops here, before any engine or game code.
     if (!o.identity.empty()) {
         std::ifstream manifest(o.identity);
@@ -267,11 +275,15 @@ int main(int argc, char** argv) {
     RenderDatabase database;
 
     CppWorkload twin;
+    tn::engine::player::SkinnedCrowd crowd(false);
     V8Game game;
     std::string error;
     Scene* scene = nullptr;
     Camera* camera = nullptr;
-    if (o.cpp) {
+    if (o.crowd) {
+        scene = &crowd.scene();
+        camera = &crowd.camera();
+    } else if (o.cpp) {
         twin.setup(o.objects, o.width, o.height);
         scene = twin.scene.get();
         camera = twin.camera.get();
@@ -281,13 +293,29 @@ int main(int argc, char** argv) {
         camera = game.camera;
     }
 
+    // What the scene presents, counted from the scene itself: its meshes (skinned ones apart).
+    struct Census { uint64_t meshes = 0, skinned = 0, skinnedTriangles = 0; } census;
+    scene->traverse(
+        [](Object3D& object, void* context) {
+            auto& found = *static_cast<Census*>(context);
+            const std::string_view type = object.type();
+            if (type == "SkinnedMesh") {
+                ++found.skinned;
+                const auto& mesh = static_cast<const Mesh&>(object);
+                if (mesh.geometry && mesh.geometry->index) found.skinnedTriangles += mesh.geometry->index->count() / 3;
+            }
+            else if (type == "Mesh") ++found.meshes;
+        },
+        &census);
     std::vector<double> update, submit, frame, crossings, gpu;
     uint64_t gpuSeen = 0;
     Renderer::FrameStats stats;
     for (uint32_t i = 0; i < o.warmup + o.frames; ++i) {
         const uint64_t crossed = tn::abi::crossings();
         const auto t0 = Clock::now();
-        if (o.cpp) {
+        if (o.crowd) {
+            crowd.update(1.0 / 60);
+        } else if (o.cpp) {
             twin.update(i);
         } else if (!game.step(i, error)) {
             return std::fprintf(stderr, "TN_HOST_SCRIPT: %s\n", error.c_str()), 1;
@@ -301,7 +329,7 @@ int main(int argc, char** argv) {
             events.drain();
         }
         const auto t3 = Clock::now();
-        if (!o.cpp) game.safePoint();
+        if (!o.cpp && !o.crowd) game.safePoint();
         if (!database.diagnostics().empty()) return std::fprintf(stderr, "TN_HOST_RENDER: %s\n", database.diagnostics().front().c_str()), 1;
         if (i < o.warmup) continue;
         update.push_back(ms(t0, t1));
@@ -322,8 +350,14 @@ int main(int argc, char** argv) {
         return std::string(buffer);
     };
     std::ostringstream json;
-    json << "{\n  \"arm\": \"" << (o.cpp ? "native-cpp" : "native-v8") << "\",\n  \"workload\": \"L4\",\n"
-         << "  \"objects\": " << o.objects << ",\n  \"frames\": " << o.frames << ",\n  \"warmup\": " << o.warmup << ",\n"
+    // L4 is N cubes under one ground plane; the crowd is its skinned rigs under one ground plane.
+    const uint64_t presented = o.crowd ? census.skinned : census.meshes - 1;
+    json << "{\n  \"arm\": \"" << (o.cpp || o.crowd ? "native-cpp" : "native-v8") << "\",\n  \"workload\": \""
+         << (o.crowd ? "skinned-crowd" : "L4") << "\",\n"
+         << "  \"objects\": " << (o.crowd ? census.skinned : o.objects) << ",\n  \"presentedObjects\": " << presented << ",\n"
+         // The crowd's own triangles, counted from its rigs: the renderer's count differs by what each
+         // engine counts (three's info includes the shadow pass, this renderer's does not).
+         << "  \"sceneTriangles\": " << (o.crowd ? census.skinnedTriangles : stats.triangles) << ",\n  \"frames\": " << o.frames << ",\n  \"warmup\": " << o.warmup << ",\n"
          << "  \"size\": [" << o.width << ", " << o.height << "],\n"
          << "  \"updateMs\": " << series(update) << ",\n  \"submitMs\": " << series(submit) << ",\n"
          << "  \"hotPathMs\": " << series(hot) << ",\n  \"frameMs\": " << series(frame) << ",\n"

@@ -26,4 +26,8 @@ extern "C" const char* tnx_fire_before_render(int slot) {
 extern "C" const char* tnx_render(int64_t, int64_t) {
     return "TN_TSL_RENDER_UNBUILT: compile with --render";
 }
+extern "C" const char* tnx_bench(const char*, double, double, double, double) {
+    return "TN_BENCH_UNBUILT: compile with --render";
+}
+extern "C" double tnx_bench_config(const char*) { return -1; }
 #endif

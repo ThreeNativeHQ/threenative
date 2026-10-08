@@ -463,6 +463,9 @@ extern "C" {
     fn tnx_tsl_compile(material: i64) -> c_int;
     fn tnx_tsl_release(node: i64);
     fn tnx_render(scene: i64, camera: i64) -> *const c_char;
+    /// three/tn_three_bench.cpp: the benchmark session (PRD-533), open only in render builds.
+    fn tnx_bench(op: *const c_char, a: f64, b: f64, c: f64, d: f64) -> *const c_char;
+    fn tnx_bench_config(name: *const c_char) -> f64;
 }
 #[no_mangle]
 pub extern "C" fn js_tn_tsl_build(op: JsString, a: i64, b: i64, c: i64, value: f64) -> i64 {
@@ -481,4 +484,18 @@ pub extern "C" fn js_tn_tsl_release(node: i64) { unsafe { tnx_tsl_release(node) 
 #[no_mangle]
 pub extern "C" fn js_tn_render(scene: i64, camera: i64) -> *mut perry_ffi::StringHeader {
     unsafe { alloc_string(CStr::from_ptr(tnx_render(scene, camera)).to_str().unwrap_or("TN_RENDER_ERROR_UTF8")).as_raw() }
+}
+/// The benchmark session's one entry point: `op` is open, begin, render or finish; the answer is
+/// empty on success and a named refusal otherwise.
+#[no_mangle]
+pub extern "C" fn js_tn_bench(op: JsString, a: f64, b: f64, c: f64, d: f64) -> *mut perry_ffi::StringHeader {
+    let answer = with_c_string(op, String::from("TN_BENCH_OP_UTF8"), |op| unsafe {
+        CStr::from_ptr(tnx_bench(op, a, b, c, d)).to_str().unwrap_or("TN_BENCH_ERROR_UTF8").to_owned()
+    });
+    alloc_string(&answer).as_raw()
+}
+/// One benchmark setting (objects, frames, warmup, width, height), read from the environment.
+#[no_mangle]
+pub extern "C" fn js_tn_bench_config(name: JsString) -> f64 {
+    with_c_string(name, -1.0, |name| unsafe { tnx_bench_config(name) })
 }

@@ -10,7 +10,7 @@
 
 namespace tn::engine::player {
 
-SkinnedCrowd::SkinnedCrowd() {
+SkinnedCrowd::SkinnedCrowd(bool refusalCases) {
     constexpr int bones = 12, side = 8;
     constexpr double height = 2, spacing = 1.4, extent = side * spacing / 2 + 1;
     camera_.position.set(0, 7, 11);
@@ -59,7 +59,7 @@ SkinnedCrowd::SkinnedCrowd() {
                             std::vector<double>{0, 1, 2}, std::vector<double>{-0.09, 0.09, -0.09});
     clip_ = std::make_shared<animation::AnimationClip>("sway", 2, std::move(tracks));
 
-    for (int index = 0; index < side * side + 4; ++index) {
+    for (int index = 0; index < side * side + (refusalCases ? 4 : 0); ++index) {
         std::vector<std::shared_ptr<Bone>> chain;
         auto mesh = std::make_shared<SkinnedMesh>(geometry, skin);
         for (int bone = 0; bone < bones; ++bone) {

@@ -143,6 +143,38 @@ BufferStore* store(const BufferGeometry& g, const char* name) {
 
 } // namespace
 
+// The renderer binds position, normal, uv and skin weights as float32. glTF stores quantized models
+// with normalized 8/16-bit attributes (GLTFExporter writes int8 normals, WEIGHTS_0 is unsigned byte
+// in most files): they reach the shader as a dequantized float32 copy, kept while the source is unchanged.
+BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* name) {
+    const auto it = g.attributes.find(name);
+    if (it == g.attributes.end() || !it->second) return nullptr;
+    const BufferAttribute& attribute = *it->second;
+    if (attribute.store->scalar() == Scalar::F32) return attribute.store.get();
+    // Entries whose source is gone are dropped once the table doubles, so a scene that loads and
+    // unloads geometry does not keep their copies.
+    if (converted_.size() >= convertedSweepAt_) {
+        for (auto entry = converted_.begin(); entry != converted_.end();)
+            entry = entry->second.source.expired() ? converted_.erase(entry) : std::next(entry);
+        convertedSweepAt_ = std::max<std::size_t>(64, converted_.size() * 2);
+    }
+    Converted& copy = converted_[&attribute];
+    const auto source = copy.source.lock();
+    if (!copy.store || copy.version != attribute.version() || source != attribute.store) {
+        const uint64_t items = attribute.count() * static_cast<uint64_t>(attribute.itemSize);
+        std::vector<float> values;
+        values.reserve(items);
+        for (uint64_t i = 0; i < attribute.count(); ++i)
+            for (int c = 0; c < attribute.itemSize; ++c)
+                values.push_back(static_cast<float>(attribute.getComponent(i, c)));
+        copy.store = std::make_shared<BufferStore>(Scalar::F32, items);
+        copy.store->write(0, values.data(), values.size() * sizeof(float));
+        copy.version = attribute.version();
+        copy.source = attribute.store;
+    }
+    return copy.store.get();
+}
+
 RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materialize) {
     return record(mesh, records_[&mesh], materialize);
 }
@@ -170,8 +202,22 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
                                        u);
             return r;
         }
-        r.buffers = {store(*mesh.geometry, "position"), store(*mesh.geometry, "normal"), store(*mesh.geometry, "uv"),
-                     mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
+        // A decoded map the standard program does not read is refused by name, never drawn without it.
+        // (A placeholder with no image was already refused where models load.)
+        for (const auto& [slot, texture] : material->maps) {
+            if (!texture || !texture->hasImage() || slot == "map" || slot == "normalMap") continue;
+            diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
+                                   " is not read by the native standard program");
+            return r;
+        }
+        if (const auto normal = material->maps.find("normalMap");
+            normal != material->maps.end() && normal->second && normal->second->hasImage() &&
+            !store(*mesh.geometry, "uv")) {
+            diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) +
+                                   ": normalMap needs a uv attribute (drawn without it)");
+        }
+        r.buffers = {floatStore(*mesh.geometry, "position"), floatStore(*mesh.geometry, "normal"),
+                     floatStore(*mesh.geometry, "uv"), mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
         r.drawable = r.buffers[0] != nullptr;
     }
     if (!materialize || !r.drawable)
@@ -195,7 +241,12 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         const auto found = material->maps.find("map");
         if (found != material->maps.end() && found->second && found->second->hasImage())
             d.map = found->second.get();
+        const auto normal = material->maps.find("normalMap");
+        if (normal != material->maps.end() && normal->second && normal->second->hasImage())
+            d.normalMap = normal->second.get();
     }
+    d.normalScaleX = material->normalScaleX;
+    d.normalScaleY = material->normalScaleY;
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
@@ -219,11 +270,17 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.positionNode = r.material->positionNode;
     d.nodes = r.material->nodes;
     d.map = nullptr;
+    d.normalMap = nullptr;
     if (d.uvs) {
         const auto map = r.material->maps.find("map");
         if (map != r.material->maps.end() && map->second && map->second->hasImage())
             d.map = map->second.get();
+        const auto normal = r.material->maps.find("normalMap");
+        if (normal != r.material->maps.end() && normal->second && normal->second->hasImage())
+            d.normalMap = normal->second.get();
     }
+    d.normalScaleX = r.material->normalScaleX;
+    d.normalScaleY = r.material->normalScaleY;
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     return d;
@@ -271,7 +328,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                         DrawItem& d = items.back();
                         d.skinnedRig = static_cast<SkinnedMesh*>(&object);
                         d.skinIndices = store(*mesh.geometry, "skinIndex");
-                        d.skinWeights = store(*mesh.geometry, "skinWeight");
+                        d.skinWeights = floatStore(*mesh.geometry, "skinWeight");
                         if (skinned.skeleton && d.skinIndices && d.skinWeights) {
                             if (skeletonsUpdated_.insert(skinned.skeleton.get()).second)
                                 skinned.skeleton->update();

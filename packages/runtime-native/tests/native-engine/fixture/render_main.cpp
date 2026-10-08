@@ -92,6 +92,24 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     gpu.database.render(renderer, scene, *camera, clear);
     if (!gpu.database.diagnostics().empty()) return gpu.database.diagnostics().front();
     if (const auto error = finishDump(true); !error.empty()) return error;
+    for (const std::string& note : renderer.diagnostics()) std::fprintf(stderr, "%s\n", note.c_str());
+    // TN_FIXTURE_NORMAL_DUMP=<file>: the post normal target as raw RGBA16Float, packed rows.
+    if (const char* normals = std::getenv("TN_FIXTURE_NORMAL_DUMP"); normals && *normals) {
+        std::vector<uint8_t> bytes;
+        bool read = false;
+        const auto status = renderer.readNormalPixels([&](GpuStatus s, std::vector<uint8_t> px) {
+            if (s == GpuStatus::Ok) bytes = std::move(px);
+            read = true;
+        });
+        if (status != GpuStatus::Ok) return "no normal target: the post graph reads none";
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            gpu.events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (bytes.size() != size_t{r.width} * r.height * 8) return "normal readback failed";
+        std::ofstream(normals, std::ios::binary).write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
+    }
     std::vector<uint8_t> pixels;
     bool done = false;
     renderer.readPixels([&](GpuStatus s, std::vector<uint8_t> px) {

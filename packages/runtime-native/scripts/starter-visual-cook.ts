@@ -90,6 +90,9 @@ export interface IStarterVisualSnapshot {
   postGraph: unknown;
   tier: string;
   shadowMap: boolean;
+  /** The renderer's own output transform, applied after the installed graph: three's constant and exposure. */
+  toneMapping: number;
+  toneMappingExposure: number;
   nodes: { name: string; castShadow: boolean; receiveShadow: boolean }[];
   world: {
     textures: {

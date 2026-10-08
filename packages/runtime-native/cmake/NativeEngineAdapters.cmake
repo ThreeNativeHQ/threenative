@@ -34,10 +34,12 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
         set_tests_properties(native_engine_tsl_js PROPERTIES LABELS "native-engine")
     endif()
 
-    # CP1's game host (PRD-534): a workload script on V8 through the adapter (native-v8), or its C++
-    # twin (--cpp, native-cpp), drawn through the native renderer and measured per frame.
-    add_executable(tn-native-engine-host EXCLUDE_FROM_ALL src/adapters/v8/host_main.cpp)
-    target_link_libraries(tn-native-engine-host PRIVATE tn_adapter_v8 tn_engine_renderer tn_host_services)
+    # CP1's game host (PRD-534): a workload script on V8 through the adapter (native-v8), its C++
+    # twin (--cpp, native-cpp) or the C++ skinned crowd (--crowd, PRD-533), drawn through the native renderer and measured per frame.
+    add_executable(tn-native-engine-host EXCLUDE_FROM_ALL src/adapters/v8/host_main.cpp
+        src/engine/player/skinned_crowd.cpp)
+    target_link_libraries(tn-native-engine-host PRIVATE tn_adapter_v8 tn_engine_renderer tn_host_services
+        tn_engine_animation)
     set_target_properties(tn-native-engine-host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     if(NOT APPLE AND NOT WIN32)
         # Dawn and the V8 monolith both carry Abseil, as for mystral-runtime: the same version's
@@ -91,16 +93,24 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     endif()
 
     # Both CP1 arms on a small L4: 64 cubes + the ground + the output pass, 66 draws in each.
-    set(TN_ESBUILD ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/.bin/esbuild)
+    # The workspace root installs esbuild only when something there depends on it; runtime-native always does.
+    find_program(TN_ESBUILD esbuild NO_DEFAULT_PATH
+        HINTS ${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/.bin ${CMAKE_CURRENT_SOURCE_DIR}/node_modules/.bin)
     set(TN_L4_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/engine-load-test/native-engine/l4-workload.ts)
     set(TN_L4_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/l4-workload.js)
-    if(EXISTS ${TN_ESBUILD})
+    if(TN_ESBUILD)
         # The 64-object workload batches into one instanced draw (plus output); 771 triangles = 64 x 12 + 3
         # keeps proving every object drew.
         add_test(NAME native_engine_host_v8
             COMMAND sh -c "${TN_ESBUILD} ${TN_L4_SOURCE} --bundle --format=iife --platform=neutral --log-level=error --outfile=${TN_L4_SCRIPT} && $<TARGET_FILE:tn-native-engine-host> ${TN_L4_SCRIPT} --objects 64 --frames 10 --warmup 2 2>/dev/null")
         add_test(NAME native_engine_host_cpp
             COMMAND sh -c "$<TARGET_FILE:tn-native-engine-host> --cpp --objects 64 --frames 10 --warmup 2 2>/dev/null")
+        # PRD-533: the crowd workload, 64 rigs x 552 triangles + the ground's 2 + the output pass's 1,
+        # and the report states the rigs it counted from the scene (35,328 triangles over 64 objects).
+        add_test(NAME native_engine_host_crowd
+            COMMAND sh -c "$<TARGET_FILE:tn-native-engine-host> --crowd --frames 5 --warmup 2 2>/dev/null")
+        set_tests_properties(native_engine_host_crowd PROPERTIES LABELS "native-engine"
+            PASS_REGULAR_EXPRESSION "\"workload\": \"skinned-crowd\",[\r\n ]+\"objects\": 64,[\r\n ]+\"presentedObjects\": 64,[\r\n ]+\"sceneTriangles\": 35328,.*\"draws\": 3,[\r\n ]+\"triangles\": 35331,")
         set_tests_properties(native_engine_host_v8 native_engine_host_cpp PROPERTIES
             LABELS "native-engine" PASS_REGULAR_EXPRESSION "\"draws\": 3,[\r\n ]+\"triangles\": 771,")
         # PRD-530: startup checks the artifact identity manifest; a matching one runs, one built

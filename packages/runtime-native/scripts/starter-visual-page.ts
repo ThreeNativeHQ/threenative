@@ -28,6 +28,8 @@ export async function prepareStarterSnapshot(): Promise<IStarterVisualSnapshot> 
   if (typeof raw?.shadowMap?.enabled !== "boolean")
     throw new Error("TN_VISUAL_SHADOW_MAP_MISSING: ctx.renderer.raw.shadowMap.enabled");
   const shadowMap = raw.shadowMap.enabled;
+  if (!Number.isInteger(raw.toneMapping) || !Number.isFinite(raw.toneMappingExposure))
+    throw new Error("TN_VISUAL_TONE_MAPPING_MISSING: ctx.renderer.raw.toneMapping");
   const backend = raw.backend;
   // WebGPURenderer can run a WebGL backend; that arm has no GPUDevice queue to drain.
   if (
@@ -172,6 +174,8 @@ export async function prepareStarterSnapshot(): Promise<IStarterVisualSnapshot> 
     nodes: nodes.filter((node) => exportedNames.has(node.name)),
     tier,
     shadowMap,
+    toneMapping: raw.toneMapping,
+    toneMappingExposure: raw.toneMappingExposure,
     postGraph: exportTslGraph(graph),
     world: {
       textures,

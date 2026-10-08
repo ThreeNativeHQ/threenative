@@ -23,9 +23,12 @@ import { SceneRenderProjection } from "../../../packages/core/src/renderProjecti
 import { percentile } from "./workload.js";
 
 export type CrowdArm = "stock" | "stock2" | "projected";
-const BONES = 32;
 const HEIGHT = 2;
 const params = new URLSearchParams(location.search);
+/** The rig's size: PRD-533 sets these to the native crowd's (12 bones, 12 x 22 segments). */
+const BONES = Number(params.get("bones") ?? 32);
+const RADIAL_SEGMENTS = Number(params.get("radial") ?? 32);
+const HEIGHT_SEGMENTS = Number(params.get("heightSegments") ?? 128);
 const LADDER = (params.get("ladder") ?? "8,128,512").split(",").map(Number);
 const ORDER = (params.get("order") ?? "stock,projected,stock2,projected,stock,projected")
   .split(",")
@@ -44,7 +47,7 @@ function nextTick(): Promise<number> {
 }
 
 function rigGeometry(): CylinderGeometry {
-  const geometry = new CylinderGeometry(0.25, 0.3, HEIGHT, 32, 128);
+  const geometry = new CylinderGeometry(0.25, 0.3, HEIGHT, RADIAL_SEGMENTS, HEIGHT_SEGMENTS);
   const position = geometry.getAttribute("position");
   const indices: number[] = [];
   const weights: number[] = [];
@@ -84,6 +87,8 @@ interface ICrowdRun {
   /** Animation writes, projection reconcile and `renderer.render`, each per frame. */
   splitMs: [number[], number[], number[]];
   drawCalls: number;
+  /** What the frame presented: rigs, the scene's own triangles and the renderer's count. */
+  presented: { objects: number; sceneTriangles: number; renderedTriangles: number };
   projection?: unknown;
   pixels?: Uint8Array;
 }
@@ -142,6 +147,7 @@ async function run(renderer: WebGPURenderer, arm: CrowdArm, count: number): Prom
   const frameMs: number[] = [];
   const splitMs: [number[], number[], number[]] = [[], [], []];
   let drawCalls = 0;
+  let renderedTriangles = 0;
   for (let frame = 0; frame < WARMUP + FRAMES; frame++) {
     // One render per animation-frame tick, as a game's loop does. Three refreshes a stock
     // skeleton once per tick, so rendering several frames inside one tick would draw stale poses
@@ -162,6 +168,7 @@ async function run(renderer: WebGPURenderer, arm: CrowdArm, count: number): Prom
     const tRendered = performance.now();
     projection?.commit();
     drawCalls = renderer.info.render.drawCalls;
+    renderedTriangles = renderer.info.render.triangles;
     const t1 = performance.now();
     await device.queue.onSubmittedWorkDone();
     const t2 = performance.now();
@@ -203,6 +210,11 @@ async function run(renderer: WebGPURenderer, arm: CrowdArm, count: number): Prom
     frameMs,
     splitMs,
     drawCalls,
+    presented: {
+      objects: rigs.length,
+      sceneTriangles: rigs.length * Math.floor((geometry.index?.count ?? 0) / 3),
+      renderedTriangles,
+    },
     projection: report,
     ...(pixels ? { pixels } : {}),
   };
@@ -264,6 +276,7 @@ async function main(): Promise<void> {
     arm: r.arm,
     count: r.count,
     drawCalls: r.drawCalls,
+    presented: r.presented,
     cpuP50: percentile(r.cpuMs, 0.5),
     splitP50: r.splitMs.map((series) => percentile(series, 0.5)),
     frameP50: percentile(r.frameMs, 0.5),

@@ -92,6 +92,66 @@ export class Vector3 {
   set z(value: number) {
     writeNumber(this.slot, "z", value);
   }
+  set(x: number, y: number, z: number): Vector3 {
+    adapter.argNumber(x);
+    adapter.argNumber(y);
+    adapter.argNumber(z);
+    if (adapter.invoke(this.slot, "set") < 0) throw "TN_AOT_INVOKE_REFUSED set";
+    return this;
+  }
+}
+
+// The member game code writes by field: three's Euler, adopting the engine's own `mesh.rotation`.
+export class Euler {
+  slot: Handle;
+  constructor(adopt: Handle) {
+    this.slot = adopt;
+    objects[this.slot] = this;
+  }
+  get x(): number {
+    return readNumber(this.slot, "x");
+  }
+  set x(value: number) {
+    writeNumber(this.slot, "x", value);
+  }
+  get y(): number {
+    return readNumber(this.slot, "y");
+  }
+  set y(value: number) {
+    writeNumber(this.slot, "y", value);
+  }
+  get z(): number {
+    return readNumber(this.slot, "z");
+  }
+  set z(value: number) {
+    writeNumber(this.slot, "z", value);
+  }
+}
+
+export class Color {
+  slot: Handle;
+  constructor(adopt: Handle) {
+    this.slot = adopt;
+    objects[this.slot] = this;
+  }
+  setHex(hex: number): Color {
+    adapter.argNumber(hex);
+    if (adapter.invoke(this.slot, "setHex") < 0) throw "TN_AOT_INVOKE_REFUSED setHex";
+    return this;
+  }
+}
+
+export class PlaneGeometry {
+  slot: Handle;
+  constructor(width?: number, height?: number) {
+    adapter.argNumber(width === undefined ? 1 : width);
+    adapter.argNumber(height === undefined ? 1 : height);
+    this.slot = create("PlaneGeometry");
+    objects[this.slot] = this;
+  }
+  get type(): string {
+    return readString(this.slot, "type");
+  }
 }
 
 export class BoxGeometry {
@@ -110,9 +170,27 @@ export class BoxGeometry {
 
 export class MeshStandardMaterial {
   slot: Handle;
+  colorMember: Color | undefined;
   constructor(className = "MeshStandardMaterial") {
     this.slot = create(className);
     objects[this.slot] = this;
+  }
+  get color(): Color {
+    if (this.colorMember === undefined)
+      this.colorMember = new Color(readObject(this.slot, "color"));
+    return this.colorMember;
+  }
+  get metalness(): number {
+    return readNumber(this.slot, "metalness");
+  }
+  set metalness(value: number) {
+    writeNumber(this.slot, "metalness", value);
+  }
+  get roughness(): number {
+    return readNumber(this.slot, "roughness");
+  }
+  set roughness(value: number) {
+    writeNumber(this.slot, "roughness", value);
   }
   get type(): string {
     return readString(this.slot, "type");
@@ -123,7 +201,7 @@ type BeforeRender = (
   renderer: null,
   scene: Object3D | null,
   camera: Object3D | null,
-  geometry: BoxGeometry | null,
+  geometry: BoxGeometry | PlaneGeometry | null,
   material: MeshStandardMaterial | null,
   group: null,
 ) => void;
@@ -131,6 +209,7 @@ type BeforeRender = (
 export class Object3D {
   slot: Handle;
   positionMember: Vector3 | undefined;
+  rotationMember: Euler | undefined;
   beforeRender: BeforeRender | undefined;
   constructor(slot: Handle) {
     this.slot = slot;
@@ -149,6 +228,17 @@ export class Object3D {
     if (this.positionMember === undefined)
       this.positionMember = new Vector3(0, 0, 0, readObject(this.slot, "position"));
     return this.positionMember;
+  }
+  get rotation(): Euler {
+    if (this.rotationMember === undefined)
+      this.rotationMember = new Euler(readObject(this.slot, "rotation"));
+    return this.rotationMember;
+  }
+  lookAt(x: number, y: number, z: number): void {
+    adapter.argNumber(x);
+    adapter.argNumber(y);
+    adapter.argNumber(z);
+    if (adapter.invoke(this.slot, "lookAt") < 0) throw "TN_AOT_INVOKE_REFUSED lookAt";
   }
   // three's onBeforeRender: the engine calls it before the object is drawn. The closure handed to
   // the engine captures this wrapper, so two meshes with callbacks each run their own.
@@ -203,9 +293,9 @@ export class Scene extends Object3D {
 }
 
 export class Mesh extends Object3D {
-  geometry: BoxGeometry;
+  geometry: BoxGeometry | PlaneGeometry;
   material: MeshStandardMaterial;
-  constructor(geometry: BoxGeometry, material: MeshStandardMaterial) {
+  constructor(geometry: BoxGeometry | PlaneGeometry, material: MeshStandardMaterial) {
     adapter.argObject(geometry.slot);
     adapter.argObject(material.slot);
     super(create("Mesh"));
@@ -275,9 +365,11 @@ export function releaseUnreferenced(): number {
   while (queue.length > 0) {
     const owner = queue.pop() as Object3D;
     keep(owner.positionMember);
+    keep(owner.rotationMember);
     const mesh = owner as Mesh;
     keep(mesh.geometry);
     keep(mesh.material);
+    keep((mesh.material as MeshStandardMaterial | undefined)?.colorMember);
   }
   let released = 0;
   for (let handle = 1; handle < objects.length; handle += 1) {
@@ -313,6 +405,22 @@ export class OrthographicCamera extends Object3D {
     adapter.argNumber(near);
     adapter.argNumber(far);
     super(create("OrthographicCamera"));
+  }
+}
+export class PerspectiveCamera extends Object3D {
+  constructor(fov: number, aspect: number, near: number, far: number) {
+    adapter.argNumber(fov);
+    adapter.argNumber(aspect);
+    adapter.argNumber(near);
+    adapter.argNumber(far);
+    super(create("PerspectiveCamera"));
+  }
+}
+export class DirectionalLight extends Object3D {
+  constructor(color: number, intensity: number) {
+    adapter.argNumber(color);
+    adapter.argNumber(intensity);
+    super(create("DirectionalLight"));
   }
 }
 export class WebGPURenderer {

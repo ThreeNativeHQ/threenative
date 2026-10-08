@@ -118,7 +118,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     endif()
     tn_native_engine_test(tn-native-engine-shader-emit-test tests/native-engine/shader_emit_test.cpp
         ${tn_shader_validator}=validates
-        native_engine_shader_emit_stable=stable)
+        native_engine_shader_emit_stable=stable
+        native_engine_shader_emit_position_invariant=position_invariant)
     target_link_libraries(tn-native-engine-shader-emit-test PRIVATE tn_engine_shader tn_host_services)
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
         native_engine_renderer_resize_readback=resize_readback
@@ -187,6 +188,17 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         endforeach()
     endif()
 
+    # PRD-526: a GTAO post pass over a box on a plane. The renderer draws the "normal" target it
+    # reads (r185's MRT normalView); the render driver refuses the graph without it.
+    find_program(TN_POST_NORMAL_NODE node)
+    if(TN_POST_NORMAL_NODE)
+        add_test(NAME native_engine_post_normal_pass
+            COMMAND ${TN_POST_NORMAL_NODE} --import tsx tests/native-engine/post-normal-pass.ts
+                $<TARGET_FILE:tn-native-engine-render-driver> ${CMAKE_CURRENT_BINARY_DIR}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        set_tests_properties(native_engine_post_normal_pass PROPERTIES LABELS "native-engine" TIMEOUT 180)
+    endif()
+
     tn_native_engine_test(tn-native-engine-compute-test tests/native-engine/compute_test.cpp
         native_engine_compute_readback=readback)
     target_link_libraries(tn-native-engine-compute-test PRIVATE tn_engine_renderer tn_host_services)
@@ -207,7 +219,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_callback=render_callback
         native_engine_renderer_instanced=instanced
         native_engine_batched_vs_unbatched=batched_vs_unbatched
-        native_engine_skinned_batched_vs_unbatched=skinned_crowd)
+        native_engine_skinned_batched_vs_unbatched=skinned_crowd
+        native_engine_skinned_normalized_weights=skinned_normalized_weights
+        native_engine_normal_map_tilt=normal_map_tilt
+        native_engine_unsupported_map_slot=unsupported_map_slot
+        native_engine_converted_copies_swept=converted_copies_swept)
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
@@ -269,8 +285,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         # errors and undefined behaviour, not leaks. CPU-only engine tests keep leak checking.
         # traa_reset_seed: exit trace contains libnvidia-glcore/glsi calloc and Dawn Vulkan Buffer::Create.
         set_tests_properties(native_engine_gpu_upload_readback native_engine_gpu_deferred_destroy
-            native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_layouts
-            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_renderer_instanced native_engine_batched_vs_unbatched native_engine_skinned_batched_vs_unbatched native_engine_animation_tick_vs_render native_engine_animation_material_revision native_engine_admission_failure native_engine_admission_cancel native_engine_loop_async_cancel native_engine_loop_render_ids native_engine_compute_readback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test native_engine_traa_reset_seed
+            native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_emit_position_invariant native_engine_shader_layouts
+            native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_renderer_instanced native_engine_batched_vs_unbatched native_engine_skinned_batched_vs_unbatched native_engine_skinned_normalized_weights native_engine_normal_map_tilt native_engine_unsupported_map_slot native_engine_animation_tick_vs_render native_engine_animation_material_revision native_engine_admission_failure native_engine_admission_cancel native_engine_loop_async_cancel native_engine_loop_render_ids native_engine_compute_readback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test native_engine_traa_reset_seed
             native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")

@@ -388,7 +388,7 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         ? v.swizzle(v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(4)}))), "xyz")
         : v.attribute("instanceColor", Type::vec(3));
     // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
-    const ExprId uv = variant.map && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
+    const ExprId uv = (variant.map || variant.normalMap) && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
 
@@ -418,6 +418,35 @@ static ExprId srgbDecode(Program& f, ExprId channel) {
                                     f.constant(2.4f)});
     const ExprId b = f.mul(channel, f.constant(0.0773993808f));
     return f.select(f.less(channel, f.constant(0.04045f)), b, a);
+}
+
+// NormalMapNode for a tangent-space map on a geometry without tangents: three's perturbNormal2Arb,
+// the tangent frame from the screen-space derivatives of the view position and the map's uv. The map
+// is linear data; normalScale scales the xy of the decoded vector. faceDirection flips the frame for a
+// back face. Called after the fragment's other varyings exist, so `uv` takes the vertex stage's slot.
+static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
+    const ExprId eye = f.varying("positionView", Type::vec(3));
+    if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
+    const ExprId uv = f.varying("uv", Type::vec(2));
+    const ExprId transform = f.uniform("normalUvTransform", Type::mat(3, 3));
+    const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
+    const ExprId texel = f.swizzle(f.sample(f.texture2d("normalMap"), at), "xyz");
+    const ExprId decoded = f.sub(f.mul(texel, f.constant(2.0f)), f.constant(1.0f));
+    const ExprId scaled = f.mul(f.swizzle(decoded, "xy"), f.uniform("normalScale", Type::vec(2)));
+    const ExprId mapN = f.construct(Type::vec(3), {scaled, f.swizzle(decoded, "z")});
+    const ExprId q0 = f.call("dFdx", {eye}), q1 = f.call("dFdy", {eye});
+    const ExprId st0 = f.call("dFdx", {at}), st1 = f.call("dFdy", {at});
+    const ExprId q1perp = f.call("cross", {q1, surfaceNormal}), q0perp = f.call("cross", {surfaceNormal, q0});
+    const ExprId T = f.add(f.mul(q1perp, f.swizzle(st0, "x")), f.mul(q0perp, f.swizzle(st1, "x")));
+    const ExprId B = f.add(f.mul(q1perp, f.swizzle(st0, "y")), f.mul(q0perp, f.swizzle(st1, "y")));
+    const ExprId det = f.call("max", {f.call("dot", {T, T}), f.call("dot", {B, B})});
+    const ExprId faceDirection = f.select(f.builtin("frontFacing"), f.constant(1.0f), f.constant(-1.0f));
+    const ExprId scale = f.mul(faceDirection, f.div(f.constant(1.0f), f.call("sqrt", {det})));
+    const ExprId result = f.add(f.add(f.mul(T, f.mul(f.swizzle(mapN, "x"), scale)), f.mul(B, f.mul(f.swizzle(mapN, "y"), scale))),
+                                f.mul(surfaceNormal, f.swizzle(mapN, "z")));
+    // Held in a variable: the derivatives above must run in uniform control flow, and a pure
+    // expression is emitted where it is used, which can be inside a later light or environment branch.
+    return f.load(f.var(Type::vec(3), f.call("normalize", {result})));
 }
 
 // three's setupDiffuseColor: the map texel multiplies the diffuse colour and alpha. It is sampled at
@@ -477,7 +506,7 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     Program& v = out.vertex;
     for (const auto& [name, type] : out.fragment.varyings()) {
         if (name == "normalView" || name == "positionView" ||
-            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && variant.map)) continue;
+            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap))) continue;
         ExprId value;
         if (name == "positionWorld")
             value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position), "xyz");
@@ -711,9 +740,10 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // normalViewGeometry is the varying renormalized (three's .normalize().toVar()); getGeometryRoughness
     // differentiates that, not the raw varying.
     const ExprId normalViewGeometry = f.call("normalize", {f.varying("normalView", Type::vec(3))});
-    const ExprId n = nodeValue(f, variant.nodes.normalNode, Type::vec(3), normalViewGeometry, normalViewGeometry);
+    ExprId n = nodeValue(f, variant.nodes.normalNode, Type::vec(3), normalViewGeometry, normalViewGeometry);
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
     const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
+    if (variant.normalMap && !variant.nodes.normalNode) n = perturbedNormal(f, variant, normalViewGeometry);
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix), in the fragment:
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
@@ -903,9 +933,10 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
 
     Program& f = out.fragment;
     Tsl t{f};
-    const ExprId n = f.call("normalize", {f.varying("normalView", Type::vec(3))});
+    ExprId n = f.call("normalize", {f.varying("normalView", Type::vec(3))});
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
     const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
+    if (variant.normalMap) n = perturbedNormal(f, variant, n);
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix), in the fragment:
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),

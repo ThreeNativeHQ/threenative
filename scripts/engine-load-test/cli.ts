@@ -21,6 +21,7 @@ import {
   waitForUrl,
 } from "./browser.js";
 import { parseCp1Arms, runCp1 } from "./cp1.js";
+import { runCrowd } from "./crowd.js";
 import {
   BenchError,
   type IPerformanceBaseline,
@@ -41,6 +42,7 @@ import { runAndroidArm } from "./run-android.js";
 import { desktopTimeoutMs, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
 import { exportGodotWeb } from "./run-godot.js";
 import { runWebBench, webBenchOptions } from "./web.js";
+import { type Workload, parseWorkloads } from "./workloads.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const artifactRoot = path.join(repoRoot, "artifacts/engine-load-test");
@@ -498,14 +500,12 @@ async function runReportCheckCommand(file: string): Promise<void> {
   }
 }
 
-/** PRD-534 CP1: the three engine arms on the heterogeneous workload (L4, unique materials). */
+/**
+ * PRD-534 CP1 and PRD-533 phase 1: the engine arms on each requested workload. `--workload` (one) and
+ * `--workloads` (a list, or `all`) name them; blocked and undefined workloads fail by name.
+ */
 async function runCp1Command(arms: string): Promise<void> {
-  const workload = flag("workload") ?? "heterogeneous";
-  if (workload !== "heterogeneous")
-    throw new BenchError(
-      "TN_BENCH_BAD_FLAG",
-      `CP1 runs only the heterogeneous workload, not ${workload}`,
-    );
+  const workloads = parseWorkloads(flag("workloads") ?? flag("workload") ?? "heterogeneous");
   const target = flag("target") ?? "desktop";
   if (target !== "desktop")
     throw new BenchError(
@@ -514,6 +514,30 @@ async function runCp1Command(arms: string): Promise<void> {
     );
   const base = ladderOptions();
   const objects = Number(flag("objects") ?? 4096);
+  const sections: string[] = [];
+  const written: string[] = [];
+  for (const workload of workloads) {
+    const run = await runWorkload(workload, arms, base, objects);
+    sections.push(run.markdown);
+    written.push(path.relative(repoRoot, run.file));
+  }
+  process.stdout.write(`${sections.join("\n\n")}\n\nwrote ${written.join(", ")}\n`);
+}
+
+async function runWorkload(
+  workload: Workload,
+  arms: string,
+  base: ILadderOptions,
+  objects: number,
+): Promise<{ file: string; markdown: string }> {
+  if (workload === "skinned-crowd")
+    return runCrowd(repoRoot, artifactRoot, {
+      arms: arms.split(",").map((arm) => arm.trim()),
+      frames: base.frames,
+      warmup: base.warmup,
+    });
+  if (workload !== "heterogeneous")
+    throw new BenchError("TN_BENCH_WORKLOAD_UNDEFINED", `${workload} has no runner`);
   // The current arm's bundle times its GPU work only for CP1 (three's timestamp queries).
   process.env.TN_BENCH_GPU_TIMESTAMPS = "1";
   const options = {
@@ -523,7 +547,7 @@ async function runCp1Command(arms: string): Promise<void> {
     modes: "L4",
     repeats: 1,
   };
-  const { file, markdown } = await runCp1(repoRoot, artifactRoot, {
+  return runCp1(repoRoot, artifactRoot, {
     arms: parseCp1Arms(arms),
     objects,
     frames: options.frames,
@@ -532,7 +556,6 @@ async function runCp1Command(arms: string): Promise<void> {
     height: options.height,
     runCurrent: () => runRequestedArm("tn-desktop", options),
   });
-  process.stdout.write(`${markdown}\n\nwrote ${path.relative(repoRoot, file)}\n`);
 }
 
 async function runProductComparison(): Promise<void> {
@@ -546,7 +569,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous [--objects N] [--frames N --warmup N --width N --height N]\n       pnpm bench:engines --target web --arms current,wasm-js,wasm-perry [--objects N --frames N --warmup N --profile]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n       pnpm bench:engines --cpu-setup\n       pnpm bench:engines --cpu --source <absolute checkout path> --name <result name>\n       pnpm bench:engines --cpu-compare --baseline <absolute saved-run dir> --candidate <absolute saved-run dir> [--control <name>]\n",
+    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --arms current,native,native-v8,native-cpp,native-aot --workloads heterogeneous,skinned-crowd|all [--objects N] [--frames N --warmup N --width N --height N]\n       pnpm bench:engines --target web --arms current,wasm-js,wasm-perry [--objects N --frames N --warmup N --profile]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n       pnpm bench:engines --cpu-setup\n       pnpm bench:engines --cpu --source <absolute checkout path> --name <result name>\n       pnpm bench:engines --cpu-compare --baseline <absolute saved-run dir> --candidate <absolute saved-run dir> [--control <name>]\n",
   );
 }
 

@@ -34,3 +34,35 @@ export function fireBeforeRender(object: Object3D): string {
 export function residentKilobytes(): number {
   return adapter.residentKb();
 }
+
+/** The benchmark session of the native-AOT driver (PRD-533): the engine, a renderer and the meters. */
+export function benchOpen(
+  scene: { slot: number },
+  camera: { slot: number },
+  width: number,
+  height: number,
+): void {
+  const error = adapter.bench("open", scene.slot, camera.slot, width, height);
+  if (error !== "") throw error;
+}
+
+export function benchBegin(frame: number, warmup: number): void {
+  const error = adapter.bench("begin", frame, warmup, 0, 0);
+  if (error !== "") throw error;
+}
+
+export function benchRender(): void {
+  const error = adapter.bench("render", 0, 0, 0, 0);
+  if (error !== "") throw error;
+}
+
+/** Writes the report to the file named by TN_BENCH_REPORT. */
+export function benchFinish(): void {
+  const error = adapter.bench("finish", 0, 0, 0, 0);
+  if (error !== "") throw error;
+}
+
+/** One setting from the environment: TN_BENCH_OBJECTS, _FRAMES, _WARMUP, _WIDTH or _HEIGHT. */
+export function benchSetting(name: string): number {
+  return adapter.benchConfig(name);
+}

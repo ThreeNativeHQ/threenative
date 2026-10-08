@@ -15,6 +15,8 @@ class PostEffects {
     PostEffects& operator=(const PostEffects&) = delete;
     void resize(uint32_t width, uint32_t height);
     void input(const std::string& name, WGPUTextureView view);
+    /** True when any pass reads the named resource ("normal" asks the renderer for a normal target). */
+    bool reads(const std::string& name) const;
     void render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
                 const CameraState& camera, uint64_t frame);
     WGPUTextureView view(const std::string& name) const;
@@ -32,6 +34,10 @@ class PostEffects {
         shader::graph::PostPass source;
         WGPUBuffer uniforms = nullptr;
         WGPURenderPipeline pipeline = nullptr; // borrowed from cache
+        // Explicit layout: an automatic one drops a binding the shader never reads (SMAA's unused
+        // uniform block), and the pass binds every binding its package declares.
+        WGPUBindGroupLayout layout = nullptr;
+        WGPUPipelineLayout pipelineLayout = nullptr;
         bool rendered = false;
     };
     void clearTargets();
