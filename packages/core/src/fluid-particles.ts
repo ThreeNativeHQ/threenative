@@ -208,6 +208,7 @@ function basisRows(rotation: Vec4): readonly [Vec3, Vec3, Vec3] {
  * water.fill([-2.8, 0.1, -1.5], [-0.6, 3, 1.5]);
  */
 export class FluidParticles3D extends Group {
+  readonly #options: IFluidParticlesOptions;
   readonly capacity: number;
   readonly spacing: number;
   readonly bounds: IFluidBounds;
@@ -317,6 +318,7 @@ export class FluidParticles3D extends Group {
         );
 
     super();
+    this.#options = { ...options };
     this.capacity = options.capacity;
     this.spacing = spacing;
     this.bounds = bounds;
@@ -948,6 +950,18 @@ export class FluidParticles3D extends Group {
       this.#columnHeights,
     ];
     this.addEventListener("removed", this.#onRemoved);
+  }
+
+  /** Fresh runtime resources with the same parameters; pending work is not copied. */
+  override clone(recursive = true): this {
+    return new FluidParticles3D({
+      ...this.#options,
+      viscosity: this.viscosity,
+      cohesion: this.cohesion,
+      vorticity: this.vorticity,
+      gravity: this.gravity,
+      bounds: { min: [...this.bounds.min], max: [...this.bounds.max] },
+    }).copy(this, recursive) as this;
   }
 
   get released(): boolean {

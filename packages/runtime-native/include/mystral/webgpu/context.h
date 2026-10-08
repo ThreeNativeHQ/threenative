@@ -3,17 +3,19 @@
 #include <cstdint>
 #include <vector>
 
+#include "mystral/host/frame_capture.h"
+
 // Forward declare WebGPU types to avoid header dependency
 typedef struct WGPUInstanceImpl* WGPUInstance;
 typedef struct WGPUSurfaceImpl* WGPUSurface;
+typedef struct WGPUTextureViewImpl* WGPUTextureView;
+typedef struct WGPUTextureImpl* WGPUTexture;
 typedef struct WGPUAdapterImpl* WGPUAdapter;
 typedef struct WGPUDeviceImpl* WGPUDevice;
 typedef struct WGPUQueueImpl* WGPUQueue;
 
 namespace mystral {
 namespace webgpu {
-
-struct BindingsState;
 
 /**
  * WebGPU Context
@@ -88,7 +90,11 @@ public:
      * @param height Window height
      * @return true on success
      */
-    bool configureSurface(uint32_t width, uint32_t height, bool vsync = true);
+    bool configureSurface(uint32_t width, uint32_t height, bool vsync);
+    // Recovery callers that omit a mode must preserve the current Android presentation path.
+    bool configureSurface(uint32_t width, uint32_t height) {
+        return configureSurface(width, height, vsync_);
+    }
 
     /**
      * Resize the surface
@@ -105,6 +111,10 @@ public:
      * Returns false rather than leaving the old, dead surface in place silently.
      */
     bool rebuildSurface(void* nativeHandle, int platformType);
+    /** Release only window-bound objects before Android destroys its native window. */
+    void releaseSurface();
+    uint32_t deviceCreations() const { return deviceCreations_; }
+    uint32_t surfaceCreations() const { return surfaceCreations_; }
 
     /** The native window the live surface was built from, or nullptr. */
     void* getSurfaceNativeHandle() const { return surfaceNativeHandle_; }
@@ -112,7 +122,7 @@ public:
 
     /**
      * Get the current texture to render to
-     * @return WGPUTextureView or nullptr if failed
+     * @return WGPUTextureView owned by this context until present/reconfigure, or nullptr if failed
      */
     void* getCurrentTextureView();
 
@@ -145,7 +155,23 @@ public:
      */
     void clearFrameScreenshotReady();
 
-    void setBindingsState(BindingsState* state) { bindingsState_ = state; }
+    void setFrameCaptureSource(host::IFrameCaptureSource* source) { captureSource_ = source; }
+
+    /**
+     * A device-loss observer (the native engine's device lifecycle). Installed, it hears every
+     * loss, the context's own destroy included, and the loss is no longer fatal. It may run on any
+     * thread the backend chooses, so it must only record the loss.
+     */
+    using DeviceLostHandler = void (*)(void* user, uint32_t reason, const char* message);
+    void setDeviceLostHandler(DeviceLostHandler handler, void* user) {
+        lostHandler_ = handler;
+        lostHandlerUser_ = user;
+    }
+    bool notifyDeviceLost(uint32_t reason, const char* message) {
+        if (!lostHandler_) return false;
+        lostHandler_(lostHandlerUser_, reason, message);
+        return true;
+    }
 
     /**
      * Capture the current frame as RGBA pixel data
@@ -199,11 +225,15 @@ public:
     };
 
 private:
-    /** Builds a surface handle for a native window without touching any member state. */
+    void releaseSurfaceView();
+    /** Builds and counts a surface without changing the installed surface, adapter or device. */
     WGPUSurface makeSurface(void* nativeHandle, int platformType);
 
+    uint32_t deviceCreations_ = 0, surfaceCreations_ = 0;
     WGPUInstance instance_ = nullptr;
     WGPUSurface surface_ = nullptr;
+    WGPUTexture surfaceTexture_ = nullptr;
+    WGPUTextureView surfaceView_ = nullptr;
     void* surfaceNativeHandle_ = nullptr;
     int surfacePlatformType_ = -1;
     WGPUAdapter adapter_ = nullptr;
@@ -224,7 +254,9 @@ private:
     // Offscreen rendering (for headless mode)
     void* offscreenTexture_ = nullptr;  // WGPUTexture
     void* offscreenTextureView_ = nullptr;  // WGPUTextureView
-    BindingsState* bindingsState_ = nullptr;
+    host::IFrameCaptureSource* captureSource_ = nullptr;
+    DeviceLostHandler lostHandler_ = nullptr;
+    void* lostHandlerUser_ = nullptr;
 };
 
 }  // namespace webgpu

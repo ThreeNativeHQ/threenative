@@ -1,0 +1,217 @@
+#!/usr/bin/env node
+// PRD-531's VM artifact, explicitly selected. Strict Perry packaging never calls this path.
+import { randomUUID } from "node:crypto";
+import { readFile, mkdir, writeFile, rename, unlink } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const native = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repo = resolve(native, "../..");
+const player = resolve(native, "src/engine/player");
+const require = createRequire(resolve(native, "package.json"));
+const { build } = require("esbuild");
+const ts = createRequire(resolve(repo, "packages/create-threenative/package.json"))("typescript");
+
+function rejectUpstream(metafile) {
+  const upstream = Object.keys(metafile.inputs).filter((file) => /(?:^|\/)node_modules\/(?:.*\/)?three\//.test(file));
+  if (upstream.length) throw new Error(`TN_NATIVE_ENGINE_UPSTREAM: ${upstream.join(", ")}`);
+}
+
+function imports(source, specifier) {
+  const ast = ts.createSourceFile("game.ts", source, ts.ScriptTarget.Latest, true);
+  const names = new Set();
+  const namespaces = new Set();
+  const matches = (node) => ts.isStringLiteral(node) && node.text === specifier;
+  const bindings = (elements) => {
+    for (const item of elements) {
+      if (!item.isTypeOnly) names.add((item.propertyName ?? item.name).text);
+    }
+  };
+  function importDeclaration(node) {
+    if (!ts.isImportDeclaration(node)) return;
+    if (!matches(node.moduleSpecifier) || node.importClause?.isTypeOnly) return;
+    const clause = node.importClause;
+    if (clause?.name) names.add("default");
+    const named = clause?.namedBindings;
+    if (named && ts.isNamedImports(named)) bindings(named.elements);
+    else if (named) namespaces.add(named.name.text);
+  }
+  function exportDeclaration(node) {
+    if (!ts.isExportDeclaration(node)) return;
+    if (node.isTypeOnly || !node.moduleSpecifier || !matches(node.moduleSpecifier)) return;
+    if (node.exportClause && ts.isNamedExports(node.exportClause)) bindings(node.exportClause.elements);
+  }
+  function dynamicImport(node) {
+    if (!ts.isCallExpression(node) || node.expression.kind !== ts.SyntaxKind.ImportKeyword) return;
+    if (!matches(node.arguments[0])) return;
+    const expression = ts.isAwaitExpression(node.parent) ? node.parent : node;
+    const parent = expression.parent;
+    if (!ts.isVariableDeclaration(parent)) return;
+    if (ts.isObjectBindingPattern(parent.name)) bindings(parent.name.elements);
+    else if (ts.isIdentifier(parent.name)) namespaces.add(parent.name.text);
+  }
+  function visit(node) {
+    importDeclaration(node);
+    exportDeclaration(node);
+    dynamicImport(node);
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  function references(node) {
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && namespaces.has(node.expression.text))
+      names.add(node.name.text);
+    if (ts.isElementAccessExpression(node) && ts.isIdentifier(node.expression) && namespaces.has(node.expression.text)) {
+      if (ts.isStringLiteral(node.argumentExpression)) names.add(node.argumentExpression.text);
+      else names.add("*");
+    }
+    ts.forEachChild(node, references);
+  }
+  references(ast);
+  return [...names];
+}
+
+function unboundDiagnostic(specifier, name) {
+  let reason = "the native engine profile has no binding for this import";
+  if (specifier.startsWith("three/addons/tsl/display/"))
+    reason = "live addon-node construction and update scheduling are unbound; the native renderer currently consumes cooked post graphs";
+  else if (specifier.includes("RoundedBoxGeometry"))
+    reason = "the native geometry module has no RoundedBoxGeometry implementation";
+  else if (specifier.includes("GLTFLoader"))
+    reason = "the native cgltf loader has no V8 loader binding and does not decode glTF images or external buffers";
+  else if (/KTX2Loader|DRACOLoader|MeshoptDecoder|meshopt_decoder/.test(specifier))
+    reason = "the selected native engine asset path has no bound decoder/transcoder for this loader";
+  else if (specifier === "three-mesh-bvh")
+    reason = "native raycasting exists, but MeshBVH construction, queries and serialization are not bound";
+  else if (specifier === "three/webgpu" || name === "RenderTarget")
+    reason = "native render targets, fullscreen draws and game-authored node lifecycle lack the required V8 renderer bindings";
+  else if (specifier === "three/tsl")
+    reason = "the native graph lacks this material/pass/history/storage context binding";
+  else if (name === "PropertyBinding" || name.endsWith("ConsoleFunction"))
+    reason = "native PropertyBinding exists, but its V8 object/static reflection and diagnostic console hook are unbound";
+  else if (name === "Material")
+    reason = "concrete native material classes are bound; the base Material constructor and identity are unbound";
+  return `TN_NATIVE_ENGINE_UNBOUND: ${specifier}:${name} [${reason}]`;
+}
+
+/** Bundle the portable entry against native imports; publish nothing when a binding is absent. */
+export async function bundleNativeEngine({ entry, outfile, boot = true }) {
+  entry = resolve(entry);
+  outfile = resolve(outfile);
+  if (entry === outfile) throw new Error("TN_NATIVE_ENGINE_OUTPUT: entry and output must differ");
+  // Tree-shake the game and packages first. Unused package exports must not enlarge the game's
+  // compatibility denominator merely because the package's index reexports them.
+  const game = await build({
+    entryPoints: [entry], bundle: true, write: false, format: "esm", platform: "neutral",
+    target: "es2022", conditions: ["threenative-native"], define: { "import.meta.env": "{}" },
+    external: ["three", "three/*", "three-mesh-bvh", "three-mesh-bvh/*",
+      "@threenative/core", "@threenative/core/*"],
+    logLevel: "silent", metafile: true,
+  });
+  rejectUpstream(game.metafile);
+  const code = game.outputFiles[0].text;
+  const coreIndex = ts.createSourceFile("index.ts",
+    await readFile(resolve(repo, "packages/core/src/index.ts"), "utf8"), ts.ScriptTarget.Latest, true);
+  const coreExports = imports(code, "@threenative/core").map((name) => {
+    const declaration = coreIndex.statements.find((node) => ts.isExportDeclaration(node) &&
+      !node.isTypeOnly && node.exportClause && ts.isNamedExports(node.exportClause) &&
+      node.exportClause.elements.some((item) => !item.isTypeOnly && item.name.text === name));
+    if (!declaration?.moduleSpecifier)
+      throw new Error(`TN_NATIVE_ENGINE_UNBOUND: @threenative/core:${name}`);
+    const source = JSON.stringify(resolve(repo, "packages/core/src", declaration.moduleSpecifier.text));
+    if (name === "defineGame") return `import { defineGame as coreDefineGame } from ${source};
+      import { platform } from ${JSON.stringify(resolve(player, "core-host.mjs"))};
+      export function defineGame(options) { return coreDefineGame({ ...options, platform: options.platform ?? platform }); }`;
+    return `export { ${name} } from ${source};`;
+  }).join("\n");
+  const modules = {
+    three: resolve(player, "core-three.mjs"),
+    "three/webgpu": resolve(player, "core-webgpu.mjs"),
+    "three/tsl": resolve(player, "core-tsl.mjs"),
+    "three/addons/utils/SkeletonUtils.js": resolve(player, "core-three.mjs"),
+  };
+  const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
+    const result = await build({ entryPoints: [facade], bundle: true, write: false, format: "esm",
+      metafile: true, logLevel: "silent" });
+    return [facade, Object.values(result.metafile.outputs)[0].exports];
+  })));
+  const unresolved = new Map();
+  const bundled = await build({
+    stdin: { contents: boot
+      ? `import ${JSON.stringify(resolve(player, "core-host.mjs"))}; import game from "tn:game"; void game.start().then(() => game.ctx.renderer.render(game.ctx.scene, game.ctx.camera)).catch(error => { globalThis.tn.__startupError = String(error.stack ?? error); });`
+      : 'import "tn:game";', resolveDir: repo },
+    bundle: true, write: false, format: "iife", platform: "neutral", target: "es2022",
+    conditions: ["threenative-native"], define: { "import.meta.env": "{}" }, metafile: true,
+    logLevel: "silent",
+    plugins: [{ name: "native-engine", setup(builder) {
+      builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
+        if (args.importer.startsWith(`${resolve(repo, "packages/core/src")}/`))
+          return { path: resolve(player, "core-assets.mjs") };
+      });
+      builder.onResolve({ filter: /^tn:game$/ }, () => ({ path: "game", namespace: "native-game" }));
+      builder.onLoad({ filter: /.*/, namespace: "native-game" }, () => ({ contents: code, resolveDir: repo }));
+      builder.onResolve({ filter: /^@threenative\/core$/ }, () => ({ path: "core", namespace: "native-core" }));
+      builder.onLoad({ filter: /.*/, namespace: "native-core" }, () => ({ contents: coreExports, resolveDir: repo }));
+      builder.onResolve({ filter: /^@threenative\/core\// }, (args) => ({
+        path: resolve(repo, "packages/core/src", `${args.path.split("/").at(-1)}.ts`),
+      }));
+      builder.onResolve({ filter: /^(three(?:\/|$)|three-mesh-bvh(?:\/|$))/ }, async (args) => {
+        const source = args.namespace === "native-game" ? code : await readFile(args.importer, "utf8");
+        const names = imports(source, args.path);
+        const path = JSON.stringify([args.path, names]);
+        unresolved.set(path, { specifier: args.path, names });
+        return { path, namespace: "native-import" };
+      });
+      builder.onLoad({ filter: /.*/, namespace: "native-import" }, async (args) => {
+        const { specifier, names } = unresolved.get(args.path);
+        const facade = modules[specifier];
+        // Missing symbols are temporary compiler inputs only. Their unique diagnostics survive
+        // precisely when a live import uses them; the artifact is refused below, never emitted.
+        const known = exports.get(facade) ?? [];
+        return { contents: [
+          ...(facade ? [`export * from ${JSON.stringify(facade)};`] : []),
+          ...names.filter((name) => !known.includes(name)).map((name) => {
+            const error = JSON.stringify(unboundDiagnostic(specifier, name));
+            if (name === "*") return `throw new Error(${error});`;
+            if (name === "default") return `export default function() { throw new Error(${error}); }`;
+            return `export function ${name}() { throw new Error(${error}); }`;
+          }),
+          ...(!facade && names.length === 0 ? [`throw new Error(${JSON.stringify(unboundDiagnostic(specifier, "*"))});`] : []),
+        ].join("\n"), resolveDir: repo };
+      });
+    } }],
+  });
+  const output = bundled.outputFiles[0].text;
+  const missing = [...new Set(output.match(/TN_NATIVE_ENGINE_UNBOUND: [^"\n]+/g) ?? [])].sort();
+  if (missing.length) throw new Error(missing.join("\n"));
+  if (output.includes("TN_CORE_NATIVE_UNSUPPORTED"))
+    throw new Error("TN_NATIVE_ENGINE_UNBOUND: the game retains an unsupported core import");
+  rejectUpstream(bundled.metafile);
+  await mkdir(dirname(outfile), { recursive: true });
+  const temporary = `${outfile}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, output, { flag: "wx" });
+    await rename(temporary, outfile);
+  } finally {
+    await unlink(temporary).catch((error) => { if (error.code !== "ENOENT") throw error; });
+  }
+  return { outfile, bytes: Buffer.byteLength(output), profile: { engine: "native", gameRuntime: "v8" } };
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const args = process.argv.slice(2);
+  const flags = new Map();
+  for (let i = 0; i < args.length; i += 2) {
+    if (!["--entry", "--out", "--engine", "--game-runtime"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
+      throw new Error(`TN_NATIVE_ENGINE_ARGS: invalid or repeated option ${args[i]}`);
+    flags.set(args[i], args[i + 1]);
+  }
+  if (flags.get("--engine") !== "native" || flags.get("--game-runtime") !== "v8" || !flags.get("--entry") || !flags.get("--out"))
+    throw new Error("Usage: bundle-native-engine.mjs --engine native --game-runtime v8 --entry <src/game.ts> --out <game.js>");
+  try {
+    console.log(JSON.stringify(await bundleNativeEngine({ entry: flags.get("--entry"), outfile: flags.get("--out") })));
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

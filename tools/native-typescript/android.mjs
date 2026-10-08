@@ -1,0 +1,155 @@
+#!/usr/bin/env node
+// The Android arm64 build lane: which NDK Perry links with, and which cross runtime it links.
+//
+// Decision 11: Perry compiles the cross target itself, so this lane no longer emits objects for a
+// host linker to combine. It resolves the NDK, provisions the pinned Perry cross runtime for the
+// target triple, and reports how Perry is invoked. Perry links the target's own archives — runtime,
+// stdlib and UI — so the page size comes from the NDK driver Perry invokes.
+//
+// Everything this builds is cached outside the repository and keyed by the target's own pins.
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { loadLock, provisionCross } from "./provision.mjs";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const TARGETS = path.join(HERE, "targets");
+
+function named(code, message) {
+  const error = new Error(`${code}: ${message}`);
+  error.code = code;
+  return error;
+}
+
+/** The target file whose `triple` matches, so `--target <triple>` names no file of its own. */
+export function findTarget(triple, dir = TARGETS) {
+  let files;
+  try {
+    files = fs.readdirSync(dir).filter((file) => file.endsWith(".json"));
+  } catch {
+    return undefined;
+  }
+  for (const file of files.sort()) {
+    const target = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+    if (target.triple === triple) return { file: path.join(dir, file), target };
+  }
+  return undefined;
+}
+
+/** The `--target` value Perry takes for a triple in targets/. */
+export function perryTarget(triple) {
+  switch (triple) {
+    case "aarch64-linux-android":
+      return "android";
+    case "x86_64-linux-android":
+      return "android-x86_64";
+    case "aarch64-apple-ios":
+      return "ios";
+    default:
+      return undefined;
+  }
+}
+
+/** Newest of `versions` whose leading number is in `majors`; undefined when none is. */
+export function pickNdkVersion(versions, majors) {
+  const rank = (version) => version.split(/[.-]/u).map((part) => Number.parseInt(part, 10) || 0);
+  const compare = (a, b) => {
+    for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+      const difference = (b[index] ?? 0) - (a[index] ?? 0);
+      if (difference !== 0) return difference;
+    }
+    return 0;
+  };
+  return versions
+    .map((version) => ({ version, parts: rank(version) }))
+    .filter(({ parts }) => majors.includes(parts[0]))
+    .sort((a, b) => compare(a.parts, b.parts))
+    .at(0)?.version;
+}
+
+/** Every directory that holds `ndk/<version>` trees, in the order the SDK documents. */
+function ndkRoots(env) {
+  const roots = [];
+  for (const name of ["ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "ANDROID_NDK"]) {
+    if (env[name]) roots.push(env[name]);
+  }
+  for (const name of ["ANDROID_HOME", "ANDROID_SDK_ROOT"]) {
+    if (env[name]) roots.push(path.join(env[name], "ndk"));
+  }
+  roots.push(path.join(os.homedir(), "Android", "Sdk", "ndk"));
+  return roots;
+}
+
+/**
+ * The NDK this lane links with: the newest installed version whose major the target allows. A
+ * directory whose `source.properties` disagrees with its name is a corrupted SDK, not a toolchain.
+ */
+export function resolveNdk(target, env = process.env) {
+  const searched = [];
+  for (const root of ndkRoots(env)) {
+    let entries;
+    try {
+      entries = fs.readdirSync(root);
+    } catch {
+      searched.push(root);
+      continue;
+    }
+    const version = pickNdkVersion(entries, target.ndk.majors);
+    if (version === undefined) {
+      searched.push(root);
+      continue;
+    }
+    const dir = path.join(root, version);
+    const revision = /Pkg\.Revision\s*=\s*(\S+)/u.exec(
+      fs.readFileSync(path.join(dir, "source.properties"), "utf8"),
+    )?.[1];
+    if (revision !== version)
+      throw named(
+        "TN_NATIVE_TS_NDK",
+        `${dir}/source.properties reports Pkg.Revision ${revision ?? "none"}, not ${version}`,
+      );
+    return { dir, version, bin: path.join(dir, "toolchains", "llvm", "prebuilt", hostTag(dir)) };
+  }
+  throw named(
+    "TN_NATIVE_TS_NDK",
+    `no NDK r${target.ndk.majors.join("/r")} under ${searched.join(", ")}`,
+  );
+}
+
+function hostTag(ndkDir) {
+  const prebuilt = path.join(ndkDir, "toolchains", "llvm", "prebuilt");
+  return fs.readdirSync(prebuilt)[0];
+}
+
+/**
+ * The cross runtime Perry links a target with, plus the NDK it drives. Perry refuses a runtime whose
+ * embedded build stamp does not match its own compiler, so the stamp is read here and reported as
+ * this lane's own failure rather than surfacing later as a link error.
+ */
+export async function ensureAndroidRuntime(
+  target,
+  { ndk, env = process.env, log = () => {} } = {},
+) {
+  const lock = loadLock();
+  const provisioned = await provisionCross(target.triple, { lock, env, log });
+  const stamps = stampReport(path.join(provisioned.dir, "libperry_runtime.a"));
+  if (stamps !== undefined) return { ...provisioned, ndk, stamps };
+  return { ...provisioned, ndk };
+}
+
+/**
+ * Perry's runtime stamp, next to the compiler's own: an out-of-tree cross runtime built from a
+ * different source tree than the pinned compiler is refused by Perry at link time, so it is
+ * reported here, where the reason is actionable.
+ */
+export function stampReport(runtimeArchive) {
+  if (!fs.existsSync(runtimeArchive)) return undefined;
+  const run = spawnSync("sh", ["-c", `strings -a "${runtimeArchive}" | head -c 200000`], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const found = /build=([a-z]+:[0-9a-f]+)/u.exec(run.stdout ?? "")?.[1];
+  return found === undefined ? undefined : { build: found };
+}

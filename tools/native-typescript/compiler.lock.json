@@ -1,0 +1,23 @@
+{
+  "repository": "PerryTS/perry",
+  "tag": "v0.5.1520",
+  "tagRefSha": "381045a8735ff325621c5dfb26a3bd4f5a8798c5",
+  "binaryCandidates": ["perry"],
+  "artifacts": {
+    "linux-x86_64": {
+      "url": "https://github.com/PerryTS/perry/releases/download/v0.5.1520/perry-linux-x86_64.tar.gz",
+      "sha256": "3423d9fea9bce9b2011fa53b5788a5ca115c947352b5c67278147de30fd2f952",
+      "size": 654896138
+    }
+  },
+  "crossArtifacts": {
+    "aarch64-linux-android": {
+      "url": "https://github.com/PerryTS/perry/releases/download/v0.5.1520/perry-cross-aarch64-linux-android.tar.gz",
+      "sha256": "58d98cbf74a29355fad7dae0a7638eda1da371d6789c4c458b882355ae7bb26d",
+      "size": 90050404
+    }
+  },
+  "hostPreference": {
+    "linux-x64": ["linux-x86_64"]
+  }
+}

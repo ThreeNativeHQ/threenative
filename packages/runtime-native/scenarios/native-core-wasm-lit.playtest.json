@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "native-core-wasm-lit",
+  "target": "web",
+  "subject": "native-core",
+  "viewport": { "width": 640, "height": 480 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": false },
+  "steps": [{ "kind": "wait", "label": "running", "waitTicks": 60 }],
+  "assert": {
+    "components": [
+      {
+        "entity": "native-core",
+        "component": "lit",
+        "path": "compared",
+        "equals": true,
+        "allowTrivial": "The frame is rendered and compared during boot, before the bridge reports ready."
+      },
+      {
+        "entity": "native-core",
+        "component": "lit",
+        "path": "worst",
+        "lte": 8,
+        "allowTrivial": "The comparison is made once, during boot; the tolerance is the desktop test's against the browser reference."
+      },
+      {
+        "entity": "native-core",
+        "component": "lit",
+        "path": "over1Ratio",
+        "lte": 0.001,
+        "allowTrivial": "The comparison is made once, during boot; the tolerance is the desktop test's against the browser reference."
+      },
+      { "entity": "native-core", "component": "loop", "path": "ticks", "changed": true }
+    ]
+  }
+}

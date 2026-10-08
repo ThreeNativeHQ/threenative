@@ -234,6 +234,7 @@ const PACKED_CHANNELS: readonly (readonly [number, number] | null)[] = [
  * geometry are authored; a completed bake is reused until the game requests another one.
  */
 export class ProbeVolume extends Object3D implements IComputeDriven {
+  readonly #options: IProbeVolumeOptions;
   readonly isProbeVolume = true;
   readonly processCadence = "render" as const;
   readonly warmupNodes: readonly unknown[] = [];
@@ -290,6 +291,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
 
   constructor(options: IProbeVolumeOptions) {
     super();
+    this.#options = { ...options };
     this.#report = options.report ?? ((line) => console.info(line));
     this.#now = options.now ?? (() => globalThis.performance?.now() ?? Date.now());
     this.#bakeBudgetMs = positiveNumber(options.bakeBudgetMs ?? 2, "bakeBudgetMs");
@@ -359,6 +361,15 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
 
   get probeCount(): number {
     return this.#probeCount;
+  }
+
+  /** Fresh runtime resources with the same parameters; pending work is not copied. */
+  override clone(recursive = true): this {
+    return new ProbeVolume({
+      ...this.#options,
+      bounds: this.boundingBox.clone(),
+      density: this.#density.clone(),
+    }).copy(this, recursive) as this;
   }
 
   get released(): boolean {

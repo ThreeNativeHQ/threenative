@@ -7,6 +7,7 @@ import {
   type VisualAbError,
   type VisualAbResult,
   buildVisualAbBundle,
+  runCli,
   scoreVisualAb,
 } from "../visual-ab";
 
@@ -269,4 +270,31 @@ it("reports a measured regression as a LOSS", async () => {
 
   expect(score.mde).toBe(0);
   expect(score.rows.find((row) => row.template === "alpha")?.classification).toBe("LOSS");
+});
+
+it("scores an existing native reveal without rebuilding or reshuffling the capture bundle", async () => {
+  const { after, before, root } = await fixture(["starter"]);
+  const built = buildVisualAbBundle(before, after, path.join(root, "out"), undefined, 1);
+  const file = await verdict(built, root, "rater-1", {
+    "starter::before": 4,
+    "starter::after": 4,
+    "starter::before::duplicate": 4,
+  });
+  const revealBefore = await readFile(built.reveal, "utf8");
+  expect(
+    runCli([
+      "--reveal",
+      built.reveal,
+      "--out",
+      path.join(root, "out"),
+      "--raters",
+      "1",
+      "--verdict",
+      file,
+    ]),
+  ).toBe(0);
+  expect(await readFile(built.reveal, "utf8")).toBe(revealBefore);
+  expect(JSON.parse(await readFile(path.join(root, "out/score.json"), "utf8")).rows[0].after).toBe(
+    4,
+  );
 });

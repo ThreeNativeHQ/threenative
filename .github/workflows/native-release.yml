@@ -24,6 +24,11 @@ on:
     # to four files, one of them touched by ordinary runtime-native PRs.
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
+    inputs:
+      native_engine:
+        description: Qualify only the JS-free Linux, Windows and macOS native-engine players (no release)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -126,6 +131,7 @@ jobs:
     # other PR. Every proof job below needs `gates`, so refusing here spends nothing.
     if: >-
       ${{ !cancelled() &&
+      !(github.event_name == 'workflow_dispatch' && github.event.inputs && github.event.inputs.native_engine == 'true') &&
       (github.event_name != 'pull_request' ||
       github.event.pull_request.base.ref == 'main' ||
       contains(github.event.pull_request.labels.*.name, 'release-proof')) &&
@@ -556,6 +562,164 @@ jobs:
         with:
           name: evidence-desktop-${{ matrix.key }}
           path: packages/runtime-native/artifacts/
+          if-no-files-found: error
+
+  native-engine:
+    name: native-engine-${{ matrix.platform }}
+    # Independent of release gates: dispatch the selected branch, without a tag or main CI run.
+    if: github.event_name == 'workflow_dispatch' && inputs.native_engine
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            key: linux-x64
+            runner: ubuntu-24.04
+            preset: tn-linux
+            executable: tn-native-engine-player
+            dawn_dependency: dawn
+          - platform: macos
+            key: darwin-arm64
+            runner: macos-15
+            preset: tn-macos
+            executable: tn-native-engine-player
+            dawn_dependency: dawn
+          - platform: windows
+            key: win32-x64
+            runner: windows-2025
+            preset: tn-windows
+            executable: tn-native-engine-player.exe
+            dawn_dependency: skia-win-static
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+      NATIVE_ENGINE_PRESET: ${{ matrix.preset }}
+      NATIVE_ENGINE_PLAYER: ${{ github.workspace }}/packages/runtime-native/build/${{ matrix.preset }}/${{ matrix.executable }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - name: Build the existing playtest runner
+        run: pnpm --filter @threenative/playtest build
+      - name: Install Linux JS-free desktop build and display dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          cmake ninja-build binutils pkg-config
+          libasound2-dev libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb xauth xcompmgr
+      - name: Provision the host build's pinned SDL, stb and Dawn dependencies
+        shell: bash
+        env:
+          DAWN_DEPENDENCY: ${{ matrix.dawn_dependency }}
+        run: |
+          set -euo pipefail
+          cd packages/runtime-native
+          node scripts/download-deps.mjs --only sdl3
+          node scripts/download-deps.mjs --only stb
+          node scripts/download-deps.mjs --only "$DAWN_DEPENDENCY"
+      - name: Build the JS-free player with MSVC and inspect PE imports
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+          if errorlevel 1 exit /b 1
+          set "CC=cl"
+          set "CXX=cl"
+          where cl
+          if errorlevel 1 exit /b 1
+          cd packages\runtime-native
+          cmake --preset %NATIVE_ENGINE_PRESET% -DTN_ENGINE_ONLY=ON -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=OFF
+          if errorlevel 1 exit /b 1
+          cmake --build --preset %NATIVE_ENGINE_PRESET% --target tn-native-engine-player --parallel
+          if errorlevel 1 exit /b 1
+          cd ..\..
+          node packages/runtime-native/scripts/inspect-js-free.mjs --binary "%NATIVE_ENGINE_PLAYER%" --manifest packages/runtime-native/artifacts/native-engine/js-free.json
+      - name: Build the JS-free player on Linux or macOS and inspect ELF or Mach-O
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          set -euo pipefail
+          cd packages/runtime-native
+          cmake --preset "$NATIVE_ENGINE_PRESET" -DTN_ENGINE_ONLY=ON -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=OFF
+          cmake --build --preset "$NATIVE_ENGINE_PRESET" --target tn-native-engine-player --parallel
+          cd ../..
+          node packages/runtime-native/scripts/inspect-js-free.mjs --binary "$NATIVE_ENGINE_PLAYER" --manifest packages/runtime-native/artifacts/native-engine/js-free.json
+      - name: Run inspect, input and capture journeys on the built player
+        shell: bash
+        run: |
+          set -euo pipefail
+          for journey in inspect input capture; do
+            artifacts="packages/runtime-native/artifacts/native-engine/$journey"
+            mkdir -p "$artifacts"
+            sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js "packages/runtime-native/tests/native-engine/playtests/native-engine-$journey.playtest.json" \
+              --target desktop --executable "$NATIVE_ENGINE_PLAYER" --artifacts "$artifacts" \
+              > "$artifacts/runner.log" 2>&1 && status=0 || status=$?
+            cat "$artifacts/runner.log"
+            test "$status" -eq 0
+          done
+      - name: Record the Linux adapter (software is acceptable)
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -hE '\[WebGPU\] (Adapter|Vendor|Backend):' packages/runtime-native/artifacts/native-engine/*/console.json \
+            | tee packages/runtime-native/artifacts/native-engine/linux-adapter.txt
+          grep -F '[WebGPU] Adapter:' packages/runtime-native/artifacts/native-engine/linux-adapter.txt
+          cat packages/runtime-native/artifacts/native-engine/linux-adapter.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Record the Windows adapter (D3D12 WARP is acceptable)
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -hE '\[WebGPU\] (Adapter|Vendor|Backend):' packages/runtime-native/artifacts/native-engine/*/console.json \
+            | tee packages/runtime-native/artifacts/native-engine/windows-adapter.txt
+          grep -F '[WebGPU] Adapter:' packages/runtime-native/artifacts/native-engine/windows-adapter.txt
+          cat packages/runtime-native/artifacts/native-engine/windows-adapter.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Stage the inspected and verified player
+        shell: bash
+        env:
+          NATIVE_ENGINE_KEY: ${{ matrix.key }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+          import { basename, join } from "node:path";
+          const source = process.env.NATIVE_ENGINE_PLAYER;
+          const output = join("release", `native-engine-${process.env.NATIVE_ENGINE_KEY}`);
+          mkdirSync(output, { recursive: true });
+          copyFileSync(source, join(output, basename(source)));
+          if (statSync(source).size === 0) throw new Error(`${source} is empty.`);
+          const map = source.replace(/\.exe$/i, ".map");
+          if (process.platform === "win32" && existsSync(map)) copyFileSync(map, join(output, basename(map)));
+          NODE
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-engine-player-${{ matrix.key }}
+          path: release/native-engine-${{ matrix.key }}/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: evidence-native-engine-${{ matrix.key }}
+          path: packages/runtime-native/artifacts/native-engine/
           if-no-files-found: error
 
   build-android:

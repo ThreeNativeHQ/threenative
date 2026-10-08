@@ -81,6 +81,7 @@ export class Daylight extends Group implements IComputeDriven {
   readonly sky: SkyMesh;
   readonly sun: DirectionalLight;
   readonly fill: HemisphereLight;
+  readonly #options: IDaylightOptions;
   readonly #follow: Object3D;
   readonly #sunDirection: Vector3;
   readonly #haze: FogExp2;
@@ -89,6 +90,7 @@ export class Daylight extends Group implements IComputeDriven {
 
   constructor(options: IDaylightOptions) {
     super();
+    this.#options = { ...options };
     this.name = "daylight";
     if (!(options.exposure > 0)) throw new Error("Daylight exposure must be positive.");
     if (!(options.skySize > 0)) throw new Error("Daylight skySize must be positive.");
@@ -129,6 +131,45 @@ export class Daylight extends Group implements IComputeDriven {
 
     this.#haze = new FogExp2(options.haze.color, options.haze.density);
     this.#place();
+  }
+
+  /** Recreate the rig and shadow runtime; preserve live light and sky settings. */
+  override clone(recursive = true): this {
+    const copy = new Daylight({
+      ...this.#options,
+      sunDirection: this.#sunDirection,
+      sunColor: this.sun.color,
+      sunIntensity: this.sun.intensity,
+      sky: {
+        turbidity: this.sky.turbidity.value,
+        rayleigh: this.sky.rayleigh.value,
+        mieCoefficient: this.sky.mieCoefficient.value,
+        mieDirectionalG: this.sky.mieDirectionalG.value,
+      },
+      fill: { sky: this.fill.color, ground: this.fill.groundColor, intensity: this.fill.intensity },
+      haze: { color: this.#haze.color, density: this.#haze.density },
+    }).copy(this, false);
+    const geometry = copy.sky.geometry;
+    const material = copy.sky.material;
+    copy.sky.copy(this.sky, recursive);
+    copy.sky.geometry = geometry;
+    copy.sky.material = material;
+    copy.fill.copy(this.fill);
+    const shadowNode = copy.sun.shadow.shadowNode;
+    const target = copy.sun.target;
+    copy.sun.copy(this.sun);
+    copy.sun.shadow.shadowNode = shadowNode;
+    target.copy(this.sun.target, recursive);
+    copy.sun.target = target;
+    copy.clear();
+    for (const child of this.children) {
+      if (child === this.sky) copy.add(copy.sky);
+      else if (child === this.sun) copy.add(copy.sun);
+      else if (child === this.fill) copy.add(copy.fill);
+      else if (child === this.sun.target) copy.add(copy.sun.target);
+      else if (recursive) copy.add(child.clone());
+    }
+    return copy as this;
   }
 
   get released(): boolean {

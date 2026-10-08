@@ -1,6 +1,34 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
-import { reclaimableProfileDirectories } from "../src/runner/browserSession.js";
+import { reclaimableProfileDirectories, removeStrandedProfiles } from "../src/runner/browserSession.js";
+
+test("reclaims a profile when its process exits after the first cleanup snapshot", async () => {
+  const root = makeTempDirSync("tn-profile-exit-");
+  const profile = join(root, "playwright_chromiumdev_profile-exiting");
+  mkdirSync(profile);
+  if (process.platform === "win32") {
+    expect(await removeStrandedProfiles([], root)).toEqual([]);
+    expect(existsSync(profile)).toBe(true); // Windows has no ps cleanup lane.
+    return;
+  }
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "--", profile], { stdio: "ignore" });
+  await once(child, "spawn");
+  const exited = once(child, "exit");
+  const stop = setTimeout(() => child.kill(), 100);
+  try {
+    expect(await removeStrandedProfiles([], root)).toEqual([profile]);
+    expect(existsSync(profile)).toBe(false);
+  } finally {
+    clearTimeout(stop);
+    child.kill();
+    await exited;
+  }
+});
 
 // The orphan gate failed on `playwright_chromiumdev_profile-*` surviving a signal teardown, with
 // its own verdict: "no process holds these directories, so this is a real leak". Playwright removes

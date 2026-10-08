@@ -14,7 +14,7 @@ import {
 } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SDL3_ANDROID_VERSION, stageAndroidAssets } from "../scripts/package-android.mjs";
 import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
@@ -50,7 +50,7 @@ import {
   writeProjectScene,
 } from "./project-mode.mjs";
 
-const REPORT_SCHEMA_VERSION = "0.3.0";
+export const REPORT_SCHEMA_VERSION = "0.3.0";
 const REGISTRY_SCHEMA_VERSION = "0.1.0";
 const runtimeRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
@@ -177,6 +177,11 @@ function usage() {
   --device SERIAL                  Android emulator/device serial
   --out PATH                       Report file or artifact directory
   --dry-run                        Validate and bundle without target execution
+  --suite native-engine           Run the native-engine fixture suite against a native driver
+  --suite native-engine-<group>   The same suite over the <group>-* fixtures only
+                                  (--target android|android-hardware runs it on a device over adb;
+                                  --only <glob> selects fixtures; --renders with a render-capable
+                                  --driver draws the render fixtures' frames)
   --validate-report PATH           Validate an existing report
   --help                           Show this help without executing a lane
 `;
@@ -389,8 +394,17 @@ export function validateProvenance(provenance) {
   return [...errors, ...validateProvenanceEnv(provenance.env)];
 }
 
-export function validateReport(report, registry) {
+/**
+ * Validates a conformance report.
+ *
+ * `suite` names a lane that brings its own rows: the native-engine fixture suite reports each
+ * fixture as a row instead of a registry scene, so its ids come from `expectedIds` and a `pass`
+ * means every observation matched. Everything else — the field list, the provenance contract, the
+ * statuses, the summary arithmetic and the exit code — is the same rule every lane answers to.
+ */
+export function validateReport(report, registry, options = {}) {
   const errors = [];
+  const suite = options.suite ?? null;
   for (const field of Object.keys(report)) {
     if (!REPORT_FIELDS.includes(field)) {
       errors.push(`report.${field} is not a recognised report field`);
@@ -412,10 +426,14 @@ export function validateReport(report, registry) {
     errors.push("report.results must be an array");
     return errors;
   }
-  const expectedIds = registry.tests.map((entry) => entry.id);
+  const expectedIds = options.expectedIds ?? registry.tests.map((entry) => entry.id);
   const resultIds = report.results.map((entry) => entry.id);
   if (JSON.stringify(resultIds) !== JSON.stringify(expectedIds)) {
-    errors.push("report result IDs/order must exactly match the registry");
+    errors.push(
+      options.expectedIds === undefined
+        ? "report result IDs/order must exactly match the registry"
+        : "report result IDs/order must exactly match the suite's rows",
+    );
   }
   for (const exclusion of registry.exclusions ?? []) {
     if (exclusion.target !== report.target || typeof exclusion.row !== "string") continue;
@@ -436,7 +454,17 @@ export function validateReport(report, registry) {
     actualSummary[result.status] += 1;
     if (result.status !== "pass") continue;
     const target = report.target || "desktop";
-    if (target === "web") {
+    if (suite === "native-engine") {
+      if (result.native?.completed !== true) {
+        errors.push(`${result.id}: pass requires a completed native driver run`);
+      }
+      if (result.fixture?.matched !== result.fixture?.observations) {
+        errors.push(`${result.id}: pass requires every observation to match`);
+      }
+      if (!Array.isArray(result.gpuValidationErrors) || result.gpuValidationErrors.length > 0) {
+        errors.push(`${result.id}: pass requires zero GPU validation errors`);
+      }
+    } else if (target === "web") {
       if (result.browser?.completed !== true) {
         errors.push(`${result.id}: pass requires completed browser execution`);
       }
@@ -2500,6 +2528,90 @@ export function reportExitCode(report) {
   return 0;
 }
 
+/**
+ * The fixture driver on an Android device: `scripts/adb-fixture-driver.sh` runs the binary cross-built
+ * for the device's ABI (cmake -DTN_ENGINE_CORE_ONLY=ON with the NDK toolchain into
+ * build/android-core-<abi>) over adb. `--target android` takes an emulator, `android-hardware` a
+ * physical device, and each refuses the other kind, as the scene lanes do.
+ */
+function androidFixtureDriver(argv, target) {
+  const { adb } = discoverTools();
+  const wanted = target === "android" ? "emulator" : "physical";
+  const online = parseAdbDevices(String(runCommand(adb, ["devices", "-l"]).stdout)).filter(({ state }) => state === "device");
+  const serial =
+    valueAfter(argv, "--device") ??
+    online.map(({ serial: s }) => s).find((s) => androidDeviceKind(androidDeviceProperties(adb, s)) === wanted);
+  if (!serial) throw new Error(`TN_PARITY_ANDROID_DEVICE_MISSING: no online ${wanted} Android device for --target ${target}`);
+  const kind = androidDeviceKind(androidDeviceProperties(adb, serial));
+  if (kind !== wanted) throw new Error(`TN_PARITY_ANDROID_DEVICE_KIND: ${serial} is ${kind}; --target ${target} needs ${wanted}`);
+  const abi = String(runCommand(adb, androidArgs(serial, "shell", "getprop", "ro.product.cpu.abi")).stdout || "").trim();
+  const binary =
+    process.env.TN_ANDROID_DRIVER ?? join(runtimeRoot, "build", `android-core-${abi}`, "tn-native-engine-fixture-driver");
+  if (!existsSync(binary)) {
+    throw new Error(
+      `TN_PARITY_ANDROID_DRIVER_MISSING: ${binary}. Build it: cmake -S packages/runtime-native -B packages/runtime-native/build/android-core-${abi} -G Ninja -DTN_ENGINE_CORE_ONLY=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=${abi} -DANDROID_PLATFORM=android-26 && cmake --build <that dir> --target tn-native-engine-fixture-driver`,
+    );
+  }
+  process.stderr.write(`native-engine fixtures on ${serial} (${wanted}, ${abi})\n`);
+  return { TN_ADB: adb, TN_ADB_SERIAL: serial, TN_ANDROID_DRIVER: binary };
+}
+
+/**
+ * The native-engine fixture suite: `@threenative/three-native` writes the conformance report from
+ * a native driver's answers, and this runner keeps the gate record, the validation and the exit
+ * code. The suite never renders a scene, so it needs no Xvfb, no browser reference and no runtime
+ * binary; a missing driver leaves every fixture blocked, which exits 2.
+ */
+/** run-native's fixturePattern: comma-separated globs where `*` and `?` are the only wildcards. */
+function onlyPattern(globs) {
+  const alternatives = globs
+    .split(",")
+    .map((glob) => glob.replace(/[.+^${}()|[\]\\]/gu, "\\$&").replace(/\*/gu, ".*").replace(/\?/gu, "."));
+  return new RegExp(`^(?:${alternatives.join("|")})$`, "u");
+}
+
+function runFixtureSuite(argv, suite, groupOnly = null) {
+  const runner = join(workspaceRoot, "packages", "three-native", "tests", "compatibility", "run-native.ts");
+  const out = valueAfter(argv, "--out") ?? join(runtimeRoot, "artifacts", "conformance", suite);
+  const file = extname(out).toLowerCase() === ".json" ? out : join(out, "report.json");
+  const target = valueAfter(argv, "--target");
+  const env = { ...process.env };
+  let driver = valueAfter(argv, "--driver");
+  if (target === "android" || target === "android-hardware") {
+    Object.assign(env, androidFixtureDriver(argv, target));
+    driver = join(runtimeRoot, "scripts", "adb-fixture-driver.sh");
+  } else if (target !== null && target !== "desktop") {
+    throw new Error(`TN_PARITY_SUITE_TARGET: --suite native-engine runs on desktop, android or android-hardware; received ${target}`);
+  }
+  const args = [runner, "--out", file, ...(driver === null ? [] : ["--driver", driver])];
+  if (groupOnly !== null && valueAfter(argv, "--only") !== null)
+    throw new Error(`TN_PARITY_SUITE_ONLY: --suite ${suite} already selects ${groupOnly}; drop --only`);
+  const only = groupOnly ?? valueAfter(argv, "--only");
+  if (only !== null) args.push("--only", only);
+  if (argv.includes("--allow-blocked")) args.push("--allow-blocked");
+  // A render-capable driver (tn-native-engine-render-driver) draws the render fixtures' frames.
+  if (argv.includes("--renders")) args.push("--renders");
+  const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const child = spawnSync(pnpm, ["exec", "tsx", ...args], { cwd: workspaceRoot, stdio: "inherit", env });
+  if (child.error) throw new Error(`TN_PARITY_SUITE_UNAVAILABLE: ${child.error.message}`);
+  const report = JSON.parse(readFileSync(file, "utf8"));
+  const expectedIds = readdirSync(join(workspaceRoot, "packages", "three-native", "tests", "compatibility", "fixtures"))
+    .filter((entry) => entry.endsWith(".json"))
+    .map((entry) => basename(entry, ".json"))
+    // `--only` runs a prefix of the corpus (run-native's fixturePattern: `*` and `?` are the only
+    // wildcards), and the report must hold exactly those rows.
+    .filter((id) => only === null || onlyPattern(only).test(id))
+    .sort();
+  const errors = validateReport(report, loadRegistry(), { suite: "native-engine", expectedIds });
+  if (errors.length > 0) {
+    throw new Error(`Generated an invalid conformance report:\n- ${errors.join("\n- ")}`);
+  }
+  process.stdout.write(
+    `${JSON.stringify({ wrote: file, suite, mode: report.mode, summary: report.summary }, null, 2)}\n`,
+  );
+  if (!argv.includes("--allow-blocked")) process.exitCode = child.status === 0 ? 0 : (reportExitCode(report) || child.status || 1);
+}
+
 function runAll(argv) {
   const outArg = valueAfter(argv, "--out") || "artifacts/conformance";
   const base = isAbsolute(outArg) ? outArg : resolve(runtimeRoot, outArg);
@@ -2538,6 +2650,15 @@ async function main(argv = process.argv.slice(2)) {
   const baseRegistryErrors = validateRegistry(baseRegistry);
   if (baseRegistryErrors.length > 0) {
     throw new Error(`Invalid conformance registry:\n- ${baseRegistryErrors.join("\n- ")}`);
+  }
+  const suite = valueAfter(argv, "--suite");
+  if (suite !== null) {
+    // `native-engine-<group>` is the native-engine suite over the `<group>-*` fixtures, the form the
+    // PRD proofs name (`--suite native-engine-buffer-version`).
+    const group = suite.startsWith("native-engine-") ? suite.slice("native-engine-".length) : null;
+    if (suite !== "native-engine" && !group) throw new Error(`--suite must be native-engine or native-engine-<group>; received ${suite}`);
+    runFixtureSuite(argv, suite, group === null ? null : `${group},${group}-*`);
+    return;
   }
   const projectArgument = valueAfter(argv, "--project");
   const project = projectArgument ? resolveParityProject(projectArgument) : null;

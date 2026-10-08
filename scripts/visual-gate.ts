@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "@playwright/test";
+import { type Page, chromium } from "@playwright/test";
 import {
   type ScaffoldTemplate,
   createProject,
@@ -355,11 +355,13 @@ export async function packageLocalFramework(root: string): Promise<Record<string
   return Object.fromEntries(archives);
 }
 
-const captureTemplate: CaptureTemplate = async (
+export const captureTemplate = async (
   template: ScaffoldTemplate,
   root: string,
   packageSources: Record<string, string>,
   port: number,
+  atCapture?: (page: Page) => Promise<Buffer>,
+  beforeNavigate?: (page: Page) => Promise<void>,
 ): Promise<{ content: Buffer; stats: CaptureFrameStats }> => {
   const result = await createProject(
     {
@@ -395,6 +397,7 @@ const captureTemplate: CaptureTemplate = async (
       const page = await browser.newPage({ viewport: { height: 720, width: 1280 } });
       const pageErrors: string[] = [];
       page.on("pageerror", (error) => pageErrors.push(error.message));
+      await beforeNavigate?.(page);
       await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "domcontentloaded" });
       await page.waitForSelector("canvas", { timeout: 30_000 });
       if ((await page.locator('[data-threenative-canvas="true"]').count()) > 0)
@@ -402,7 +405,8 @@ const captureTemplate: CaptureTemplate = async (
       else await page.waitForTimeout(2_000);
       await page.waitForTimeout(250);
       if (pageErrors.length > 0) throw new Error(`TN_VISUAL_PAGE_ERROR: ${pageErrors.join(" | ")}`);
-      const content = await page.screenshot({ type: "png" });
+      const content =
+        atCapture === undefined ? await page.screenshot({ type: "png" }) : await atCapture(page);
       const stats = assertFrameShowsSomething(content, template);
       return { content, stats };
     } finally {
@@ -477,6 +481,25 @@ export async function runVisualGate(
     throw new Error(`TN_VISUAL_STRUCTURE_FAILED:\n${structuralErrors.join("\n")}`);
   console.log(`Visual structure passed for ${TEMPLATE_NAMES.join(", ")}.`);
   if (args.includes("--structural-only")) return;
+  if (args.includes("--native-engine")) {
+    const { runStarterNativeVisual, scoreStarterNativeVisual } = await import(
+      "./starter-native-visual.js"
+    );
+    const outFlag = args.indexOf("--out");
+    const out =
+      outFlag < 0
+        ? path.join(REPO_ROOT, "artifacts/visuals/starter-native")
+        : path.resolve(args[outFlag + 1] ?? "");
+    if (args.includes("--score-only")) await scoreStarterNativeVisual(out, args);
+    else {
+      const result = await runStarterNativeVisual(args);
+      console.log(JSON.stringify(result, null, 2));
+      throw new Error(
+        `TN_VISUAL_SCORE_UNVERIFIED: judge ${out}/ab/blind and ${out}/red/blind; rerun with --native-engine --score-only --out ${out} --verdict <file> (3 raters) --red-verdict <file> (3 raters).`,
+      );
+    }
+    return;
+  }
 
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "threenative-visuals-"));
   try {

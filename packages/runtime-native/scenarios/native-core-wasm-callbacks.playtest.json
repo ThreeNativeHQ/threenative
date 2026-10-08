@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "name": "native-core-wasm-callbacks",
+  "target": "web",
+  "subject": "native-core",
+  "viewport": {
+    "width": 640,
+    "height": 480
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "running",
+      "waitTicks": 60
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "native-core",
+        "component": "callbacks",
+        "path": "delivered",
+        "changed": true
+      },
+      {
+        "entity": "native-core",
+        "component": "callbacks",
+        "path": "reentrant",
+        "equals": 0,
+        "allowTrivial": "Zero is the invariant: it must hold from boot through every readback the scenario runs, which the delivered count proves happened."
+      },
+      {
+        "entity": "native-core",
+        "component": "loop",
+        "path": "ticks",
+        "changed": true
+      }
+    ]
+  }
+}

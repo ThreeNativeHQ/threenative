@@ -7475,5 +7475,364 @@
       ]
     }
   ],
-  "version": 2
+  "version": 2,
+  "native": {
+    "catalog": "packages/three-native/api/catalog.json",
+    "compatibilityContract": 1,
+    "engineAbi": 1,
+    "scene": 1,
+    "shaderPackage": 1,
+    "symbols": [
+      {
+        "symbol": "ACESFilmicToneMapping",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "AgXToneMapping",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "AmbientLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "AnimationAction",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "AnimationClip",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "AnimationMixer",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Bone",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Box3",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "BoxGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "BufferAttribute",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "BufferGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Camera",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "CircleGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Color",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "ConeGeometry",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "CylinderGeometry",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "DataTexture",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "DirectionalLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Euler",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Face",
+        "kind": "type",
+        "source": "three"
+      },
+      {
+        "symbol": "Float32BufferAttribute",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Fog",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "FogExp2",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Frustum",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Group",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "HemisphereLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "InstancedBufferAttribute",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "InstancedMesh",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Intersection",
+        "kind": "type",
+        "source": "three"
+      },
+      {
+        "symbol": "LOD",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Layers",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "LinearSRGBColorSpace",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "MathUtils",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Matrix3",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Matrix4",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Mesh",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshBasicMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshBasicNodeMaterial",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "MeshLambertMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshPhongMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshPhysicalMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshStandardMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "MeshStandardNodeMaterial",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "NeutralToneMapping",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "NoColorSpace",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "Object3D",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "OrthographicCamera",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "PCFSoftShadowMap",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "PerspectiveCamera",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Plane",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "PlaneGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "PointLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Quaternion",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Ray",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Raycaster",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "RingGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Scene",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Skeleton",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "SkinnedMesh",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Sphere",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "SphereGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "SpotLight",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Sprite",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "SpriteMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "SpriteNodeMaterial",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Texture",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "TorusGeometry",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "Vector2",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Vector3",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Vector4",
+        "kind": "class",
+        "source": "three"
+      }
+    ]
+  }
 }

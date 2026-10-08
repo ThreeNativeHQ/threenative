@@ -34,6 +34,7 @@
       "examples/native-css-hud/corpus/out/**",
       "examples/native-css-hud/corpus/out-interaction/**",
       "packages/assets/vendor/basis-encoder/basis_encoder.js",
+      "packages/three-native/generated/**",
       "packages/runtime-native/**/*.json",
       "test-results/**",
       "examples/abyss-vanilla/index.html",
@@ -121,7 +122,8 @@
         "packages/physics/src/**",
         "packages/ui/src/**",
         "packages/create-threenative/src/**",
-        "packages/playtest/src/**"
+        "packages/playtest/src/**",
+        "packages/three-native/src/**"
       ],
       "linter": {
         "rules": {

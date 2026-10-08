@@ -17,6 +17,21 @@ if(NOT MYSTRAL_PACKAGE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+")
 endif()
 
 project(MystralNativeRuntime VERSION ${MYSTRAL_PACKAGE_VERSION} LANGUAGES C CXX)
+
+# The browser port builds only the portable engine core (PRD-499, owner decision 4): no host
+# services, no GPU backend, no JS engine. Its CPU tests run under node through ctest.
+# The portable engine core alone: Wasm, and any cross toolchain (an Android NDK build that runs the
+# fixture driver on a device) that needs no host services, SDL or JS engine.
+option(TN_ENGINE_CORE_ONLY "Configure only the portable native-engine core" OFF)
+if(EMSCRIPTEN OR TN_ENGINE_CORE_ONLY)
+    enable_testing()
+    if(EMSCRIPTEN)
+        # This package is "type": "module"; Emscripten emits CommonJS, and the nearest package.json wins.
+        file(WRITE "${CMAKE_BINARY_DIR}/package.json" "{\"type\": \"commonjs\"}\n")
+    endif()
+    include(cmake/NativeEngineCore.cmake)
+    return()
+endif()
 enable_testing()
 
 function(tn_register_contract_test target)
@@ -283,7 +298,7 @@ elseif(ANDROID)
     # Three places state this default — here, `android/app/build.gradle.kts`, and the `tn-android`
     # CMake preset. They must agree; a preset contradicting this block is how the flag came to work
     # on one machine only.
-    if(NOT MYSTRAL_USE_QUICKJS AND NOT MYSTRAL_USE_JSC)
+    if(NOT MYSTRAL_USE_QUICKJS AND NOT MYSTRAL_USE_JSC AND NOT TN_ENGINE_ONLY)
         set(MYSTRAL_USE_V8 ON)
     else()
         set(MYSTRAL_USE_V8 OFF)
@@ -335,8 +350,13 @@ if(SDL3_SOURCE_DIRS)
         message(STATUS "Building SDL3 from source: ${SDL3_SOURCE_DIR}")
 
         # Configure SDL3 build options - static library only
-        set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-        set(SDL_STATIC ON CACHE BOOL "" FORCE)
+        if(ANDROID AND TN_ENGINE_ONLY)
+            set(SDL_SHARED ON CACHE BOOL "" FORCE)
+            set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+        else()
+            set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+            set(SDL_STATIC ON CACHE BOOL "" FORCE)
+        endif()
         set(SDL_TEST OFF CACHE BOOL "" FORCE)
         set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 
@@ -358,7 +378,11 @@ if(SDL3_SOURCE_DIRS)
         endif()
 
         # SDL3 creates SDL3::SDL3-static target
-        if(TARGET SDL3::SDL3-static)
+        if(ANDROID AND TN_ENGINE_ONLY AND TARGET SDL3::SDL3-shared)
+            set(SDL3_FOUND ON)
+            # Existing engine consumers use this variable for either SDL target.
+            set(SDL3_STATIC_TARGET SDL3::SDL3-shared)
+        elseif(TARGET SDL3::SDL3-static)
             set(SDL3_FOUND ON)
             set(SDL3_STATIC_TARGET SDL3::SDL3-static)
             message(STATUS "SDL3 static library target: SDL3::SDL3-static")
@@ -703,6 +727,13 @@ if(MYSTRAL_USE_DAWN)
             message(WARNING "  Run 'node scripts/download-deps.mjs --only dawn'")
         endif()
     endif()
+endif()
+
+option(TN_ENGINE_ONLY "Configure only the JS-free native engine targets" OFF)
+include(cmake/NativeEngine.cmake)
+if(TN_ENGINE_ONLY)
+    message(STATUS "TN_ENGINE_ONLY: native engine targets only, no scripting configured")
+    return()
 endif()
 
 # QuickJS-NG (actively maintained fork with MSVC/Windows support)
@@ -1475,6 +1506,7 @@ set(MYSTRAL_SOURCES
     src/webgpu/bindings_pipeline_cache.cpp
     src/webgpu/pipeline_cache.cpp
     src/webgpu/bindings_presentation.cpp
+    src/webgpu/presentation.cpp
     src/webgpu/bindings_ui_composite.cpp
     src/webgpu/bindings_resources.cpp
     src/webgpu/bindings_screenshot.cpp
@@ -1909,11 +1941,10 @@ endif()
 
 if(MYSTRAL_USE_V8 AND TARGET v8::v8)
     target_sources(mystral-runtime PRIVATE src/js/v8_engine.cpp)
-    # V8 requires C++20 - force it at target level for MSVC
-    # MSVC needs /Zc:__cplusplus to report the correct __cplusplus value
-    # (V8 checks __cplusplus <= 201703L which fails without this flag)
+    # Every V8 consumer must report its C++20 language level to V8's headers.
     if(MSVC)
-        target_compile_options(mystral-runtime PRIVATE /std:c++20 /Zc:__cplusplus)
+        target_compile_options(v8::v8 INTERFACE /Zc:__cplusplus)
+        target_compile_options(mystral-runtime PRIVATE /std:c++20)
     else()
         target_compile_features(mystral-runtime PRIVATE cxx_std_20)
     endif()
@@ -2857,3 +2888,4 @@ install(TARGETS mystral-runtime
 install(DIRECTORY include/mystral
     DESTINATION include
 )
+include(cmake/NativeEngineAdapters.cmake)

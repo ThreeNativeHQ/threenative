@@ -108,6 +108,14 @@ export class Atmosphere extends Group implements IComputeDriven {
     this.addEventListener("removed", this.#onRemoved);
   }
 
+  /** Fresh LUTs using the current coefficients and sun direction. */
+  override clone(recursive = true): this {
+    const copy = new Atmosphere({ ...this.parameters, resolutions: this.luts.resolutions });
+    copy.#sunDirection.copy(this.#sunDirection);
+    copy.#sunDirectionNode.value.copy(this.#sunDirection);
+    return copy.copy(this, recursive) as this;
+  }
+
   get parameters(): IResolvedAtmosphereParameters {
     return {
       atmosphereRadius: this.#parameters.atmosphereRadius,

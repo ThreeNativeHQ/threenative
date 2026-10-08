@@ -1168,6 +1168,9 @@ importers:
       '@threenative/playtest':
         specifier: workspace:*
         version: link:../playtest
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
       esbuild:
         specifier: 'catalog:'
         version: 0.27.0
@@ -1180,6 +1183,12 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@20.19.43)(@vitest/coverage-v8@4.1.10)(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.0)(jiti@2.7.0)(tsx@4.23.5))
+
+  packages/three-native:
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: '@typescript/typescript6@6.0.2'
 
   packages/ueformat:
     dependencies:

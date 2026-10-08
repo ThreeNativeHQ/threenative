@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   blockedRegistrationReason,
+  nativeEngineCoverageInvocations,
   configuredWebgpuBackend,
   staleGeneratorBuildDirectory,
 } from "../scripts/measure-native-coverage.mjs";
@@ -167,5 +168,40 @@ describe("configured WebGPU backend", () => {
       configuredWebgpuBackend([{ command: "clang++ -O2 -c src/runtime.cpp", file: "src/runtime.cpp" }]),
     ).toBeUndefined();
     expect(configuredWebgpuBackend([])).toBeUndefined();
+  });
+});
+
+
+describe("native engine coverage invocations", () => {
+  const entry = (name, command) => ({ name, command,
+    properties: [{ name: "LABELS", value: ["native-engine"] }] });
+
+  it("requires native profiles for binaries and wrappers, while accounting for static checks", () => {
+    const inventory = [
+      entry("native_engine_scene", ["/build/tn-native-engine-scene-test", "hierarchy"]),
+      entry("native_engine_fixture", ["pnpm", "exec", "tsx", "run-native.ts", "--driver", "/build/driver"]),
+      entry("native_engine_reference", ["node", "scene-reference.ts", "--check"]),
+      entry("native_engine_registry_snapshot", ["/build/tn-native-engine-registry-dump", "--check"]),
+      entry("native_engine_inspect", ["node", "/repo/scripts/inspect-js-free.mjs", "--binary", "/build/fixture"]),
+      entry("native_engine_graph", ["cmake", "-DGRAPH=graph.txt", "-P", "CheckGraph.cmake"]),
+      entry("native_engine_methods", ["pnpm", "exec", "tsx", "inspect/protocol-methods.ts", "--check"]),
+      entry("native_engine_aot", ["node", "/repo/tools/native-typescript/run-corpus.mjs", "--native", "--case", "x"]),
+      { name: "legacy", command: ["legacy"], properties: [] },
+    ];
+    expect(nativeEngineCoverageInvocations(inventory)).toEqual([
+      { name: "native_engine_scene", requiresProfile: true },
+      { name: "native_engine_fixture", requiresProfile: true },
+      { name: "native_engine_reference", requiresProfile: false },
+      { name: "native_engine_registry_snapshot", requiresProfile: true },
+      { name: "native_engine_inspect", requiresProfile: false },
+      { name: "native_engine_graph", requiresProfile: false },
+      { name: "native_engine_methods", requiresProfile: false },
+      { name: "native_engine_aot", requiresProfile: false },
+    ]);
+  });
+
+  it("rejects an empty suite or an unbuilt executable", () => {
+    expect(() => nativeEngineCoverageInvocations([])).toThrow(/zero native-engine/);
+    expect(() => nativeEngineCoverageInvocations([entry("unbuilt", undefined)])).toThrow(/unbuilt/);
   });
 });

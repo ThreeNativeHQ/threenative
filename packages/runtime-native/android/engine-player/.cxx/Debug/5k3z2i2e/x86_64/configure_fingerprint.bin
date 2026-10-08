@@ -1,0 +1,64 @@
+C/C++ Structured Log}
+{
+y/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/CMakeLists.txtC
+A
+?com.android.build.gradle.internal.cxx.io.EncodedFileFingerPrint	¶Ñü‘4ô¸ Ş£¾‘4¾
+»
+¸/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/additional_project_files.txt	¶Ñü‘4©	 ÇˆÒ‘4»
+¸
+µ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/android_gradle_build.json	¶Ñü‘4ñ° ÌˆÒ‘4À
+½
+º/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/android_gradle_build_mini.json	¶Ñü‘4¥ ä‰Ò‘4­
+ª
+§/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/build.ninja	¶Ñü‘4£»H Ê‡Ò‘4±
+®
+«/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/build.ninja.txt	¶Ñü‘4¶
+³
+°/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/build_file_index.txt	·Ñü‘4´ Ò­‘4·
+´
+±/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/compile_commands.json	·Ñü‘4	§ô> É‡Ò‘4»
+¸
+µ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/compile_commands.json.bin	·Ñü‘4
+ó‹ É‡Ò‘4Á
+¾
+»/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/metadata_generation_command.txt	·Ñü‘4Å Ñ­‘4´
+±
+®/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/prefab_config.json	·Ñü‘4( Ò­‘4¹
+¶
+³/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/x86_64/symbol_folder_index.txt	·Ñü‘4² Ò­‘4‰
+†
+ƒ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/cmake/NativeEngine.cmake	·Ñü‘4ÉÜ Ù«Å‘4
+Š
+‡/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/cmake/NativeEngineCore.cmake	·Ñü‘4ç¡ »­îœ‘4œ
+™
+–/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/CMakeLists.txt	·Ñü‘4êˆ ğ€È4¢
+Ÿ
+œ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/3rdparty.cmake	·Ñü‘4 ¹ğ€È4¤
+¡
+/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/FindLibUSB.cmake	·Ñü‘4Ê ¹ğ€È4³
+°
+­/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/GetGitRevisionDescription.cmake	·Ñü‘4áN »ğ€È4°
+­
+ª/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/PreseedEmscriptenCache.cmake	·Ñü‘4Ö‹ ½ğ€È4ª
+§
+¤/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/PreseedMSVCCache.cmake	·Ñü‘4èˆ ½ğ€È4§
+¤
+¡/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/SDL3Config.cmake.in	·Ñü‘4Ø ½ğ€È4 
+
+š/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/macros.cmake	·Ñü‘4Ûx ¾ğ€È4£
+ 
+/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlchecks.cmake	·Ñü‘4Šä ¾ğ€È4¦
+£
+ /home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlcompilers.cmake	·Ñü‘4ó< ¾ğ€È4 
+
+š/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlcpu.cmake	·Ñü‘4ã( ¾ğ€È4¥
+¢
+Ÿ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlmanpages.cmake	·Ñü‘4— ¾ğ€È4¥
+¢
+Ÿ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlplatform.cmake	·Ñü‘4  ¾ğ€È4¤
+¡
+/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdltargets.cmake	·Ñü‘4… ¾ğ€È4»
+¸
+µ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/include/build_config/SDL_build_config.h.cmake	·Ñü‘4åŒ ®ñ€È4·
+´
+±/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/include/build_config/SDL_revision.h.cmake	·Ñü‘4™ °ñ€È4

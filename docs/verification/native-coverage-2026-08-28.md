@@ -2,31 +2,33 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-46 native contract targets; 3 configured
+310 native contract targets; 3 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
+| `src/adapters/` | 1583 | 1410 | 89.07% |
 | `src/async/` | 73 | 60 | 82.19% |
 | `src/audio/` | 1471 | 1296 | 88.10% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
-| `src/cli/` | 1690 | 1242 | 73.49% |
+| `src/cli/` | 1653 | 1248 | 75.50% |
+| `src/engine/` | 25643 | 22658 | 88.36% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
 | `src/js/` | 2785 | 2212 | 79.43% |
 | `src/platform/` | 1460 | 1003 | 68.70% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
-| `src/runtime.cpp` | 2410 | 1886 | 78.26% |
+| `src/runtime.cpp` | 2412 | 1888 | 78.28% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9741 | 7473 | 76.72% |
+| `src/webgpu/` | 9798 | 7577 | 77.33% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 524 | 85.20% |
-| **TOTAL** | **24669** | **19354** | **78.45%** |
+| `src/workers/` | 615 | 527 | 85.69% |
+| **TOTAL** | **51917** | **43537** | **83.86%** |
 
-Source digest: `sha256:b5ddb0d3c39a6590d1e9088c4e82fd8659c38e0713ca373a1083002fbb256595`
+Source digest: `sha256:7c2c8266386099f5222230ae64a33670cca14fc06f2926bd89135aef408fa77b`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -34,10 +36,12 @@ change requires this opt-in command to refresh the record.
 
 | Coverage floor | Minimum |
 | --- | ---: |
+| `src/adapters/` | 88.96% |
 | `src/async/` | 72.60% |
 | `src/audio/` | 57.37% |
 | `src/canvas/` | 48.39% |
 | `src/cli/` | 0.00% |
+| `src/engine/` | 87.24% |
 | `src/fs/` | 37.45% |
 | `src/http/` | 43.53% |
 | `src/js/` | 38.23% |
@@ -55,6 +59,7 @@ change requires this opt-in command to refresh the record.
 ## Not compiled in this configuration
 
 - `src/debug/debug_server.cpp`
+- `src/engine/world/physics_sync.cpp`
 - `src/gltf/gltf_loader.cpp`
 - `src/js/jsc_engine.mm`
 - `src/js/quickjs_engine.cpp`

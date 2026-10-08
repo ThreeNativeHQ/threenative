@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "native-core-wasm-assets",
+  "target": "web",
+  "subject": "native-core",
+  "viewport": { "width": 320, "height": 240 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": true },
+  "steps": [{ "kind": "wait", "label": "cooked", "waitTicks": 30 }],
+  "assert": {
+    "components": [
+      { "entity": "native-core", "component": "assets", "path": "error", "equals": "", "allowTrivial": "The page reports its errors before ready resolves." },
+      { "entity": "native-core", "component": "assets", "path": "bootTriangles", "equals": 13, "allowTrivial": "The catalog-authored box and output pass render before the package loads." },
+      { "entity": "native-core", "component": "assets", "path": "packageLoaded", "equals": true, "allowTrivial": "Ready resolves after the native package upload and readback." },
+      { "entity": "native-core", "component": "assets", "path": "uploadedBytes", "equals": 36, "allowTrivial": "The package carries one complete f32 triangle." },
+      { "entity": "native-core", "component": "assets", "path": "triangles", "equals": 2, "allowTrivial": "The cooked triangle replaces the box before ready; the output pass adds one triangle." },
+      { "entity": "native-core", "component": "assets", "path": "covered", "gte": 0.01, "allowTrivial": "The native frame is read back before ready." },
+      { "entity": "native-core", "component": "assets", "path": "ticks", "changed": true }
+    ]
+  }
+}

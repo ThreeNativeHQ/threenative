@@ -25,6 +25,7 @@
     "node_modules",
     "**/dist/**",
     "packages/runtime-native/scripts/**",
+    "packages/three-native/__tests__/fixtures",
     "scripts/performance-regression/labs"
   ]
 }

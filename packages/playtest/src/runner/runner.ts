@@ -276,22 +276,16 @@ async function runStandalonePlaytestInternal(
       // over a live Chromium, stranding it and its profile directory — which is the orphan the
       // suite gate catches. Wait for the launch to settle, then close whatever it produced.
       await teardownBrowserSession(page, context, browser, browserLaunch, options.remoteBrowser);
-      // Teardown above is deliberately bounded, and the CLI exits as soon as it returns — so
-      // Playwright's own removal of the profile directory may never run. Reclaim what this run
-      // launched and nothing else; the orphan gate reports whatever is left.
-      if (profilesBeforeLaunch !== undefined) {
-        const removed = removeStrandedProfiles(profilesBeforeLaunch);
-        if (removed.length > 0) {
-          process.stderr.write(
-            `${JSON.stringify({ reclaimedBrowserProfiles: removed.length })}\n`,
-          );
-        }
-      }
     })();
     await teardownPromise.catch(() => undefined);
     if (stopManagedServerOnTeardown) await stopServer();
     // Signal exits do not reach finally. Await this run's pending handles before exiting too.
     await releaseOwnedResources();
+    // Releasing the display can finish killing Chromium. Reclaim only after that owned teardown.
+    if (options.remoteBrowser === undefined && profilesBeforeLaunch !== undefined) {
+      const removed = await removeStrandedProfiles(profilesBeforeLaunch);
+      if (removed.length > 0) process.stderr.write(`${JSON.stringify({ reclaimedBrowserProfiles: removed.length })}\n`);
+    }
   };
   let tearingDown = false;
   const ensureRunning = (): void => {

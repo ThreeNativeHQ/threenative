@@ -234,19 +234,19 @@ function compiledProductObjects(buildDirectory) {
   }
   const commands = JSON.parse(readFileSync(commandsPath, "utf8"));
   if (!Array.isArray(commands)) throw new Error(`${commandsPath} is not a JSON array`);
-  const bySource = new Map();
+  const byObject = new Map();
   for (const command of commands) {
     if (typeof command?.file !== "string" || typeof command?.output !== "string") continue;
     const source = relative(runtimeRoot, resolve(command.file)).split(sep).join("/");
     if (source.startsWith("../") || !source.startsWith("src/")) continue;
     const object = resolve(command.directory, command.output);
     if (!existsSync(object)) throw new Error(`compiled coverage object is missing: ${object}`);
-    if (!bySource.has(source)) bySource.set(source, object);
+    byObject.set(object, source);
   }
-  if (bySource.size === 0) throw new Error("compile_commands contains zero native product objects");
+  if (byObject.size === 0) throw new Error("compile_commands contains zero native product objects");
   return {
-    entries: [...bySource.entries()].map(([source, object]) => ({ object, source })),
-    sourceFiles: [...bySource.keys()].sort(),
+    entries: [...byObject.entries()].map(([object, source]) => ({ object, source })),
+    sourceFiles: [...new Set(byObject.values())].sort(),
   };
 }
 
@@ -348,19 +348,24 @@ function compactFailure(error) {
     .join(" ");
 }
 
-function runForStdout(command, args) {
+function runForStdout(command, args, { timeout = 120_000, maxBuffer = 64 * 1024 * 1024 } = {}) {
   const result = spawnSync(command, args, {
     cwd: runtimeRoot,
     encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: 120_000,
+    maxBuffer,
+    timeout,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`${command} exited ${result.status}:\n${result.stderr ?? ""}`);
   }
-  if (result.stderr?.trim()) {
-    throw new Error(`${command} emitted a coverage warning:\n${result.stderr.trim()}`);
+  // One merged profile spans every test binary, so a header inline function compiled with different
+  // flags in two binaries carries two hashes; llvm-cov keeps one record. Only that is tolerated.
+  const warnings = (result.stderr ?? "")
+    .split("\n")
+    .filter((line) => line.trim() && !/^warning: \d+ functions have mismatched data$/u.test(line.trim()));
+  if (warnings.length > 0) {
+    throw new Error(`${command} emitted a coverage warning:\n${warnings.join("\n")}`);
   }
   return result.stdout;
 }
@@ -381,17 +386,21 @@ function coverageExports({ buildDirectory, compiledProducts, executedTargets, pr
   ];
   const reports = [];
   const zeroLineSources = [];
-  for (const { object, source } of compiledProducts.entries) {
-    const report = runForStdout("llvm-cov", [
-      "export",
-      "--empty-profile",
-      object,
-      ...commonArguments,
-    ]);
-    reports.push(report);
-    const files = instrumentedFilesFromLcov([report]);
-    if (!files.some(({ path }) => path === source)) zeroLineSources.push(source);
-  }
+  const mergedProfile = join(profileDirectory, "all.profdata");
+  run("llvm-profdata", ["merge", "-sparse", ...profileNames.map((name) => join(profileDirectory, name)), "-o", mergedProfile]);
+  requireCoverageProfile(mergedProfile);
+  // One export over every product object: a call per object re-reads the merged profile each time
+  // and outlasts any sane timeout once the engine has a few hundred objects.
+  const [first, ...rest] = compiledProducts.entries.map(({ object }) => object);
+  const report = runForStdout(
+    "llvm-cov",
+    ["export", first, ...rest.flatMap((object) => ["-object", object]), `-instr-profile=${mergedProfile}`,
+      ...commonArguments],
+    { timeout: 1_800_000, maxBuffer: 1024 * 1024 * 1024 },
+  );
+  reports.push(report);
+  const exported = new Set(instrumentedFilesFromLcov([report]).map(({ path }) => path));
+  for (const source of compiledProducts.sourceFiles) if (!exported.has(source)) zeroLineSources.push(source);
   for (const target of executedTargets) {
     const targetProfiles = profileNames
       .filter((name) => name.startsWith(`${target}-`))
@@ -581,6 +590,25 @@ function registrationsForTarget(registrations, target) {
   return registrations.filter((name) => name === target || name.startsWith(`${target}-`)).sort();
 }
 
+export function nativeEngineCoverageInvocations(inventory) {
+  const entries = inventory.filter(({ properties }) => properties?.some(
+    ({ name, value }) => name === "LABELS" && value.includes("native-engine"),
+  ));
+  if (entries.length === 0) throw new Error("CTest registered zero native-engine coverage tests");
+  return entries.map(({ name, command }) => {
+    if (!Array.isArray(command) || command.length === 0) {
+      throw new Error(`native-engine coverage executable is unbuilt: ${name}`);
+    }
+    // Generated-fixture checks (a TS script run with --check), source-graph checks, binary
+    // inspection and the Perry corpus (its own, uninstrumented binaries) execute no instrumented code.
+    const staticCheck = (command.includes("--check") &&
+      command.some((arg) => arg.endsWith(".ts"))) ||
+      command.some((arg) => arg.endsWith("/inspect-js-free.mjs") || arg.endsWith("/run-corpus.mjs")) ||
+      (command.includes("-P") && command.some((arg) => arg.endsWith(".cmake")));
+    return { name, requiresProfile: !staticCheck };
+  });
+}
+
 function runCoverageTargets({ buildDirectory, cmake, ctest, inventory, registrations, targets }) {
   const blockedTargets = [];
   const executedTargets = [];
@@ -628,7 +656,25 @@ function runCoverageTargets({ buildDirectory, cmake, ctest, inventory, registrat
     }
     if (targetPassed) executedTargets.push(target);
   }
-  return { blockedTargets, executedTargets, executionFailures, expectedProfilePrefixes };
+  const engineInvocations = nativeEngineCoverageInvocations(inventory);
+  for (const { name, requiresProfile } of engineInvocations) {
+    const prefix = `${name}-0-`;
+    if (requiresProfile) expectedProfilePrefixes.push(prefix);
+    try {
+      run(ctest, ["--test-dir", buildDirectory, "--output-on-failure", "-R", `^${name}$`], {
+        env: { ...process.env, TN_NATIVE_ENGINE_BUILD: buildDirectory,
+          // Instrumented timing cannot judge the 18x scaling ratio: run its update path at one
+          // size here. The ratio gate itself runs uninstrumented in test-native.
+          TN_UPDATE_OBJECTS: "65536",
+          [coverageProfileEnvironmentVariable]: join(profileDirectory, `${prefix}%p.profraw`) },
+        timeout: 180_000,
+      });
+    } catch (error) {
+      executionFailures.push({ reason: compactFailure(error), target: name });
+    }
+  }
+  return { blockedTargets, executedTargets, executionFailures, expectedProfilePrefixes,
+    engineTests: engineInvocations.map(({ name }) => name) };
 }
 
 const COVERAGE_GENERATOR = "Unix Makefiles";
@@ -697,6 +743,11 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
       `native test target(s) written under a condition that registers nothing when it does not hold: ${hollow.join(", ")}. Give each one a tn_register_blocked_test in the else branch, or a platforms list on its execution contract.`,
     );
   }
+  buildNativeTarget(cmake, buildDirectory, "mystral", 1_800_000);
+  buildNativeTarget(cmake, buildDirectory, "mystral-tools", 1_800_000);
+  buildNativeTarget(cmake, buildDirectory, "tn-native-engine-tests", 1_800_000);
+  // The JS-free player is a shipped product outside the test aggregate; its objects count too.
+  buildNativeTarget(cmake, buildDirectory, "tn-native-engine-player", 1_800_000);
   const inventory = ctestInventory(buildDirectory, ctest);
   const registrations = inventory.map(({ name }) => name);
   for (const target of targets) {
@@ -705,9 +756,7 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   rmSync(profileDirectory, { force: true, recursive: true });
   mkdirSync(profileDirectory, { recursive: true });
 
-  buildNativeTarget(cmake, buildDirectory, "mystral", 1_800_000);
-  buildNativeTarget(cmake, buildDirectory, "mystral-tools", 1_800_000);
-  const { blockedTargets, executedTargets, executionFailures, expectedProfilePrefixes } =
+  const { blockedTargets, executedTargets, executionFailures, expectedProfilePrefixes, engineTests } =
     runCoverageTargets({
       buildDirectory,
       cmake,
@@ -741,7 +790,7 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
     sourceFiles: sourceInventory(),
   });
   const previousRecord = existsSync(recordPath) ? readFileSync(recordPath, "utf8") : "";
-  const markdown = renderMarkdown(report, executedTargets, previousRecord);
+  const markdown = renderMarkdown(report, [...executedTargets, ...engineTests], previousRecord);
   mkdirSync(dirname(recordPath), { recursive: true });
   writeGeneratedRecord(recordPath, markdown);
   console.info(markdown);

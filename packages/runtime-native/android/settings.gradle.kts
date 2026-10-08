@@ -14,4 +14,8 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "MystralNative"
-include(":app")
+if (providers.gradleProperty("threenativeNativeEngine").orElse("false").get().toBoolean()) {
+    include(":engine-player")
+} else {
+    include(":app")
+}

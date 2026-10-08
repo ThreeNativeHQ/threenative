@@ -1,0 +1,4 @@
+# native-only
+first ok true true true true true true
+second TN_CALLBACK_FAILED onBeforeRender: boom
+calls 2

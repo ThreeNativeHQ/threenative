@@ -1,0 +1,54 @@
+# PRD-514 — Native renderer and standard materials (N09)
+
+**Status:** IN PROGRESS — the draw core, geometry and pipeline caches land first; the render database waits on N06
+**Complexity:** 5 — first C++ renderer in the repo; reads native scene state and draws standard materials against a pinned reference
+**Owner:** João
+**Work package:** N09 — [native-engine batch](../../native-engine/README.md)
+**Depends on:** [PRD-508 (N06)](PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-509 (N07)](PRD-509-n07-gpu-resources-presentation-and-device-loss.md), [N08 shader packages](../../native-engine/N08-native-tsl-and-shader-packages/README.md)
+
+## Context
+
+§10 asks for a renderer that reads native state and keeps persistent renderable, material and resource records, invalidated by revision rather than rediscovered every frame. The first path is opaque, alpha-masked and transparent rendering, camera and layer selection, ordinary shadows, geometry and material updates, resize and readback. §9.3 pins PBR equations, lighting units, colour conversion, tonemapping, alpha, normals and material defaults to the pinned `three@0.185.1` reference. The behaviour to preserve today lives in `packages/core/src/renderer.ts` (the renderer interface, §3 R3), `packages/core/src/renderer-config.ts`, `packages/core/src/render-camera-cull.ts` and `packages/core/src/render/material-key.ts`. The JS frame-op stream and its replay belong to the legacy backend (§10), not this renderer.
+
+## Solution
+
+1. **Render database derived from the native graph.** Proposed: `packages/runtime-native/src/engine/renderer/`. It keeps one record per renderable, material instance and GPU resource, keyed by the N04 handle. It updates from N06 revision counters and never polls a JS scene. The public object graph stays the only source of truth (§5, §6.2).
+2. **First pass set.** Opaque front-to-back, alpha-masked (alpha test plus the reference's alpha-to-coverage rule), and transparent back-to-front with the reference's sort keys and `renderOrder`. Camera `layers` and `visible` are applied. Every `render(scene, camera)` call gets its own render ID (§6.4, §12).
+3. **Ordinary shadows.** Directional, spot and point shadow maps, with the reference's bias, `castShadow`/`receiveShadow` and shadow-camera semantics. Virtual shadows belong to PRD-524.
+4. **Standard materials.** `MeshBasicMaterial`, `MeshLambertMaterial`, `MeshPhongMaterial`, `MeshStandardMaterial` and `MeshPhysicalMaterial` (the subset the representative games need, §9.3) compile through the N08 shader-package path. Advanced material features nobody has ported fail with `TN_NATIVE_MATERIAL_UNSUPPORTED` naming the property. They never fall back silently to a simpler shader.
+5. **Resize and readback** go through the N07 surface and readback services. `renderer.ts` keeps its behaviours (compile, readback, output graph, timing) as a binding consumer, and `ctx.renderer.raw` returns this compatible renderer object, covering the public fields templates read (`toneMapping`, `toneMappingExposure`, `shadowMap`); renderer-private fields and the raw GPU device are named unsupported (owner decision 7, [PRD-497](PRD-497-n00-architecture-decision-and-compatibility-inventory.md)).
+6. **Rollback.** The legacy upstream `WebGPURenderer` backend stays selectable. A native-engine artifact never falls back to it (§1).
+
+## Out of scope
+
+- Batching, instancing, culling and LOD eligibility: [PRD-519 (N12)](../../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md)
+- Render graph, temporal history and post chains: [N14](../../native-engine/N14-native-render-chain-and-advanced-visuals/README.md)
+- Skinned and morphed draws: [N11](../../native-engine/N11-native-animation/README.md)
+- Shader IR and package generation: [N08](../../native-engine/N08-native-tsl-and-shader-packages/README.md)
+
+## Execution Phases
+
+#### Phase 1: Opaque scene from native state
+**Status:** NOT STARTED
+**Files:** proposed `packages/runtime-native/src/engine/renderer/`, `packages/runtime-native/tests/native-engine/renderer/`
+- [x] Render records update only from revision changes: an unchanged scene rebuilds zero records across 300 frames. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_invalidation` — 2026-10-04: green on Dawn, ASan and wgpu-native: `RenderDatabase` keeps one record per mesh keyed by the mesh's revision, its geometry's revision and its material's version; an unchanged lit scene rebuilds 0 records over 300 frames, a transform, a `needsUpdate` and a remove/re-add each rebuild exactly one, and 300 more still frames rebuild none. Red when records rebuild every frame or the scene skips updateMatrixWorld. The same database draws the lit-render and alpha-transparency fixtures built as scene graphs and matches their browser goldens (worst 4 and worst 0 levels); the orthographic one is red without the WebGPU clip switch (worst 188)
+- [x] A lit opaque `MeshStandardMaterial` scene matches the pinned upstream reference capture within the documented tolerance. proof: `pnpm parity -- --suite native-engine --driver packages/runtime-native/build/tn-linux/tn-native-engine-render-driver --renders --only lit-render` — 2026-10-04: green on Dawn, wgpu-native and ASan (`native_engine_render_lit`): lit-render's ops build the native scene and the render driver's frame is within the fixture metric (measured mismatch 0.0036, mean dE 0.002; limits 0.01 / 0.02, set from measurement); red with a view-space hemisphere direction
+- [x] Resize and readback return the new extent and a non-blank frame on the native host. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_resize_readback` — 2026-10-04: green on Dawn (`build/tn-linux`, ASan) and wgpu-native: a lit standard-material sphere renders at 64x48, 160x90 and 90x150; each readback has exactly width x height x 4 bytes and covers 17.71/13.44/39.73% of the frame against the analytic 18.06/13.54/40.13%. Red when setSize keeps the old targets or the projection is dropped. Draw core: `src/engine/renderer/renderer.{h,cpp}`
+
+#### Phase 2: Alpha, transparency, cameras and layers
+**Status:** NOT STARTED
+**Files:** proposed `packages/runtime-native/src/engine/renderer/passes/`
+- [x] Alpha-masked and transparent objects sort and blend as the reference does, `renderOrder` included. proof: `pnpm parity -- --suite native-engine --driver packages/runtime-native/build/tn-linux/tn-native-engine-render-driver --renders --only 'alpha-*'` — 2026-10-04: green on Dawn, wgpu-native and ASan (`native_engine_render_alpha`): alpha-transparency (back-to-front sort, renderOrder over depth with depthWrite on) and alpha-test (discard at or below alphaTest, opaque ignores opacity) match their browser frames exactly; red without the sort (17.8%), with renderOrder ignored (12.5%), without blending (48.9%) or without the discard (6.0%)
+- [x] Two cameras with different `layers`, rendered in one tick, each see only their layer and get distinct render IDs. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_multi_camera_layers` (a render fixture carries one camera, so the two-camera tick is a renderer test) — 2026-10-05: green on Dawn, ASan and wgpu. A mesh on layer 1 and one on layer 2, lights on both: camera A (layer 1) draws only the left mesh, camera B (layer 2) only the right, and the two renders return distinct IDs. Red before the fix: 200 record rebuilds over 100 ticks, because each camera's render purged the records of meshes on the other's layer; a mesh in the scene that the camera does not draw now keeps its record, so 100 ticks rebuild nothing
+
+#### Phase 3: Shadows and the standard material set
+**Status:** NOT STARTED
+**Files:** proposed `packages/runtime-native/src/engine/renderer/shadows/`, `packages/runtime-native/src/engine/renderer/materials/`
+- [x] Directional, spot and point shadow maps match the reference capture. proof: `pnpm parity` case `native-engine-ordinary-shadows` — 2026-10-05: run as `pnpm parity -- --suite native-engine-shadows --driver <render driver> --renders` (the `shadows-*` group, also ctest `native_engine_render_shadows`), 3/3 pass against browser goldens: directional 0.02% of pixels / deltaE 0.00012, spot 0.12% / 0.00072, point 0.23% / 0.0013 (limits 1% / 0.02), on Dawn and wgpu. PCFShadowMap only (three's default); VSM and basic types are not ported. Red controls: shadow factor 1 -> 2.9%, 7.0%, 25.1%; receiveShadow ignored -> 1.7%, 1.7%, 2.1%; bias sign -> directional fails; spot fov without the 2 -> 2.5%; point without the cube y flip -> 25.1%; point faces 2/3 swapped -> 4.6%.
+- [x] Each of the five standard materials matches its reference fixture, and an unported property is rejected with `TN_NATIVE_MATERIAL_UNSUPPORTED`. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_standard_materials` — 2026-10-04: green on Dawn, wgpu-native and ASan: `_fixtures` runs Basic (alpha-test), Standard (lit-render), Lambert, Phong, Physical (+ a rim-lit Physical) render fixtures and the materials-props fixtures through the render driver; `_unsupported` shows a clearcoat MeshPhysicalMaterial refused as `TN_NATIVE_MATERIAL_UNSUPPORTED MeshPhysicalMaterial: ... clearcoat` and not drawn (red when the refusal is removed). The rim fixture caught direct specular using specularF90 (mean dE 0.134 vs 0.003)
+- [x] Geometry and material edits between frames show up on the next render with no stale records. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_updates` — 2026-10-05: green on Dawn, ASan and wgpu. A material colour edit and an in-place position edit (`attribute.needsUpdate`) show on the next frame; 200 geometry swaps, each old geometry released, draw their own radius every frame and leave at most 6 GPU attribute copies. Red before the fix: 23 copies and growing, because nothing freed a released store's GPU buffer. Fix: the geometry cache tracks each shared-owned store's lifetime (`weak_ptr`), sweeps released ones per frame and never serves a dead store's copy to a store at its address; a render record co-owns its geometry and material and knows its mesh by id, so no new object can pass for one at a reused address
+
+## Decisions
+
+- JS WebGPU frame-op serialization and replay stays in the legacy backend and is not part of native submission (§10).
+- Better visual defaults are separate opt-in changes, never part of the parity comparison (§9.3).

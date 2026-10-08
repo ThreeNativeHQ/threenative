@@ -1,0 +1,139 @@
+// PRD-531 slice 1: the TSL corpus authored as a lazy shader graph (src/engine/shader/graph), graph
+// for graph the same as tsl_corpus.cpp and tsl-corpus/reference.ts. Each graph is built with no
+// program in scope, then lowered into a Program through the native TSL builder and printed in the
+// same typed IR dump. differential.mjs --suite tsl-ir compares it with the upstream node tree.
+#include "engine/shader/graph/graph.h"
+#include "engine/shader/tsl/tsl.h"
+
+#include <cstdio>
+#include <functional>
+#include <string>
+
+using namespace tn::engine::shader;
+using namespace tn::engine::shader::graph;
+namespace tsl = tn::engine::shader::tsl;
+
+namespace {
+
+void shaderGraph(const char* name, const char* output, const std::function<Node()>& make) {
+    Program p(std::string(output) == "color" ? Stage::Fragment : Stage::Vertex);
+    const Node root = make();
+    {
+        tsl::Build build(p);
+        tsl::output(output, lower(root, p));
+    }
+    std::printf("# %s\n", name);
+    if (!p.ok()) {
+        for (const Diagnostic& d : p.diagnostics())
+            std::printf("DIAGNOSTIC %s %s: %s\n", d.code.c_str(), d.node.c_str(), d.reason.c_str());
+        return;
+    }
+    std::printf("%s", p.dump(true).c_str());
+}
+
+/** A compute graph: the body of an `Fn`, dispatched one invocation per instance. */
+void compute(const char* name, const std::function<void(Block&, Storage)>& make) {
+    Program p(Stage::Compute);
+    Block body;
+    const Storage positions = storage("positions", Type::vec(4));
+    make(body, positions);
+    const Node root = body.node();
+    std::printf("# %s\n", name);
+    {
+        tsl::Build build(p);
+        lower(root, p);
+    }
+    for (const Diagnostic& d : p.diagnostics())
+        std::printf("DIAGNOSTIC %s %s: %s\n", d.code.c_str(), d.node.c_str(), d.reason.c_str());
+    if (p.ok()) std::printf("%s", p.dump(true).c_str());
+}
+
+Node u() { return uniform("u", Type::f32()); }
+Node tint() { return uniform("tint", Type::vec(3)); }
+Node time() { return uniform("time", Type::f32()); }
+
+}  // namespace
+
+int main() {
+    shaderGraph("scale-by-uniform", "position", [] { return vec4({mul(positionLocal(), u()), float_(1)}); });
+    shaderGraph("swizzle-and-join", "color",
+          [] { return vec4({swizzle(positionLocal(), "zyx"), swizzle(positionLocal(), "x")}); });
+    shaderGraph("sin-of-sum", "color", [] { return vec4({vec3({sin(add(float_(2), u()))}), float_(1)}); });
+    shaderGraph("attribute-weight", "position",
+          [] { return vec4({mul(positionLocal(), attribute("weight", Type::f32())), float_(1)}); });
+    shaderGraph("vector-math", "color",
+          [] { return vec4({normalize(cross(positionLocal(), tint())), dot(positionLocal(), tint())}); });
+    shaderGraph("length-distance", "color",
+          [] {
+              return vec4(
+                  {length(positionLocal()), distance(positionLocal(), tint()), float_(0), float_(1)});
+          });
+    shaderGraph("mix-clamp-smoothstep", "color",
+          [] {
+              return vec4({mix(tint(), positionLocal(), clamp(u(), float_(0), float_(1))),
+                           smoothstep(float_(0), float_(1), u())});
+          });
+    shaderGraph("unary-math", "color", [] { return vec4({abs(u()), floor(u()), fract(u()), sqrt(u())}); });
+    shaderGraph("binary-math", "color",
+          [] {
+              return vec4({pow(u(), float_(2)), min(u(), time()), max(u(), time()), step(u(), time())});
+          });
+    shaderGraph("exp-cos", "color", [] { return vec4({exp2(u()), cos(time()), float_(0), float_(1)}); });
+    shaderGraph("compare-select", "color",
+          [] { return vec4({vec3({select(lessThan(u(), time()), u(), time())}), float_(1)}); });
+    shaderGraph("greater-select", "color",
+          [] {
+              return vec4({vec3({select(greaterThan(u(), float_(0.25)), float_(1), float_(0))}), float_(1)});
+          });
+    shaderGraph("negate-sub-div", "color",
+          [] { return vec4({negate(u()), sub(u(), time()), div(u(), float_(2)), float_(1)}); });
+    shaderGraph("uv-texture", "color", [] { return texture("albedo", uv()); });
+    shaderGraph("texture-scaled-uv", "color", [] { return mul(texture("albedo", mul(uv(), float_(2))), u()); });
+    shaderGraph("int-convert", "color",
+          [] { return vec4({float_(int_(3)), float_(uint_(4)), float_(0), float_(1)}); });
+    shaderGraph("vector-constants", "color",
+          [] { return vec4({add(vec3({float_(1), float_(2), float_(3)}), tint()), float_(1)}); });
+    shaderGraph("constant-splat", "color", [] { return vec4({mul(vec3({float_(0.5)}), tint()), float_(1)}); });
+    shaderGraph("vec2-swizzle", "color",
+          [] { return vec4({swizzle(vec2({u(), time()}), "yx"), float_(0), float_(1)}); });
+    shaderGraph("instance-offset", "position",
+          [] {
+              return vec4({add(positionLocal(), vec3({float_(instanceIndex()), float_(0), float_(0)})),
+                           float_(1)});
+          });
+    shaderGraph("time-wave", "position",
+          [] {
+              return vec4({add(positionLocal(),
+                               vec3({float_(0), sin(add(time(), swizzle(positionLocal(), "x"))), float_(0)})),
+                           float_(1)});
+          });
+
+    compute("fn-if-store", [](Block& b, Storage positions) {
+        const Var acc = b.var(float_(0));
+        b.If(lessThan(instanceIndex(), uint_(16)), [&] {
+            b.assign(acc, add(acc.read(), float_(1)));
+            b.assign(positions.element(instanceIndex()), vec4({acc.read(), float_(0), float_(0), float_(1)}));
+        });
+    });
+    compute("loop-accumulate", [](Block& b, Storage positions) {
+        const Var acc = b.var(float_(0));
+        b.Loop(4, [&](Node i) { b.assign(acc, add(acc.read(), float_(i))); });
+        b.assign(positions.element(instanceIndex()), vec4({acc.read(), float_(0), float_(0), float_(1)}));
+    });
+    compute("if-else", [](Block& b, Storage positions) {
+        b.IfElse(lessThan(instanceIndex(), uint_(8)),
+                 [&] {
+                     b.assign(positions.element(instanceIndex()),
+                              vec4({float_(1), float_(0), float_(0), float_(1)}));
+                 },
+                 [&] {
+                     b.assign(positions.element(instanceIndex()),
+                              vec4({float_(0), float_(1), float_(0), float_(1)}));
+                 });
+    });
+    compute("storage-read-modify", [](Block& b, Storage positions) {
+        b.assign(positions.element(instanceIndex()),
+                 mul(positions.element(instanceIndex()), float_(2)));
+    });
+    return 0;
+}

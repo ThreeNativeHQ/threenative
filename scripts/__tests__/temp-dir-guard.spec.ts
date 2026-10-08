@@ -7,6 +7,26 @@ const tempCreatorPattern = /\bmkdtemp(?:Sync)?\s*\(/u;
 
 const allowedProductionCreators = new Map<string, string>([
   [
+    "packages/runtime-native/tests/native-engine/player-imports.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/post-normal-pass.ts",
+    "The CTest probe writes its fixture and readback under its caller's build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/template-post-packages.ts",
+    "The compiler CLI retains authored graphs, emitted modules and Tint outputs under its caller's build directory for diagnosis.",
+  ],
+  [
+    "packages/three-native/tests/compatibility/run-native.ts",
+    "The conformance CLI retains captured frames because failed pixel-comparison reports name their paths.",
+  ],
+  [
+    "scripts/starter-native-visual.ts",
+    "The production starter visual gate removes its package staging directory in finally.",
+  ],
+  [
     "packages/assets/src/watch.ts",
     "The dev watcher stages each changed input through a scratch project removed in finally.",
   ],
@@ -131,6 +151,8 @@ async function unregisteredTempCreators(): Promise<string[]> {
   const files = [
     ...(await sourceFiles(path.join(repositoryRoot, "packages"))),
     ...(await sourceFiles(path.join(repositoryRoot, "scripts"))),
+    // Tooling specs leak into the same suite namespace (CI run 37727407515: 24 dirs from tools/).
+    ...(await sourceFiles(path.join(repositoryRoot, "tools"))),
     path.join(repositoryRoot, "playwright.config.ts"),
   ];
   const offenders: string[] = [];

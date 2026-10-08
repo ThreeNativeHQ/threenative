@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "name": "native-core-wasm-nothreads",
+  "target": "web",
+  "subject": "native-core",
+  "viewport": {
+    "width": 640,
+    "height": 480
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "running",
+      "waitTicks": 60
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "native-core",
+        "component": "threads",
+        "path": "built",
+        "equals": false,
+        "allowTrivial": "A build property, fixed before the page loads."
+      },
+      {
+        "entity": "native-core",
+        "component": "threads",
+        "path": "crossOriginIsolated",
+        "equals": false,
+        "allowTrivial": "The page is served without COOP/COEP, so threads could not run here even if built."
+      },
+      {
+        "entity": "native-core",
+        "component": "boot",
+        "path": "initialized",
+        "equals": true,
+        "allowTrivial": "The bridge reports ready only once the engine has booted."
+      },
+      {
+        "entity": "native-core",
+        "component": "loop",
+        "path": "ticks",
+        "changed": true
+      }
+    ]
+  }
+}

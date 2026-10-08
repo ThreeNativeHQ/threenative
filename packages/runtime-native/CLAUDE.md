@@ -27,6 +27,12 @@ editing regressions. It provisions its own Xvfb and requires Rust, WebKitGTK dev
 Runtime internals may keep Mystral names recognizable during the fork, but public contracts expose
 ThreeNative names.
 
+**Amended and not yet reworded:** this package is becoming the owned C++ engine, not a host for
+upstream Three.js. The decision, the rules it reverses here and in the charter, and the gates are
+recorded in
+[`docs/architecture/NATIVE-ENGINE-DECISION.md`](../../docs/architecture/NATIVE-ENGINE-DECISION.md);
+the rule text above changes in the commit that ships the first native-engine artifact.
+
 Targets: browser/upstream Three.js, Windows/macOS/Linux V8+Dawn, Android V8+wgpu-native,
 iOS JSC+wgpu-native. The JavaScript runtime that owns `THREE.Scene` also owns the renderer —
 never mirror the `Object3D` tree across threads. Heavy systems use native/GPU/thread

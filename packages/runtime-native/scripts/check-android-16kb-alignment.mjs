@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -152,6 +152,22 @@ const ZIP_DEFLATED = 8;
 
 /** `lib/<abi>/<name>.so` — the only entries Android maps as native code. */
 export const ANDROID_LIBRARY_ENTRY = /^lib\/([^/]+)\/([^/]+\.so)$/u;
+
+/**
+ * Every ELF file under `dir`, so a build directory of freshly linked libraries can be checked
+ * before anything is packaged. A directory with no ELF in it proves nothing, so it is refused.
+ */
+export function elfFilesIn(dir) {
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    const file = join(entry.parentPath, entry.name);
+    if (!entry.isFile()) continue;
+    const bytes = readFileSync(file);
+    if (bytes.length >= 4 && bytes.readUInt32BE(0) === 0x7f454c46) found.push(file);
+  }
+  if (found.length === 0) throw new Error(`Android 16 KB alignment check found no ELF file in ${dir}`);
+  return found.sort();
+}
 
 /**
  * Read an archive's entries from its central directory.
@@ -393,19 +409,27 @@ if (process.argv[1] && existsSync(process.argv[1]) &&
     const { values, positionals } = parseArgs({
       options: { abis: { type: 'string' }, bundletool: { type: 'string' } }, allowPositionals: true,
     });
-    if (positionals.length !== 1 || !['.apk', '.aab'].includes(extname(positionals[0]))) {
-      throw new Error(
-        'Usage: check-android-16kb-alignment.mjs <game.apk|game.aab> [--bundletool <jar>] [--abis arm64-v8a[,x86_64]]',
-      );
-    }
-    const artifact = resolve(positionals[0]);
+    const usage =
+      'Usage: check-android-16kb-alignment.mjs <game.apk|game.aab|directory> ' +
+      '[--bundletool <jar>] [--abis arm64-v8a[,x86_64]]';
+    const named = positionals[0] ?? '';
+    const archive = extname(named) === '.apk' || extname(named) === '.aab';
+    if (positionals.length !== 1 || (!archive && !existsSync(named))) throw new Error(usage);
+    const artifact = resolve(named);
     // The ABI set the artifact was built for: a release ships arm64-v8a alone. Unnamed, both
     // 64-bit ABIs are required, so an omitted slice still fails unless the caller declares it.
     const options = values.abis === undefined ? {} : { abis: values.abis.split(',').map((abi) => abi.trim()) };
-    const result = extname(artifact) === '.aab'
-      ? assertAndroidBundle16KbAlignment(artifact, values.bundletool, options)
-      : assertAndroidArtifact16KbAlignment(artifact, options);
-    console.log(`Android 16 KB check passed: ${artifact} (${result.libraries.length} native libraries)`);
+    // A directory is what a cross build leaves behind: check every library in it directly.
+    if (existsSync(artifact) && statSync(artifact).isDirectory()) {
+      const libraries = elfFilesIn(artifact);
+      assertAndroid16KbAlignment(libraries, options);
+      console.log(`Android 16 KB check passed: ${artifact} (${libraries.length} ELF files)`);
+    } else {
+      const result = extname(artifact) === '.aab'
+        ? assertAndroidBundle16KbAlignment(artifact, values.bundletool, options)
+        : assertAndroidArtifact16KbAlignment(artifact, options);
+      console.log(`Android 16 KB check passed: ${artifact} (${result.libraries.length} native libraries)`);
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

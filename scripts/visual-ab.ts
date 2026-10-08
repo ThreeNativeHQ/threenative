@@ -371,9 +371,13 @@ export function runCli(args: readonly string[]): number {
   const before = argumentValue(args, "--before");
   const after = argumentValue(args, "--after");
   const out = argumentValue(args, "--out");
-  if (before === undefined || after === undefined || out === undefined) {
+  const reveal = argumentValue(args, "--reveal");
+  if (
+    out === undefined ||
+    (reveal === undefined && (before === undefined || after === undefined))
+  ) {
     process.stderr.write(
-      "Usage: pnpm visuals:ab --before <dir> --after <dir> --out <dir> [--duplicates n] [--raters n --verdict <file> ...]\n",
+      "Usage: pnpm visuals:ab (--before <dir> --after <dir> | --reveal <file>) --out <dir> [--duplicates n] [--raters n --verdict <file> ...]\n",
     );
     return 2;
   }
@@ -381,8 +385,13 @@ export function runCli(args: readonly string[]): number {
   const raters = Number(argumentValue(args, "--raters") ?? 3);
   const verdicts = argumentValues(args, "--verdict").filter((file) => file.length > 0);
 
-  const built = buildVisualAbBundle(before, after, out, BASELINE_PROMPT, duplicates);
+  const built =
+    reveal === undefined
+      ? buildVisualAbBundle(before as string, after as string, out, BASELINE_PROMPT, duplicates)
+      : undefined;
   if (verdicts.length === 0) {
+    if (!built)
+      throw new VisualAbError("TN_VISUAL_AB_NO_VERDICT: --reveal requires verdict files.");
     // Building is not scoring. Exit 2 is exactly right here: the bundle is ready and the run has
     // not reached a verdict, which is the state this code must never print scores from.
     //
@@ -408,7 +417,7 @@ export function runCli(args: readonly string[]): number {
     return 2;
   }
 
-  const score = scoreVisualAb(built.reveal, verdicts, raters);
+  const score = scoreVisualAb(reveal ?? (built as VisualAbResult).reveal, verdicts, raters);
   const markdown = renderVisualAbMarkdown(score);
   process.stdout.write(`${markdown}\n`);
   const reportFile = path.join(out, "score.json");

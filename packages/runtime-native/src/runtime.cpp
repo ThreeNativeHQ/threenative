@@ -805,7 +805,8 @@ public:
             bindingsState_ = nullptr;
             return false;
         }
-        webgpu_->setBindingsState(bindingsState_);
+        frameCapture_ = webgpu::makeFrameCaptureSource(bindingsState_);
+        webgpu_->setFrameCaptureSource(frameCapture_.get());
 
         // In no-SDL mode, set the offscreen texture for headless rendering
         if (config_.noSdl) {
@@ -946,7 +947,8 @@ public:
         }
 
         if (bindingsState_) {
-            if (webgpu_) webgpu_->setBindingsState(nullptr);
+            if (webgpu_) webgpu_->setFrameCaptureSource(nullptr);
+            frameCapture_.reset();
             webgpu::destroyBindingsState(bindingsState_);
             bindingsState_ = nullptr;
         }
@@ -3044,6 +3046,7 @@ private:
 
     std::unique_ptr<webgpu::Context> webgpu_;
     webgpu::BindingsState* bindingsState_ = nullptr;
+    std::unique_ptr<host::IFrameCaptureSource> frameCapture_;
     std::unique_ptr<js::Engine> jsEngine_;
     std::unique_ptr<js::ModuleSystem> moduleSystem_;
     std::unordered_set<int> activeWorkerIds_;

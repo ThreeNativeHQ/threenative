@@ -184,13 +184,15 @@ export async function withBrowserCapture<T>(
     signal?.removeEventListener("abort", abort);
     try {
       await teardownBrowserSession(page, context, browser, browserLaunch, undefined);
-      if (profilesBeforeLaunch !== undefined) removeStrandedProfiles(profilesBeforeLaunch);
     } finally {
       try {
         await stopManagedServer(server);
       } finally {
         try { await display?.release(); }
-        finally { await lease?.release(); }
+        finally {
+          try { if (profilesBeforeLaunch !== undefined) await removeStrandedProfiles(profilesBeforeLaunch); }
+          finally { await lease?.release(); }
+        }
       }
     }
   }

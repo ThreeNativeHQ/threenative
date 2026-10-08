@@ -17,9 +17,12 @@ export interface IBrowserCpuProfile {
 export async function startBrowserCpuProfile(
   page: Page,
   outputPath: string,
+  samplingIntervalUs?: number,
 ): Promise<IBrowserCpuProfile> {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Profiler.enable");
+  if (samplingIntervalUs !== undefined)
+    await cdp.send("Profiler.setSamplingInterval", { interval: samplingIntervalUs });
   await cdp.send("Profiler.start");
   return {
     async stop(): Promise<string> {

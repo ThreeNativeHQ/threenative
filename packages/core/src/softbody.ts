@@ -335,6 +335,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
   readonly #collision: IClothCollisionState | undefined;
   readonly #readback: GPUReadback | undefined;
   readonly #ownedMaterial: NodeMaterial;
+  readonly #options: ISoftBody3DOptions;
   #renderer: IRendererLike | undefined;
   #released = false;
   #steps = 0;
@@ -372,6 +373,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
       buffers.originalToUnique.element(vertexIndex),
     );
     super(mesh.geometry, material);
+    this.#options = { ...options, pinned: [...options.pinned] };
     this.#ownedMaterial = material;
     this.#buffers = buffers;
     this.#forces = forces;
@@ -433,6 +435,19 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
         : undefined;
     this.frustumCulled = false;
     this.addEventListener("removed", this.#onRemoved);
+  }
+
+  /** A fresh body over the same geometry and parameters; GPU state and readback are not shared. */
+  override clone(recursive = true): this {
+    const copy = new SoftBody3D(this, {
+      ...this.#options,
+      gravity: [this.gravity.x, this.gravity.y, this.gravity.z],
+      wind: [this.wind.x, this.wind.y, this.wind.z],
+    });
+    copy.copy(this, recursive);
+    // Mesh.copy shares material, but this material addresses the new body's own buffers.
+    copy.material = copy.#ownedMaterial;
+    return copy as this;
   }
 
   get released(): boolean {

@@ -46,6 +46,7 @@ function assertRequiredFeatureBuilder(source) {
     "TextureCompressionASTC",
     "TimestampQuery",
     "RG11B10UfloatRenderable",
+    "Float32Filterable",
   ]) {
     assert.match(
       body,

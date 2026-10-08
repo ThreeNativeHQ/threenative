@@ -18,7 +18,7 @@ export interface IStandalonePlaytestConfig {
    * render evidence, so it fails unless the operator says otherwise.
    */
   allowSoftwareAdapter?: boolean;
-  android?: { activity: string; packageName: string; user?: string };
+  android?: { activity: string; packageName: string; user?: string; nativeEngine?: boolean };
   adbPath?: string;
   /** @see IAndroidDriverOptions.touchRotation */
   touchRotation?: number;
@@ -114,6 +114,7 @@ export const PLAYTEST_FLAGS = {
   // overlay serves, and the parser would otherwise read `--ui` as a playtest flag and reject it.
   "--host-arg": { allowDashValue: true, default: "none", repeatable: true, summary: "argument passed to the native desktop host, repeatable", takesValue: true },
   "--mailbox-root": { default: "Android external files directory", summary: "native device mailbox directory", takesValue: true },
+  "--native-engine": { default: "false", summary: "Android JS-free native inspect endpoint; require the native/cpp profile handshake", takesValue: false },
   "--ios-transport": { default: "simulator", summary: "iOS transport (simulator or device)", takesValue: true },
   "--project": { default: ".", summary: "project root used to resolve paths", takesValue: true },
   "--package": { default: "com.mystral.engine", summary: "Android application id", takesValue: true },
@@ -237,6 +238,10 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   const urlFlag = flags.get("--url")?.[0];
   const url = urlFlag ?? "http://127.0.0.1:5173";
   const target = flags.get("--target")?.[0] ?? "browser";
+  const nativeEngine = argv.includes("--native-engine");
+  if (nativeEngine && target !== "android") {
+    throw new PlaytestCliUsageError("--native-engine requires --target android.");
+  }
   if (target !== "browser" && target !== "android" && target !== "desktop" && target !== "ios") {
     throw new PlaytestCliUsageError(`Unknown target '${target}'. Expected 'browser', 'android', 'desktop', or 'ios'.`);
   }
@@ -351,6 +356,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
       activity: flags.get("--activity")?.[0] ?? ".MystralActivity",
       packageName: flags.get("--package")?.[0] ?? "com.mystral.engine",
       ...(androidUser === undefined ? {} : { user: androidUser }),
+      ...(nativeEngine ? { nativeEngine: true } : {}),
     },
     artifactDirectory: resolve(projectPath, flags.get("--artifacts")?.[0] ?? "artifacts/playtest"),
     captureArtifactScreenshots: !argv.includes("--no-screenshots"),

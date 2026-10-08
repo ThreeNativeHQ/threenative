@@ -24,6 +24,11 @@ flowchart LR
 One game codebase, two release lanes. **The runtime is a host for cross-platform plumbing; the game
 and its look stay in shared three.js source** (execution: PRD-047).
 
+**Amended and not yet reworded:** "a host, not a renderer" is replaced by an owned C++ engine behind
+the same Three.js API. The decision, the rules it reverses, the definitions and the gates are
+recorded in [`NATIVE-ENGINE-DECISION.md`](NATIVE-ENGINE-DECISION.md); the text above changes in the
+commit that ships the first native-engine artifact.
+
 Mystral's host source, CMake and platform projects live in the single `packages/runtime-native/`
 workspace package. Third-party dependency trees never enter git — `scripts/download-deps.mjs`
 reconstructs them in the gitignored `third_party/`. Native builds are opt-in, produce one
