@@ -2100,8 +2100,8 @@ export class WorldGpuScene {
     // one thread per key. The main pass writes the same uniform before its own pair.
     const keys = this.#regions.length;
     this.#counts.value.set(this.placements.length, this.#order.length, keys, keys);
-    renderer.compute(kernel.clear);
-    renderer.compute(kernel.cull);
+    // One pass holds both kernels: storage writes reach the next dispatch, so clear precedes cull.
+    renderer.compute([kernel.clear, kernel.cull]);
   }
 
   /**
@@ -2132,8 +2132,8 @@ export class WorldGpuScene {
     if (kernel === undefined) return;
     const keys = this.#regions.length;
     this.#counts.value.set(this.placements.length, this.#order.length, keys, keys);
-    renderer.compute(kernel.clear);
-    renderer.compute(kernel.cull);
+    // One pass holds both kernels: storage writes reach the next dispatch, so clear precedes cull.
+    renderer.compute([kernel.clear, kernel.cull]);
     this.#dispatched += 1;
     if (
       this.#validate === true &&

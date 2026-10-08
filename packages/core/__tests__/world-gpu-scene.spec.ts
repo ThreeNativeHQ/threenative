@@ -4649,8 +4649,8 @@ describe("the shadow twins of a registered provider", () => {
     const renderer = {
       kind: "webgpu",
       raw: { backend: { hasFeature: () => true } },
-      compute: () => {
-        computes += 1;
+      compute: (node: unknown) => {
+        computes += Array.isArray(node) ? node.length : 1;
       },
     } as never;
     const { camera, planes } = cameraAt(0, 0);
@@ -4670,6 +4670,24 @@ describe("the shadow twins of a registered provider", () => {
     scene.dispose();
   });
 
+  it("makes one compute call of two kernels per main-pass dispatch", () => {
+    const scene = wired([{ name: "a", levels: [...DISTANCES] }], 1, 64);
+    const received: unknown[] = [];
+    const renderer = {
+      kind: "webgpu",
+      raw: { backend: { hasFeature: () => true } },
+      compute: (node: unknown) => {
+        received.push(node);
+      },
+    } as never;
+    const { camera } = cameraAt(0, 0);
+    scene.dispatch(renderer, camera);
+    expect(received).toHaveLength(1);
+    expect(Array.isArray(received[0])).toBe(true);
+    expect(received[0]).toHaveLength(2);
+    scene.dispose();
+  });
+
   /**
    * Machinefall's walk: the first level render happens at the camp with a handful of placements,
    * and streaming then grows the placement buffer a thousandfold. A shadow kernel kept from that
@@ -4683,7 +4701,7 @@ describe("the shadow twins of a registered provider", () => {
     const renderer = {
       kind: "webgpu",
       raw: { backend: { hasFeature: () => true } },
-      compute: (node: { count: number }) => culls.push(node),
+      compute: (node: { count: number } | { count: number }[]) => culls.push(...[node].flat()),
     } as never;
     const { planes } = cameraAt(0, 0);
     const level = { base: 0, gate: 0, planes };
