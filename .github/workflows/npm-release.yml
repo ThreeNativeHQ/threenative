@@ -173,10 +173,11 @@ jobs:
       !cancelled() && (inputs.clean_room_only == true ||
       ((github.event_name == 'push' || inputs.dry_run == false) && needs.publish.result == 'success'))
     runs-on: ubuntu-latest
-    # Raised from 20 when the `android` step joined this job: the same evidence now costs a Gradle
-    # build and its first-run dependency download, and a job killed by its own clock reports a
+    # Raised from 20 when the `android` step joined this job, then from 30 when the first hosted
+    # run (37709499660) was killed by its own clock inside the verifier: both managers each pay a
+    # Gradle build and a software-adapter gameplay run, and a job killed by its own clock reports a
     # failure nobody earned.
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
