@@ -410,7 +410,8 @@ jobs:
         run: |
           set -euo pipefail
           : "${ImageVersion:=unknown}"
-          identity="$( { printf '%s\n' "$ImageVersion"; c++ --version; cmake --version; rustc --version; node --version; dpkg-query -W; } | sha256sum | cut -d' ' -f1)"
+          # CMakeCache.txt pins its absolute source path: hosted and tn-local checkouts differ.
+          identity="$( { printf '%s\n' "$ImageVersion" "$GITHUB_WORKSPACE"; c++ --version; cmake --version; rustc --version; node --version; dpkg-query -W; } | sha256sum | cut -d' ' -f1)"
           echo "identity=$identity" >> "$GITHUB_OUTPUT"
       - name: Restore the compiled native tree
         uses: actions/cache@v4
