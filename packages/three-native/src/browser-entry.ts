@@ -9,7 +9,9 @@
  */
 import catalogJson from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
+import { DataUtils } from "./addons/data-utils.js";
 import {
+  type IBrowserRuntime,
   type IRegistryDump,
   type TnAbiModule,
   createWasmRuntime,
@@ -17,6 +19,7 @@ import {
 } from "./browser-backend.js";
 import { defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
+import { defineTextureSources } from "./texture-sources.js";
 
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
 
@@ -78,14 +81,26 @@ export async function bindWebEngine(
   names: readonly string[],
 ): Promise<Record<string, unknown>> {
   const module = await createModule();
+  const runtime = createWasmRuntime(module);
   const { classes } = defineBrowserClasses(
     registry as IRegistryDump,
-    createWasmRuntime(module),
+    runtime,
     catalogJson as unknown as ICatalog,
   );
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
-  const bound: Record<string, unknown> = { ...classes };
+  const bound: Record<string, unknown> = withTextureSources(classes, runtime);
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never);
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
+}
+
+/**
+ * The engine classes plus what plain JS adds over them: three's texture sources (typed array,
+ * canvas, image, ImageBitmapLoader) and `DataUtils`, which touches no engine object at all.
+ */
+export function withTextureSources(
+  classes: Readonly<Record<string, unknown>>,
+  runtime: IBrowserRuntime,
+): Record<string, unknown> {
+  return { ...classes, ...defineTextureSources(classes, runtime), DataUtils };
 }

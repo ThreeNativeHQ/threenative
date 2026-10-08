@@ -29,7 +29,7 @@
     { "name": "cancelAnimationFrame", "evidence": "packages/runtime-native/src/runtime.cpp" },
     { "name": "clearInterval", "evidence": "packages/runtime-native/src/runtime.cpp" },
     { "name": "clearTimeout", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "createImageBitmap", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js" },
+    { "name": "createImageBitmap", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js and packages/runtime-native/src/engine/player/core-textures.mjs" },
     { "name": "document", "evidence": "packages/runtime-native/src/runtime.cpp" },
     { "name": "fetch", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
     { "name": "localStorage", "evidence": "packages/runtime-native/src/runtime-scripts/storage-polyfill.js" },
