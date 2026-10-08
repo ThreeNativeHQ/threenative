@@ -127,9 +127,10 @@ absorbs the gap in ≤ maxSteps steps → play resumes.
 **Files (max 5):** `src/runtime.cpp` (EDIT), one deliberate-crash test executable or env-gated
 branch (NEW), `android/app/build.gradle.kts` symbol settings (EDIT), evidence record (NEW).
 
-- [ ] Gate handler install off on `__ANDROID__`.
-- [ ] Prove tombstones return: one deliberate null deref under an env flag → symbolized
-      `data_app_native_crash` entry captured and pasted.
+- [x] Gate handler install off on `__ANDROID__`. proof: `node --test packages/runtime-native/tests/crash-handler-policy.test.mjs` — 4/4 pass, 4/4 red at `01ec0658` (`docs/verification/prd-210-2026-08-23.md`).
+- [x] Prove tombstones return: one deliberate null deref under an env flag → symbolized
+      `data_app_native_crash` entry captured and pasted. proof: Pixel 8 rung 1 + rung 2 control in
+      `docs/verification/prd-210-2026-08-23.md` (`reason=5 APP CRASH(NATIVE)` vs `reason=2 SIGNALED`).
 - [ ] Keep unstripped `.so` for ndk-stack (debugSymbolLevel SYMBOL_TABLE or usePrebuiltRuntime=false
       lane note).
 
@@ -141,10 +142,12 @@ paste both.
 **Files (max 5):** `src/webgpu/bindings.cpp` wrapper header + edits at ranked sites, contract
 test executable (NEW), spec (EDIT).
 
-- [ ] Checked-create helper: log op+args, throw to JS on NULL; migrate ranked sites S1–S4 first
+- [x] Checked-create helper: log op+args, throw to JS on NULL; migrate ranked sites S1–S4 first
       (encoder chain, canvas2D, shaders/bind-groups, offscreen views), then screenshot path.
-- [ ] Red first: test executable forces a NULL create against HEAD → SEGV pasted; after → throw
-      with named op pasted.
+      proof: `node --test packages/runtime-native/tests/wgpu-null-handle.test.mjs` — 5/5 pass.
+- [x] Red first: test executable forces a NULL create against HEAD → SEGV pasted; after → throw
+      with named op pasted. proof: `node packages/runtime-native/scripts/verify-desktop-stability.mjs`
+      — `wgpu_null_handle_test` SIGSEGV red, V8 throw green (`docs/verification/prd-210-2026-08-23.md`).
 
 #### Phase 3: the loop pauses
 
@@ -152,13 +155,16 @@ test executable (NEW), spec (EDIT).
 body, surface revalidation, markers), `audio_context.cpp` registry (EDIT), core config type +
 metadata plumbing (EDIT), spec/scenario (NEW).
 
-- [ ] Watch + paused flag + markers + audio registry + count-and-drop timers, as specified above.
+- [x] Watch + paused flag + markers + audio registry + count-and-drop timers, as specified above.
+      proof: `node --test packages/runtime-native/tests/lifecycle-pause.test.mjs` + `lifecycle_policy_test`
+      in `verify-desktop-stability.mjs` — all pass (`docs/verification/prd-210-2026-08-23.md`).
 - [ ] Playtest scenario (`--target android`): launch → observe ticks → KEYCODE_SLEEP → 10 s →
       assert zero new `TN_PRESENTS_TICK`; wake → `resumed` marker + bounded catch-up. At HEAD this
       scenario fails exactly as bug 9 documents (60 s of ticks) — paste that red first.
 - [ ] Desktop arm: minimize step asserts same pause semantics.
-- [ ] Assert `FixedStepLoop` clamp by unit test naming `loop.ts:111,121` (mutation: remove the
-      clamp → red).
+- [x] Assert `FixedStepLoop` clamp by unit test naming `loop.ts:111,121` (mutation: remove the
+      clamp → red). proof: `pnpm exec vitest run packages/core/__tests__/loop.spec.ts` — 18/18, mutation red
+      (`docs/verification/prd-210-2026-08-23.md`).
 
 #### Phase 4: the knob and the honest record
 
@@ -180,10 +186,11 @@ and emulator results named separately. Caller census for the new export(s) paste
 
 ## Acceptance Criteria
 
-- [ ] A crash after startup on Android leaves a symbolized tombstone in dropbox (deliberate-crash
-      proof pasted).
-- [ ] A NULL from any migrated wgpu create throws to JS naming the operation; no SEGV path
-      remains at the migrated sites (forced-NULL test red/green pasted).
+- [x] A crash after startup on Android leaves a symbolized tombstone in dropbox (deliberate-crash
+      proof pasted). proof: Pixel 8 rung 1, `docs/verification/prd-210-2026-08-23.md`.
+- [x] A NULL from any migrated wgpu create throws to JS naming the operation; no SEGV path
+      remains at the migrated sites (forced-NULL test red/green pasted). proof:
+      `verify-desktop-stability.mjs` red/green + `wgpu-null-handle.test.mjs` site census, `docs/verification/prd-210-2026-08-23.md`.
 - [ ] Screen-off stops presenting within ~1 s and suspends audio, on device; resume recovers with
       catch-up bounded by maxSteps; markers report what happened either way.
 - [ ] `backgroundMode:"continue"` demonstrably overrides pausing while markers keep flowing.
