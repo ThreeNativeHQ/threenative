@@ -65,7 +65,7 @@ All of these export from `@threenative/core`.
 | Camera shake | `CameraShake` | `update()` returns an offset. Apply it after your camera rig. |
 | Sky | `Atmosphere`, `solarPosition` | The `minimal` template uses it on WebGPU only. |
 | Sound | `AudioBus` | Loads and plays sounds and manages volume. Unlocks on first input. |
-| GPU ray queries | `GPUSceneBVH` | Call `rebuild()` after the scene geometry changes. |
+| GPU ray queries | `GPUSceneBVH` (`@threenative/core/gpu-scene-bvh`) | Call `rebuild()` after the scene geometry changes. |
 | Frame timing | `FrameBudget`, `SpanRecorder` | GPU timings appear when the platform provides timestamps. |
 
 Physics nodes (`RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`) export from

@@ -84,7 +84,16 @@ const now = (): number => globalThis.performance?.now() ?? Date.now();
 
 /** The upstream TSL ray query, exposed without renaming or wrapping it. */
 export type GPUSceneBVHTraceFunction = (...args: readonly unknown[]) => unknown;
+/**
+ * Upstream three-mesh-bvh's TSL first-hit ray query, unrenamed, for a `GPUSceneBVH` snapshot.
+ * @situation trace a ray against a GPUSceneBVH inside a TSL kernel
+ * @example const trace = wgslFn(`fn hit(i: ptr<storage, array<vec3u>, read>, p: ptr<storage, array<vec3f>, read>, n: ptr<storage, array<BVHNode>, read>, r: Ray) -> bool { return bvhIntersectFirstHit(i, p, n, r).didHit; }`, [bvhIntersectFirstHit]);
+ */
 export const bvhIntersectFirstHit = upstream.bvhIntersectFirstHit;
+/**
+ * Upstream three-mesh-bvh's TSL ray struct, the argument `bvhIntersectFirstHit` takes.
+ * @situation build the ray a GPUSceneBVH query traces
+ */
 export const rayStruct = upstream.rayStruct;
 
 function storageAttribute<T extends ArrayBufferView>(
@@ -348,8 +357,15 @@ function packScene(scene: Object3D, include: (object: Mesh) => boolean): IPacked
  *
  * This class owns packing, residency, and release. It deliberately does not own the ray query or
  * a rendered effect: a game imports the exact upstream `bvhIntersectFirstHit` and `rayStruct`
- * exports through the core entry point and uses these four named nodes in its own `src/render/`
- * kernel. The snapshot is static until `rebuild()`.
+ * exports through `@threenative/core/gpu-scene-bvh` and uses these four named nodes in its own `src/render/`
+ * kernel. The snapshot is static until `rebuild()`. It is a subpath, not the main entry, because
+ * `three-mesh-bvh/webgpu` subclasses TSL nodes at import time: a game that never traces a scene BVH
+ * must not load it.
+ * @situation trace thousands of scene rays inside a TSL kernel
+ * @situation build a contact-occlusion or visibility query over loaded meshes
+ * @constraint call rebuild() after a scene transform or geometry change; the snapshot is static by default
+ * @constraint rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray
+ * @example import { GPUSceneBVH } from "@threenative/core/gpu-scene-bvh"; const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));
  */
 export class GPUSceneBVH extends Group implements IComputeDriven {
   #backings: INodeBackings = {

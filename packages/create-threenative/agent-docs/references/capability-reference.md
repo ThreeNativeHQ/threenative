@@ -766,21 +766,6 @@ import { boneLengths } from "@threenative/core";
 const baseline = boneLengths(character);
 ```
 
-### `bvhIntersectFirstHit`
-
-`function` — Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
-
-```ts
-bvhIntersectFirstHit = upstream.bvhIntersectFirstHit
-```
-
-- **Use when:** trace thousands of scene rays inside a TSL kernel · build a contact-occlusion or visibility query over loaded meshes
-- **Constraints:** call rebuild() after a scene transform or geometry change; the snapshot is static by default · rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray
-
-```ts
-const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));
-```
-
 ### `CameraShake`
 
 `class` — Produce a game-authored camera shake offset for a template-owned camera rig.
@@ -1368,21 +1353,6 @@ export class GPUReadback { … }
 
 ```ts
 const heights = new GPUReadback({ attribute: field.value, everyFrames: 4 });
-```
-
-### `GPUSceneBVH`
-
-`class` — Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
-
-```ts
-export class GPUSceneBVH extends Group implements IComputeDriven { … }
-```
-
-- **Use when:** trace thousands of scene rays inside a TSL kernel · build a contact-occlusion or visibility query over loaded meshes
-- **Constraints:** call rebuild() after a scene transform or geometry change; the snapshot is static by default · rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray
-
-```ts
-const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));
 ```
 
 ### `GroundSnap`
@@ -2670,6 +2640,37 @@ export function zenithTransmittance( parameters: IAtmosphereParameters | IResolv
 
 ```ts
 const zenith = zenithTransmittance({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });
+```
+
+## `@threenative/core/gpu-scene-bvh`
+
+### `bvhIntersectFirstHit`
+
+`function` — Upstream three-mesh-bvh's TSL first-hit ray query, unrenamed, for a `GPUSceneBVH` snapshot.
+
+```ts
+bvhIntersectFirstHit = upstream.bvhIntersectFirstHit
+```
+
+- **Use when:** trace a ray against a GPUSceneBVH inside a TSL kernel
+
+```ts
+const trace = wgslFn(`fn hit(i: ptr<storage, array<vec3u>, read>, p: ptr<storage, array<vec3f>, read>, n: ptr<storage, array<BVHNode>, read>, r: Ray) -> bool { return bvhIntersectFirstHit(i, p, n, r).didHit; }`, [bvhIntersectFirstHit]);
+```
+
+### `GPUSceneBVH`
+
+`class` — Snapshot selected scene meshes into world-space storage buffers for an upstream TSL BVH query. This class owns packing, residency, and release. It deliberately does not own the ray query or a rendered effect: a game imports the exact upstream `bvhIntersectFirstHit` and `rayStruct` exports through `@threenative/core/gpu-scene-bvh` and uses these four named nodes in its own `src/render/` kernel. The snapshot is static until `rebuild()`. It is a subpath, not the main entry, because `three-mesh-bvh/webgpu` subclasses TSL nodes at import time: a game that never traces a scene BVH must not load it.
+
+```ts
+export class GPUSceneBVH extends Group implements IComputeDriven { … }
+```
+
+- **Use when:** trace thousands of scene rays inside a TSL kernel · build a contact-occlusion or visibility query over loaded meshes
+- **Constraints:** call rebuild() after a scene transform or geometry change; the snapshot is static by default · rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray
+
+```ts
+import { GPUSceneBVH } from "@threenative/core/gpu-scene-bvh"; const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));
 ```
 
 ## `@threenative/core/hot`
