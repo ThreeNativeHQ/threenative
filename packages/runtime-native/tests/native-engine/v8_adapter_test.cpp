@@ -6,6 +6,7 @@
 #include "engine/foundation/ThreeConstants.h"
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/tsl/tsl.h"
+#include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
@@ -398,6 +399,9 @@ void catalogCoverage() {
         {"AgXToneMapping", tn::engine::AgXToneMapping},
         {"NeutralToneMapping", tn::engine::NeutralToneMapping},
         {"PCFSoftShadowMap", tn::engine::PCFSoftShadowMap},
+        {"FrontSide", static_cast<double>(tn::engine::Side::Front)},
+        {"BackSide", static_cast<double>(tn::engine::Side::Back)},
+        {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},
     };
     const std::map<std::string, std::string> strings = {
         {"NoColorSpace", tn::engine::NoColorSpace},
