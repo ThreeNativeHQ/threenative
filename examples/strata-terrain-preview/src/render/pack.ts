@@ -477,9 +477,15 @@ function surface(
   if (!otherBiome && canopy && !cutout) material.normalMap = source.normalMap;
   // Forest needle crowns need their authored interior shading and filtered alpha coverage.
   // A plain imported PBR card erased canopy depth at the same geometry and camera.
-  if (cutout && source.map && !(world === "forest" && canopy))
+  if (cutout && source.map && !(world === "forest" && canopy)) {
     importedFoliage(material, source, source.map);
-  else if (source.map) tintedFoliage(material, context, snowMap);
+    if (world === "forest") {
+      // Blades and fronds a cell thick pass the sun through; without it a meadow seen against the
+      // sun is lit almost only by the sky. Same shadowed term as the needles, without their fill.
+      lightNeedles(material, float(1), 0.6);
+      material.emissiveNode = null;
+    }
+  } else if (source.map) tintedFoliage(material, context, snowMap);
   applyWind(material, context);
   // Image-based sky light, as Wildwood lights the same Fab packs (Kloofendal at 1.8 × 0.629).
   // Without it a shaded needle card gets only the hemisphere fill and falls to one flat dark value.

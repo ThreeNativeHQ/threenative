@@ -3910,8 +3910,13 @@ An independent diagnostic pass (in-page A/B on the forest meadow, RTX 2080) rank
    blew out the cloud cores, turned the sky cartoon cyan and darkened the meadow (66 vs 77), judged 4 vs
    4.5 on the meadow. The crown gain has to come from canopy fill light, not the tone curve.
 6. GTAO multiplies direct sun and haze (`sky.ts`); AO off raises meadow 12%, crowns 15%. **Open.**
-7. (Suspected) imported foliage has no transmission, so backlit grass gets 14% of its light from the
-   real sun. 8. (Suspected) mid/far terrain detail is replaced by flat colour beyond 32–115 m.
+7. Imported foliage had no transmission, so backlit grass got 14% of its light from the real sun.
+   **Fixed** in the commit after `2cca8e2e9`: forest ground foliage (`importedFoliage` path) adds the
+   shadowed `lightNeedles` backlight at 0.6 without its crown fill. Backlit meadow 77.4 → 92.0, the
+   non-backlit elevated view unchanged; fresh judge 4 → 5/10 (mid meadow believable; near field
+   lifts the gaps too). The earlier "grass transmission had no effect" round edited `cutoutSurface`,
+   which alpha-tested grass never reaches, so it was a no-op, not a measurement.
+   ([capture](../../benchmark/strata-loading-2026-10-06/foliage-transmission-meadow.jpg)) 8. (Suspected) mid/far terrain detail is replaced by flat colour beyond 32–115 m.
 
 Corrections to earlier sections: the kept field-grass root lift (`fe6964fc8`) edits a branch the
 alpha-tested grass never reaches, so its reported gain was run-to-run variance; single captures taken
