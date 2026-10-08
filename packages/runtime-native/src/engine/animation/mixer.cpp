@@ -728,11 +728,19 @@ AnimationMixer& AnimationMixer::update(double deltaTime) {
     const double t = time += deltaTime;
     const double timeDirection = deltaTime > 0 ? 1 : deltaTime < 0 ? -1 : deltaTime; // Math.sign
     const int accuIndex = accuIndex_ ^= 1;
+    // Events wait for both loops: a listener that uncaches an action shrinks the lists they walk.
+    // Actions live as long as the mixer (ownedActions_), so a queued event's action stays valid.
+    updating_ = true;
     for (std::size_t i = 0; i != nActions; ++i)
         actions_[i]->update(t, deltaTime, timeDirection, accuIndex);
     const std::size_t nBindings = nActiveBindings_;
     for (std::size_t i = 0; i != nBindings; ++i)
         bindings_[i]->apply(accuIndex);
+    updating_ = false;
+    std::vector<MixerEvent> pending;
+    pending.swap(pendingEvents_);
+    for (const MixerEvent& event : pending)
+        dispatchEvent(event);
     return *this;
 }
 
@@ -806,6 +814,10 @@ void AnimationMixer::removeEventListener(std::string_view type, Listener listene
 }
 
 void AnimationMixer::dispatchEvent(const MixerEvent& event) {
+    if (updating_) {
+        pendingEvents_.push_back(event);
+        return;
+    }
     const std::vector<ListenerEntry> copy = listeners_; // a listener may remove itself while it runs
     for (const ListenerEntry& e : copy)
         if (e.type == event.type)

@@ -256,6 +256,8 @@ class AnimationMixer {
     std::shared_ptr<Object3D> root_;
     int accuIndex_ = 0;
     std::uint64_t updateCount_ = 0;
+    bool updating_ = false;
+    std::vector<MixerEvent> pendingEvents_;  // dispatched once update()'s loops finish
     std::vector<AnimationAction*> actions_;
     std::size_t nActiveActions_ = 0;
     std::vector<ActionsForClip> actionsByClip_;

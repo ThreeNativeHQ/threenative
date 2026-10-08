@@ -141,6 +141,25 @@ the V8 adapter and the Wasm back end (`tn_tsl_call`) build the same graph.
   NodeMaterial and others) leave the bundle through tier-scoped imports in core and the templates.
   Box 49 closes after that lane lands. MeshBVH is real in `feat/native-engine`.
 
+## Open items (QA review, 2026-10-08)
+
+- `native_engine_v8_catalog_coverage` is red after the feat merge (41aca5170): the installed
+  globals plus constants no longer sum to `capability_count` (`v8_adapter_test.cpp:458`).
+- `aoPass.resolutionScale` set after the first render does nothing: `rawPass` copies it at
+  lowering (`post_effects.cpp:281`). Resize must read `source.effect->resolutionScale`.
+- Every `pass()` overwrites `tn.scene`/`tn.camera` (`core-tsl.mjs`); a second distinct scene or
+  camera must refuse by name.
+- `adapterIdentity()` (`v8_main.cpp`) opens its own wgpu instance; read the renderer's adapter.
+- `renderer.info`: `frame` never increments, `compute` is empty, `memory` is missing. Make each
+  real or absent.
+- Low: the MRT slot markers (`normalView`, `metalness`, `roughness`, `output`) are frozen
+  objects; `bloom()` lacks strength/radius/threshold uniforms; `getVertexPosition` lacks a skinned
+  case; `AnimationMixer.clipAction` ignores its `optionalRoot` argument (`bindings_scene.cpp:972`).
+- The V8 player's performance series (owner decision above) is not built yet. Core announces a
+  runner through `TN_PLAYTEST_ENDPOINT`, which the V8 player does not set, and announcing freezes
+  core's loop, so the player's ticks must then drive the bridge's advance and its rAF must fire
+  once per presented frame with a wall-clock timestamp.
+
 ## Known deviations
 
 - Denoise (2026-10-08): the engine's DenoiseNode WGSL port differs from three's by at most one
