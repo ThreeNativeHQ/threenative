@@ -29,6 +29,8 @@ bool loadEntry(const assets::Package& package, const assets::PackageEntry& e, Gp
     {
         const auto data = package.data(e);
         if (e.kind == static_cast<uint16_t>(assets::EntryKind::Buffer)) {
+            // uploadSize 0 is CPU data a decoder reads (audio, .hdr): it never becomes a GPU buffer.
+            if (e.uploadSize == 0) return true;
             if (data.empty() || data.size() % 4 != 0) return fail(error, e.name, "buffer size is not a multiple of 4");
             const Handle buffer = gpu.createBuffer(data.size(), WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc |
                                                                     WGPUBufferUsage_Vertex | WGPUBufferUsage_Index);

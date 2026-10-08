@@ -95,6 +95,31 @@ export function Texture(image, ...rest) {
 }
 Texture.prototype = NativeTexture.prototype;
 
+/** An ImageBitmap whose pixels are a native Texture, adopted once by `new Texture(bitmap)`. */
+function imageBitmap(texture, options = {}, width = undefined, height = undefined) {
+  if (options.premultiplyAlpha === "premultiply")
+    throw new Error("TN_NATIVE_IMAGE_BITMAP_OPTION: premultiplyAlpha \"premultiply\" is unsupported; the engine keeps straight alpha");
+  for (const option of ["resizeWidth", "resizeHeight", "resizeQuality"])
+    if (options[option] !== undefined) throw new Error(`TN_NATIVE_IMAGE_BITMAP_OPTION: ${option} is unsupported`);
+  const bitmap = { width, height, close() { bitmaps.get(bitmap).texture = undefined; } };
+  bitmaps.set(bitmap, { texture, flipped: options.imageOrientation === "flipY" });
+  return bitmap;
+}
+
+/**
+ * The browser's createImageBitmap for encoded PNG or JPEG bytes (a Blob, an ArrayBuffer or a typed
+ * array), decoded by the engine's image decoder. Installed only when the player has that decoder.
+ */
+export async function createImageBitmap(source, ...rest) {
+  if (rest.length > 1) throw new Error("TN_NATIVE_IMAGE_BITMAP_CROP: a source rectangle is unsupported");
+  const bytes = typeof source?.arrayBuffer === "function" ? await source.arrayBuffer() : source;
+  if (!(bytes instanceof ArrayBuffer) && !ArrayBuffer.isView(bytes))
+    throw new TypeError("TN_NATIVE_IMAGE_BITMAP_SOURCE: expected a Blob, an ArrayBuffer or a typed array of PNG or JPEG bytes");
+  const { texture, width, height } = globalThis.tn.decodeImage(bytes);
+  return imageBitmap(texture, rest[0], width, height);
+}
+if (typeof globalThis.tn?.decodeImage === "function") globalThis.createImageBitmap = createImageBitmap;
+
 /** three's ImageBitmapLoader over the cooked package: the bitmap is the package's decoded texture. */
 export class ImageBitmapLoader {
   constructor() {
@@ -107,9 +132,6 @@ export class ImageBitmapLoader {
     this.loadAsync(url).then(onLoad, (error) => { if (onError) onError(error); else throw error; });
   }
   async loadAsync(url) {
-    const texture = globalThis.tn.loadAsset("texture", logicalPath(this.path + url)).value;
-    const bitmap = { close() { bitmaps.get(bitmap).texture = undefined; } };
-    bitmaps.set(bitmap, { texture, flipped: this.options?.imageOrientation === "flipY" });
-    return bitmap;
+    return imageBitmap(globalThis.tn.loadAsset("texture", logicalPath(this.path + url)).value, this.options);
   }
 }
