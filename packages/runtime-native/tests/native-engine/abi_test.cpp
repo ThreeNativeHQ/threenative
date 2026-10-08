@@ -584,8 +584,46 @@ void callbacks() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-540: three's one-argument Color is Color.set(): a hex in sRGB, a CSS string, or a Color to
+// copy. Three numbers stay linear components.
+void color_set() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_value_t result{};
+    const auto channel = [&](tn_handle_t color, const char* name) {
+        CHECK(tn_get(color, name, &result, &d.value) == TN_OK && result.kind == TN_VALUE_NUMBER);
+        return result.number;
+    };
+
+    tn_handle_t red{};
+    const tn_value_t hex = num(0xff0000);
+    CHECK(tn_construct(ctx, "Color", &hex, 1, &red, &d.value) == TN_OK);
+    CHECK(channel(red, "r") == 1 && channel(red, "g") == 0 && channel(red, "b") == 0);
+
+    tn_handle_t green{};
+    tn_value_t css{};
+    css.kind = TN_VALUE_STRING;
+    css.text = "#00ff00";
+    css.count = 7;
+    CHECK(tn_construct(ctx, "Color", &css, 1, &green, &d.value) == TN_OK);
+    CHECK(channel(green, "r") == 0 && channel(green, "g") == 1 && channel(green, "b") == 0);
+
+    tn_handle_t copy{};
+    const tn_value_t source = ref(red);
+    CHECK(tn_construct(ctx, "Color", &source, 1, &copy, &d.value) == TN_OK);
+    CHECK(!same(copy, red) && channel(copy, "r") == 1 && channel(copy, "g") == 0);
+
+    tn_handle_t linear{};
+    const tn_value_t rgb[3] = {num(0.25), num(0.5), num(0.75)};
+    CHECK(tn_construct(ctx, "Color", rgb, 3, &linear, &d.value) == TN_OK);
+    CHECK(channel(linear, "r") == 0.25 && channel(linear, "g") == 0.5 && channel(linear, "b") == 0.75);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks})
+             {"callbacks", callbacks}, {"color_set", color_set})

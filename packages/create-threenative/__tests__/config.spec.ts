@@ -276,6 +276,7 @@ describe("threenative.config.ts", () => {
         maximized: true,
         resizable: false,
       },
+      engine: "legacy",
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: false },
       ui: { renderer: "web" },
@@ -900,6 +901,16 @@ describe("threenative.config.ts", () => {
     await config(root, "export default { assets: { models: { quantize: { positionBits: 0 } } } };");
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
     await expect(loadConfig(root)).rejects.toThrow(/between 1 and 16 bits/u);
+  });
+
+  it("resolves the web engine to legacy unless the project opts in", async () => {
+    const root = await project();
+    await config(root, "export default {};");
+    expect((await loadConfig(root)).engine).toBe("legacy");
+    await config(root, 'export default { engine: "native" };');
+    expect((await loadConfig(root)).engine).toBe("native");
+    await config(root, 'export default { engine: "wasm" };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ENGINE_INVALID/u);
   });
 
   it("rejects bad orientation with the named code", async () => {

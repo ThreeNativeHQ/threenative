@@ -4374,11 +4374,11 @@
         },
         {
           "name": "RGB_BPTC_SIGNED_Format",
-          "value": "RGB_BPTC_SIGNED_Format = 36494"
+          "value": "36494"
         },
         {
           "name": "RGB_BPTC_UNSIGNED_Format",
-          "value": "RGB_BPTC_UNSIGNED_Format = 36495"
+          "value": "36495"
         },
         {
           "name": "RED_RGTC1_Format",
@@ -16093,7 +16093,7 @@
         "gaps": ["native-not-implemented"]
       },
       "type": "number",
-      "value": "RGB_BPTC_SIGNED_Format = 36494"
+      "value": "36494"
     },
     {
       "name": "RGB_BPTC_UNSIGNED_Format",
@@ -16104,7 +16104,7 @@
         "gaps": ["native-not-implemented"]
       },
       "type": "number",
-      "value": "RGB_BPTC_UNSIGNED_Format = 36495"
+      "value": "36495"
     },
     {
       "name": "RGB_ETC1_Format",
