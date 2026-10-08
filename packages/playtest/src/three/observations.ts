@@ -38,7 +38,26 @@ export interface IThreePlaytestRenderer {
   };
 }
 
+/** Explicit empty entities and a single resource channel identify a wait poll, not a full witness. */
+export function isResourceOnlySample(request: IPlaytestSampleRequest): boolean {
+  return request.entities?.length === 0 && request.include?.length === 1 &&
+    request.include[0] === "resources" && request.resources !== undefined &&
+    request.geometry === undefined && request.sceneNodes === undefined;
+}
+
+function sampleClock(input: IThreeObservationInput): IPlaytestObservationSnapshot["clock"] {
+  return {
+    mode: input.clockMode,
+    ...(input.tick === undefined ? { timeMs: performance.now() } : { tick: input.tick }),
+    // Live observations carry wall time even when the producer also supplies its tick.
+    ...(input.clockMode === "wall-clock" ? { timeMs: performance.now() } : {}),
+  };
+}
+
 export function sampleThreeObservations(input: IThreeObservationInput, request: IPlaytestSampleRequest): IPlaytestObservationSnapshot {
+  if (isResourceOnlySample(request)) {
+    return { clock: sampleClock(input), ...(input.resources === undefined ? {} : { resources: input.resources() }) };
+  }
   input.scene.updateMatrixWorld(true);
   input.camera.updateMatrixWorld(true);
   const rendererSize = input.renderer.getDrawingBufferSize(new Vector2());
@@ -47,14 +66,7 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
   const renderPerformance = rendererPerformance(input.renderer);
   const renderChain = input.renderChain?.();
   return {
-    clock: {
-      mode: input.clockMode,
-      ...(input.tick === undefined ? { timeMs: performance.now() } : { tick: input.tick }),
-      // A live run is measured in seconds: the runner reads `timeMs` for any mode that is not
-      // fixed-step, so a wall-clock producer that reported only a tick would leave every
-      // seconds-based rate unmeasured rather than measured.
-      ...(input.clockMode === "wall-clock" ? { timeMs: performance.now() } : {}),
-    },
+    clock: sampleClock(input),
     ...(input.diagnostics === undefined ? {} : { diagnostics: input.diagnostics() }),
     entities,
     ...(input.gameplay === undefined ? {} : { gameplay: input.gameplay() }),

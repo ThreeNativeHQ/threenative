@@ -19,7 +19,7 @@ import {
 import type { Camera, Scene } from "three";
 
 import { ThreePlaytestEntityRegistry, type IThreePlaytestEntity } from "./entities.js";
-import { sampleThreeObservations, type IThreePlaytestRenderer } from "./observations.js";
+import { isResourceOnlySample, sampleThreeObservations, type IThreePlaytestRenderer } from "./observations.js";
 import { ThreePlaytestPhysicsRecorder, type IThreePlaytestPhysics } from "./physics.js";
 import {
   connectDevicePlaytestBridge,
@@ -171,7 +171,8 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
       return { ready: true, startup };
     },
     sample: (request) => {
-      syncEntities(registry, options.entities);
+      const resourceOnly = isResourceOnlySample(request);
+      if (!resourceOnly) syncEntities(registry, options.entities);
       const snapshot = sampleThreeObservations({
         camera: options.camera,
         clockMode: clockMode(),
@@ -185,7 +186,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         scene: options.scene,
         tick: options.tick?.(),
       }, request);
-      const components = options.components?.();
+      const components = resourceOnly ? undefined : options.components?.();
       const withComponents = components === undefined || Object.keys(components).length === 0
         ? snapshot
         : { ...snapshot, components };

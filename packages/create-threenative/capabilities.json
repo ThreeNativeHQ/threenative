@@ -1658,7 +1658,10 @@
       "constraints": [
         "on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement",
         "per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main",
-        "GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero"
+        "GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero",
+        "`ctx.renderer.observeGpuFrames({ maxFrames, maxQueries })` is opt-in, bounded and fail-closed; `take()` delivers immutable complete render-query groups once, while `status()` reports pending/undrained/queued membership and losses",
+        "observation preserves ordinary sampling; a complete benchmark explicitly requests `renderer.gpuTimestampFrameInterval: 1` and joins Three query IDs to actual world renders, including separate overlay IDs",
+        "`stop()` fences allocated frames and drains existing resolver work; `dispose()` invalidates late completions, and a failed observation must be disposed before replacement"
       ],
       "example": "defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });",
       "importPath": "@threenative/core",
@@ -1672,7 +1675,8 @@
         "attribute a frame to present wait, simulation, three.js render, or overlay",
         "tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp",
         "split a frame's draw calls and triangles per render pass (main, shadow, reflection)",
-        "tell a shadow or reflection pass's cost from the main colour pass"
+        "tell a shadow or reflection pass's cost from the main colour pass",
+        "retain every asynchronous GPU render frame for a complete paired benchmark"
       ],
       "summary": "Read where the frame's milliseconds went, per presented frame, on any platform; each `TN_FRAME_BUDGET` window also carries the GPU time per resolved frame and the draw calls and triangles each render pass submitted.",
       "supersedes": [],
@@ -6213,6 +6217,125 @@
       "summary": "Record Three.js physics bodies for playtest observations.",
       "supersedes": [],
       "symbol": "ThreePlaytestPhysicsRecorder"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "identity parent required; material and motion are editable game source; no move/Mixer/composer writer exists"
+      ],
+      "example": "const wolf = createAnimalActor(bake, { motion, material, ground });",
+      "importPath": "@threenative/procedural-animals",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-animals",
+      "requires": ["npm i @threenative/procedural-animals"],
+      "signature": "export function createAnimalActor(bake: IAnimalBake, options: IAnimalActorOptions) { … }",
+      "situations": ["follow a baked animal from accepted fixed-step Rapier state"],
+      "summary": "Own one actor's pose/lifetime, accepting the completed physics state as its only root writer.",
+      "supersedes": [],
+      "symbol": "createAnimalActor"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "this creates bind geometry only; game-owned DQS material and animated bounds remain required"
+      ],
+      "example": "const { bake, geometry } = createAnimalGeometry(bytes);",
+      "importPath": "@threenative/procedural-animals",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-animals",
+      "requires": ["npm i @threenative/procedural-animals"],
+      "signature": "export function createAnimalGeometry(buffer: ArrayBuffer): { … }",
+      "situations": ["construct a Three.js geometry from a validated procedural wolf bake"],
+      "summary": "Validates all bytes before constructing geometry with the bake's skin and rig attributes.",
+      "supersedes": [],
+      "symbol": "createAnimalGeometry"
+    },
+    {
+      "aliases": [],
+      "constraints": ["a corrupt served bake rejects rather than falling back to a different file"],
+      "example": "const bake = await loadAnimalBake(ctx.assets, \"wolf.animal\");",
+      "importPath": "@threenative/procedural-animals",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-animals",
+      "requires": ["npm i @threenative/procedural-animals"],
+      "signature": "export async function loadAnimalBake( assets: IAnimalAssetResolver, logicalPath: string, options: { … }",
+      "situations": ["load a cooked animal from ctx.assets without runtime generation"],
+      "summary": "Resolves and loads a prebuilt wolf through the game's ordinary asset resolver.",
+      "supersedes": [],
+      "symbol": "loadAnimalBake"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "unknown revisions, malformed sections, indices and skin weights throw by name"
+      ],
+      "example": "const bake = parseAnimalBake(bytes);",
+      "importPath": "@threenative/procedural-animals",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-animals",
+      "requires": ["npm i @threenative/procedural-animals"],
+      "signature": "export function parseAnimalBake(buffer: ArrayBuffer): IAnimalBake { … }",
+      "situations": ["validate a baked procedural animal before allocating geometry"],
+      "summary": "Validates a pinned wolf PANM bake before constructing any renderer resource.",
+      "supersedes": [],
+      "symbol": "parseAnimalBake"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "only .animal inputs are interpreted; corruption fails the cook, without regeneration"
+      ],
+      "example": "await compileAssets({ passes: [animalBakePass()] });",
+      "importPath": "@threenative/procedural-animals/build",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-animals",
+      "requires": ["npm i @threenative/procedural-animals"],
+      "signature": "export function animalBakePass() { … }",
+      "situations": ["cook staged animal bakes through the ordinary asset pipeline"],
+      "summary": "Validate staged PANM sources inside the existing asset compiler; it owns the hashed manifest.",
+      "supersedes": [],
+      "symbol": "animalBakePass"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "exact pinned Node runtime, donor revision, options and generated bytes are validated; no worker is created"
+      ],
+      "example": "const bytes = await bakeWolf({ seed: 7, tier: \"crowd\" });",
+      "importPath": "@threenative/procedural-animals/build",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-animals",
+      "requires": ["npm i @threenative/procedural-animals"],
+      "signature": "export async function bakeWolf(options: IWolfBakeOptions): Promise<ArrayBuffer> { … }",
+      "situations": ["bake high and crowd wolf geometry before the ordinary asset cook"],
+      "summary": "Bake the pinned wolf on the build machine, never on the portable runtime path.",
+      "supersedes": [],
+      "symbol": "bakeWolf"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "validation and generation complete before the destination is touched; temporary files are removed on failure"
+      ],
+      "example": "await bakeWolfToFile({ seed: 7, tier: \"crowd\" }, \"assets/wolf-crowd.animal\");",
+      "importPath": "@threenative/procedural-animals/build",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-animals",
+      "requires": ["npm i @threenative/procedural-animals"],
+      "signature": "export async function bakeWolfToFile( options: IWolfBakeOptions, destination: string, ): Promise<string> { … }",
+      "situations": [
+        "publish a generated wolf without replacing the last valid bake on interruption"
+      ],
+      "summary": "Stage a validated source bake with a same-directory atomic rename, then use compileAssets.",
+      "supersedes": [],
+      "symbol": "bakeWolfToFile"
     },
     {
       "aliases": [],

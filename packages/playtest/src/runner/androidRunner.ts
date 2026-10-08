@@ -373,6 +373,7 @@ async function runDevicePlaytestInternal(
           id: wait.id,
           path: wait.path,
           predicate: wait,
+          poll: () => attachedBridge.sample({ entities: [], include: ["resources"], resources: [wait.id] }),
           sample: () => attachedBridge.sample(sampleRequest),
           signal: target.abortSignal,
           timeoutMs,

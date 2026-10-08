@@ -724,6 +724,10 @@ describe("PRD-373 fixed full candidates and current package products", () => {
     expect(cache).toContain("packages/runtime-native/scripts/**");
     expect(native).toContain("$ImageVersion");
     expect(native).toContain("c++ --version");
+    // CMakeCache.txt records its absolute source path, so a tree from another checkout path fails.
+    expect(native.split("\n").find((line) => line.includes('identity="$(')) ?? "").toContain(
+      "$GITHUB_WORKSPACE",
+    );
     expect(cache).not.toContain("restore-keys:");
   });
 

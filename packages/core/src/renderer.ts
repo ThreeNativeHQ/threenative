@@ -8,6 +8,11 @@ import {
 import { ComputeTimingScopes, type IComputeTimingReceipt } from "./compute-timing.js";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
+  GpuFrameObservation,
+  type IGpuFrameObservation,
+  type IGpuFrameObservationOptions,
+} from "./gpu-frame-observation.js";
+import {
   type IPipelineCensus,
   type PipelineCensus,
   createPipelineCensus,
@@ -246,6 +251,14 @@ export interface IRendererLike {
    */
   gpuFrameSample?(): { readonly frame: number; readonly ms: number } | undefined;
   /**
+   * Observes complete allocated render-query groups without changing ordinary sampling.
+   * Frame IDs are Three query IDs, including any overlay draws; callers map world callbacks.
+   * Capacities bound undrained, pending and queued membership. maxQueries counts timestamp
+   * slots (two per pass). A failed receipt is sticky and must be disposed before replacement.
+   * Requires timestamp-capable WebGPU and its existing asynchronous resolver.
+   */
+  observeGpuFrames?(options: IGpuFrameObservationOptions): IGpuFrameObservation;
+  /**
    * GPU milliseconds of the last resolved compute frame, when the adapter reports one.
    *
    * The compute pool is a separate series from the render pool and `resolveGpuFrame` resolves it,
@@ -348,6 +361,7 @@ type RendererInstance = IStorageBufferSource & {
   };
   backend?: {
     trackTimestamp?: boolean;
+    timestampQueryPool?: { render?: unknown };
     /** The backend's own attribute creation, which a compile does not do. */
     createAttribute?: (attribute: unknown) => void;
     createIndexAttribute?: (attribute: unknown) => void;
@@ -458,6 +472,8 @@ function wrapRenderer(
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
   let timestampFrame = -1;
+  let gpuObservation: GpuFrameObservation | undefined;
+  let gpuObservationGeneration = 0;
   const setTimestampTracking = (): void => {
     // Three writes `info.frame` only inside its own animation loop, which the engine deliberately
     // does not run -- the game drives frames through here -- so it sat at 0 for the whole session.
@@ -585,6 +601,25 @@ function wrapRenderer(
       return frame - sample.frame;
     },
     gpuFrameSample,
+    observeGpuFrames: (options) => {
+      if (
+        disposed ||
+        kind !== "webgpu" ||
+        !timestampCapable ||
+        typeof raw.resolveTimestampsAsync !== "function"
+      )
+        throw new Error("TN_GPU_FRAME_OBSERVATION_UNSUPPORTED");
+      if (gpuObservation !== undefined && gpuObservation.status().state !== "disposed")
+        throw new Error("TN_GPU_FRAME_OBSERVATION_ALREADY_ACTIVE");
+      gpuObservation = new GpuFrameObservation(
+        ++gpuObservationGeneration,
+        timestampFrame + 1,
+        () => raw.backend?.timestampQueryPool?.render,
+        () => timestampFrame,
+        options,
+      );
+      return gpuObservation;
+    },
     gpuMainMs: () => gpuMainEma,
     noteGpuMainMs,
     gpuComputeMs: () => {
@@ -600,7 +635,12 @@ function wrapRenderer(
       // reported absence rather than a frame-time error.
       const resolveTimestampsAsync = raw.resolveTimestampsAsync;
       if (resolveTimestampsAsync === undefined) return;
+      const observationBatch =
+        gpuObservation !== undefined && raw.backend?.trackTimestamp === true
+          ? gpuObservation.capture()
+          : undefined;
       void resolveTimestampsAsync.call(raw)?.catch(() => undefined);
+      gpuObservation?.submitted(observationBatch);
       // Three maintains independent 2,048-query pools for render and compute passes. Resolving
       // only the default render pool lets GPU simulations exhaust the compute pool even when the
       // render pool is healthy, after which the adapter can be lost instead of merely reporting
@@ -818,6 +858,8 @@ function wrapRenderer(
         return;
       }
       disposed = true;
+      gpuObservation?.dispose();
+      gpuObservation = undefined;
       pendingScale = undefined;
       pendingSize = undefined;
       for (const chain of renderChains) chain.dispose();
