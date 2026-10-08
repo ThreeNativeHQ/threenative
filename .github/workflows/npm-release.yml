@@ -16,6 +16,10 @@ on:
         description: Pack every package and run the preflight without publishing
         type: boolean
         default: true
+      clean_room_only:
+        description: Skip gates and publish; run only the clean room against the published latest cohort
+        type: boolean
+        default: false
 
 concurrency:
   group: npm-release
@@ -27,6 +31,7 @@ permissions:
 
 jobs:
   gates:
+    if: inputs.clean_room_only != true
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -162,7 +167,11 @@ jobs:
 
   clean-room:
     needs: publish
-    if: github.event_name == 'push' || inputs.dry_run == false
+    # `!cancelled()` lets a clean_room_only dispatch run with `publish` skipped; every other run
+    # still requires a successful publish first.
+    if: >-
+      !cancelled() && (inputs.clean_room_only == true ||
+      ((github.event_name == 'push' || inputs.dry_run == false) && needs.publish.result == 'success'))
     runs-on: ubuntu-latest
     # Raised from 20 when the `android` step joined this job: the same evidence now costs a Gradle
     # build and its first-run dependency download, and a job killed by its own clock reports a
