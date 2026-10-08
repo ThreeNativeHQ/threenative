@@ -157,6 +157,23 @@ interface ISurfaceContext {
 }
 
 /** Imported foliage draws as imported: its albedo, its normal map, its own cutoff, both faces. */
+/**
+ * Imported normal maps whose green channel is DirectX (Unreal) rather than glTF's OpenGL, measured
+ * per material by a curl test on the staged maps (2026-10-08). Every other imported map is OpenGL.
+ */
+const DIRECTX_NORMALS =
+  /^(branch|MI_LargePlainsBoulder002|MI_Large_VolcanicRock_002|ScotsPine_01_.*)$/u;
+
+/**
+ * GLTFLoader flips `normalScale.y` for a mesh without tangents, which none of the cooked meshes
+ * carry; a rebuilt material that copies only `normalMap` loses that flip and lights every relief
+ * from the mirrored side. Keep it, and undo it for the DirectX-authored maps.
+ */
+function copyNormalScale(material: MeshPhysicalNodeMaterial, source: MeshStandardMaterial): void {
+  material.normalScale.copy(source.normalScale);
+  if (DIRECTX_NORMALS.test(source.name)) material.normalScale.y *= -1;
+}
+
 function importedFoliage(
   material: MeshPhysicalNodeMaterial,
   source: MeshStandardMaterial,
@@ -165,6 +182,7 @@ function importedFoliage(
   const sampled = texture(map, uv());
   map.anisotropy = 8;
   material.normalMap = source.normalMap;
+  copyNormalScale(material, source);
   material.roughness = 0.92;
   // The Kite field grass is authored dark for Unreal's exposure (Wildwood lifts such packs ~3x); drawn raw
   // it read as a blue-black carpet.
@@ -454,6 +472,7 @@ function surface(
           : 0.3,
     metalness: 0,
   });
+  copyNormalScale(material, source);
   if (!otherBiome && canopy && !cutout) material.normalMap = source.normalMap;
   // Forest needle crowns need their authored interior shading and filtered alpha coverage.
   // A plain imported PBR card erased canopy depth at the same geometry and camera.
