@@ -1,5 +1,6 @@
 #include "check.h"
 #include "threenative/abi/tn_abi.h"
+#include "threenative/abi/tn_tsl.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/pooled_shared.h"
 #include "engine/scene/object3d.h"
@@ -645,8 +646,39 @@ void children() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-540: TSL by name through the C ABI, the table the V8 back end shares. Midway's first call is
+// a class field `uniform(0)`; its graph then reaches a node material and compiles.
+void tsl_call() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto number = [](double n) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NUMBER; a.number = n; return a; };
+    const auto nodeArg = [](uint64_t id) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NODE; a.node = id; return a; };
+
+    uint64_t clock = 0, scaled = 0, uv = 0, color = 0, unknown = 0;
+    const tn_tsl_arg_t zero = number(0);
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &zero, 1, &clock, &d.value) == TN_OK && clock != 0);
+    const tn_tsl_arg_t two = number(2);
+    CHECK(tn_tsl_call(ctx, "mul", &clock, &two, 1, &scaled, &d.value) == TN_OK && scaled != 0);
+    CHECK(tn_tsl_call(ctx, "uv", nullptr, nullptr, 0, &uv, &d.value) == TN_OK);
+    const tn_tsl_arg_t parts[3] = {nodeArg(uv), nodeArg(scaled), number(1)};
+    CHECK(tn_tsl_call(ctx, "vec4", nullptr, parts, 3, &color, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "noSuchNode", nullptr, nullptr, 0, &unknown, &d.value) == TN_ERROR_UNSUPPORTED && unknown == 0);
+    tn_diagnostic_release(&d.value);
+    const tn_tsl_arg_t stale = nodeArg(999999);
+    CHECK(tn_tsl_call(ctx, "sin", nullptr, &stale, 1, &unknown, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", color, &d.value) == TN_OK);
+    CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call})
