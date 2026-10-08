@@ -275,6 +275,11 @@ public:
      * pass) start to output pass end, in milliseconds; negative until one has, and always on a device without timestamp-query.
      */
     double lastGpuMs() const { return timing_->lastMs; }
+    /**
+     * Whether frames are timed on the GPU: off by default, since a timed frame resolves its query
+     * set and reads it back, a cost every frame pays and only a caller of lastGpuMs wants.
+     */
+    void setGpuTimer(bool on) { gpuTimer_ = on; }
     /** How many GPU times have come back, so a caller samples each one once. */
     uint64_t gpuSamples() const { return timing_->samples; }
     /** Whether the last timed frame's GPU time began at its first shadow pass (else at the scene pass). */
@@ -444,6 +449,7 @@ private:
     std::vector<uint64_t> mainBundleKey_;
     FrameStats mainBundleStats_;
     bool timerBeganAtShadow_ = false;
+    bool gpuTimer_ = false;
     WGPUQuerySet timestamps_ = nullptr;  // scene pass begin/end [0, 1], output pass begin/end [2, 3], first shadow pass begin [4, 5]
     Handle timestampResolve_;
     // Shared with the readback callback by weak reference: a backend may deliver it after this

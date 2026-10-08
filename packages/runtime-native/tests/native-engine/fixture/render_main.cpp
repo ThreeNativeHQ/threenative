@@ -79,6 +79,7 @@ std::string meterFrames(Gpu& gpu, Renderer& renderer, Scene& scene, Camera& came
     using Clock = std::chrono::steady_clock;
     const auto ms = [](Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
     std::vector<double> submit, frame, gpuMs;
+    renderer.setGpuTimer(true);
     const unsigned long warmup = std::min<unsigned long>(count / 4, 30);
     for (unsigned long i = 0; i < count + warmup; ++i) {
         const uint64_t seen = renderer.gpuSamples();

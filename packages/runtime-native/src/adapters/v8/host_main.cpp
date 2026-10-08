@@ -53,6 +53,7 @@ struct Options {
     std::string report;
     bool cpp = false;
     bool crowd = false;
+    bool gpuTimer = true;  // --no-gpu-timer: skip the per-frame timestamp resolve and readback (gpuMs is then null)
     std::string identity;  // the artifact identity manifest checked at startup (PRD-530)
     std::string snapshot;  // V8's startup snapshot, where the platform's V8 keeps it outside the library
 };
@@ -270,6 +271,7 @@ int main(int argc, char** argv) {
         else if (a == "--report") o.report = next();
         else if (a == "--cpp") o.cpp = true;
         else if (a == "--crowd") o.crowd = true;
+        else if (a == "--no-gpu-timer") o.gpuTimer = false;
         else if (a == "--identity") o.identity = next();
         else if (a == "--v8-snapshot") o.snapshot = next();
         else if (o.script.empty() && a.rfind("--", 0) != 0) o.script = a;
@@ -292,6 +294,7 @@ int main(int argc, char** argv) {
     EventQueue events;
     Renderer renderer(gpuContext.getInstance(), gpuContext.getDevice(), gpuContext.getQueue(), events);
     renderer.setSize(o.width, o.height);
+    renderer.setGpuTimer(o.gpuTimer);
     RenderDatabase database;
 
     CppWorkload twin;

@@ -1362,7 +1362,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
     passDesc.depthStencilAttachment = &depth;
-    const bool timed = timestamps_ && !timing_->pending;
+    const bool timed = timestamps_ && gpuTimer_ && !timing_->pending;
     WGPURenderPassTimestampWrites_Compat sceneTimes = {};
     if (timed) {
         sceneTimes.querySet = timestamps_;

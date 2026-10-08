@@ -1393,6 +1393,7 @@ void gpuTimerCoversShadows() {
         s.mesh.setCastShadow(shadows);
         RenderDatabase database;
         database.shadowMapEnabled = shadows;
+        renderer.setGpuTimer(true);
         const uint64_t before = renderer.gpuSamples();
         // A sample is read back asynchronously: render a few frames, as a game does, until one lands.
         for (int frame = 0; frame < 8 && renderer.gpuSamples() == before; ++frame) {
@@ -1412,9 +1413,41 @@ void gpuTimerCoversShadows() {
     }
 }
 
+// A timed frame resolves its query set and reads it back; only a caller of lastGpuMs wants that, so
+// a renderer times nothing until it is asked.
+void gpuTimerIsOptIn() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    if (!wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_TimestampQuery)) {
+        std::printf("no timestamp-query on this device: nothing to time\n");
+        return;
+    }
+    LitScene s;
+    RenderDatabase database;
+    const auto frames = [&](int count) {
+        for (int frame = 0; frame < count; ++frame) {
+            database.render(renderer, s.scene, s.camera);
+            const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(60);
+            while (std::chrono::steady_clock::now() < until) {
+                renderer.poll();
+                events.drain();
+            }
+        }
+    };
+    frames(6);
+    CHECK(renderer.gpuSamples() == 0 && renderer.lastGpuMs() < 0);  // the default frame is untimed
+    renderer.setGpuTimer(true);
+    for (int attempt = 0; attempt < 10 && renderer.gpuSamples() == 0; ++attempt)  // a sample lands asynchronously, later under load
+        frames(2);
+    CHECK(renderer.gpuSamples() > 0 && renderer.lastGpuMs() >= 0);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn})

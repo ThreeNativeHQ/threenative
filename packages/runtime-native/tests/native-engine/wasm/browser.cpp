@@ -136,6 +136,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     config.alphaMode = WGPUCompositeAlphaMode_Opaque;
     wgpuSurfaceConfigure(surface, &config);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
+    renderer->setGpuTimer(gpuProfile);
     renderer->setSize(kWidth, kHeight);
     EM_ASM({ globalThis.__tnWasmAssets.initialized = true; });
 }
