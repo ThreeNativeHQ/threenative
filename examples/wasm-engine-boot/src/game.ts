@@ -32,7 +32,7 @@ class Boot extends Scene<IBootState> {
     ctx.scene.add(this.#box, sun, new AmbientLight(0xffffff, 0.4));
     return (frameCtx, dt) => {
       if (this.#box !== undefined) this.#box.rotation.y += dt;
-      frameCtx.state.frames += 1;
+      frameCtx.state.set((state) => ({ frames: state.frames + 1 }));
     };
   }
 }

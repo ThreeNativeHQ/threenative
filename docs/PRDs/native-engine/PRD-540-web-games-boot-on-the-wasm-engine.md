@@ -69,7 +69,9 @@ reach geometry arrays directly.
 Known gap, not claimed: `pnpm dev` reads the project's own Vite config, which does not add the
 plugin, so the dev server still bundles upstream three under `engine: "native"`. The template gate
 judges native boots on the built output for that reason. Gates on 2026-10-08: `pnpm typecheck`
-passed; `pnpm lint` has no error; the `create-threenative` and `three-native` suites pass, with two
+was first reported as passing, which was wrong: colour codes hid a TS2741 in a `build.spec.ts`
+fixture (the new required `engine` field) and one in the example; both fixed, and the root
+`pnpm typecheck` exits 0; `pnpm lint` has no error; the `create-threenative` and `three-native` suites pass, with two
 asset-compile cases that timed out at load 30 and passed when rerun alone. `pnpm budgets` fails on
 a stale native coverage digest. This lane changed no `packages/runtime-native` file.
 
