@@ -20,6 +20,9 @@ if [[ -z "$suite_temp_root" || ! -d "$suite_temp_root" ]]; then
   owned_temp_root=1
 fi
 export TMPDIR="$suite_temp_root"
+# pnpm turns on Node's module compile cache, a persistent `node-compile-cache` under `TMPDIR`. It is
+# a cache by design, not a leak, and counting it read `before 1, after 2` on a clean run.
+export NODE_DISABLE_COMPILE_CACHE=1
 
 cleanup_temp_root() {
   if [[ "$owned_temp_root" -eq 1 ]]; then
