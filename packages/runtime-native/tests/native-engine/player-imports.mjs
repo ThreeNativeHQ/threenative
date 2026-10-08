@@ -166,7 +166,7 @@ const { writeNativePackage } = await import(writer);
 await mkdir(resolve(work, "audio"));
 const audioPackage = resolve(work, "audio/assets.tnpk");
 await writeFile(audioPackage, writeNativePackage([
-  { name: "beep.ogg", kind: 1, data: Buffer.from("OggS!"), uploadSize: 5 },
+  { name: "beep.ogg", kind: 1, data: Buffer.from("OggS!"), uploadSize: 0 },
   { name: "sky.jpg", kind: 2, data: Buffer.alloc(16), uploadSize: 4 },
 ]));
 await writeFile(entry, `
