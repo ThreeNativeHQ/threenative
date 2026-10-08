@@ -298,6 +298,24 @@ await bundleNativeEngine({ entry, outfile, boot: false });
 const audioRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8",
   env: { ...process.env, SDL_AUDIO_DRIVER: "dummy", TN_NATIVE_ASSET_PACKAGE: audioPackage } });
 assert.equal(audioRun.status, 0, `${audioRun.stdout}\n${audioRun.stderr}`);
+// An async boot publishes its scene ticks later, as Midway's does after its audio decodes settle;
+// the player keeps the event loop turning until the scene arrives instead of refusing it.
+await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { Scene, PerspectiveCamera } from "three";
+setTimeout(() => { globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); }, 500);
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const lateRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+assert.equal(lateRun.status, 0, `${lateRun.stdout}\n${lateRun.stderr}`);
+await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+setTimeout(() => { globalThis.tn.__startupError = "late failure"; }, 500);
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const lateFailure = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+assert.equal(lateFailure.status, 1);
+assert.match(lateFailure.stderr, /core startup failed: late failure/);
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");
   process.exit(0);

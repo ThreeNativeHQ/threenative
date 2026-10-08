@@ -26,6 +26,8 @@
 #include <libplatform/libplatform.h>
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -606,16 +608,37 @@ bool V8Game::start(const std::string& path, std::string& error) {
         return error = std::string("the game bundle failed: ") + (*message ? *message : "?"), false;
     }
     isolate_->PerformMicrotaskCheckpoint();
-    v8::Local<v8::Value> startupError;
-    if (host->Get(ctx, v8str(isolate_, "__startupError")).ToLocal(&startupError) && !startupError->IsUndefined()) {
+    const auto failed = [&] {
+        v8::Local<v8::Value> startupError;
+        if (!host->Get(ctx, v8str(isolate_, "__startupError")).ToLocal(&startupError) || startupError->IsUndefined())
+            return false;
         v8::String::Utf8Value message(isolate_, startupError);
-        return error = std::string("core startup failed: ") + (*message ? *message : "?"), false;
-    }
+        error = std::string("core startup failed: ") + (*message ? *message : "?");
+        return true;
+    };
+    if (failed()) return false;
 
     v8::Local<v8::Value> tnValue;
     if (!ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocal(&tnValue) || !tnValue->IsObject())
         return error = "the game bundle left no `tn` host object", false;
     v8::Local<v8::Object> tn = tnValue.As<v8::Object>();
+    v8::Local<v8::Value> update;
+    if (!tn->Get(ctx, v8str(isolate_, "__update")).ToLocal(&update) || !update->IsFunction())
+        return error = "the game bundle registered no tn.onUpdate(fn)", false;
+    update_.Reset(isolate_, update.As<v8::Function>());
+    // An async boot (audio decodes, timers) publishes its scene ticks later. As a browser's event
+    // loop turns while a page loads, fixed ticks run in real time until the scene arrives or fails.
+    const auto published = [&] {
+        v8::Local<v8::Value> value;
+        return tn->Get(ctx, v8str(isolate_, "scene")).ToLocal(&value) && !value->IsNullOrUndefined();
+    };
+    constexpr int kBootTicks = 120 * 60;
+    for (int i = 0; i < kBootTicks && !published(); ++i) {
+        std::this_thread::sleep_for(std::chrono::microseconds(16667));
+        tick(1.0 / 60.0);
+        isolate_->PerformMicrotaskCheckpoint();
+        if (failed()) return false;
+    }
     const auto binding = [&](const char* field, tn::binding::Object*& out) {
         v8::Local<v8::Value> value;
         tn_handle_t handle{};
@@ -630,10 +653,6 @@ bool V8Game::start(const std::string& path, std::string& error) {
         return error = "tn.scene is not a Scene", false;
     if (!binding("camera", camera) || (camera->cls != "PerspectiveCamera" && camera->cls != "OrthographicCamera"))
         return error = "tn.camera is not a camera", false;
-    v8::Local<v8::Value> update;
-    if (!tn->Get(ctx, v8str(isolate_, "__update")).ToLocal(&update) || !update->IsFunction())
-        return error = "the game bundle registered no tn.onUpdate(fn)", false;
-    update_.Reset(isolate_, update.As<v8::Function>());
 
     sceneHold_ = scene->ptr;
     cameraHold_ = camera->ptr;
