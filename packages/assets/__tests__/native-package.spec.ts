@@ -350,6 +350,8 @@ describe("assets.nativePackage", () => {
     const manifest = readNativePackageManifest(
       await readFile(path.join(root, "public", "native", "assets.tnpk")),
     );
+    // The cooked model enters once, by logical path, never again under its web-root URL.
+    expect(manifest.entries.map((entry) => entry.name)).toEqual(["model.glb", "sky.jpg"]);
     const byName = Object.fromEntries(manifest.entries.map((entry) => [entry.name, entry]));
     expect(byName["model.glb"]?.kind).toBe(NativeEntryKind.Scene);
     expect(byName["model.glb"]?.size).toBe(glb.length);

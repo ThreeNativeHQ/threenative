@@ -2386,6 +2386,16 @@ async function writeManifest(
   }
 }
 
+/** Every file under `root` with its mtime, so a file this run never wrote is told apart by more than a clock margin. */
+async function snapshotOutputMtimes(root: string): Promise<Map<string, number>> {
+  const mtimes = new Map<string, number>();
+  for (const relative of await walkOutputFiles(root)) {
+    const info = await stat(path.join(root, relative)).catch(() => undefined);
+    if (info !== undefined) mtimes.set(relative, info.mtimeMs);
+  }
+  return mtimes;
+}
+
 /** Every file under `root`, as paths relative to it with `/` separators on every platform. */
 async function walkOutputFiles(root: string, prefix = ""): Promise<string[]> {
   let entries: Dirent[];
@@ -2409,13 +2419,15 @@ async function walkOutputFiles(root: string, prefix = ""): Promise<string[]> {
  * Without this, a pass that writes a file it does not report is invisible: the delete-test would
  * delete less than the bake produced, the second run would still find the undeleted file, and the
  * gate would pass while proving nothing. Only files touched during this run are considered — a
- * project's own hand-authored `public/icon.png` is not a bake output and is left alone.
+ * project's own hand-authored `public/icon.png` is not a bake output and is left alone, even when
+ * it was written within the mtime margin of the run's start: `existedBefore` holds its mtime then.
  */
 async function assertNoUndeclaredOutputs(
   outputRoot: string,
   declared: ReadonlySet<string>,
   since: number,
   writtenBefore: ReadonlySet<string>,
+  existedBefore: ReadonlyMap<string, number>,
 ): Promise<void> {
   const undeclared: string[] = [];
   for (const relative of await walkOutputFiles(outputRoot)) {
@@ -2431,6 +2443,7 @@ async function assertNoUndeclaredOutputs(
     // millisecond apart, and the previous bake's now-stale output is not this bake's leak.
     if (writtenBefore.has(relative)) continue;
     const info = await stat(path.join(outputRoot, relative));
+    if (existedBefore.get(relative) === info.mtimeMs) continue;
     if (info.mtimeMs + 1 >= since) undeclared.push(relative);
   }
   if (undeclared.length > 0) {
@@ -2552,6 +2565,7 @@ export async function compileAssets(
   // `bake-receipt.spec.ts` went red on a loaded CI shard while passing locally. It never reaches
   // the receipt: that stays deterministic.
   const runStart = Date.now();
+  const existedBefore = await snapshotOutputMtimes(layout.outputRoot);
 
   const sources = await walkSources(layout.sourceRoot);
   const excluded = sources.filter((logical) =>
@@ -3173,7 +3187,13 @@ export async function compileAssets(
     );
   }
   const currentReceiptPaths = new Set(receiptOutputs.map((output) => output.path));
-  await assertNoUndeclaredOutputs(layout.outputRoot, currentReceiptPaths, runStart, writtenBefore);
+  await assertNoUndeclaredOutputs(
+    layout.outputRoot,
+    currentReceiptPaths,
+    runStart,
+    writtenBefore,
+    existedBefore,
+  );
   const staleOutputs = await resolveStaleReceiptOutputs(
     layout.outputRoot,
     new Set([...writtenBefore, ...pendingPaths]),
