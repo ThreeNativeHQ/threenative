@@ -509,7 +509,7 @@ describe("addInSlices yield", () => {
       expect(timeout).not.toHaveBeenCalled();
     } finally {
       timeout.mockRestore();
-      if (previous === undefined) delete scope.scheduler;
+      if (previous === undefined) Reflect.deleteProperty(scope, "scheduler");
       else scope.scheduler = previous;
     }
   });
@@ -517,7 +517,7 @@ describe("addInSlices yield", () => {
   test("falls back to setTimeout where no scheduler.yield exists", async () => {
     const scope = globalThis as { scheduler?: unknown };
     const previous = scope.scheduler;
-    delete scope.scheduler;
+    Reflect.deleteProperty(scope, "scheduler");
     const timeout = vi.spyOn(globalThis, "setTimeout");
     try {
       await addInSlices([1, 2], () => {}, { sliceSize: 1 });
