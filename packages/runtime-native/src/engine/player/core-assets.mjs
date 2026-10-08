@@ -1,4 +1,5 @@
 // The owned engine consumes verified TNPK entries, never browser loaders or network fallbacks.
+import { audio } from "./core-audio.mjs";
 export function createAssetLoader(options = {}) {
   if (Object.keys(options).some((key) => !["renderer", "basePath", "manifest", "sourcePath"].includes(key)))
     throw new Error("TN_NATIVE_ASSET_OPTIONS_UNSUPPORTED: this player accepts cooked package paths only");
@@ -19,7 +20,8 @@ export function createAssetLoader(options = {}) {
       progress.requestedBytes += record.bytes;
       progress.settledBytes += record.bytes;
       resolved.set(path, { url: record.url, via: "manifest" });
-      return record.value;
+      // Audio is a Buffer entry of encoded bytes; the shared context decodes it, as three's AudioLoader does.
+      return kind === "audio" ? audio.AudioContext.getContext().decodeAudioData(record.value) : record.value;
     }).finally(() => { pending.delete(path); progress.settled++; });
     if (!copy) cache.set(key, result);
     result.catch(() => { if (cache.get(key) === result) cache.delete(key); });
@@ -39,7 +41,7 @@ export function createAssetLoader(options = {}) {
         else if (settings.repeat !== undefined) value.repeat.set(...settings.repeat);
       return value;
     },
-    audio: async () => { throw new Error("TN_NATIVE_ASSET_AUDIO_UNSUPPORTED: TNPK v1 has no audio entry"); },
+    audio: (path) => load("audio", path),
     resolve: async (path) => [resolved.get(path)?.url ?? `tnpk:${path}`],
     release: (kind, path) => cache.delete(`${kind}:${path}`),
     clear() { cache.clear(); resolved.clear(); },

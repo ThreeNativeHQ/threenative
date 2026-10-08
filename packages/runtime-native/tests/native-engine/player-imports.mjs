@@ -23,12 +23,14 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", ...constants];
+  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry",
+  "AudioListener", "PositionalAudio", "Audio", ...constants];
 await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
 const THREE = { ${names.join(", ")} };
 import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3 } from "three/webgpu";
+import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
@@ -94,22 +96,85 @@ const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0
 basic.opacityNode = clamp(graph, 0, 1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
   check(THREE[name] === expected, name + " differs from pinned Three.js");
-globalThis.tn.scene = scene; globalThis.tn.camera = camera; globalThis.tn.onUpdate(() => {});
+// three's audio classes are engine objects over the player's WebAudio, and the native tick pushes
+// world poses to it: the listener on the camera, a voice on a moving mesh.
+const context = new THREE.AudioListener().context;
+const heard = [];
+const createPanner = context.createPanner.bind(context);
+let panners = 0;
+context.createPanner = () => {
+  const panner = createPanner();
+  const setPosition = panner.setPosition.bind(panner);
+  const who = "voice" + panners++;
+  panner.setPosition = (x, y, z) => { heard.push([who, x, y, z]); setPosition(x, y, z); };
+  return panner;
+};
+const setListener = context.listener.setPosition.bind(context.listener);
+context.listener.setPosition = (x, y, z) => { heard.push(["listener", x, y, z]); setListener(x, y, z); };
+const pose = (who) => heard.filter((entry) => entry[0] === who).at(-1)?.slice(1).map((v) => Math.round(v * 1000) / 1000).join(",");
+camera.position.set(0, 1, 5); scene.add(camera);
+const bus = new AudioBus({ camera, maxVoices: 4, gestureTarget: null });
+check(bus.listener instanceof THREE.AudioListener && bus.listener instanceof THREE.Object3D, "listener identity");
+check(camera.children.includes(bus.listener) && bus.listener.parent === camera, "listener on the camera");
+const buffer = context.createBuffer(1, 4410, 44100);
+bus.unlock().then(() => {
+  const fixed = bus.playAt(buffer, new THREE.Vector3(3, 0, -2));
+  check(fixed instanceof THREE.PositionalAudio && fixed.isPlaying, "fixed positional voice");
+  const welded = bus.playAt(buffer, mesh);
+  check(welded.parent === mesh && mesh.children.includes(welded), "voice welded to the mesh");
+  check(bus.play(buffer) instanceof THREE.Audio, "flat voice");
+  mesh.position.set(-4, 0, 1);
+  globalThis.tn.__update(1 / 60);
+  check(pose("voice0") === "3,0,-2", "fixed voice position " + pose("voice0"));
+  check(pose("voice1") === "-4,0,1", "voice follows its mesh on the tick " + pose("voice1"));
+  check(pose("listener") === "0,1,5", "listener follows the camera on the tick " + pose("listener"));
+  globalThis.tn.scene = scene; globalThis.tn.camera = camera; globalThis.tn.onUpdate(() => {});
+}).catch((error) => { globalThis.tn.__startupError = String(error.stack ?? error); });
 `);
 await bundleNativeEngine({ entry, outfile, boot: false });
-const run = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+// The dummy driver keeps the check hermetic: the context runs with no sound card.
+const run = spawnSync(resolve(executable), ["--check-game", outfile], {
+  encoding: "utf8", env: { ...process.env, SDL_AUDIO_DRIVER: "dummy" } });
 assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
 assert.match(run.stdout, /engine=native gameRuntime=v8 startup=passed/);
-if (process.argv.includes("--imports-only")) {
-  console.log("PASS native imports, identity, picking, clone and TSL");
-  process.exit(0);
-}
-// Same resident, package reader, native handles and installed bridge as the desktop player.
 const { build } = createRequire(resolve(native, "package.json"))("esbuild");
 const writer = resolve(work, "package-writer.mjs");
 await build({ entryPoints: [resolve(native, "../assets/src/native-package.ts")], outfile: writer,
   bundle: true, platform: "node", format: "esm", logLevel: "silent" });
 const { writeNativePackage } = await import(writer);
+// Cooked audio is a Buffer entry of encoded bytes, any length; WebAudio decodes it on the worker.
+await mkdir(resolve(work, "audio"));
+const audioPackage = resolve(work, "audio/assets.tnpk");
+await writeFile(audioPackage, writeNativePackage([
+  { name: "beep.ogg", kind: 1, data: Buffer.from("OggS!"), uploadSize: 5 },
+  { name: "sky.jpg", kind: 2, data: Buffer.alloc(16), uploadSize: 4 },
+]));
+await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { createAssetLoader } from ${JSON.stringify(resolve(native, "src/engine/player/core-assets.mjs"))};
+import { Scene, PerspectiveCamera, AudioLoader } from "three";
+function check(value, name) { if (!value) throw Error("AUDIO_ASSET_CHECK: " + name); }
+const record = globalThis.tn.loadAsset("audio", "beep.ogg");
+check(record.value instanceof ArrayBuffer && String.fromCharCode(...new Uint8Array(record.value)) === "OggS!", "cooked audio bytes");
+let mismatch = false;
+try { globalThis.tn.loadAsset("audio", "sky.jpg"); } catch (error) { mismatch = /TN_NATIVE_ASSET_KIND_MISMATCH/.test(error.message); }
+check(mismatch, "a texture entry is not audio");
+// A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
+// both pending, and any refusal before it rejects inside this check's microtasks.
+for (const [name, decoding] of [["assets.audio", createAssetLoader().audio("beep.ogg")],
+  ["AudioLoader", new AudioLoader().loadAsync("beep.ogg")]])
+  decoding.catch((error) => { globalThis.tn.__startupError = name + " refused: " + error.message; });
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const audioRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8",
+  env: { ...process.env, SDL_AUDIO_DRIVER: "dummy", TN_NATIVE_ASSET_PACKAGE: audioPackage } });
+assert.equal(audioRun.status, 0, `${audioRun.stdout}\n${audioRun.stderr}`);
+if (process.argv.includes("--imports-only")) {
+  console.log("PASS native imports, identity, picking, clone, TSL and audio");
+  process.exit(0);
+}
+// Same resident, package reader, native handles and installed bridge as the desktop player.
 const textureBytes = Buffer.alloc(16);
 textureBytes.writeUInt32LE(1, 0); textureBytes.writeUInt32LE(1, 4); textureBytes.writeUInt32LE(19, 8);
 textureBytes.set([255, 32, 16, 255], 12);

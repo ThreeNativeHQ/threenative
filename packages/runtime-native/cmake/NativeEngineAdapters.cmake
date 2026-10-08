@@ -71,6 +71,13 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     endif()
     set_target_properties(tn_player_v8_services PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_player_v8_services)
+    # WebAudio for three's audio classes: the legacy host's SDL output and worker decode.
+    target_sources(tn_player_v8_services PRIVATE src/audio/audio_context.cpp src/audio/audio_bindings.cpp
+        src/audio/async_audio_decode.cpp src/audio/vorbis_impl.c)
+    target_include_directories(tn_player_v8_services PRIVATE ${THIRD_PARTY_DIR}/stb
+        ${CMAKE_CURRENT_BINARY_DIR}/generated)
+    add_dependencies(tn_player_v8_services threenative-runtime-scripts)
+    target_link_libraries(tn_player_v8_services PUBLIC tn_engine_player)
     if(TN_ENABLE_NATIVE_PHYSICS)
         target_sources(tn_player_v8_services PRIVATE src/physics/native_bindings.cpp)
         target_link_libraries(tn_player_v8_services PUBLIC threenative-native-physics)

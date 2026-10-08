@@ -230,6 +230,17 @@ void unsupported() {
     const std::string handedOut = run(rt, adapter, "new AnimationAction()");
     CHECK(handedOut.rfind("THROWN", 0) == 0 && handedOut.find("TN_NATIVE_UNSUPPORTED class AnimationAction") != std::string::npos);
     if (handedOut.find("TN_NATIVE_UNSUPPORTED class AnimationAction") == std::string::npos) std::fprintf(stderr, "%s\n", handedOut.c_str());
+    // A JS subclass constructs its nearest engine ancestor, whatever its own (or a bundler's) name.
+    const std::string subclass = run(rt, adapter, R"JS(
+        class Voice2 extends Object3D { constructor() { super(); this.cue = 7; } }
+        class Loud extends Voice2 {}
+        const parent = new Object3D(), voice = new Loud();
+        parent.add(voice);
+        voice.position.x = 2;
+        [voice instanceof Voice2, voice.parent === parent, voice.cue, voice.position.x].join()
+    )JS");
+    CHECK(subclass == "true,true,7,2");
+    if (subclass != "true,true,7,2") std::fprintf(stderr, "subclass: %s\n", subclass.c_str());
 }
 
 void gcRelease() {
