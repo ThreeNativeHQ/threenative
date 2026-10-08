@@ -119,6 +119,7 @@ export interface IVirtualShadowOptions {
    *
    * `false` puts every level back on the `refreshStep` it was given, which is also what a harness
    * that wants to count today's renders uses.
+   * `?tnAdaptiveRefresh=0` in the page URL makes the default `false` from the node's first setup.
    */
   readonly adaptiveRefresh?: boolean;
   /**
@@ -786,6 +787,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #statsRequested: boolean | undefined;
   /** URL-only, web-only diagnostic; native hosts have no URL switch or alternate path. */
   #levelsRequested: boolean | undefined;
+  /** The game's own `adaptiveRefresh`, so the URL switch read at setup never overrides it. */
+  readonly #adaptiveRefreshGiven: boolean | undefined;
   /**
    * The diagnostic's tint, one per material build, keyed weakly by the builder that owns it.
    *
@@ -976,6 +979,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     });
     this.tracker = new ShadowInvalidationTracker(this.clipmap);
     const marker = options.marker ?? DEFAULT_MARKER_EVERY;
+    this.#adaptiveRefreshGiven = options.adaptiveRefresh;
     this.options = {
       adaptiveCasterGate: options.adaptiveCasterGate ?? true,
       adaptiveRefresh: options.adaptiveRefresh ?? true,
@@ -2061,9 +2065,18 @@ export class VirtualShadowNode extends ShadowBaseNode {
   override setup(builder: NodeBuilder): Node | null | undefined {
     if (builder.renderer.shadowMap.enabled === false) return null;
     // Read once, like tnShadowStats. Build no diagnostic nodes unless the URL switch is on.
-    this.#levelsRequested ??= /[?&]tnShadowLevels=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(
-      globalThis.location?.search ?? "",
-    );
+    if (this.#levelsRequested === undefined) {
+      const search = globalThis.location?.search ?? "";
+      this.#levelsRequested = /[?&]tnShadowLevels=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(search);
+      // Counter runs: a fixed refreshStep, since the adaptive step follows measured render cost and
+      // two runs of one route would move their windows at different ticks. Set once, before a frame.
+      if (
+        this.#adaptiveRefreshGiven === undefined &&
+        /[?&]tnAdaptiveRefresh=(?:0|false)(?:&|$)/u.test(search)
+      ) {
+        (this.options as { adaptiveRefresh: boolean }).adaptiveRefresh = false;
+      }
+    }
     this.#init();
     const levels = this.#levels;
     const centerU = this.#centerU;

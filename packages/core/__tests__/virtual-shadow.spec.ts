@@ -806,6 +806,27 @@ describe("VirtualShadowNode", () => {
     }
   });
 
+  it("should default adaptiveRefresh off under ?tnAdaptiveRefresh=0 and keep an explicit value", () => {
+    const { light } = world();
+    const nodes: VirtualShadowNode[] = [];
+    try {
+      vi.stubGlobal("location", { search: "?tnAdaptiveRefresh=0" });
+      const defaulted = setupNode(light, { clipExtents: [320] });
+      nodes.push(defaulted);
+      const explicit = setupNode(light, { clipExtents: [320], adaptiveRefresh: true });
+      nodes.push(explicit);
+      expect(defaulted.options.adaptiveRefresh).toBe(false);
+      expect(explicit.options.adaptiveRefresh).toBe(true);
+      vi.stubGlobal("location", { search: "?tnAdaptiveRefresh=1" });
+      const other = setupNode(light, { clipExtents: [320] });
+      nodes.push(other);
+      expect(other.options.adaptiveRefresh).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      for (const node of nodes) node.dispose();
+    }
+  });
+
   it("should count window travel in pages whatever the frames sampled, where byMove counts renders", () => {
     const { camera, light } = world();
     const extent = 320;
