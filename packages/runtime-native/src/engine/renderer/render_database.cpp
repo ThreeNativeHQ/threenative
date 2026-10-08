@@ -660,10 +660,15 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         return a.id < b.id;
     };
     depthKeys_.resize(batchMeshes_.size());
+    floatKeys_.resize(batchMeshes_.size());
     for (std::size_t i = 0; i < batchMeshes_.size(); ++i) {
-        const double depth = batchMeshes_[i].depth;
-        const auto bits = std::bit_cast<uint64_t>(depth == 0 ? 0.0 : depth);
+        const double depth = batchMeshes_[i].depth == 0 ? 0.0 : batchMeshes_[i].depth;
+        const auto bits = std::bit_cast<uint64_t>(depth);
         depthKeys_[i] = bits >> 63 ? ~bits : bits ^ (uint64_t{1} << 63);
+        // The depth rounded to float32: never out of order against the double, so four radix passes
+        // order everything but the keys that round together, which the pass after them settles.
+        const auto narrow = std::bit_cast<uint32_t>(static_cast<float>(depth));
+        floatKeys_[i] = narrow >> 31 ? ~narrow : narrow ^ (uint32_t{1} << 31);
     }
     for (std::size_t slot = 0; slot < meshGroupCount_; ++slot) {
         auto& group = meshGroups_[slot];
@@ -680,17 +685,29 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         if (!group.orderedIds)
             std::sort(members.begin(), members.end(), idBefore);
         sortScratch_.resize(members.size());
-        uint64_t varying = 0;
-        const uint64_t first = depthKeys_[members.front()];
-        for (auto i : members) varying |= depthKeys_[i] ^ first;
-        for (unsigned shift = 0; shift < 64; shift += 8) {
+        uint32_t varying = 0;
+        const uint32_t first = floatKeys_[members.front()];
+        for (auto i : members) varying |= floatKeys_[i] ^ first;
+        for (unsigned shift = 0; shift < 32; shift += 8) {
             if (((varying >> shift) & 255) == 0) continue;
             std::array<std::size_t, 256> offsets{};
-            for (auto i : members) ++offsets[(depthKeys_[i] >> shift) & 255];
+            for (auto i : members) ++offsets[(floatKeys_[i] >> shift) & 255];
             std::size_t total = 0;
             for (auto& offset : offsets) { const auto count = offset; offset = total; total += count; }
-            for (auto i : members) sortScratch_[offsets[(depthKeys_[i] >> shift) & 255]++] = i;
+            for (auto i : members) sortScratch_[offsets[(floatKeys_[i] >> shift) & 255]++] = i;
             members.swap(sortScratch_);
+        }
+        // Depths that round to the same float keep id order from the stable passes; put each such
+        // run in exact depth order, with the id as the tie-break the scene order already gave.
+        for (std::size_t at = 0; at < members.size();) {
+            std::size_t end = at + 1;
+            while (end < members.size() && floatKeys_[members[end]] == floatKeys_[members[at]]) ++end;
+            if (end - at > 1)
+                std::sort(members.begin() + at, members.begin() + end, [&](std::size_t a, std::size_t b) {
+                    return depthKeys_[a] != depthKeys_[b] ? depthKeys_[a] < depthKeys_[b]
+                                                          : batchMeshes_[a].id < batchMeshes_[b].id;
+                });
+            at = end;
         }
     }
     batchParams_.resize(batchGroups_ + meshGroupCount_);

@@ -139,6 +139,24 @@ void uniformBatchPreparation() {
             }
         }
     }
+    // Depths that round to one float32 (1 + k * 2^-30, scrambled) keep their exact double order, and
+    // equal depths keep id order.
+    depthCamera.projectionMatrix.identity();
+    std::vector<std::pair<double, const Mesh*>> rounded;
+    for (std::size_t i = 0; i < meshes.size(); ++i) {
+        meshes[i]->material->roughness = 1;
+        meshes[i]->position.z = 1 + std::ldexp(double((i * 2654435761u) % 211), -30);
+        rounded.emplace_back(meshes[i]->position.z, meshes[i].get());
+    }
+    std::sort(rounded.begin(), rounded.end(), [](const auto& a, const auto& b) {
+        return a.first != b.first ? a.first < b.first : a.second->id() < b.second->id();
+    });
+    items = database.prepare(scene, depthCamera, lights);
+    CHECK(items.size() == 1 && items[0].instanceCount == rounded.size() && items[0].instanceColors);
+    if (items.size() == 1 && items[0].instanceColors) {
+        colors = reinterpret_cast<const float*>(items[0].instanceColors->data());
+        for (std::size_t i = 0; i < rounded.size(); ++i) CHECK(colors[i * 3] == float(rounded[i].second->material->color.r));
+    }
     for (std::size_t i = 0; i < meshes.size(); ++i) {
         meshes[i]->position.z = double(i / 64);
         meshes[i]->material->roughness = 1;

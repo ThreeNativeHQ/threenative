@@ -136,6 +136,7 @@ class RenderDatabase {
     bool flatParentIdentity_ = false;
     std::vector<std::size_t> sortScratch_;
     std::vector<uint64_t> depthKeys_;
+    std::vector<uint32_t> floatKeys_;
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
     // A float32 copy per attribute. The source is held weakly: a freed store (or one whose address a
