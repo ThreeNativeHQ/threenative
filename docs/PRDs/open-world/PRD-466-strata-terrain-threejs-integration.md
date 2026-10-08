@@ -3842,4 +3842,16 @@ and coastal phases with this session's commits, then fails at `alpine-ground-rea
 file this session changed (`de1b57ab9`) fails at the same step and timeout, so the alpine native
 ground load predates this work; the shared `VirtualShadowNode` fix does not regress native.
 
+**Native desktop draws no ground textures (pre-existing, found 2026-10-08).** With the swallowed
+errors logged, every world's ground material fails on the native host: `RangeError: Ground layer
+'grass' has no diffuse texture`, because every ground map is `TN_ASSETS_UNRESOLVED` (for example
+`leafy_grass/leafy_grass_diff_1k.jpg`, `temperate/rockface/diffuse.ktx2`): the host looks only at
+`<path>` and `assets/<path>` beside the example, while the web build serves them from Vite's
+`publicDir` (`packages/terrain/starter-assets`) and dev-server mounts of `local-assets/`. Forest and
+coastal desktop phases pass only because they never assert `groundBiome`; the terrain renders on its
+flat placeholder colours. Two `.catch(() => undefined)` calls in `terrain.ts` (`get()` and the
+ground-material chain) hide this, against the fail-closed rule. Fix belongs to the native lane: give
+the native run one asset root (or the `assets/` convention) covering all three sources, then make
+the ground-material failure throw.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
