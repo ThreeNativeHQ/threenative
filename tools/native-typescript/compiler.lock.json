@@ -19,5 +19,13 @@
   },
   "hostPreference": {
     "linux-x64": ["linux-x86_64"]
+  },
+  "crossBuilds": {
+    "aarch64-linux-android": {
+      "version": "0.5.1520",
+      "buildId": "src:85ccd72f8e535523d882fbebfb36cf54a45d9a4337ab4b096b049e0dbf06b369",
+      "reason": "the release ships its Linux compiler stamped src:85ccd72f8e53 (built from the tag's exported tree, which has no .git) and this runtime stamped git:381045a8735f; Perry refuses the pair. build-cross-runtime.mjs builds the runtime from the same tag, exported the same way, which takes the compiler's stamp.",
+      "trust": "The build id is the only trust anchor: it is a hash of the sources the compiler was built from, and Perry refuses a runtime that does not carry it. The archives are not pinned by checksum because a Rust build is not reproducible bit for bit across machines and paths."
+    }
   }
 }

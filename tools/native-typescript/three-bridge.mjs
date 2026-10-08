@@ -30,6 +30,15 @@ export const ENGINE_LIBS = [
   "tn_engine_foundation",
 ];
 
+const HOST_TOOLS = { cc: "cc", cxx: "c++", ar: "ar" };
+
+/** The NDK's clang, clang++ and ar for a cross target, so the C half is built for the device's ABI. */
+export function ndkTools(ndk, android) {
+  const bin = path.join(ndk.bin, "bin");
+  const clang = path.join(bin, `${android.triple}${android.apiLevel}-clang`);
+  return { cc: clang, cxx: `${clang}++`, ar: path.join(bin, "llvm-ar") };
+}
+
 function named(code, message) {
   const error = new Error(`${code}: ${message}`);
   error.code = code;
@@ -49,7 +58,7 @@ function firstError(output, tool) {
  * and the hooks (the engine's own RenderCallback, which needs the engine's internal headers).
  * Rebuilt only when its sources or the engine include tree change.
  */
-export function buildEngineBridge({ outDir, engineBuild, render = false }) {
+export function buildEngineBridge({ outDir, engineBuild, render = false, tools = HOST_TOOLS }) {
   fs.mkdirSync(outDir, { recursive: true });
   const include = path.join(NATIVE, "include");
   const archive = path.join(outDir, "libtn-three-shim.a");
@@ -94,8 +103,8 @@ export function buildEngineBridge({ outDir, engineBuild, render = false }) {
     const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
     if (run.status !== 0) throw named("TN_STRICT_SHIM", firstError(output, tool));
   };
-  compile("cc", ["-c", "-fPIC", `-I${include}`, sources[0], "-o", shim]);
-  compile("c++", [
+  compile(tools.cc, ["-c", "-fPIC", `-I${include}`, sources[0], "-o", shim]);
+  compile(tools.cxx, [
     "-c",
     "-fPIC",
     "-std=c++20",
@@ -119,7 +128,7 @@ export function buildEngineBridge({ outDir, engineBuild, render = false }) {
       .flatMap((flag) => flag.split(/\s+/));
     for (const source of renderSources) {
       const object = path.join(outDir, `${path.basename(source, ".cpp")}.o`);
-      compile("c++", [
+      compile(tools.cxx, [
         "-c",
         "-fPIC",
         "-std=c++20",
@@ -132,7 +141,7 @@ export function buildEngineBridge({ outDir, engineBuild, render = false }) {
       objects.push(object);
     }
   }
-  compile("ar", ["crs", archive, ...objects]);
+  compile(tools.ar, ["crs", archive, ...objects]);
   return archive;
 }
 
@@ -140,13 +149,11 @@ export function buildEngineBridge({ outDir, engineBuild, render = false }) {
  * The bridge one run links with: the C archive plus the engine archives beside it. Every archive is
  * refused when absent — the engine is an input to a game build, never rebuilt by one.
  */
-export async function bridgeFor({ target, engineBuild: override, render = false } = {}) {
-  const outDir = path.join(
-    override ?? path.join(NATIVE, "build", "tn-linux"),
-    "three-bridge",
-    ...(render ? ["render"] : []),
-  );
-  const engineBuild = override ?? path.join(NATIVE, "build", "tn-linux");
+export async function bridgeFor({ android, ndk, engineBuild: override, render = false } = {}) {
+  if (android && render) throw named("TN_STRICT_RENDER_BUILD", "--render has no Android build");
+  const engineBuild =
+    override ?? path.join(NATIVE, "build", android ? `android-core-${android.abi}` : "tn-linux");
+  const outDir = path.join(engineBuild, "three-bridge", ...(render ? ["render"] : []));
   for (const lib of ENGINE_LIBS) {
     const archive = path.join(engineBuild, `lib${lib}.a`);
     if (!fs.existsSync(archive)) {
@@ -156,7 +163,12 @@ export async function bridgeFor({ target, engineBuild: override, render = false 
       );
     }
   }
-  const archive = buildEngineBridge({ outDir, engineBuild, render });
+  const archive = buildEngineBridge({
+    outDir,
+    engineBuild,
+    render,
+    tools: android ? ndkTools(ndk, android) : HOST_TOOLS,
+  });
   const renderArchives = render
     ? fs
         .readFileSync(path.join(engineBuild, "build.ninja"), "utf8")
@@ -180,18 +192,16 @@ export async function bridgeFor({ target, engineBuild: override, render = false 
       "tn-three-shim",
       ...ENGINE_LIBS,
       ...renderArchives.map((file) => path.basename(file).replace(/^lib|\.a$/g, "")),
-      "stdc++",
-      "m",
-      "pthread",
-      "dl",
+      // Android's libc carries pthread; its C++ runtime is the NDK's static libc++.
+      ...(android ? ["c++_static", "c++abi", "m", "dl", "log"] : ["stdc++", "m", "pthread", "dl"]),
     ],
     /** Writes the link fields into the staged adapter's manifest; the adapter's own stays pathless. */
     async writeManifest(packageDir) {
       const manifestPath = path.join(packageDir, "package.json");
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-      const linux = manifest.perry.nativeLibrary.targets.linux;
-      linux.libDirs = this.libDirs;
-      linux.libs = this.libs;
+      const platform = manifest.perry.nativeLibrary.targets[android ? "android" : "linux"];
+      platform.libDirs = this.libDirs;
+      platform.libs = this.libs;
       fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`);
     },
   };

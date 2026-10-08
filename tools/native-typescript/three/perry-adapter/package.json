@@ -150,6 +150,10 @@
         "linux": {
           "crate": ".",
           "lib": "tn_perry_adapter"
+        },
+        "android": {
+          "crate": ".",
+          "lib": "tn_perry_adapter"
         }
       }
     }

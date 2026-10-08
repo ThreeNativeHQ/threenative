@@ -4,7 +4,13 @@
 //   --reference               run each case with tsx, compare stdout and exit to <case>.expected
 //   --native --target <triple> compile each case with the pinned Perry to an
 //                              executable and compare stdout and exit to <case>.expected
+//   --packaged                with --adb and --case, run the case inside the corpus-player app's
+//                              activity (android/corpus-player, built with the host's Gradle wrapper)
+//                              instead of through the standalone loader
 //   --build-only              link every case and run none of them
+//   --adb <serial>            with a cross target, push each linked library to that device and run it
+//                              there through tn_so_runner, comparing stdout and exit code to the same
+//                              <case>.expected the host run uses
 //   --out <dir>               where a cross target's artifacts land (default
 //                              artifacts/native-typescript, ignored by git)
 //   --case <name>             run only one case
@@ -50,7 +56,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { format } from "node:util";
 import { compareCaptures } from "../../packages/runtime-native/conformance/metrics.mjs";
 import { inspect } from "../../packages/runtime-native/scripts/inspect-js-free.mjs";
-import { ensureAndroidRuntime, findTarget, perryTarget, resolveNdk } from "./android.mjs";
+import {
+  buildPthreadKeys,
+  buildSoRunner,
+  ensureAndroidRuntime,
+  findTarget,
+  perryTarget,
+  resolveAdb,
+  resolveNdk,
+} from "./android.mjs";
+import { checkDevice, isAarch64Elf, pushRunner, runLibrary } from "./device.mjs";
+import { runPackaged } from "./packaged.mjs";
 import { compareRedToDeclared, loadLedger } from "./patches.mjs";
 import { provision } from "./provision.mjs";
 import { ENGINE_LIBS, bridgeFor, buildEngineBridge } from "./three-bridge.mjs";
@@ -373,7 +389,7 @@ export async function stageProject({ entry, modules, tmp, three, bridge }) {
       recursive: true,
       filter: (source) => !source.includes(`${path.sep}target${path.sep}`),
     });
-    await bridge.writeManifest(packageDir);
+    await bridge?.writeManifest(packageDir);
   }
   await fsp.writeFile(
     path.join(tmp, "package.json"),
@@ -423,25 +439,39 @@ export function compileWithPerry({ perry, project, out, env, extraFlags = [] }) 
   return { ok: true, output };
 }
 
+/**
+ * One native case in a staged project that is removed afterwards: a three-import case builds a
+ * Rust adapter into it (about 300 MB), and /tmp is RAM. TN_NATIVE_TS_KEEP=1 keeps it for debugging.
+ */
 async function runNative(name, info, target, plan = {}) {
   const missing = missingExpectationNote(name);
   if (missing !== undefined) return { ok: false, note: missing };
+  const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "tn-native-ts-"));
+  try {
+    return await runNativeIn(tmp, name, info, target, plan);
+  } finally {
+    if (process.env.TN_NATIVE_TS_KEEP !== "1") await fsp.rm(tmp, { recursive: true, force: true });
+  }
+}
 
+async function runNativeIn(tmp, name, info, target, plan) {
   const entry = path.join(CORPUS, `${name}.ts`);
   const modules = collectModules(entry);
-  const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "tn-native-ts-"));
   const three = importsThree(entry);
   // A cross target with no engine archives for its ABI cannot link a three-import case: refuse it
   // with the missing archives named, rather than trying the host archives and reporting a link error.
-  if (three && plan.blockedThreeImport) return { ok: false, note: plan.blockedThreeImport };
-  const bridge = three
-    ? await bridgeFor({
-        target,
-        ndk: plan.ndk,
-        render: plan.render,
-        engineBuild: process.env.TN_NATIVE_ENGINE_BUILD,
-      })
-    : undefined;
+  const compileErrorCase = parseExpected(fs.readFileSync(expectedPath(name))).compileError;
+  if (three && plan.blockedThreeImport && compileErrorCase === undefined)
+    return { ok: false, note: plan.blockedThreeImport };
+  const bridge =
+    three && !plan.blockedThreeImport
+      ? await bridgeFor({
+          android: plan.target,
+          ndk: plan.ndk,
+          render: plan.render,
+          engineBuild: plan.target ? undefined : process.env.TN_NATIVE_ENGINE_BUILD,
+        })
+      : undefined;
   const env = mergeEnv(process.env, [["PERRY_CACHE_DIR", path.join(tmp, ".perry")]]);
   if (plan.render) env.TN_TSL_FRAME = path.join(plan.outDir, `${name}-native.png`);
   for (const [key, value] of plan.env ?? []) env[key] = value;
@@ -482,8 +512,13 @@ async function runNative(name, info, target, plan = {}) {
     return { ok: false, note: `TN_NATIVE_TS_COMPILE ${name}: ${compileErrors[0]}` };
   }
   await fsp.mkdir(plan.outDir, { recursive: true });
-  const artifact = path.join(plan.outDir, name);
+  const artifact = path.join(
+    plan.outDir,
+    plan.target ? plan.target.output.replace("{case}", name) : name,
+  );
   await fsp.copyFile(exe, artifact);
+  if (plan.target && !isAarch64Elf(artifact))
+    return { ok: false, note: `TN_NATIVE_TS_ARTIFACT ${artifact} is not an arm64 ELF` };
   if (name === "dynamic-tsl") {
     const audit = inspect({ binary: artifact });
     if (!audit.jsFree)
@@ -492,8 +527,16 @@ async function runNative(name, info, target, plan = {}) {
   if (plan.buildOnly) return { ok: true, note: "linked, not run (--build-only)" };
 
   if (plan.render) await fsp.rm(env.TN_TSL_FRAME, { force: true });
-  const measured =
-    name === "alloc-loop"
+  const measured = plan.device
+    ? plan.device.packaged
+      ? await runPackaged({
+          adb: plan.device.adb,
+          serial: plan.device.serial,
+          name,
+          library: artifact,
+        })
+      : await runLibrary(plan.device.adb, plan.device.serial, artifact)
+    : name === "alloc-loop"
       ? await runMeasured(exe, env)
       : { ...(await runExecutable(exe, env)), peakRssBytes: 0 };
   if (process.env.TN_NATIVE_TS_DEBUG === "1") {
@@ -639,15 +682,25 @@ function printTable(rows) {
  * archives exist for no Android build tree in every lane this runner can rely on, and Perry's
  * Android target links its own runtime rather than objects the runner emits.
  */
-async function crossPlan(targetFile, outDir) {
+async function crossPlan(targetFile, outDir, serial, packaged) {
   const ndk = resolveNdk(targetFile);
   const runtime = await ensureAndroidRuntime(targetFile, { ndk, log: () => {} });
   const dir = path.join(outDir, targetFile.outDir);
+  // The loader and the keys object are not corpus libraries, so they stay out of the directory the
+  // 16 KB check walks.
+  const helpers = path.join(outDir, `${targetFile.outDir}-tools`);
   await fsp.mkdir(dir, { recursive: true });
+  let device;
+  if (serial !== undefined) {
+    const adb = resolveAdb();
+    device = { adb, serial, packaged, ...(await checkDevice(adb, serial, targetFile)) };
+    await pushRunner(adb, serial, buildSoRunner(targetFile, ndk, helpers));
+  }
   const engineBuild = path.join(
     REPO,
     "packages",
     "runtime-native",
+    "build",
     `android-core-${targetFile.abi}`,
   );
   const missing = ENGINE_LIBS.filter(
@@ -657,16 +710,25 @@ async function crossPlan(targetFile, outDir) {
     target: targetFile,
     ndk,
     outDir: dir,
+    device,
     perryFlags: ["--target", perryTarget(targetFile.triple)],
     // Perry links its own cross runtime from here; without it the target has no runtime to link.
-    env: [["PERRY_RUNTIME_DIR", runtime.dir]],
+    // Perry drives the NDK clang named by ANDROID_NDK_HOME, so the pinned NDK is exported, not inherited.
+    env: [
+      ["PERRY_RUNTIME_DIR", runtime.dir],
+      ["ANDROID_NDK_HOME", ndk.dir],
+      ["PERRY_EXTRA_LINK_ARGS", buildPthreadKeys(targetFile, ndk, helpers)],
+    ],
     blockedThreeImport:
       missing.length === 0
         ? undefined
-        : `three-import link is blocked: ${missing.join(", ")} exist for no ${targetFile.abi} engine build (packages/runtime-native/android-core-${targetFile.abi})`,
+        : `three-import link is blocked: ${missing.join(", ")} exist for no ${targetFile.abi} engine build (cmake -DTN_ENGINE_CORE_ONLY=ON into packages/runtime-native/build/android-core-${targetFile.abi}, the command conformance/run-conformance.mjs prints)`,
     summary: (rows) => {
       const ok = rows.filter((row) => row.native === "PASS").length;
-      return `${targetFile.triple}: Perry ${perryTarget(targetFile.triple)}, NDK ${ndk.version}, ${targetFile.maxPageSize}-byte pages — ${ok}/${rows.length} cases ok`;
+      const where = device
+        ? `, run${device.packaged ? " packaged in an activity" : ""} on ${device.model} ${device.serial} (${device.abi}, Android ${device.release}${device.emulator ? ", emulator" : ", physical"})`
+        : "";
+      return `${targetFile.triple}: Perry ${perryTarget(targetFile.triple)}, NDK ${ndk.version}, ${targetFile.maxPageSize}-byte pages${where} — ${ok}/${rows.length} cases ok`;
     },
   };
 }
@@ -680,9 +742,13 @@ async function main() {
   const withoutPatches = args.includes("--without-patches");
   let target;
   let filter;
+  let serial;
+  let packaged = false;
   let outDir = DEFAULT_OUT;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--target") target = args[++i];
+    else if (args[i] === "--adb") serial = args[++i];
+    else if (args[i] === "--packaged") packaged = true;
     else if (args[i] === "--case") {
       i += 1;
       filter = args[i];
@@ -728,13 +794,31 @@ async function main() {
     }
   }
 
+  // Usage is settled before the toolchain is provisioned: a wrong flag must not cost a download.
+  if (serial !== undefined && !cross)
+    throw named("TN_NATIVE_TS_USAGE", "--adb needs --native --target <android triple>");
+  if (cross && serial === undefined && !buildOnly)
+    throw named(
+      "TN_NATIVE_TS_USAGE",
+      "a cross target runs on a device: pass --adb <serial> or --build-only",
+    );
+  if (packaged && (serial === undefined || filter === undefined))
+    throw named(
+      "TN_NATIVE_TS_USAGE",
+      "--packaged runs one case on a device: add --adb <serial> --case <name>",
+    );
+  if (serial !== undefined && buildOnly)
+    throw named("TN_NATIVE_TS_USAGE", "--adb runs the cases; drop --build-only");
+
   // The ledger is read for every native run: a malformed one fails closed rather than reading as
   // "no patches", and an ordinary native run is the patched one it declares.
   const ledger = wantNative ? loadLedger() : undefined;
   const info = wantNative
     ? await provision({ patches: withoutPatches ? [] : ledger.patches, log: () => {} })
     : undefined;
-  const plan = cross ? await crossPlan(targetFile.target, outDir) : { buildOnly, render, outDir };
+  const plan = cross
+    ? { ...(await crossPlan(targetFile.target, outDir, serial, packaged)), buildOnly }
+    : { buildOnly, render, outDir };
   const rows = [];
   let failed = false;
   for (const name of names) {

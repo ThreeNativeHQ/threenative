@@ -1,0 +1,8 @@
+.gradle/
+build/
+local.properties
+.project
+.classpath
+.settings/
+corpus-libs/
+.cxx/

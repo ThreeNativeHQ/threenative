@@ -12,7 +12,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadLock, provisionCross } from "./provision.mjs";
+import { loadLock, provisionCross, readRuntimeStamp } from "./provision.mjs";
+import { ndkTools } from "./three-bridge.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TARGETS = path.join(HERE, "targets");
@@ -124,9 +125,9 @@ function hostTag(ndkDir) {
 }
 
 /**
- * The cross runtime Perry links a target with, plus the NDK it drives. Perry refuses a runtime whose
- * embedded build stamp does not match its own compiler, so the stamp is read here and reported as
- * this lane's own failure rather than surfacing later as a link error.
+ * The cross runtime Perry links a target with, plus the NDK it drives. A triple the lock pins under
+ * `crossBuilds` comes from build-cross-runtime.mjs and is checked against the pinned stamp here, so
+ * a missing or stale build is this lane's own named failure rather than a Perry link error.
  */
 export async function ensureAndroidRuntime(
   target,
@@ -134,22 +135,61 @@ export async function ensureAndroidRuntime(
 ) {
   const lock = loadLock();
   const provisioned = await provisionCross(target.triple, { lock, env, log });
-  const stamps = stampReport(path.join(provisioned.dir, "libperry_runtime.a"));
-  if (stamps !== undefined) return { ...provisioned, ndk, stamps };
-  return { ...provisioned, ndk };
+  const stamp = readRuntimeStamp(path.join(provisioned.dir, "libperry_runtime.a"));
+  return { ...provisioned, ndk, stamps: stamp === undefined ? undefined : { build: stamp.build } };
+}
+
+/** The SDK's adb: `ANDROID_HOME`/`ANDROID_SDK_ROOT` or the default SDK, which are usually off `PATH`. */
+export function resolveAdb(env = process.env) {
+  const roots = [env.ANDROID_HOME, env.ANDROID_SDK_ROOT, path.join(os.homedir(), "Android", "Sdk")];
+  for (const root of roots) {
+    if (!root) continue;
+    const adb = path.join(root, "platform-tools", "adb");
+    if (fs.existsSync(adb)) return adb;
+  }
+  throw named("TN_NATIVE_TS_ADB", `no adb under ${roots.filter(Boolean).join(", ")}`);
+}
+
+/** Compiles one C file of this lane with the target's NDK clang, rebuilding only when it is newer. */
+function compileC(source, output, flags, target, ndk) {
+  if (fs.existsSync(output) && fs.statSync(output).mtimeMs >= fs.statSync(source).mtimeMs) {
+    return output;
+  }
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  const { cc } = ndkTools(ndk, target);
+  const compile = spawnSync(cc, [...flags, source, "-o", output], { encoding: "utf8" });
+  if (compile.status !== 0) {
+    throw named("TN_NATIVE_TS_RUNNER", `${cc} failed: ${compile.stderr.split("\n")[0]}`);
+  }
+  return output;
 }
 
 /**
- * Perry's runtime stamp, next to the compiler's own: an out-of-tree cross runtime built from a
- * different source tree than the pinned compiler is refused by Perry at link time, so it is
- * reported here, where the reason is actionable.
+ * The loader that runs a Perry Android library as a program. Perry's Android output is a shared
+ * library, so a pushed case needs this to execute.
  */
-export function stampReport(runtimeArchive) {
-  if (!fs.existsSync(runtimeArchive)) return undefined;
-  const run = spawnSync("sh", ["-c", `strings -a "${runtimeArchive}" | head -c 200000`], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  const found = /build=([a-z]+:[0-9a-f]+)/u.exec(run.stdout ?? "")?.[1];
-  return found === undefined ? undefined : { build: found };
+export function buildSoRunner(target, ndk, outDir) {
+  const flags = ["-fPIE", "-pie", `-Wl,-z,max-page-size=${target.maxPageSize}`];
+  return compileC(
+    path.join(HERE, "android", "tn_so_runner.c"),
+    path.join(outDir, "tn_so_runner"),
+    flags,
+    target,
+    ndk,
+  );
+}
+
+/**
+ * The virtual pthread keys object every Android library links (tn_pthread_keys.c): Perry v0.5.1520's
+ * runtime needs more thread-local keys than bionic's 128. Perry appends it to the link line from
+ * PERRY_EXTRA_LINK_ARGS, so neither the compiler nor the runtime archive changes.
+ */
+export function buildPthreadKeys(target, ndk, outDir) {
+  return compileC(
+    path.join(HERE, "android", "tn_pthread_keys.c"),
+    path.join(outDir, "tn_pthread_keys.o"),
+    ["-c", "-fPIC"],
+    target,
+    ndk,
+  );
 }

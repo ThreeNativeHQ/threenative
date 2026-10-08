@@ -264,6 +264,10 @@ export function verifiedFetch(url, sha256, archivePath, opts = {}) {
  */
 export async function provisionCross(triple, opts = {}) {
   const lock = opts.lock ?? loadLock(opts.lockFile);
+  // A triple whose shipped runtime cannot link with the shipped compiler is built from source
+  // (build-cross-runtime.mjs); the release archive is not used for it.
+  if (lock.crossBuilds?.[triple] !== undefined)
+    return provisionBuiltCross(triple, { ...opts, lock });
   const artifact = lock.crossArtifacts?.[triple];
   if (!artifact) {
     throw named("TN_NATIVE_TS_HOST", `no pinned Perry cross runtime for ${triple}`);
@@ -320,6 +324,81 @@ export async function provisionCross(triple, opts = {}) {
   await fsp.rename(staging, dir);
   await writeMarker(cacheDir, artifact);
   return { triple, artifact, cacheDir, dir, manifestPath };
+}
+
+/** Where a cross runtime built from source lives: `toolchain/` holds what Perry links, `work/` the build. */
+export function builtCrossDir(lock, triple, env = process.env) {
+  const base =
+    env.TN_NATIVE_TS_CACHE || path.join(os.homedir(), ".cache", "threenative", "native-typescript");
+  return path.join(base, lock.tag, "cross-built", triple);
+}
+
+/**
+ * The build stamp Perry embeds in a runtime archive (`PERRY_RUNTIME_BUILD_STAMP_V1|version=..|build=..`),
+ * read the way Perry reads it. Undefined for an archive with no stamp.
+ */
+export function readRuntimeStamp(archive) {
+  const bytes = fs.readFileSync(archive);
+  const prefix = Buffer.from("PERRY_RUNTIME_BUILD_STAMP_V1|");
+  const start = bytes.indexOf(prefix);
+  if (start < 0) return undefined;
+  const end = bytes.indexOf(0, start);
+  const fields = bytes
+    .subarray(start, end < 0 ? start + 512 : end)
+    .toString("utf8")
+    .split("|");
+  const version = fields.find((field) => field.startsWith("version="))?.slice("version=".length);
+  const build = fields.find((field) => field.startsWith("build="))?.slice("build=".length);
+  return version && build ? { version, build } : undefined;
+}
+
+/** A built tree is usable only when its manifest holds, and its runtime carries the pinned stamp. */
+function builtCrossProblem(dir, triple, build) {
+  const manifest = crossManifestProblem(dir, triple);
+  if (manifest !== undefined) return manifest;
+  let stamp;
+  try {
+    stamp = readRuntimeStamp(path.join(dir, "libperry_runtime.a"));
+  } catch (error) {
+    return `cannot read libperry_runtime.a: ${error.message}`;
+  }
+  if (stamp?.build !== build.buildId) {
+    return `libperry_runtime.a is stamped ${stamp?.build ?? "unstamped"}, compiler.lock.json pins ${build.buildId}`;
+  }
+  return undefined;
+}
+
+/** The cross runtime built from the pinned source: found in the cache, or a named instruction to build it. */
+export function provisionBuiltCross(triple, opts = {}) {
+  const lock = opts.lock ?? loadLock(opts.lockFile);
+  const build = lock.crossBuilds[triple];
+  const cacheDir = opts.cacheDir ?? builtCrossDir(lock, triple, opts.env);
+  const dir = path.join(cacheDir, "toolchain");
+  const problem = fs.existsSync(dir)
+    ? builtCrossProblem(dir, triple, build)
+    : "no built runtime in the cache";
+  if (problem !== undefined) {
+    throw named(
+      "TN_NATIVE_TS_CROSS_BUILD",
+      `${triple}: ${problem}. Build it: node tools/native-typescript/build-cross-runtime.mjs --target ${triple}`,
+    );
+  }
+  return { triple, artifact: build, cacheDir, dir, manifestPath: path.join(dir, "manifest.json") };
+}
+
+/** Checks a runtime built elsewhere (a staged directory) against the pin and installs it in the cache. */
+export function installBuiltCross(triple, staged, opts = {}) {
+  const lock = opts.lock ?? loadLock(opts.lockFile);
+  const build = lock.crossBuilds?.[triple];
+  if (build === undefined) throw named("TN_NATIVE_TS_HOST", `no crossBuilds pin for ${triple}`);
+  const problem = builtCrossProblem(staged, triple, build);
+  if (problem !== undefined) throw named("TN_NATIVE_TS_CROSS_BUILD", `${staged}: ${problem}`);
+  const cacheDir = opts.cacheDir ?? builtCrossDir(lock, triple, opts.env);
+  const dir = path.join(cacheDir, "toolchain");
+  fs.mkdirSync(cacheDir, { recursive: true });
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.cpSync(staged, dir, { recursive: true });
+  return dir;
 }
 
 /** Perry's own cross manifest: it names the triple and pins every archive inside it. */

@@ -3,7 +3,7 @@
 **Status:** IN PROGRESS — early spike for gate T; blocks nothing else (owner decision 2)
 **Complexity:** 5 — crosses the compiler's module system, the generated ABI and the engine lifetime protocol at once
 **Owner:** João
-**Work package:** N05 — [native-engine batch](../../../native-engine/README.md) · [N05 index](../../../native-engine/N05-native-typescript-qualification/README.md)
+**Work package:** N05 — [native-engine batch](../../../native-engine/README.md) · [N05 index](README.md)
 **Depends on:** [PRD-505](PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md), [PRD-502 — Handles keep identity and aliases](../N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md), [PRD-503 — Unreachable cycles are reclaimed](../N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md)
 
 ## Context

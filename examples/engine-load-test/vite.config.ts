@@ -100,6 +100,13 @@ export default defineConfig({
         },
       },
   define: {
+    // The Android host evaluates the bundle as a script, where `import.meta` is a SyntaxError; the
+    // desktop host evaluates it as a module. Three's KTX2 and Draco loaders spell their embedded
+    // wasm as `new URL("data:...", import.meta.url)`, a URL that ignores its base, so any constant
+    // serves. Without it the Android arm opens a window, logs one line and draws nothing.
+    ...(native && process.env.TN_BENCH_PLATFORM === "android"
+      ? { "import.meta.url": JSON.stringify("file:///engine-load-test-android.js") }
+      : {}),
     // The native host has no `navigator`, so the target is stamped at build time. `--arm` on the
     // collector never sets it: the arm a report claims comes from the binary that ran.
     __TN_PLATFORM__: JSON.stringify(process.env.TN_BENCH_PLATFORM ?? "desktop"),
