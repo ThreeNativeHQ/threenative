@@ -50,6 +50,7 @@ import {
   positionLocal,
   positionWorld,
   pow,
+  renderGroup,
   rotateUV,
   smoothstep,
   texture,
@@ -136,7 +137,9 @@ const CANOPY = {
 } as const;
 
 /** The sun as a world-space direction towards it, written by `src/render/sky.ts`. */
-const sunDirection = uniform(new Vector3(-180, 240, 120).normalize()) as unknown as Node<"vec3">;
+const sunDirection = uniform(new Vector3(-180, 240, 120).normalize()).setGroup(
+  renderGroup,
+) as unknown as Node<"vec3">;
 
 /**
  * Point the shared canopy uniform at the sun. One call, from the rig that owns the sun.
@@ -871,7 +874,7 @@ export async function createPropSurfaces(
   biome?: IBiome,
   skyLight?: Texture,
 ): Promise<IPropSurfaces> {
-  const seconds = uniform(0) as unknown as Node<"float">;
+  const seconds = uniform(0).setGroup(renderGroup) as unknown as Node<"float">;
   const under = ground === undefined ? undefined : groundHeight(ground);
   const [fernDiffuse, fernAlpha] = await Promise.all([
     map(assets, FERN_MAPS.diffuse, false),
