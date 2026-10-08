@@ -11,7 +11,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { pushHost, readyDevice, runHostOnDevice } from "./cp1-android.js";
+import { assertStillReady, pushHost, readyDevice, runHostOnDevice } from "./cp1-android.js";
 import { BenchError, type IRunReport, percentile } from "./report.js";
 import { assertEqualPresentedWork } from "./workloads.js";
 
@@ -107,6 +107,10 @@ function currentResult(report: IRunReport, objects: number): ICp1ArmResult {
     crossingsPerFrame: null,
     gpuMs: rung.gpuMs === undefined || rung.gpuMs.length === 0 ? null : series(rung.gpuMs),
     presented: true,
+    // The Android collector stamps the preflight state onto the report; desktop reports have none.
+    ...((report as { deviceCondition?: unknown }).deviceCondition === undefined
+      ? {}
+      : { deviceCondition: (report as { deviceCondition?: unknown }).deviceCondition }),
   };
 }
 
@@ -244,9 +248,12 @@ async function nativeResult(
     const serial = options.device;
     if (serial === undefined)
       throw new BenchError("TN_BENCH_BAD_FLAG", "an Android CP1 run needs --device <serial>");
-    deviceCondition = await readyDevice(serial, arm);
+    // The push comes first: copying 87 MB heats the phone, and the preflight is the last word
+    // before the timed run, not a reading from before the copy.
     await pushHost(repoRoot, serial);
+    const before = await readyDevice(serial, arm);
     const run = await runHostOnDevice(serial, args, script);
+    deviceCondition = { before, after: await assertStillReady(serial, before) };
     if (run.exit !== 0)
       throw new BenchError(
         "TN_BENCH_CP1_HOST_FAILED",

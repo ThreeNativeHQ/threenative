@@ -22,7 +22,7 @@ describe.runIf(hasCc)("tn_pthread_keys.c", () => {
   const fixture = path.join(import.meta.dirname, "fixtures", "pthread_keys_test.c");
 
   /** The fixture as a shared library, with or without the shim, run by the loader like a Perry library. */
-  function run(withShim: boolean) {
+  function run(withShim: boolean, shim = path.join(ANDROID, "tn_pthread_keys.c")) {
     const dir = scratch();
     const library = path.join(dir, "libkeys.so");
     cc([
@@ -31,7 +31,7 @@ describe.runIf(hasCc)("tn_pthread_keys.c", () => {
       "-Wl,-Bsymbolic",
       "-pthread",
       fixture,
-      ...(withShim ? [path.join(ANDROID, "tn_pthread_keys.c")] : []),
+      ...(withShim ? [shim] : []),
       "-o",
       library,
       "-ldl",
@@ -45,6 +45,16 @@ describe.runIf(hasCc)("tn_pthread_keys.c", () => {
     const result = run(true);
     expect(result.stdout).toBe("keys ok\n");
     expect(result.status).toBe(0);
+  });
+
+  it("red control: a read that ignores the key's generation sees a live thread's stale value", () => {
+    const source = fs.readFileSync(path.join(ANDROID, "tn_pthread_keys.c"), "utf8");
+    const check =
+      "if (table == NULL || table[key].generation != atomic_load(&generations[key])) return NULL;";
+    expect(source).toContain(check);
+    const broken = path.join(scratch(), "broken_keys.c");
+    fs.writeFileSync(broken, source.replace(check, "if (table == NULL) return NULL;"));
+    expect(run(true, broken).status).toBe(5);
   });
 
   it("red control: without the shim the same library cannot create 2000 keys", () => {

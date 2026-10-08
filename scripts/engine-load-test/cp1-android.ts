@@ -22,6 +22,10 @@ import { adbOn } from "./run-android.js";
 export const DEVICE_DIR = "/data/local/tmp/tn-cp1";
 /** The battery temperature, in degrees Celsius, the device must be at or below before an arm starts. */
 export const COOL_C = 31.5;
+/** The battery temperature, in degrees Celsius, above which a finished run no longer counts: the Pixel throttles near 38. */
+export const RUN_MAX_C = 36;
+/** Seconds a host run may take on the device before `timeout` ends it (exit 124). */
+export const HOST_TIMEOUT_S = 1500;
 const COOL_POLL_MS = 30_000;
 const COOL_TIMEOUT_MS = 30 * 60_000;
 
@@ -111,7 +115,14 @@ export async function waitUntilCool(
  * screen off stops the run.
  */
 export async function readyDevice(serial: string, label: string) {
-  await waitUntilCool(serial);
+  const adb = adbOn(serial);
+  // A TCP emulator has an `emulator-*` serial only when started by the SDK; the property is the truth.
+  if ((await adb(["shell", "getprop", "ro.kernel.qemu"])).trim() === "1")
+    throw new BenchError(
+      "TN_BENCH_DEVICE_EMULATOR",
+      `${serial} is an emulator; a physical device is required`,
+    );
+  const temperatureC = await waitUntilCool(serial);
   const state = await assertDeviceReady(
     serial,
     {
@@ -121,12 +132,36 @@ export async function readyDevice(serial: string, label: string) {
       minBatteryPercent: MINIMUM_BATTERY_PERCENT,
       requireDischarging: true,
     },
-    { adb: adbOn(serial) },
+    { adb },
   );
   process.stderr.write(
-    `[${label}] device ${state.serial}, battery ${state.batteryPercent}%, ${state.activeRefreshHz} Hz\n`,
+    `[${label}] device ${state.serial}, battery ${state.batteryPercent}%, ${temperatureC} C, ${state.activeRefreshHz} Hz\n`,
   );
-  return state;
+  return { ...state, temperatureC };
+}
+
+/**
+ * The device after a timed run, read again: a phone that was plugged in, throttled or heated past
+ * RUN_MAX_C during the run measured something other than what the preflight cleared, so the arm
+ * fails instead of reporting.
+ */
+export async function assertStillReady(serial: string, before: { batteryPercent: number }) {
+  const adb = adbOn(serial);
+  const battery = await adb(["shell", "dumpsys", "battery"]);
+  const thermal = parseThermalState(await adb(["shell", "dumpsys", "thermalservice"]));
+  const temperatureC = parseBatteryTemperature(battery);
+  const charging = /^\s*(AC|USB|Wireless) powered:\s*true\s*$/mu.test(battery);
+  const problems = [
+    ...(charging ? ["the device was charging"] : []),
+    ...(thermal.thermalStatusCode !== 0 ? [`thermal status ${thermal.thermalStatus}`] : []),
+    ...(temperatureC > RUN_MAX_C ? [`${temperatureC} C is above ${RUN_MAX_C} C`] : []),
+  ];
+  if (problems.length > 0)
+    throw new BenchError(
+      "TN_BENCH_DEVICE_CHANGED",
+      `${serial} changed during the run (battery ${before.batteryPercent}% at the start): ${problems.join("; ")}; the arm is not reported`,
+    );
+  return { temperatureC, thermalStatus: thermal.thermalStatus };
 }
 
 async function md5(file: string): Promise<string> {
@@ -183,11 +218,11 @@ export async function runHostOnDevice(
   const script = scriptLocal === undefined ? "" : "./l4-workload.js ";
   const command = [
     `cd ${DEVICE_DIR} && rm -f report.json host.log`,
-    `LD_LIBRARY_PATH=. ./tn-native-engine-host ${script}--v8-snapshot snapshot_blob.bin ${quoted} --report report.json > host.log 2>&1`,
+    `LD_LIBRARY_PATH=. timeout ${HOST_TIMEOUT_S} ./tn-native-engine-host ${script}--v8-snapshot snapshot_blob.bin ${quoted} --report report.json > host.log 2>&1`,
     "echo TN_EXIT=$?",
     "tail -n 12 host.log",
   ].join("; ");
-  const log = await adb(["shell", command], 30 * 60_000);
+  const log = await adb(["shell", command], (HOST_TIMEOUT_S + 60) * 1000);
   const exit = /TN_EXIT=(\d+)/u.exec(log)?.[1];
   const body = await adb(["shell", `cat ${report} 2>/dev/null`]);
   if (body.trim().length === 0)

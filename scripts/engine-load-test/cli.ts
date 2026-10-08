@@ -20,7 +20,7 @@ import {
   startProcess,
   waitForUrl,
 } from "./browser.js";
-import { buildCurrentApk, readyDevice, waitUntilCool } from "./cp1-android.js";
+import { assertStillReady, buildCurrentApk, readyDevice, waitUntilCool } from "./cp1-android.js";
 import { parseCp1Arms, runCp1 } from "./cp1.js";
 import { runCrowd } from "./crowd.js";
 import {
@@ -549,15 +549,17 @@ async function runCurrentOnAndroid(serial: string, options: ILadderOptions): Pro
       `adb install failed on ${serial}: ${installed.trim()}`,
     );
   await waitUntilCool(serial);
-  return parseRunReport(
-    await runAndroidArm(repoRoot, "tn-android", {
-      ...options,
-      allowEmulator: false,
-      allowLowBattery: false,
-      serial,
-      timeoutMs: desktopTimeoutMs(options),
-    }),
-  );
+  const report = await runAndroidArm(repoRoot, "tn-android", {
+    ...options,
+    allowEmulator: false,
+    allowLowBattery: false,
+    serial,
+    timeoutMs: desktopTimeoutMs(options),
+  });
+  // The same after-the-run check the native arms get: a phone that changed under the run is not reported.
+  const start = (report as { deviceCondition?: { batteryPercent: number } }).deviceCondition;
+  await assertStillReady(serial, start ?? { batteryPercent: before.batteryPercent });
+  return parseRunReport(report);
 }
 
 async function runWorkload(

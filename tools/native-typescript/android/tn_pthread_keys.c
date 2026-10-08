@@ -91,7 +91,7 @@ int pthread_key_create(pthread_key_t* key, tn_dtor_t destructor) {
 }
 
 int pthread_key_delete(pthread_key_t key) {
-    if (key == 0 || key >= TN_KEY_COUNT) return EINVAL;
+    if (key == 0 || (unsigned)key >= TN_KEY_COUNT) return EINVAL;
     pthread_mutex_lock(&lock);
     atomic_store(&generations[key], 0);
     atomic_store(&dtors[key], NULL);
@@ -100,7 +100,7 @@ int pthread_key_delete(pthread_key_t key) {
 }
 
 void* pthread_getspecific(pthread_key_t key) {
-    if (key == 0 || key >= TN_KEY_COUNT) return NULL;
+    if (key == 0 || (unsigned)key >= TN_KEY_COUNT) return NULL;
     ensure();
     tn_slot_t* table = real_get(carrier);
     if (table == NULL || table[key].generation != atomic_load(&generations[key])) return NULL;
@@ -108,7 +108,7 @@ void* pthread_getspecific(pthread_key_t key) {
 }
 
 int pthread_setspecific(pthread_key_t key, const void* value) {
-    if (key == 0 || key >= TN_KEY_COUNT) return EINVAL;
+    if (key == 0 || (unsigned)key >= TN_KEY_COUNT) return EINVAL;
     ensure();
     const unsigned generation = atomic_load(&generations[key]);
     if (generation == 0) return EINVAL;
