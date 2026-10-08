@@ -216,7 +216,7 @@ export function groundTurf(
   const field = mix(vec3(0.042, 0.072, 0.018), vec3(0.062, 0.102, 0.029), dry)
     .mul(tufts)
     .mul(mix(0.92, 1.08, smoothstep(0.6, -0.6, hollow)));
-  return mix(sampled.mul(MEADOW), field, smoothstep(32, 115, distance).mul(0.86));
+  return mix(sampled.mul(MEADOW), field, smoothstep(60, 220, distance).mul(0.55));
 }
 
 function rockLayer(
@@ -707,7 +707,7 @@ export function createGroundMaterial(
             oneMinus(smoothstep(6, 28, positionView.length())),
           ),
         )
-        .mul(mix(1, 0.12, smoothstep(60, 240, positionView.length()))),
+        .mul(mix(1, 0.35, smoothstep(60, 240, positionView.length()))),
     };
     // Rock's strata are metres across, so its wall projection samples at its own tile size; grass and
     // dirt sample at theirs, which is why a cliff's grass fringe keeps the same grain as the meadow.

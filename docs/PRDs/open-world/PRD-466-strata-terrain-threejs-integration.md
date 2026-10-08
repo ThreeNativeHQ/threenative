@@ -3919,7 +3919,10 @@ An independent diagnostic pass (in-page A/B on the forest meadow, RTX 2080) rank
    ([capture](../../benchmark/strata-loading-2026-10-06/foliage-transmission-meadow.jpg)). Gated by
    blade height (`smoothstep(0.02, 0.4, positionGeometry.y)`) so roots and gaps stay dark: near-meadow
    p5/p95 48/151 → 31/164, contrast ~34 → 45, 0% blown; fresh judge 5/10 against 4 (uniform) and 3.5
-   (none) ([capture](../../benchmark/strata-loading-2026-10-06/foliage-transmission-gated-meadow.jpg)). 8. (Suspected) mid/far terrain detail is replaced by flat colour beyond 32–115 m.
+   (none) ([capture](../../benchmark/strata-loading-2026-10-06/foliage-transmission-gated-meadow.jpg)). 8. Mid/far terrain detail was replaced by flat colour beyond 32–115 m (86%) with relief cut to 0.12.
+   **Eased**: the field colour now takes 55% over 60–220 m and distant relief keeps 0.35. Elevated
+   mid-band edge energy +11%, no tiling or shimmer; fresh judge 3 → 3.5/10 for that band ("small gain;
+   the flat band past ~60 m needs ground cover or larger-scale material variation").
 
 Corrections to earlier sections: the kept field-grass root lift (`fe6964fc8`) edits a branch the
 alpha-tested grass never reaches, so its reported gain was run-to-run variance; single captures taken
