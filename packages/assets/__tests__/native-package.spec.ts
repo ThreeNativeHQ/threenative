@@ -306,6 +306,48 @@ describe("assets.nativePackage", () => {
     ).toBe(true);
   });
 
+  it("writes a model as a Scene entry and a JPEG as a decoded RGBA8 Texture entry", async () => {
+    const root = await makeTempDir("threenative-native-package-scene-");
+    await mkdir(path.join(root, "assets"));
+    // A 2x1 baseline JPEG (pure red, pure blue) and a minimal glTF binary with one node.
+    const { encode } = await import("jpeg-js");
+    const jpeg = encode(
+      { data: Buffer.from([255, 0, 0, 255, 0, 0, 255, 255]), height: 1, width: 2 },
+      100,
+    ).data;
+    await writeFile(path.join(root, "assets", "sky.jpg"), jpeg);
+    const json = Buffer.from(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [{ name: "n" }],
+        scene: 0,
+        scenes: [{ nodes: [0] }],
+      }).padEnd(84, " "),
+    );
+    const glb = Buffer.alloc(12 + 8 + json.length);
+    glb.write("glTF", 0, "ascii");
+    glb.writeUInt32LE(2, 4);
+    glb.writeUInt32LE(glb.length, 8);
+    glb.writeUInt32LE(json.length, 12);
+    glb.write("JSON", 16, "ascii");
+    json.copy(glb, 20);
+    await writeFile(path.join(root, "assets", "model.glb"), glb);
+
+    await compileAssets({
+      config: { models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    const manifest = readNativePackageManifest(
+      await readFile(path.join(root, "public", "native", "assets.tnpk")),
+    );
+    const byName = Object.fromEntries(manifest.entries.map((entry) => [entry.name, entry]));
+    expect(byName["model.glb"]?.kind).toBe(NativeEntryKind.Scene);
+    expect(byName["model.glb"]?.size).toBe(glb.length);
+    expect(byName["sky.jpg"]?.kind).toBe(NativeEntryKind.Texture);
+    // 12-byte header plus 2x1 RGBA pixels.
+    expect(byName["sky.jpg"]?.size).toBe(12 + 2 * 1 * 4);
+  });
+
   it("removes a stale package when a recook has no v1 entry", async () => {
     const root = await makeTempDir("threenative-native-package-empty-");
     await mkdir(path.join(root, "assets"));
