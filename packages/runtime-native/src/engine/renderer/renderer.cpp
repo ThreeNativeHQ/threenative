@@ -1589,8 +1589,10 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         put(frameUniforms_, v, vs[kMorphVertexCount], std::array<double, 1>{d.morphVertexCount});
         put(frameUniforms_, v, vs[kMorphBaseInfluence], std::array<double, 1>{d.morphBaseInfluence});
     };
-    // Only a frame with a normal pass draws two pipelines from one vertex stage (colour, then depth-Equal normals).
-    const bool invariantPosition = postEffects_ && postEffects_->reads("normal");
+    // Only a frame that draws a second pipeline depth-Equal against the colour pass asks for @invariant
+    // positions: the normal pass (it shares the colour vertex stage) and TRAA's velocity pass (its own
+    // vertex stage, flagged the same way below). Every other frame is compiled as three's is.
+    const bool invariantPosition = (postEffects_ && postEffects_->reads("normal")) || traa_;
     auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
@@ -1790,6 +1792,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         const std::string key = "traa-velocity";
         if (!programs_.count(key)) {
             auto source = traaVelocityPrograms();
+            source.vertex.setInvariantPosition(true);  // drawn depth-Equal against the colour pass, which is flagged under TRAA
             add(key, shader::buildStage(source.vertex, 0), shader::buildStage(source.fragment, 1));
         }
         Program& velocity = *programs_.at(key);

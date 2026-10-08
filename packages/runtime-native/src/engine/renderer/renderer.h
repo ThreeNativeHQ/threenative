@@ -280,6 +280,12 @@ public:
     /** Whether the last timed frame's GPU time began at its first shadow pass (else at the scene pass). */
     bool gpuTimerBeganAtShadow() const { return timerBeganAtShadow_; }
 
+    /** Every built program's vertex WGSL by program key: what a test reads to see how the frame's programs were compiled. */
+    std::vector<std::pair<std::string, std::string>> programVertexSources() const {
+        std::vector<std::pair<std::string, std::string>> out;
+        for (const auto& [key, program] : programs_) out.emplace_back(key, program->vertex.wgsl.code);
+        return out;
+    }
     GpuResources& gpu() { return gpu_; }
     const GeometryCache& geometry() const { return geometry_; }
     const PipelineCache& pipelines() const { return pipelines_; }

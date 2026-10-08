@@ -4,6 +4,7 @@
 // path, against the browser's golden frame. `invalidation` checks that records follow revisions only.
 
 #include "check.h"
+#include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
 #include "engine/renderer/projection/plan.h"
 #include "engine/shader/package.h"
@@ -637,6 +638,35 @@ void flatLaneEquivalence() {
             }
         }
     }
+}
+
+// @invariant clip positions are asked for only by a frame that draws a second pipeline depth-Equal
+// against the colour pass. Plain frames compile as three's do; under TRAA the colour programs and the
+// velocity program are flagged together, and a program built before the toggle is not rebuilt in place.
+void invariantScope() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    LitScene s;
+    RenderDatabase database;
+    const auto flagged = [](const std::string& source) { return source.find("@invariant") != std::string::npos; };
+    database.render(renderer, s.scene, s.camera);
+    const auto plain = renderer.programVertexSources();
+    CHECK(!plain.empty());
+    for (const auto& [key, source] : plain) CHECK(!flagged(source));
+    renderer.setTraa(TraaOptions{});
+    database.render(renderer, s.scene, s.camera);
+    std::size_t colour = 0, velocity = 0;
+    for (const auto& [key, source] : renderer.programVertexSources()) {
+        const bool before = std::any_of(plain.begin(), plain.end(), [&](const auto& p) { return p.first == key; });
+        if (key == "traa-velocity") { ++velocity; CHECK(flagged(source)); }
+        else if (key.rfind("depth|", 0) == 0) CHECK(!flagged(source));  // the shadow depth program shares its stage with nothing
+        else if (before) CHECK(!flagged(source));                         // built by the plain frame, untouched
+        else { ++colour; CHECK(flagged(source)); }
+    }
+    CHECK(velocity == 1 && colour >= 1);  // the TRAA frame built its own flagged colour program beside the plain one
 }
 
 void directionalTarget() {
@@ -1380,7 +1410,7 @@ void gpuTimerCoversShadows() {
 
 }  // namespace
 
-TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows})
