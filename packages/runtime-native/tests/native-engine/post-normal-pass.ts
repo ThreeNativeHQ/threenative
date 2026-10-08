@@ -166,7 +166,8 @@ function checkInvariantPositions(file: string): void {
     .filter(Boolean)
     .map((entry) => ({ key: entry.slice(0, entry.indexOf("\n")), text: entry }))
     .filter(({ key }) => !key.startsWith("depth|"));
-  if (colour.length === 0) throw new Error("TN_POST_NORMAL_NO_PROGRAMS: no colour program compiled");
+  if (colour.length === 0)
+    throw new Error("TN_POST_NORMAL_NO_PROGRAMS: no colour program compiled");
   const plain = colour.filter(({ text }) => !text.includes("@invariant @builtin(position)"));
   if (plain.length > 0)
     throw new Error(
