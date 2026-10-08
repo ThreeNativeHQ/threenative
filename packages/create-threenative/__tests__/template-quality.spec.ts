@@ -678,6 +678,9 @@ describe("starter postprocessing lifecycle", () => {
     const absent = controller.debug();
     expect(absent).toMatchObject({ fallback: "gpu-unavailable", meter: "presented", window: 1 });
     expect(Object.hasOwn(absent, "gpuMs")).toBe(false);
+    // No temporal provider is installed, so the key must be absent: `undefined` is not JSON-safe and
+    // the playtest bridge rejects the whole quality component with it.
+    expect(Object.hasOwn(absent, "temporal")).toBe(false);
 
     post.observeQualityWindow(frameWindow(2, { gpuMs: 8 }));
     const fresh = controller.debug();

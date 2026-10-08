@@ -208,7 +208,7 @@ phase is where "no lighting node ships web-only" stops being a sentence.
 
       The first box covers `ssgi`, `ssr`, `gtao`, `denoise`, `temporal-resolve`, `godrays`, and — from
       Phase 3 — `probe-volume-sample`; `velocity-buffer` joins when
-      [PRD-269](../rendering/PRD-269-motion-vectors-or-the-temporal-filters-lie.md) lands. Each scene
+      [PRD-269](../done/PRD-269-motion-vectors-or-the-temporal-filters-lie.md) lands. Each scene
       follows the `62-postprocessing-pass` shape: a structural assertion that the stage is actually
       **installed in the graph**, not merely requested, plus geometry chosen so the effect is
       *visible*. Each scene states in a comment which pixels change when its stage is removed, and
@@ -405,7 +405,7 @@ fix (sample the probe atlas as a rough reflection fallback), filed separately on
 is measured — adding it here doubles a PRD that is already the long pole. Probe relighting without a
 re-bake.
 
-Motion vectors ([PRD-269](../rendering/PRD-269-motion-vectors-or-the-temporal-filters-lie.md)): until
+Motion vectors ([PRD-269](../done/PRD-269-motion-vectors-or-the-temporal-filters-lie.md)): until
 they land, TRAA is requested only on templates without skinned characters, and the reason is written
 in the file.
 

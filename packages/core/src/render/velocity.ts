@@ -1,6 +1,6 @@
-import type { BatchedMesh, Matrix4, Object3D } from "three";
+import type { BatchedMesh, Matrix4, Object3D, RenderTarget, SkinnedMesh } from "three";
 import { context, mrt, output, velocity } from "three/tsl";
-import type { MRTNode, Node } from "three/webgpu";
+import type { MRTNode, Node, TextureNode } from "three/webgpu";
 
 import {
   disposeBatchedMeshVelocity,
@@ -18,6 +18,8 @@ export const VELOCITY_OUTPUT_NAME = "velocity";
  * without making the game depend on either implementation.
  */
 export interface IVelocityRenderPass {
+  /** Physical attachments on Three passes; structural adapters may own them elsewhere. */
+  readonly renderTarget?: Pick<RenderTarget, "textures" | "dispose">;
   getMRT(): MRTNode | null;
   getTextureNode(name?: string): Node;
   setMRT(value: MRTNode | null): unknown;
@@ -36,6 +38,10 @@ export const VELOCITY_PREVIOUS_BONE_MATRICES = Symbol.for(
   "threenative.velocity.previousBoneMatrices",
 );
 
+const VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE = Symbol.for(
+  "threenative.velocity.previousBindMatrixInverse",
+);
+
 interface IInstanceMatrixSource {
   instanceMatrix?: { array: ArrayLike<number> };
 }
@@ -51,6 +57,7 @@ interface IVelocityObject {
   [VELOCITY_PREVIOUS_INSTANCE_MATRICES]?: Float32Array;
   [VELOCITY_PREVIOUS_WORLD_MATRIX]?: Matrix4;
   [VELOCITY_PREVIOUS_BONE_MATRICES]?: Float32Array;
+  [VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE]?: Matrix4;
 }
 
 interface ITrackedSkeleton {
@@ -87,7 +94,13 @@ export function ensureVelocityOutput(pass: IVelocityRenderPass): MRTNode {
  */
 export function velocityTexture(pass: IVelocityRenderPass): Node {
   ensureVelocityOutput(pass);
-  return pass.getTextureNode(VELOCITY_OUTPUT_NAME);
+  const node = pass.getTextureNode(VELOCITY_OUTPUT_NAME);
+  const target = pass.renderTarget;
+  const texture = (node as TextureNode).value;
+  // PassNode caches texture nodes after a chain detaches their physical attachment.
+  if (target !== undefined && texture?.isTexture === true && !target.textures.includes(texture))
+    target.textures.push(texture);
+  return node;
 }
 
 /**
@@ -110,6 +123,7 @@ export class VelocityTracker {
   readonly #originalFlags = new Map<Object3D, IOriginalVelocityFlag>();
   readonly #instanceSnapshots = new Map<Object3D, Float32Array>();
   readonly #worldSnapshots = new Map<Object3D, Matrix4>();
+  readonly #bindInverseSnapshots = new Map<Object3D, Matrix4>();
   readonly #boneSnapshots = new Map<ITrackedSkeleton, Float32Array>();
   readonly #ownedBatchedMeshes = new Set<BatchedMesh>();
   readonly #active = new Set<Object3D>();
@@ -133,8 +147,13 @@ export class VelocityTracker {
           seenSkeletons.add(skeleton);
         }
         this.captureBones(object, skeleton);
+        (object as IVelocityObject)[VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE] =
+          this.#bindInverseSnapshots.get(object) ??
+          (object as SkinnedMesh).bindMatrixInverse.clone();
       } else {
         Reflect.deleteProperty(object, VELOCITY_PREVIOUS_BONE_MATRICES);
+        Reflect.deleteProperty(object, VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE);
+        this.#bindInverseSnapshots.delete(object);
       }
       this.captureInstance(object);
     });
@@ -162,6 +181,7 @@ export class VelocityTracker {
       this.#worldSnapshots.set(object, object.matrixWorld.clone());
       const skeleton = getSkeleton(object);
       if (skeleton !== undefined) {
+        this.#bindInverseSnapshots.set(object, (object as SkinnedMesh).bindMatrixInverse.clone());
         if (!seenSkeletons.has(skeleton)) {
           skeleton.update();
           seenSkeletons.add(skeleton);
@@ -184,6 +204,7 @@ export class VelocityTracker {
     this.#originalFlags.clear();
     this.#instanceSnapshots.clear();
     this.#worldSnapshots.clear();
+    this.#bindInverseSnapshots.clear();
     this.#boneSnapshots.clear();
     this.#updatedRoot = undefined;
   }
@@ -266,9 +287,11 @@ export class VelocityTracker {
     Reflect.deleteProperty(typed, VELOCITY_PREVIOUS_INSTANCE_MATRICES);
     Reflect.deleteProperty(typed, VELOCITY_PREVIOUS_WORLD_MATRIX);
     Reflect.deleteProperty(typed, VELOCITY_PREVIOUS_BONE_MATRICES);
+    Reflect.deleteProperty(typed, VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE);
     this.#originalFlags.delete(object);
     this.#instanceSnapshots.delete(object);
     this.#worldSnapshots.delete(object);
+    this.#bindInverseSnapshots.delete(object);
   }
 }
 

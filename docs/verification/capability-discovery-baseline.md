@@ -29,7 +29,10 @@ and results, are committed beside this report:
 
 - [baseline run 1](capability-discovery-baseline-run-1.jsonl)
 - [baseline run 2](capability-discovery-baseline-run-2.jsonl)
-- [baseline run 3](capability-discovery-baseline-run-3.jsonl)
+- [baseline run 3](capability-discovery-baseline-run-3.jsonl.gz)
+
+Run 3 is stored gzip-compressed; the bytes are unchanged. Restore it with
+`gzip -dc capability-discovery-baseline-run-3.jsonl.gz > capability-discovery-baseline-run-3.jsonl`.
 
 ## Measurements
 

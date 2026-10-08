@@ -13,7 +13,7 @@ Depends on PRD-266 (landed as
 [PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md)) and
 [PRD-267](./PRD-267-screen-space-gi-ships-in-the-templates.md); gates
 [PRD-268](../rendering/PRD-268-light-that-comes-from-off-screen.md) and
-[PRD-269](../rendering/PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch:
+[PRD-269](../done/PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch:
 [docs/PRDs/lighting](./README.md).
 
 **Goal: every lighting stage this batch turns on is proved to execute on native in the commit that
