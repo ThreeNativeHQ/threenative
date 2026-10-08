@@ -3702,3 +3702,49 @@ historical and does not apply to this shared host.
 K2 concerns the adopted CC0 kit; these licensed-preview measurements cannot earn it. PRD-467
 and PRD-468 retain their historical 9/9 and 8/8 criteria, with their existing limits. No HLOD or
 native-FPS gate is invented. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
+
+### 2026-10-07 — re-evaluation: static receivers sampled frozen shadow inputs
+
+The owner reported that the meadow still looked low quality ("shadow issue, or the texture?").
+Measured on the forest meadow view (RTX 2080, Chrome WebGPU, 1920×1080, MSAA 4, licensed assets):
+
+- **Cause (engine, `packages/core`).** `VirtualShadowNode` kept its window centre, light basis,
+  per-level `mapped`, offsets, extent and guard in plain `uniform()` nodes (three's object group).
+  The three patch skips object-group uploads for a settled static object, so static terrain and
+  streamed props sampled the shadow inputs they settled with at startup.
+- **Discriminator.** In the running page, `material.needsUpdate = true` on every material (no light
+  change, no map re-render) moved meadow luma 67.8 → 92.4; `invalidateAll()` alone moved it by 0.0.
+  The startup state reproduced 6 of 6 runs; hiding casters, the hidden `daylight-sun` shadow and
+  cached pages were each ruled out by a same-page control.
+- **Fix.** `43f97d8e2` moves those inputs to `renderGroup`. Startup meadow luma 67.8 → 88.2 with no
+  rebuild; a forced rebuild now adds +2.0 (was +24.6); crown luma 76.2 → 67.7 (crowns self-shadow).
+  `virtual-shadow.spec.ts` asserts every scalar/vector receiver uniform is render-group and fails
+  without the fix; 146/146 shadow specs pass.
+- **Same class, game layer.** The prop wind clock and canopy sun in `propMaterials.ts` move to
+  `renderGroup`, because world-cells marks the prop meshes static and the same freeze applies.
+  Measured meadow frame-to-frame motion is noisy: 6.57 before, 13.08 and 8.44 after (crowns 11.73
+  before, 12.91 and 9.76 after); no wind improvement is claimed from these three runs.
+- **Fresh judge (BEFORE → AFTER, 0–10).** Ground 3 → 5, trees 4 → 5, lighting/grounding 2 → 4,
+  sky 6 → 6, overall vs Gaia/Unreal references 3 → 4. Ranked remaining defects: no sun structure
+  (no tree shadows or dappled pools on the meadow), no trunk contact occlusion, uniform
+  sticker-like tall grass, dark repeated crowns without translucency, no depth haze. Captures:
+  [before](../../benchmark/strata-loading-2026-10-06/shadow-receivers-before-9977b16fa.jpg),
+  [after](../../benchmark/strata-loading-2026-10-06/shadow-receivers-after-43f97d8e2.jpg).
+- **Not the textures.** All 55 live textures carry full GPU mip chains; KTX2 files carry full
+  chains. The owner's screenshots were 255-colour palette PNGs, which posterize the sky; the
+  true-colour capture's clouds are hard-edged by the deliberately narrow coverage ramps.
+
+Re-evaluation of the open boxes:
+
+- Every visual verdict before `43f97d8e2` (rounds 9–18, V10/V11 judges, canopy evidence) was graded
+  on frozen shadow inputs and does not count toward AC-5, K3 or K4. Light, haze and grade constants
+  tuned in those rounds need re-checking on the fixed baseline before more tuning.
+- The judges' recurring "weak shadow grounding" was this defect, not art. The next visual lane is
+  the ranked list above, starting with sun structure and contact occlusion.
+- Other defects found: a failed KTX2 fetch leaves a white untextured prop and the run continues
+  (should fail closed or retry); `?tnShadowLevels=1` lost the device in 2 of 2 runs; the committed
+  lockfile pinned one importer to a stale three patch hash (`b75ce28ca`).
+- Device loss "A valid external Instance reference no longer exists" occurred while host load was
+  60–135 from CI jobs; GPU-watchdog starvation is a hypothesis, not a proven cause.
+
+No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
