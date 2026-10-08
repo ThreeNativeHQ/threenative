@@ -401,9 +401,12 @@ export interface IWorldCellsLoadOptions {
   readonly transparentScatter?: "cutout" | "blend";
   /**
    * Shadows for the streamed world, all off by default. `cast` makes scattered batches cast into
-   * the scene's shadow map, but only their `castLevels` finest distance levels (default 1: the
-   * near shape), since a far LOD's shadow is sub-texel in any open-world shadow window and every
-   * caster is redrawn per shadow level. `receive` lets scatter and terrain receive shadows.
+   * the scene's shadow map. Their `castLevels` finest distance levels (default 1: the near shape)
+   * each cast their own shape; a placement drawn at a coarser level of a chain casts with the
+   * coarsest of those, so it keeps its shadow without a caster mesh per level — every level casting
+   * its own minted ~3x the casters and the churn showed as garbage collection on a walk (PRD-539).
+   * Authored `lods` past `castLevels` cast nothing. `receive` lets scatter and terrain receive
+   * shadows.
    */
   readonly shadows?: {
     readonly cast?: boolean;
@@ -5678,13 +5681,14 @@ export class WorldCells extends Group implements IComputeDriven {
    * cluster are never half attached.
    */
   #claimCaster(assetId: string, entry: ICellBatch, cell: IResidentCell): boolean {
-    if (entry.casterSegment >= 0 || !this.#casts(entry.level)) return true;
+    const level = this.#castLevelOf(entry);
+    if (entry.casterSegment >= 0 || level === undefined) return true;
     // Nothing to claim, and nothing to wait for: a world whose levels draw its keys mints no caster
     // half at all (`#casterFor`), so reading that as a spent allowance refused every swap in the
     // world — the main mesh was never attached, no cell published its placements, and the main pass
     // drew nothing while its meshes sat there prewarmed and empty.
     if (this.#keysForShadow()) return true;
-    const caster = this.#casterFor(assetId, entry, cell);
+    const caster = this.#casterFor(assetId, entry, cell, level);
     const at = caster === undefined ? undefined : this.#segmentIn(caster, entry.batch.count);
     if (caster === undefined || at === undefined) return false;
     entry.caster = caster;
@@ -5698,13 +5702,14 @@ export class WorldCells extends Group implements IComputeDriven {
    * clusters and the wide half are never half attached.
    */
   #claimWide(assetId: string, entry: ICellBatch): boolean {
-    if (entry.wideSegment >= 0 || !this.#casts(entry.level)) return true;
+    const level = this.#castLevelOf(entry);
+    if (entry.wideSegment >= 0 || level === undefined) return true;
     // A part the asset's one whole-asset representation already covers: the entry keeps its near
     // main and cluster, and the far shadow reads part 0's one quad; see `#wideOwed`.
     if (!this.#wideOwed(assetId, entry.part)) return true;
     // As `#claimCaster`: the key twin is this level's wide half, and there is no mesh to wait on.
     if (this.#keysForShadow()) return true;
-    const wide = this.#wideFor(assetId, entry);
+    const wide = this.#wideFor(assetId, entry, level);
     // The impostor's far half draws the placement root, not `placement * part local`, so its block
     // is sized to the root records the build kept beside the part's own; see `ICellBatch.wideRoot`.
     const count = entry.wideRoot?.count ?? entry.batch.count;
@@ -6129,16 +6134,22 @@ export class WorldCells extends Group implements IComputeDriven {
    * One per `(key, cluster)`, on `VIRTUAL_SHADOW_CASTER_LAYER` and off the main camera, so a level
    * culls the clusters its own window covers while the main pass keeps drawing one mesh per key.
    */
-  #casterFor(assetId: string, entry: ICellBatch, cell: IResidentCell): SharedBatch | undefined {
+  #casterFor(
+    assetId: string,
+    entry: ICellBatch,
+    cell: IResidentCell,
+    level = entry.level,
+  ): SharedBatch | undefined {
     // A world whose shadow levels draw its keys mints no cluster: the two are the same placements by
     // two routes, and a level's map can only draw one of them.
-    if (!this.#casts(entry.level) || this.#keysForShadow()) return undefined;
+    if (!this.#casts(level) || this.#keysForShadow()) return undefined;
     return this.#batchFor(
       assetId,
       entry,
-      `${this.#keyOf(entry)}@${this.#clusterOf(cell)}`,
+      `${this.#keyOf(entry, level)}@${this.#clusterOf(cell)}`,
       "cluster",
       false,
+      level,
     );
   }
 
@@ -6150,20 +6161,37 @@ export class WorldCells extends Group implements IComputeDriven {
    * covers the whole resident ring pays one draw for the key instead of one per square, and the fine
    * levels that cull clusters never see this layer.
    */
-  #wideFor(assetId: string, entry: ICellBatch): SharedBatch | undefined {
+  #wideFor(assetId: string, entry: ICellBatch, level = entry.level): SharedBatch | undefined {
     // As `#casterFor`: the key twin replaces both halves, so neither is minted.
-    if (!this.#casts(entry.level) || this.#keysForShadow()) return undefined;
+    if (!this.#casts(level) || this.#keysForShadow()) return undefined;
     // A whole-asset impostor is one shape for every part and level, so its far shadow is ONE mesh per
     // asset holding one root record per placement, not one mesh per level whose records a source part
     // offset would then double. Every other asset keeps the per-key mesh its per-part shapes need.
     const impostor = this.#assets.get(assetId)?.impostor !== undefined;
-    const key = impostor ? `${assetId}:*@${WIDE_CLUSTER}` : `${this.#keyOf(entry)}@${WIDE_CLUSTER}`;
-    return this.#batchFor(assetId, entry, key, "wide", false);
+    const key = impostor
+      ? `${assetId}:*@${WIDE_CLUSTER}`
+      : `${this.#keyOf(entry, level)}@${WIDE_CLUSTER}`;
+    return this.#batchFor(assetId, entry, key, "wide", false, level);
   }
 
   /** `asset:level:part`, the main pass's one mesh per key. */
-  #keyOf(entry: ICellBatch): string {
-    return `${entry.asset}:${String(entry.level)}:${String(entry.part)}`;
+  #keyOf(entry: ICellBatch, level = entry.level): string {
+    return `${entry.asset}:${String(level)}:${String(entry.part)}`;
+  }
+
+  /**
+   * The level a cell batch casts with: its own when that level casts, otherwise the coarsest
+   * casting level, when that level holds the same parts — a chain's derived levels do, authored
+   * `lods` need not — so a tree past `castLevels` keeps its shadow in the last shape that has a
+   * caster rather than leaving a hole in the map (PRD-539). `undefined`: it casts nothing.
+   */
+  #castLevelOf(entry: ICellBatch): number | undefined {
+    if (this.#casts(entry.level)) return entry.level;
+    if (this.#castShadowLevels === 0) return undefined;
+    const asset = this.#assets.get(entry.asset);
+    if (asset === undefined || asset.definition.lods !== undefined) return undefined;
+    const level = Math.min(entry.level, this.#castShadowLevels) - 1;
+    return asset.levels[level]?.[entry.part] === undefined ? undefined : level;
   }
 
   /**
@@ -6337,13 +6365,22 @@ export class WorldCells extends Group implements IComputeDriven {
     return fallback;
   }
 
-  #shapeFor(entry: ICellBatch, role: "cluster" | "key" | "main" | "wide"): IBatchShape {
+  #shapeFor(
+    entry: ICellBatch,
+    role: "cluster" | "key" | "main" | "wide",
+    level = entry.level,
+  ): IBatchShape {
+    // A batch cast at a finer level than its own (`#castLevelOf`) draws that level's part.
+    const own =
+      level === entry.level
+        ? { geometry: entry.batch.geometry, material: entry.batch.material }
+        : (this.#assets.get(entry.asset)?.levels[level]?.[entry.part] as IAssetPart);
     if (role === "wide")
-      return this.#wideShape(this.#assets.get(entry.asset), entry.level, entry.part, {
-        geometry: entry.batch.geometry,
-        material: entry.batch.material,
+      return this.#wideShape(this.#assets.get(entry.asset), level, entry.part, {
+        geometry: own.geometry,
+        material: own.material,
       });
-    return { geometry: entry.batch.geometry, material: entry.batch.material };
+    return { geometry: own.geometry, material: own.material };
   }
 
   /**
@@ -6391,10 +6428,11 @@ export class WorldCells extends Group implements IComputeDriven {
     key: string,
     role: "cluster" | "key" | "main" | "wide",
     receiveShadow: boolean,
+    level = entry.level,
   ): SharedBatch | undefined {
     const existing = this.#shared.get(key);
     if (existing !== undefined) return existing;
-    const shape = this.#shapeFor(entry, role);
+    const shape = this.#shapeFor(entry, role, level);
     const smallCaster = this.#smallCaster(assetId);
     // The batch released when this asset's last cell left the ring is the one to draw into again,
     // so the mesh keeps the uuid and the node three built for it. It costs no fresh allowance,
@@ -6409,7 +6447,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#dressMesh(released, receiveShadow);
       // A rebind swaps the geometry and may swap the buffer, so the key is dressed again: the indirect
       // record and the shared matrix buffer belong to the mesh, not to the batch.
-      this.#adoptGpu(released, entry.asset, key, entry.level, entry.part);
+      this.#adoptGpu(released, entry.asset, key, level, entry.part);
       this.#shared.set(key, released);
       this.#attach(released);
       return released;
@@ -6432,7 +6470,7 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     shared.smallCaster = smallCaster;
     this.#dressMesh(shared, receiveShadow);
-    this.#adoptGpu(shared, entry.asset, key, entry.level, entry.part);
+    this.#adoptGpu(shared, entry.asset, key, level, entry.part);
     this.#shared.set(key, shared);
     this.#attach(shared);
     return shared;

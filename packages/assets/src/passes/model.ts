@@ -494,6 +494,28 @@ function multiplyMatrices(a: readonly number[], b: readonly number[]): number[] 
 const IDENTITY_MATRIX = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 /**
+ * The vertices a primitive draws: all of them when it has no index buffer, otherwise the distinct
+ * ones its indices name. A card LOD chain appends scaled copies of its cards that only the levels'
+ * indices reach (PRD-539); LOD0 never draws them, so they are not drift.
+ */
+function drawnVertices(primitive: GltfPrimitive, count: number): Uint32Array {
+  const indices = primitive.getIndices()?.getArray();
+  if (indices === null || indices === undefined)
+    return Uint32Array.from({ length: count }, (_, at) => at);
+  const seen = new Uint8Array(count);
+  let distinct = 0;
+  for (const index of indices)
+    if (index < count && seen[index] === 0) {
+      seen[index] = 1;
+      distinct += 1;
+    }
+  const out = new Uint32Array(distinct);
+  let at = 0;
+  for (let index = 0; index < count; index += 1) if (seen[index] === 1) out[at++] = index;
+  return out;
+}
+
+/**
  * Stats over scene-reachable content only; DCC leftovers dropped by prune are not drift.
  * The bounding box is taken over bind-pose vertex positions evaluated the way the GPU
  * evaluates them — node transforms for static meshes, weighted joint matrices for skinned
@@ -547,8 +569,9 @@ export function reachableStats(root: RootOf): IModelStats {
           triangles += primitiveTriangles(primitive);
           const position = primitive.getAttribute("POSITION");
           if (position === null) continue;
-          vertices += position.getCount();
-          for (let index = 0; index < position.getCount(); index += 1) {
+          const drawn = drawnVertices(primitive, position.getCount());
+          vertices += drawn.length;
+          for (const index of drawn) {
             const [wx, wy, wz] = evaluateVertex(
               position,
               index,
