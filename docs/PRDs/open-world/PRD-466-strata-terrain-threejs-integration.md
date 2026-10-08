@@ -3854,4 +3854,17 @@ ground-material chain) hide this, against the fail-closed rule. Fix belongs to t
 the native run one asset root (or the `assets/` convention) covering all three sources, then make
 the ground-material failure throw.
 
+Native ground textures fixed in the example: `test:terrain:desktop` now runs
+`scripts/stage-native-assets.mjs`, which hard-links the CC0 `packages/terrain/starter-assets` set
+(65 files) into a gitignored `assets/`, the path the native host searches. Red → green on the same
+fresh native host: `alpine-ground-ready` timed out with `groundBiome` stuck at `"baked"` before;
+after, every phase runs, the ground draws its grass and rock maps
+([capture](../../benchmark/strata-loading-2026-10-06/native-ground-staged-meadow.jpg)) and the run
+logs 0 console errors. Staging the licensed `local-assets/` roots as well was tried and rejected: the
+cooked KTX2 spruce then loaded untextured (blue-white cards, 143 `GLTFLoader: Couldn't load texture
+../shared/images/*.ktx2` errors), worse than the procedural fallback; native KTX2 decoding is the
+native lane's follow-up. The desktop scenario still fails 22 of 62 assertions, mostly web-only
+measurements the native target cannot provide (Long Tasks, GPU timestamp windows, budget windows),
+plus `props.crags.drawn` and `player.visible` at two steps; these were unreachable before.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
