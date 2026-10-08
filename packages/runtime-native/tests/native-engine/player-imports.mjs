@@ -268,6 +268,7 @@ await mkdir(resolve(work, "audio"));
 const audioPackage = resolve(work, "audio/assets.tnpk");
 await writeFile(audioPackage, writeNativePackage([
   { name: "beep.ogg", kind: 1, data: Buffer.from("OggS!"), uploadSize: 0 },
+  { name: "/assets/audio/engine.ogg", kind: 1, data: Buffer.from("OggS!"), uploadSize: 0 },
   { name: "sky.jpg", kind: 2, data: Buffer.alloc(16), uploadSize: 4 },
 ]));
 await writeFile(entry, `
@@ -282,9 +283,15 @@ try { globalThis.tn.loadAsset("audio", "sky.jpg"); } catch (error) { mismatch = 
 check(mismatch, "a texture entry is not audio");
 // A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
 // both pending, and any refusal before it rejects inside this check's microtasks.
+// "audio/engine.ogg" is not a package name: core's source fallback finds it under assets/, as the
+// web loader does for a game without a manifest (Midway's cues).
 for (const [name, decoding] of [["assets.audio", createAssetLoader().audio("beep.ogg")],
+  ["assets.audio from source", createAssetLoader().audio("audio/engine.ogg")],
   ["AudioLoader", new AudioLoader().loadAsync("beep.ogg")]])
   decoding.catch((error) => { globalThis.tn.__startupError = name + " refused: " + error.message; });
+createAssetLoader({ sourcePath: "" }).audio("audio/engine.ogg").then(
+  () => { globalThis.tn.__startupError = "an empty sourcePath still fell back"; },
+  (error) => { if (!/TN_NATIVE_ASSET_MISSING/.test(error.message)) globalThis.tn.__startupError = error.message; });
 globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
 `);
 await bundleNativeEngine({ entry, outfile, boot: false });
