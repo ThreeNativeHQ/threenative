@@ -1412,11 +1412,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // with nothing reconstructing it stops being a faster frame and becomes a blur.
             minScale: resolvePlatformResolutionFloor(getPlatform().os),
             targetFps: initialTarget.targetFps,
-            // The renderer publishes no active-stage list, so this reads the one core-owned seam
-            // that is set exactly while the installed chain runs a stage consuming temporal
-            // motion data: while that is true the floor is lifted, and the deep rungs — the ones
-            // only a reconstruction can pay for — are reachable.
-            temporalUpscale: () => renderer.renderChainUsesPerObjectVelocity?.() === true,
+            // No floor lift from motion data: consuming velocity is not upscaling. Three's TRAA
+            // accumulates at the canvas's own size, so lifting the floor for it let a forest frame
+            // fall to 0.23 (442x248 on a 1920x1080 canvas). Only a stage that reconstructs a
+            // display-resolution frame may pass `temporalUpscale`, and none ships today.
           })
         : undefined;
     // The panel's own rate, once a window of presented frames can say it. The native host's
