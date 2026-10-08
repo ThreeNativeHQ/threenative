@@ -106,7 +106,7 @@ struct VertexVariant {
      * cubeUV texture `env` for IBL irradiance and radiance (three's EnvironmentNode).
      */
     bool environment = false;
-    /** The position output is @invariant: this frame draws a normal pass that shares the vertex stage. */
+    /** The position output is @invariant: this frame draws a normal pass that shares the vertex stage, or TRAA's velocity pass depth-Equal against it. */
     bool invariantPosition = false;
     MaterialNodes nodes;
     /** A stable key: two variants with the same key build the same program. */

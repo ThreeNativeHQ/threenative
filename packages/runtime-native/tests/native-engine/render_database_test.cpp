@@ -650,19 +650,23 @@ void invariantScope() {
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
     renderer.setSize(64, 48);
     LitScene s;
+    s.light.setCastShadow(true);  // a shadow depth program exists beside the colour program
+    s.mesh.setCastShadow(true);
     RenderDatabase database;
+    database.shadowMapEnabled = true;
     const auto flagged = [](const std::string& source) { return source.find("@invariant") != std::string::npos; };
     database.render(renderer, s.scene, s.camera);
     const auto plain = renderer.programVertexSources();
     CHECK(!plain.empty());
     for (const auto& [key, source] : plain) CHECK(!flagged(source));
+    CHECK(std::any_of(plain.begin(), plain.end(), [](const auto& p) { return p.first.rfind("depth|", 0) == 0; }));
     renderer.setTraa(TraaOptions{});
     database.render(renderer, s.scene, s.camera);
     std::size_t colour = 0, velocity = 0;
     for (const auto& [key, source] : renderer.programVertexSources()) {
         const bool before = std::any_of(plain.begin(), plain.end(), [&](const auto& p) { return p.first == key; });
         if (key == "traa-velocity") { ++velocity; CHECK(flagged(source)); }
-        else if (key.rfind("depth|", 0) == 0) CHECK(!flagged(source));  // the shadow depth program shares its stage with nothing
+        else if (key.rfind("depth|", 0) == 0) CHECK(!flagged(source));  // the shadow depth program shares its stage with nothing, TRAA or not
         else if (before) CHECK(!flagged(source));                         // built by the plain frame, untouched
         else { ++colour; CHECK(flagged(source)); }
     }

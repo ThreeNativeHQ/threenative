@@ -151,7 +151,7 @@ public:
      * Marks the clip position `@invariant`: two pipelines that share this vertex module (a normal pass
      * drawn depth-Equal after the colour pass) are then guaranteed the same position. It costs the
      * compiler its freedom to fuse the position arithmetic, so a program that is drawn alone is left
-     * as three's is, and only the programs of a frame with a normal pass ask for it.
+     * as three's is, and only the programs of a frame that draws a second pipeline depth-Equal against the colour pass (a normal pass, TRAA's velocity pass) ask for it.
      */
     void setInvariantPosition(bool on) { invariantPosition_ = on; }
 
