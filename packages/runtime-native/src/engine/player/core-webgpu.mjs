@@ -61,6 +61,7 @@ export class RenderPipeline {
     this.outputNode = outputNode;
   }
   render() {
+    syncUniforms();
     globalThis.tn.setRendererState(this.renderer);
     globalThis.tn.setPostGraph(this.outputNode);
   }

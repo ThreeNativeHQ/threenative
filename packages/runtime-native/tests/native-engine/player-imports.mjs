@@ -277,9 +277,9 @@ await writeFile(packagePath, packageBytes);
 await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { createAssetLoader } from ${JSON.stringify(resolve(native, "src/engine/player/core-assets.mjs"))};
-import { Scene, PerspectiveCamera, Mesh, BoxGeometry, MeshBasicMaterial } from "three";
+import { Scene, PerspectiveCamera, Mesh, BoxGeometry, MeshBasicMaterial, Color } from "three";
 import { WebGPURenderer, RenderPipeline } from "three/webgpu";
-import { vec4, convertToTexture, screenUV, pass, mrt, output, normalView, metalness, roughness } from "three/tsl";
+import { vec4, convertToTexture, screenUV, pass, mrt, output, normalView, metalness, roughness, uniform } from "three/tsl";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
@@ -335,6 +335,12 @@ composed = composed.add(bloom(convertToTexture(composed), 0.22, 0.6, 1));
 const fall = screenUV.sub(0.5).length().oneMinus();
 pipeline.outputNode = smaa(composed.mul(fall));
 pipeline.render(); pipeline.render();
+// A post-chain frame pushes edited Color/VectorN uniforms, as renderer.render does.
+const tint = uniform(new Color(1, 0, 0)); tint.value.g = 0.5;
+const setUniform = globalThis.tsl.setUniform; let synced = false;
+globalThis.tsl.setUniform = (node, ...lanes) => { synced ||= node === tint && lanes[1] === 0.5; return setUniform(node, ...lanes); };
+pipeline.render(); globalThis.tsl.setUniform = setUniform;
+check(synced, "RenderPipeline.render syncs edited uniforms");
 let refusedSlot = false;
 try { mrt({ normal: metalness }); } catch (error) { refusedSlot = /TN_NATIVE_MRT_UNSUPPORTED/.test(error.message); }
 check(refusedSlot, "an MRT slot under another name refuses");
