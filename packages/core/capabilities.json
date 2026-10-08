@@ -7694,6 +7694,21 @@
         "source": "three"
       },
       {
+        "symbol": "LoopOnce",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "LoopPingPong",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "LoopRepeat",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "MathUtils",
         "kind": "class",
         "source": "three/webgpu"

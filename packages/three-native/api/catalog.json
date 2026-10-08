@@ -7677,8 +7677,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "2200"
@@ -7688,8 +7687,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "2202"
@@ -7699,8 +7697,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "2201"

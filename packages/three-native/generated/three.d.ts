@@ -990,13 +990,13 @@ export declare const LinearToneMapping: 1;
 /** Catalog partial (native-not-implemented): three/LinearTransfer. */
 export declare const LinearTransfer: "linear";
 
-/** Catalog partial (native-not-implemented): three/LoopOnce. */
+/** Catalog supported: three/LoopOnce. */
 export declare const LoopOnce: 2200;
 
-/** Catalog partial (native-not-implemented): three/LoopPingPong. */
+/** Catalog supported: three/LoopPingPong. */
 export declare const LoopPingPong: 2202;
 
-/** Catalog partial (native-not-implemented): three/LoopRepeat. */
+/** Catalog supported: three/LoopRepeat. */
 export declare const LoopRepeat: 2201;
 
 /** Catalog partial (native-not-implemented): three/MagnificationTextureFilter. */
