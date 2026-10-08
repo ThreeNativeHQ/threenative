@@ -36,9 +36,8 @@ class Tsl {
     v8::Global<v8::ObjectTemplate> nodeTemplate_;
     std::set<Wrapper*> wrappers_;
     std::vector<std::unique_ptr<Call>> calls_;
-    std::vector<engine::shader::graph::Node>* statements_ = nullptr;
-    uint64_t scope_ = 0;
-    uint64_t nextScope_ = 0;
+    abi::TslScopes scopes_;  // the bodies open while JS callbacks run (shared with the Wasm back end)
+    uint64_t serial_ = 0;
 };
 
 } // namespace tn::adapters::v8adapter

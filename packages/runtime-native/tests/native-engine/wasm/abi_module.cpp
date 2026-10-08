@@ -3,9 +3,12 @@
 // entry point, no WebGPU. Its exports are listed in cmake/NativeEngineCore.cmake.
 #include "engine/abi/abi_internal.h"
 #include "engine/scene/nodes.h"
+#include "engine/shader/tsl/tsl.h"
 #include "threenative/abi/tn_abi.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 
 // Test hook for the smoke run (tests/browser-backend-smoke.ts): fires a mesh's onBeforeRender as
@@ -20,4 +23,30 @@ extern "C" int tnw_fire_before_render(const tn_handle_t* mesh) {
     if ((*node->onBeforeRender)({node->parent, nullptr, node->geometry, node->material}, error)) return 0;
     std::printf("TN_CALLBACK_FAILED onBeforeRender: %s\n", error.c_str());
     return 1;
+}
+
+// Test hook for the TSL corpus under Wasm (tsl-corpus.ts): lowers a tn_tsl_call node for `stage`
+// (position, color or compute) and returns its IR dump as tn-native-engine-tsl-js prints it. The
+// caller frees the string.
+extern "C" char* tnw_tsl_dump(tn_context_t* context, uint64_t id, const char* stage) {
+    using namespace tn::engine::shader;
+    const std::string out(stage);
+    const graph::Node node = tn::abi::tslNode(context, id);
+    std::string text;
+    if (!node) text = "DIAGNOSTIC TN_TSL_NODE_INVALID\n";
+    else {
+        Program program(out == "compute" ? Stage::Compute : out == "color" ? Stage::Fragment : Stage::Vertex);
+        {
+            tsl::Build build(program);
+            const ExprId expression = graph::lower(node, program);
+            if (out != "compute") program.output(out, expression);
+        }
+        if (!program.ok())
+            for (const Diagnostic& d : program.diagnostics())
+                text += "DIAGNOSTIC " + d.code + " " + d.node + ": " + d.reason + "\n";
+        else text = program.dump(true);
+    }
+    char* copy = static_cast<char*>(std::malloc(text.size() + 1));
+    std::memcpy(copy, text.c_str(), text.size() + 1);
+    return copy;
 }

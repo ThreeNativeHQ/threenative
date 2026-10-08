@@ -8,7 +8,8 @@
 // buf[i]`) is inlined where it is used, as `v3` / `load:buf[i]`. Upstream TSL has no separate read
 // statement, so the comparison is of structure and types, not of the IR's read numbering.
 //
-// Usage: node differential.mjs --suite tsl-ir [--native <corpus executable>]
+// Usage: node differential.mjs --suite tsl-ir [--native <corpus executable> | --wasm <abi module .js>]
+// `--wasm` runs the JS corpus (tsl-corpus/corpus.js) on the Wasm back end (wasm/tsl-corpus.ts).
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,7 +66,12 @@ function inlineReads(lines) {
   return out.map((line) => line.replace(/%(\d+)/g, (whole, number) => reads.get(number) ?? whole));
 }
 
-const nativeGraphs = graphs(run(native, [], packageRoot)).map((graph) => ({
+const wasm = option("--wasm");
+const nativeText =
+  wasm === undefined
+    ? run(native, [], packageRoot)
+    : run("pnpm", ["exec", "tsx", "tests/native-engine/wasm/tsl-corpus.ts", path.resolve(wasm)], packageRoot);
+const nativeGraphs = graphs(nativeText).map((graph) => ({
   ...graph,
   lines: inlineReads(graph.lines),
 }));

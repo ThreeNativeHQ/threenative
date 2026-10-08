@@ -38,6 +38,7 @@ struct tn_context : tn::binding::Store {
     std::unordered_map<uint64_t, tn::engine::shader::graph::Node> tslNodes;
     uint64_t nextTslNode = 0;
     uint64_t tslSerial = 0;  // names the uniforms and render textures tn_tsl_call makes
+    tn::abi::TslScopes tslScopes;  // the bodies open while the game's TSL callbacks run
     std::vector<tn::binding::Object> values;  // by handle index
     // (address, class) -> the one handle naming it: member aliases and shared objects. The class is
     // part of the key because a first member shares its owner's address (Box3::min).
@@ -512,6 +513,12 @@ void setShaderNode(tn_handle_t handle, const std::string& path, engine::shader::
     found->second(object->ptr.get(), binding::Value::shaderNode(std::move(node)), *context);
 }
 
+engine::shader::graph::Node tslNode(tn_context_t* context, uint64_t id) {
+    if (!context) return nullptr;
+    const auto found = context->tslNodes.find(id);
+    return found == context->tslNodes.end() ? nullptr : found->second;
+}
+
 uint64_t crossings() { return gCrossings.load(std::memory_order_relaxed); }
 
 }  // namespace tn::abi
@@ -711,8 +718,10 @@ extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, cons
             }
         }
         const tn::abi::TslArg self = receiver ? tn::abi::TslArg::of(node(*receiver)) : tn::abi::TslArg{};
-        auto result = tn::abi::tslCall(name, receiver ? &self : nullptr, converted, context->tslSerial);
-        if (!result)
+        tn::engine::shader::graph::Node result;
+        if (context->tslScopes.call(name, receiver ? &self : nullptr, converted, result)) {
+            if (!result) return ok(diagnostic);  // scope:open makes no node
+        } else if (!(result = tn::abi::tslCall(name, receiver ? &self : nullptr, converted, context->tslSerial)))
             return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_TSL_DYNAMIC_UNSUPPORTED " + std::string(name)).c_str());
         const uint64_t id = ++context->nextTslNode;
         context->tslNodes.emplace(id, std::move(result));

@@ -37,7 +37,9 @@ TN_STATIC_ASSERT(offsetof(tn_tsl_arg_t, node) == 8 && offsetof(tn_tsl_arg_t, num
                  "tn_tsl_arg_t layout");
 /* `name` as TSL names it (`uniform`, `mul`, `swizzle:xy`); `receiver` points at the node a method
  * is called on, or is null for a module function. The new node's id lands in `out_node`. A name the
- * table lacks fails with TN_TSL_DYNAMIC_UNSUPPORTED. */
+ * table lacks fails with TN_TSL_DYNAMIC_UNSUPPORTED. The statement forms (scope:open, scope:close,
+ * toVar, assign, If, Else, Loop:index, Loop) run against the context's open bodies, as
+ * tn::abi::TslScopes (engine/abi/tsl_call.h) documents; scope:open leaves `out_node` 0. */
 TN_EXPORT tn_status_t tn_tsl_call(tn_context_t *context, const char *name, const uint64_t *receiver,
                                   const tn_tsl_arg_t *args, uint32_t arg_count, uint64_t *out_node,
                                   tn_diagnostic_t *diagnostic);

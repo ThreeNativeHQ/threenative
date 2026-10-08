@@ -397,7 +397,7 @@ if(EMSCRIPTEN)
     tn_native_engine_target(tn-native-engine-abi-module)
     target_link_options(tn-native-engine-abi-module PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_NAME=createTnAbi
         -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_fire_before_render,_malloc,_free"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_fire_before_render,_tnw_tsl_dump,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
     target_include_directories(tn-native-engine-abi-module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     find_program(TN_PNPM_EXECUTABLE pnpm)
@@ -407,6 +407,12 @@ if(EMSCRIPTEN)
                 $<TARGET_FILE:tn-native-engine-abi-module>)
         set_tests_properties(native_engine_wasm_browser_backend PROPERTIES LABELS "native-engine"
             PASS_REGULAR_EXPRESSION "TN_BROWSER_BACKEND_OK")
+        # PRD-540: the JS TSL corpus V8 passes (native_engine_tsl_js), on the Wasm back end.
+        add_test(NAME native_engine_wasm_tsl_js
+            COMMAND ${TN_PNPM_EXECUTABLE} exec node tests/native-engine/differential.mjs --suite tsl-ir
+                --wasm $<TARGET_FILE:tn-native-engine-abi-module>
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        set_tests_properties(native_engine_wasm_tsl_js PROPERTIES LABELS "native-engine")
     endif()
 endif()
 

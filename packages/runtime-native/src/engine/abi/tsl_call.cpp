@@ -65,6 +65,25 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     const auto lhs = [&] { return method ? input(*receiver) : arg(0); };
     const auto rhs = [&] { return arg(method ? 0 : 1); };
 
+    // PRD-540 (Wasm wrappers): the calls a back end without native wrappers makes by name.
+    if (!method && name.rfind("constant:", 0) == 0) {
+        arity(0);
+        for (auto& [label, node] : tslConstants())
+            if (label == name.substr(9)) return node;
+        return {};
+    }
+    if (!method && name == "storage:element") {  // instancedArray(n, type).setName(name).element(index)
+        arity(3);
+        if (text(args[0]).empty()) throw std::runtime_error("storage buffer needs setName");
+        return g::storage(text(args[0]), type(text(args[1]))).element(arg(2));
+    }
+    if (method && name == "setName") {  // a uniform under the name a material binds; the data stays
+        arity(1);
+        const auto& self = receiver->node;
+        if (text(args[0]).empty()) throw std::runtime_error("empty name");
+        if (!self || self->kind != g::Kind::Uniform) throw std::runtime_error("setName requires a uniform or storage buffer");
+        return g::uniform(text(args[0]), self->type, self->values);
+    }
     if (name == "nodeObject") {
         arity(1);
         return arg(0);
@@ -258,6 +277,19 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
                         return {};
 }
 
+std::vector<std::pair<std::string, g::Node>> tslConstants() {
+    return {{"positionLocal", g::positionLocal()},
+            {"positionWorld", g::varying("positionWorld", Type::vec(3))},
+            {"normalViewGeometry", g::varying("normalViewGeometry", Type::vec(3))},
+            {"cameraViewMatrix", g::uniform("viewMatrix", Type::mat(4, 4))},
+            {"instanceIndex", g::instanceIndex()},
+            {"screenUV", g::uv()},
+            {"materialColor", g::uniform("diffuse", Type::vec(4))},
+            {"materialEmissive", g::uniform("emissive", Type::vec(3))},
+            {"materialMetalness", g::uniform("metalness", Type::f32())},
+            {"materialRoughness", g::uniform("roughness", Type::f32())}};
+}
+
 void tslSetUniform(const g::Node& uniform, const double* values, size_t count) {
     std::vector<float> lanes;
     for (size_t i = 0; i < count; ++i) {
@@ -265,6 +297,121 @@ void tslSetUniform(const g::Node& uniform, const double* values, size_t count) {
         lanes.push_back(static_cast<float>(values[i]));
     }
     g::setUniformValues(uniform, std::move(lanes));
+}
+
+std::vector<TslScopes::Body>& TslScopes::open() {
+    if (open_.empty()) throw std::runtime_error("statement outside Fn");
+    return open_;
+}
+
+bool TslScopes::call(const std::string& name, const TslArg* receiver, const std::vector<TslArg>& args, g::Node& out) {
+    const auto arity = [&](size_t n) {
+        if (args.size() != n) throw std::runtime_error("expected " + std::to_string(n) + " arguments");
+    };
+    const auto self = [&] {
+        if (!receiver || receiver->kind != TslArg::Kind::Node || !receiver->node)
+            throw std::runtime_error("invalid TSL receiver");
+        return receiver->node;
+    };
+    const auto body = [&](size_t i, const char* form) {
+        const auto& value = args.at(i);
+        if (value.kind != TslArg::Kind::Node || !value.node || value.node->kind != g::Kind::Body)
+            throw std::runtime_error(std::string(form) + " callback must contain statements");
+        return value.node->body;
+    };
+    out = {};
+    if (name == "scope:open") {
+        arity(0);
+        open_.push_back({++nextBody_, {}});
+        return true;
+    }
+    if (name == "scope:close") {
+        if (args.size() > 1) throw std::runtime_error("expected at most 1 argument");
+        Body closed = std::move(open().back());
+        open_.pop_back();
+        for (auto it = ifs_.begin(); it != ifs_.end();) it = it->second.first == closed.id ? ifs_.erase(it) : std::next(it);
+        if (closed.statements.empty() && !args.empty()) {
+            out = input(args[0]);
+            return true;
+        }
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Body;
+        node->body = std::move(closed.statements);
+        out = node;
+        return true;
+    }
+    if (name == "toVar") {
+        arity(0);
+        auto& statements = open().back().statements;
+        g::Block block;
+        out = block.var(input(*receiver)).declaration;
+        statements.push_back(out);
+        return true;
+    }
+    if (name == "assign") {
+        arity(1);
+        auto& statements = open().back().statements;
+        const auto target = self();
+        if (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement)
+            throw std::runtime_error("assign requires a variable or storage element");
+        g::Block block;
+        block.assign(target, input(args[0]));
+        statements.push_back(block.node()->body[0]);
+        out = target;
+        return true;
+    }
+    if (name == "If") {
+        arity(2);
+        auto& current = open().back();
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::If;
+        node->args = {input(args[0])};
+        node->body = body(1, "If");
+        ifs_[node.get()] = {current.id, current.statements.size()};
+        current.statements.push_back(node);
+        out = node;
+        return true;
+    }
+    if (name == "Else") {
+        arity(1);
+        auto& current = open().back();
+        const auto branch = self();
+        const auto at = ifs_.find(branch.get());
+        if (branch->kind != g::Kind::If || at == ifs_.end() || at->second.first != current.id ||
+            at->second.second >= current.statements.size() || current.statements[at->second.second] != branch ||
+            !branch->otherwise.empty())
+            throw std::runtime_error("Else requires an If in this stack");
+        auto node = std::make_shared<g::NodeData>(*branch);
+        node->otherwise = body(0, "Else");
+        current.statements[at->second.second] = node;
+        ifs_.erase(at);
+        out = node;
+        return true;
+    }
+    if (name == "Loop:index") {
+        arity(0);
+        g::Block block;
+        block.Loop(0, {});
+        out = block.node()->body[0]->args[1];
+        return true;
+    }
+    if (name == "Loop") {
+        arity(3);
+        auto& statements = open().back().statements;
+        const double n = args[0].kind == TslArg::Kind::Number ? args[0].number : -1;
+        if (n < 0 || n > std::numeric_limits<int32_t>::max() || n != std::floor(n))
+            throw std::runtime_error("expected a nonnegative i32 count");
+        if (args[1].kind != TslArg::Kind::Node || !args[1].node || args[1].node->kind != g::Kind::LoopIndex)
+            throw std::runtime_error("Loop needs the index Loop:index made");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Loop;
+        node->args = {g::int_(static_cast<int32_t>(n)), args[1].node};
+        node->body = body(2, "Loop");
+        statements.push_back(node);
+        out = node;
+        return true;
+    }
+    return false;
 }
 
 }  // namespace tn::abi
