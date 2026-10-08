@@ -70,6 +70,8 @@ const FUNCTIONS = [
   "textureLoad",
   "reflect",
   "convertToTexture",
+  "mx_noise_float",
+  "mx_worley_noise_vec2",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [

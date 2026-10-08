@@ -4,6 +4,7 @@
 // material (and any GPU work it needs) just before the frame is drawn.
 
 #include "engine/abi/binding.h"
+#include "engine/abi/tsl_call.h"
 #include "probes.h"
 #include "engine/renderer/compute.h"
 #include "engine/renderer/renderer.h"
@@ -295,6 +296,22 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
             g::vec3({g::float_(0), g::float_(0), g::mul(g::sin(g::mul(g::swizzle(g::positionLocal(), "x"), g::float_(2))), g::float_(0.4))}));
     } else if (program == "nodemat-color-uv") {
         material->nodes.colorNode = g::vec4({g::uv(), g::uniform("nodeTint", Type::f32(), {0.35f}), g::float_(1)});
+    } else if (program == "materialx-noise") {
+        // Through the shared TSL table, as V8 and Wasm build it (engine/abi/tsl_call.cpp).
+        uint64_t serial = 0;
+        const auto tsl = [&serial](const char* name, std::vector<abi::TslArg> args) {
+            return abi::tslCall(name, nullptr, args, serial);
+        };
+        const auto node = [](g::Node value) { return abi::TslArg::of(std::move(value)); };
+        const auto positionWorld = g::varying("positionWorld", Type::vec(3));
+        const auto perlin3 = g::add(g::mul(tsl("mx_noise_float", {node(g::mul(positionWorld, g::float_(1.8)))}),
+                                           g::float_(0.5)), g::float_(0.5));
+        const auto perlin2 = tsl("mx_noise_float", {node(g::mul(g::uv(), g::float_(6))), abi::TslArg::of(0.8),
+                                                    abi::TslArg::of(0.1)});
+        const auto cells = tsl("mx_worley_noise_vec2", {node(g::mul(g::uv(), g::float_(5))), abi::TslArg::of(0.9)});
+        const auto cells3 = tsl("mx_worley_noise_vec2", {node(g::mul(positionWorld, g::float_(2)))});
+        material->nodes.colorNode = g::vec4({perlin3, g::add(perlin2, g::mul(g::swizzle(cells, "x"), g::float_(0.3))),
+            g::mul(g::add(g::swizzle(cells, "y"), g::swizzle(cells3, "x")), g::float_(0.4)), g::float_(1)});
     } else if (program == "nodemat-standard-nodes") {
         material->nodes.roughnessNode = g::add(g::mul(x, g::float_(0.7)), g::float_(0.2));
         material->nodes.metalnessNode = g::mul(y, g::float_(0.8));

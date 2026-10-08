@@ -21,6 +21,8 @@ import {
   instanceIndex,
   instancedArray,
   length,
+  mx_noise_float,
+  mx_worley_noise_vec2,
   normalViewGeometry,
   normalWorld,
   normalize,
@@ -533,6 +535,19 @@ export const programs = {
   },
   async "nodemat-color-uv"({ target }) {
     target.colorNode = vec4(uv(), uniform(0.35).setName("nodeTint"), 1);
+  },
+  /** MaterialX noise: 3D and 2D Perlin through mx_noise_float, 2D and 3D Worley cells. */
+  async "materialx-noise"({ target }) {
+    const perlin3 = mx_noise_float(positionWorld.mul(1.8)).mul(0.5).add(0.5);
+    const perlin2 = mx_noise_float(uv().mul(6), 0.8, 0.1);
+    const cells = mx_worley_noise_vec2(uv().mul(5), 0.9);
+    const cells3 = mx_worley_noise_vec2(positionWorld.mul(2));
+    target.colorNode = vec4(
+      perlin3,
+      perlin2.add(cells.x.mul(0.3)),
+      cells.y.add(cells3.x).mul(0.4),
+      1,
+    );
   },
   async "nodemat-standard-nodes"({ target }) {
     target.roughnessNode = uv().x.mul(0.7).add(0.2);

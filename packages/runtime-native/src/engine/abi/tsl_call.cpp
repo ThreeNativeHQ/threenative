@@ -88,6 +88,24 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         node->type = node->args[0]->type;
         return node;
     }
+    // MaterialX noise (three's MaterialXNodes.js over mx_noise.js; the WGSL is materialx_noise.h).
+    // mx_noise_float(texcoord = uv(), amplitude = 1, pivot = 0) is perlin * amplitude + pivot, and
+    // mx_worley_noise_vec2(texcoord = uv(), jitter = 1) uses metric 1, as three's wrapper does.
+    if (!method && (name == "mx_noise_float" || name == "mx_worley_noise_vec2")) {
+        const bool worley = name == "mx_worley_noise_vec2";
+        if (args.size() > (worley ? 2u : 3u)) throw std::runtime_error("too many arguments");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Math;
+        node->name = worley ? "mx_worley_noise_vec2" : "mx_perlin_noise_float";
+        node->args = {args.empty() ? g::uv() : arg(0)};
+        node->type = worley ? Type::vec(2) : Type::f32();
+        if (worley) {
+            node->args.push_back(args.size() > 1 ? g::float_(arg(1)) : g::float_(1));
+            node->args.push_back(g::int_(1));
+            return node;
+        }
+        return g::add(g::mul(node, args.size() > 1 ? arg(1) : g::float_(1)), args.size() > 2 ? arg(2) : g::float_(0));
+    }
     if (name == "textureLoad") {
         if (args.size() < 2 || args.size() > 3) throw std::runtime_error("expected texture, coordinates and optional level");
         std::string label;

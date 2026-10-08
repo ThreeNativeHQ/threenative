@@ -154,7 +154,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
 
     # The fixture driver with a GPU: it answers render fixtures' `render` lines (PRD-514).
     add_executable(tn-native-engine-render-driver EXCLUDE_FROM_ALL tests/native-engine/fixture/render_main.cpp)
-    target_link_libraries(tn-native-engine-render-driver PRIVATE tn_fixture_driver tn_engine_renderer tn_host_services)
+    target_link_libraries(tn-native-engine-render-driver PRIVATE tn_fixture_driver tn_engine_renderer tn_host_services tn_engine_abi)
     tn_native_engine_target(tn-native-engine-render-driver)
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_TEST_TARGETS tn-native-engine-render-driver)
     # Every render fixture through the render driver against its browser golden frame (PRD-514,
@@ -171,7 +171,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "traa_history:traa-history" "history_cut:history-cut"
                 "render_particles:particles-sprite,fluid-particles"
                 "render_skinned:skinned-*" "render_morph:morph-*" "render_gltf:gltf-model-*"
-                "render_data_textures:textures-data-*")
+                "render_data_textures:textures-data-*" "render_materialx:materialx-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
             list(GET render_pair 0 render_name)
             list(GET render_pair 1 render_glob)

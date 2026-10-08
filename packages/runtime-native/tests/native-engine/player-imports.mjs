@@ -46,7 +46,7 @@ const THREE = { ${names.join(", ")} };
 import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3 } from "three/webgpu";
 import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
-import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix } from "three/tsl";
+import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_vec2 } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
 const camera = new THREE.PerspectiveCamera();
@@ -142,6 +142,7 @@ basic.colorNode = color(new THREE.Color(0.1, 0.2, 0.3));
 basic.colorNode = color(0.1, 0.2, 0.3);
 basic.colorNode = reflect(vec3(1, -1, 0), vec3(0, 1, 0));
 basic.colorNode = textureLoad(source, ivec2(0, 0)).rgb;
+basic.colorNode = vec3(mx_noise_float(uv().mul(4), 0.5, 0.5), mx_worley_noise_vec2(uv().mul(3), 0.9).x, 0);
 check(cameraViewMatrix !== undefined, "camera view uniform");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);
