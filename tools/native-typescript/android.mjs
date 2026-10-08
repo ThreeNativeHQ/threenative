@@ -7,12 +7,11 @@
 // stdlib and UI — so the page size comes from the NDK driver Perry invokes.
 //
 // Everything this builds is cached outside the repository and keyed by the target's own pins.
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadLock, provisionCross } from "./provision.mjs";
+import { loadLock, provisionCross, readRuntimeStamp } from "./provision.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TARGETS = path.join(HERE, "targets");
@@ -124,9 +123,9 @@ function hostTag(ndkDir) {
 }
 
 /**
- * The cross runtime Perry links a target with, plus the NDK it drives. Perry refuses a runtime whose
- * embedded build stamp does not match its own compiler, so the stamp is read here and reported as
- * this lane's own failure rather than surfacing later as a link error.
+ * The cross runtime Perry links a target with, plus the NDK it drives. A triple the lock pins under
+ * `crossBuilds` comes from build-cross-runtime.mjs and is checked against the pinned stamp here, so
+ * a missing or stale build is this lane's own named failure rather than a Perry link error.
  */
 export async function ensureAndroidRuntime(
   target,
@@ -134,22 +133,6 @@ export async function ensureAndroidRuntime(
 ) {
   const lock = loadLock();
   const provisioned = await provisionCross(target.triple, { lock, env, log });
-  const stamps = stampReport(path.join(provisioned.dir, "libperry_runtime.a"));
-  if (stamps !== undefined) return { ...provisioned, ndk, stamps };
-  return { ...provisioned, ndk };
-}
-
-/**
- * Perry's runtime stamp, next to the compiler's own: an out-of-tree cross runtime built from a
- * different source tree than the pinned compiler is refused by Perry at link time, so it is
- * reported here, where the reason is actionable.
- */
-export function stampReport(runtimeArchive) {
-  if (!fs.existsSync(runtimeArchive)) return undefined;
-  const run = spawnSync("sh", ["-c", `strings -a "${runtimeArchive}" | head -c 200000`], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  const found = /build=([a-z]+:[0-9a-f]+)/u.exec(run.stdout ?? "")?.[1];
-  return found === undefined ? undefined : { build: found };
+  const stamp = readRuntimeStamp(path.join(provisioned.dir, "libperry_runtime.a"));
+  return { ...provisioned, ndk, stamps: stamp === undefined ? undefined : { build: stamp.build } };
 }

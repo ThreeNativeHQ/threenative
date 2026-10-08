@@ -2,7 +2,9 @@
   "repository": "PerryTS/perry",
   "tag": "v0.5.1520",
   "tagRefSha": "381045a8735ff325621c5dfb26a3bd4f5a8798c5",
-  "binaryCandidates": ["perry"],
+  "binaryCandidates": [
+    "perry"
+  ],
   "artifacts": {
     "linux-x86_64": {
       "url": "https://github.com/PerryTS/perry/releases/download/v0.5.1520/perry-linux-x86_64.tar.gz",
@@ -18,6 +20,15 @@
     }
   },
   "hostPreference": {
-    "linux-x64": ["linux-x86_64"]
+    "linux-x64": [
+      "linux-x86_64"
+    ]
+  },
+  "crossBuilds": {
+    "aarch64-linux-android": {
+      "version": "0.5.1520",
+      "buildId": "src:85ccd72f8e535523d882fbebfb36cf54a45d9a4337ab4b096b049e0dbf06b369",
+      "reason": "the release ships its Linux compiler stamped src:85ccd72f8e53 (built from the tag's exported tree, which has no .git) and this runtime stamped git:381045a8735f; Perry refuses the pair. build-cross-runtime.mjs builds the runtime from the same tag, exported the same way, which takes the compiler's stamp."
+    }
   }
 }

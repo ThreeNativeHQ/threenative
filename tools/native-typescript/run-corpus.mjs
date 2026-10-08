@@ -373,7 +373,7 @@ async function stageProject({ entry, modules, tmp, three, bridge }) {
       recursive: true,
       filter: (source) => !source.includes(`${path.sep}target${path.sep}`),
     });
-    await bridge.writeManifest(packageDir);
+    await bridge?.writeManifest(packageDir);
   }
   await fsp.writeFile(
     path.join(tmp, "package.json"),
@@ -433,15 +433,18 @@ async function runNative(name, info, target, plan = {}) {
   const three = importsThree(entry);
   // A cross target with no engine archives for its ABI cannot link a three-import case: refuse it
   // with the missing archives named, rather than trying the host archives and reporting a link error.
-  if (three && plan.blockedThreeImport) return { ok: false, note: plan.blockedThreeImport };
-  const bridge = three
-    ? await bridgeFor({
-        target,
-        ndk: plan.ndk,
-        render: plan.render,
-        engineBuild: process.env.TN_NATIVE_ENGINE_BUILD,
-      })
-    : undefined;
+  const compileErrorCase = parseExpected(fs.readFileSync(expectedPath(name))).compileError;
+  if (three && plan.blockedThreeImport && compileErrorCase === undefined)
+    return { ok: false, note: plan.blockedThreeImport };
+  const bridge =
+    three && !plan.blockedThreeImport
+      ? await bridgeFor({
+          android: plan.target,
+          ndk: plan.ndk,
+          render: plan.render,
+          engineBuild: plan.target ? undefined : process.env.TN_NATIVE_ENGINE_BUILD,
+        })
+      : undefined;
   const env = mergeEnv(process.env, [["PERRY_CACHE_DIR", path.join(tmp, ".perry")]]);
   if (plan.render) env.TN_TSL_FRAME = path.join(plan.outDir, `${name}-native.png`);
   for (const [key, value] of plan.env ?? []) env[key] = value;
@@ -648,6 +651,7 @@ async function crossPlan(targetFile, outDir) {
     REPO,
     "packages",
     "runtime-native",
+    "build",
     `android-core-${targetFile.abi}`,
   );
   const missing = ENGINE_LIBS.filter(
@@ -663,7 +667,7 @@ async function crossPlan(targetFile, outDir) {
     blockedThreeImport:
       missing.length === 0
         ? undefined
-        : `three-import link is blocked: ${missing.join(", ")} exist for no ${targetFile.abi} engine build (packages/runtime-native/android-core-${targetFile.abi})`,
+        : `three-import link is blocked: ${missing.join(", ")} exist for no ${targetFile.abi} engine build (cmake -DTN_ENGINE_CORE_ONLY=ON into packages/runtime-native/build/android-core-${targetFile.abi}, the command conformance/run-conformance.mjs prints)`,
     summary: (rows) => {
       const ok = rows.filter((row) => row.native === "PASS").length;
       return `${targetFile.triple}: Perry ${perryTarget(targetFile.triple)}, NDK ${ndk.version}, ${targetFile.maxPageSize}-byte pages — ${ok}/${rows.length} cases ok`;
