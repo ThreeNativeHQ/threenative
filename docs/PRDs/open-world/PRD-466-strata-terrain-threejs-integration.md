@@ -3926,7 +3926,10 @@ An independent diagnostic pass (in-page A/B on the forest meadow, RTX 2080) rank
    scrub and fern draw reach (fade start 28 → 55 m, grass 112 → 160 m) was rejected: the elevated view
    did not change because grass placements thin out by 62 m from the benchmark eyes (`scatter.ts`
    `grassThin`), so ground cover at range needs more placements, which adds to load time that already
-   misses its deadline: an owner trade-off.
+   misses its deadline: an owner trade-off. A per-spruce contact-shadow decal (unlit 1.6 m disc,
+   strength 0.5) was also rejected: at the benchmark cameras grass hides meadow trunk bases and crowns
+   hide elevated ones, so no disc was visible, and the meadow gained an unexplained darker band (judge
+   meadow 7 → 5.5, elevated 6 → 6).
 
 Corrections to earlier sections: the kept field-grass root lift (`fe6964fc8`) edits a branch the
 alpha-tested grass never reaches, so its reported gain was run-to-run variance; single captures taken
