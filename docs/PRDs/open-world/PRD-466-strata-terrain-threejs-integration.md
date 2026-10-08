@@ -3884,4 +3884,30 @@ no caller), while a real Dawn loss goes to the fatal `reportFatalDeviceLoss`. So
 binding applies `dataLayout.offset` twice (pointer arithmetic and `layout.offset`); the bounded upload
 passes 0, so it is latent, but any non-zero offset reads past the intended bytes.
 
+### 2026-10-08 — independent diagnosis of the persistent look, and three fixes
+
+An independent diagnostic pass (in-page A/B on the forest meadow, RTX 2080) ranked the causes:
+
+1. **The vegetation envMap carries an unshadowed second sun.** `kloofendal_48d_2k.hdr` (`pack.ts`,
+   `propMaterials.ts` `skyEnvironment`, 1.13) holds a 72,559-luminance sun disc 81° from the scene
+   sun; clamped out in-page, meadow linear light falls 0.1258 → 0.0700. Linear meadow budget: real sun
+   14%, HDR sun 44%, HDR sky 36%, hemisphere 6%. The ground receives no env light at all. **Open.**
+2. **TRAA let the auto scaler fall to 0.23** (442×248 on 1920×1080): core lifted the desktop floor for
+   any velocity consumer. **Fixed** in `4ad7d9750`: same host, buffer now 1171×659 (the 0.61 floor).
+3. **Canvas alpha leak**: cutout coverage alpha reached the alpha canvas; 13.4% of meadow pixels took a
+   magenta page tint. **Fixed** in `c1c7f0b72` (grade writes alpha 1): 0.14%.
+4. **Imported normal maps lost their glTF green flip** (`normalScale` not copied). **Fixed** in
+   `e60883bd3`, with DirectX-authored maps (spruce branch, LargePlainsBoulder002,
+   Large_VolcanicRock_002, ScotsPine_01_*) kept unflipped per a curl test on the staged maps.
+5. ACES crushes the dark crowns (15.0% below 0.08 vs AgX 8.4% at matched brightness). **Open.**
+6. GTAO multiplies direct sun and haze (`sky.ts`); AO off raises meadow 12%, crowns 15%. **Open.**
+7. (Suspected) imported foliage has no transmission, so backlit grass gets 14% of its light from the
+   real sun. 8. (Suspected) mid/far terrain detail is replaced by flat colour beyond 32–115 m.
+
+Corrections to earlier sections: the kept field-grass root lift (`fe6964fc8`) edits a branch the
+alpha-tested grass never reaches, so its reported gain was run-to-run variance; single captures taken
+30 s after a view switch are confounded by streaming (the meadow moved 79.9 → 97.0 between 30 s and
+90 s); and the "29% residual" was measured on tone-mapped values (≈0 in linear light on the near meadow).
+Judged captures before `4ad7d9750` rendered below full resolution (a spectrum fit puts them near 0.85).
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
