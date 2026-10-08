@@ -20,6 +20,46 @@
       "release": true
     },
     {
+      "label": "retired-generations-10",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 10
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "retired-generations-20",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 20
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "retired-generations-30",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 30
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "retired-generations-40",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 40
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
       "label": "fifty-retired-generations",
       "waitForResource": {
         "id": "GameState",

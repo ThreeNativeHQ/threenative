@@ -21,13 +21,73 @@
       "release": true
     },
     {
+      "label": "complete-windows-1",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "gte": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "complete-windows-2",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "gte": 2
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "complete-windows-3",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "gte": 3
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "complete-windows-4",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "gte": 4
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "complete-windows-5",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "gte": 5
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "complete-windows-6",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "gte": 6
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
       "label": "all-seven-complete-windows",
       "waitForResource": {
         "id": "GameState",
         "path": "benchmarkCompleted",
         "equals": 7
       },
-      "timeoutMs": 900000,
+      "timeoutMs": 120000,
       "release": true
     }
   ],

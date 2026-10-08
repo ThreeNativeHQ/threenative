@@ -28,9 +28,9 @@ export function riggingScenario(bytes: Buffer): "correctness" | "lifecycle" | "b
   const hash = sha256(Buffer.from(canonical));
   if (hash === "47533aad23e554a9bf1d863870f0033bf51b96c55e5b34b708bc6508adf3e599")
     return "correctness";
-  if (hash === "b83017485a22fa28ddb44dfe3d1cceb270fe9a461cd5cfe28ae1b200d2d3c685")
+  if (hash === "1b6e32e4c39dc7621a348b24265e0ca56bab4e89446124de9ef7848ce9a9f5ac")
     return "lifecycle";
-  if (hash === "7f478b66735b20cce153b052371b80a87c94e0629be79b36a238eb970bfa081f")
+  if (hash === "56b1eeba65d641c55249cb073dbda07dd57d7b2caeb6e7b9fa801fd7718d1449")
     return "benchmark";
   throw new Error("TN_AVBD_QUALIFICATION: scenario content differs from the frozen workload.");
 }
