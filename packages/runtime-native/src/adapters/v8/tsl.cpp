@@ -136,6 +136,22 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
         }
         return abi::TslArg::rgbOf(components[0], components[1], components[2]);
     }
+    // A three VectorN or Color as an operand is its constant, as TSL's nodeObject makes of it.
+    const auto lane = [&](const char* key, double& out) {
+        v8::Local<v8::Value> component;
+        if (!object->Get(ctx, str(isolate_, key)).ToLocal(&component)) throw JsFailure{};
+        if (!component->IsNumber()) return false;
+        out = component.As<v8::Number>()->Value();
+        return true;
+    };
+    double lanes[4];
+    if (lane("x", lanes[0]) && lane("y", lanes[1])) {
+        uint8_t count = 2;
+        if (lane("z", lanes[2])) count = lane("w", lanes[3]) ? 4 : 3;
+        return abi::TslArg::vectorOf(count, lanes);
+    }
+    if (lane("r", lanes[0]) && lane("g", lanes[1]) && lane("b", lanes[2]))
+        return abi::TslArg::rgbOf(lanes[0], lanes[1], lanes[2]);
     return abi::TslArg::other();
 }
 
@@ -352,6 +368,15 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         info.GetReturnValue().Set(info.This());
         return;
     }
+    if (name == "setUniform") {
+        // three's `uniform.value = x` (tsl-uniforms.ts): the node, then one value per lane.
+        Wrapper* target = info.Length() > 0 ? wrapper(info[0]) : nullptr;
+        if (!target || !target->node) throw std::runtime_error("setUniform needs a uniform node");
+        std::vector<double> values;
+        for (int i = 1; i < info.Length(); ++i) values.push_back(number(info[i]));
+        abi::tslSetUniform(target->node, values.data(), values.size());
+        return;
+    }
     // Everything else is the shared table (engine/abi/tsl_call.cpp), which the Wasm back end calls too.
     std::vector<abi::TslArg> args;
     for (int i = 0; i < info.Length(); ++i) args.push_back(argument(name, i, info.Length(), info[i]));
@@ -392,7 +417,8 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "equal",      "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
-                             "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture"})
+                             "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
+                             "setUniform"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     module->Set(context, str(isolate_, "positionLocal"), wrap(g::positionLocal())).Check();

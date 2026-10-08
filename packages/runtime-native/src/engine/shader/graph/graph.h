@@ -43,7 +43,9 @@ struct NodeData {
     std::string name;
     std::string lanes;
     uint64_t bits = 0;
-    std::vector<float> values; // uniform initial value; data, not part of the program key
+    // A uniform's value: data, not part of the program key. The one field that changes after a node
+    // is built (three's `uniform.value = x`, through setUniformValues); every draw reads it afresh.
+    mutable std::vector<float> values;
     UnOp unary = UnOp::Negate;
     BinOp binary = BinOp::Add;
     std::vector<Node> args;
@@ -62,6 +64,8 @@ Node uint_(uint32_t value);
 Node uint_(Node value);
 
 Node uniform(std::string_view name, Type type, std::vector<float> values = {});
+/** three's `uniform.value = x`: one float per lane of the uniform's type; the program is unchanged. */
+void setUniformValues(const Node& uniform, std::vector<float> values);
 Node attribute(std::string_view name, Type type);
 Node varying(std::string_view name, Type type);
 Node builtin(std::string_view name);

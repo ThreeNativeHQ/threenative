@@ -702,7 +702,11 @@ extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, cons
                 case TN_TSL_ARG_NUMBER: converted.push_back(tn::abi::TslArg::of(a.number)); break;
                 case TN_TSL_ARG_STRING: converted.push_back(tn::abi::TslArg::of(std::string(a.text ? a.text : ""))); break;
                 case TN_TSL_ARG_NAMED: converted.push_back(tn::abi::TslArg::named(a.text ? a.text : "")); break;
-                case TN_TSL_ARG_RGB: converted.push_back(tn::abi::TslArg::rgbOf(a.rgb[0], a.rgb[1], a.rgb[2])); break;
+                case TN_TSL_ARG_RGB: converted.push_back(tn::abi::TslArg::rgbOf(a.numbers[0], a.numbers[1], a.numbers[2])); break;
+                case TN_TSL_ARG_VECTOR:
+                    if (a.reserved < 2 || a.reserved > 4) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT lanes");
+                    converted.push_back(tn::abi::TslArg::vectorOf(static_cast<uint8_t>(a.reserved), a.numbers));
+                    break;
                 default: return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT kind");
             }
         }
@@ -713,6 +717,16 @@ extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, cons
         const uint64_t id = ++context->nextTslNode;
         context->tslNodes.emplace(id, std::move(result));
         *out_node = id;
+        return ok(diagnostic);
+    });
+}
+
+extern "C" tn_status_t tn_tsl_set_uniform(tn_context_t* context, const uint64_t* node, const double* values,
+                                           uint32_t count, tn_diagnostic_t* diagnostic) {
+    if (!context || !node || (count && !values) || !context->tslNodes.contains(*node))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        tn::abi::tslSetUniform(context->tslNodes.at(*node), values, count);
         return ok(diagnostic);
     });
 }

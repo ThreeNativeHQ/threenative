@@ -52,6 +52,7 @@ function unsupported(name: string): never {
 export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
+  beforeRender: () => void = () => {},
 ): new (
   parameters?: Record<string, unknown>,
 ) => object {
@@ -217,6 +218,7 @@ export function defineWebRenderer(
     render(scene: unknown, camera: unknown): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
+      beforeRender();
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
       check(module._tnw_web_render(handles, handles + 12, ...this.#clear));

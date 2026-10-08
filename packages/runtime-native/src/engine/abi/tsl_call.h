@@ -2,6 +2,7 @@
 
 #include "engine/shader/graph/graph.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -10,19 +11,25 @@ namespace tn::abi {
 
 /** One argument of a TSL authoring call, as a language back end hands it over. */
 struct TslArg {
-    enum class Kind : uint8_t { Node, Number, String, Named, Rgb, Other };  // Other: no TSL meaning
+    enum class Kind : uint8_t { Node, Number, String, Named, Rgb, Vector, Other };  // Other: no TSL meaning
     Kind kind = Kind::Number;
     engine::shader::graph::Node node;
     double number = 0;
     std::string text;           // a String, or the name of a Named object (a texture)
-    double rgb[3] = {0, 0, 0};  // an object with r, g and b, as a three Color is
+    double numbers[4] = {0, 0, 0, 0};  // Rgb: a three Color's r, g, b; Vector: a three VectorN's lanes
+    uint8_t lanes = 0;                  // Vector: 2, 3 or 4
 
     static TslArg of(engine::shader::graph::Node value) { TslArg a; a.kind = Kind::Node; a.node = std::move(value); return a; }
     static TslArg of(double value) { TslArg a; a.kind = Kind::Number; a.number = value; return a; }
     static TslArg of(std::string value) { TslArg a; a.kind = Kind::String; a.text = std::move(value); return a; }
     static TslArg named(std::string value) { TslArg a; a.kind = Kind::Named; a.text = std::move(value); return a; }
     static TslArg other() { TslArg a; a.kind = Kind::Other; return a; }
-    static TslArg rgbOf(double r, double g, double b) { TslArg a; a.kind = Kind::Rgb; a.rgb[0] = r; a.rgb[1] = g; a.rgb[2] = b; return a; }
+    static TslArg rgbOf(double r, double g, double b) { TslArg a; a.kind = Kind::Rgb; a.numbers[0] = r; a.numbers[1] = g; a.numbers[2] = b; a.lanes = 3; return a; }
+    static TslArg vectorOf(uint8_t lanes, const double* values) {
+        TslArg a; a.kind = Kind::Vector; a.lanes = lanes;
+        for (uint8_t i = 0; i < lanes && i < 4; ++i) a.numbers[i] = values[i];
+        return a;
+    }
 };
 
 /**
@@ -37,5 +44,8 @@ struct TslArg {
  */
 engine::shader::graph::Node tslCall(const std::string& name, const TslArg* receiver, const std::vector<TslArg>& args,
                                     uint64_t& serial);
+
+/** three's `uniform.value = x` for every back end: the uniform node's live values, one per lane. */
+void tslSetUniform(const engine::shader::graph::Node& uniform, const double* values, size_t count);
 
 }  // namespace tn::abi

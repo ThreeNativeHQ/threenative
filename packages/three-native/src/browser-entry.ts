@@ -88,12 +88,16 @@ export async function bindWebEngine(
     runtime,
     catalogJson as unknown as ICatalog,
   );
-  // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
-  const bound: Record<string, unknown> = withTextureSources(classes, runtime);
-  if (isWebHostModule(module))
-    bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never);
   // TSL through the engine's shared name table (tn_tsl_call), when the module carries it.
-  if (runtime.tsl) Object.assign(bound, defineTsl(runtime.tsl));
+  const tsl = runtime.tsl ? defineTsl(runtime.tsl) : undefined;
+  const bound: Record<string, unknown> = {
+    ...withTextureSources(classes, runtime),
+    ...tsl?.exports,
+  };
+  // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
+  // Edited Color/VectorN uniform values reach the engine before each frame.
+  if (isWebHostModule(module))
+    bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, tsl?.sync);
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
 

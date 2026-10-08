@@ -3,23 +3,25 @@
  * wrappers over node ids, built by the engine's one TSL name table (`tn_tsl_call`, shared with the
  * V8 back end). A node is an engine graph node; nothing here builds shader code in JavaScript.
  *
- * Not here yet: the closure and statement forms (Fn, If, Loop, Else, toVar, assign) and writing a
- * uniform's `.value`; the catalog keeps refusing them by name.
+ * Not here yet: the closure and statement forms (Fn, If, Loop, Else, toVar, assign).
  */
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
+import { liveUniforms, uniformLanes } from "./tsl-uniforms.js";
 
 /** One argument as `tn_tsl_call` takes it. */
 export type TslArgValue =
   | { readonly kind: "node"; readonly node: number }
   | { readonly kind: "number"; readonly number: number }
   | { readonly kind: "string" | "named"; readonly text: string }
-  | { readonly kind: "rgb"; readonly rgb: readonly [number, number, number] };
+  | { readonly kind: "rgb" | "vector"; readonly numbers: readonly number[] };
 
 /** The engine side of TSL: one call by name, node release, and a material's node slot. */
 export interface ITslRuntime {
   call(name: string, receiver: number | null, args: readonly TslArgValue[]): number;
   release(node: number): void;
   set(material: IEngineRef, path: string, node: number): void;
+  /** three's `uniform.value = x`: the uniform's lanes, with no program change. */
+  setUniform(node: number, lanes: readonly number[]): void;
 }
 
 /** Module functions the shared table answers (engine/abi/tsl_call.cpp). */
@@ -123,12 +125,6 @@ const SWIZZLES: Readonly<Record<string, string>> = {
   rgb: "xyz",
   rgba: "xyzw",
 };
-const VECTORS = new Map<string, readonly string[]>([
-  ["Vector2", ["x", "y"]],
-  ["Vector3", ["x", "y", "z"]],
-  ["Vector4", ["x", "y", "z", "w"]],
-]);
-
 interface ITslNode {
   readonly [TSL_NODE]: number;
 }
@@ -137,8 +133,14 @@ export function isTslNode(value: unknown): value is ITslNode {
   return typeof value === "object" && value !== null && TSL_NODE in value;
 }
 
-/** Defines the TSL exports over `runtime`. */
-export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
+/**
+ * Defines the TSL exports over `runtime`. `sync` pushes edited Color/VectorN uniform values; the
+ * renderer calls it before each frame.
+ */
+export function defineTsl(runtime: ITslRuntime): {
+  exports: Record<string, unknown>;
+  sync(): void;
+} {
   const released = new FinalizationRegistry<number>((node) => runtime.release(node));
   const prototype: Record<string, unknown> = {};
   const wrap = (node: number): ITslNode => {
@@ -147,7 +149,7 @@ export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
     released.register(object, node);
     return object;
   };
-  const argument = (name: string, index: number, count: number, value: unknown): TslArgValue => {
+  const argument = (name: string, index: number, value: unknown): TslArgValue => {
     if (isTslNode(value)) return { kind: "node", node: value[TSL_NODE] };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
@@ -156,19 +158,10 @@ export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
       // A texture names its map; textureLoad also takes a texture node.
       if (index === 0 && (name === "texture" || name === "textureLoad"))
         return { kind: "named", text: String(object.name) };
-      if (name === "color" && count === 1 && object.isColor === true)
-        return { kind: "rgb", rgb: [object.r, object.g, object.b] as [number, number, number] };
-      // TSL's nodeObject turns a three vector into its constant: vec3(new Vector3(1, 2, 3)).
-      const lanes = VECTORS.get(object.constructor.name);
-      if (lanes !== undefined)
-        return {
-          kind: "node",
-          node: call(
-            `vec${lanes.length}`,
-            null,
-            lanes.map((lane) => object[lane]),
-          ),
-        };
+      // TSL's nodeObject turns a three Color or VectorN into its constant: vec3(new Vector3(1, 2, 3)).
+      if (object.isColor === true) return { kind: "rgb", numbers: uniformLanes(object) };
+      if (object.isVector2 === true || object.isVector3 === true || object.isVector4 === true)
+        return { kind: "vector", numbers: uniformLanes(object) };
     }
     throw new TypeError(
       `TN_TSL ${name}: argument ${index} is not a TSL node, number, string or three value`,
@@ -178,7 +171,7 @@ export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
     runtime.call(
       name,
       receiver,
-      args.map((value, index) => argument(name, index, args.length, value)),
+      args.map((value, index) => argument(name, index, value)),
     );
 
   for (const name of METHODS)
@@ -194,5 +187,9 @@ export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
   const exports: Record<string, unknown> = {};
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
-  return exports;
+  const live = liveUniforms(exports.uniform as (value: unknown) => ITslNode, (node, lanes) =>
+    runtime.setUniform(node[TSL_NODE], lanes),
+  );
+  exports.uniform = live.uniform;
+  return { exports, sync: live.sync };
 }

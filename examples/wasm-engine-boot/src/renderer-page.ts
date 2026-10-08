@@ -94,6 +94,8 @@ try {
   const frame = () => {
     probe.ticks += 1;
     box.rotation.y += 0.02;
+    // Written every frame, as Midway writes its clock: the engine updates the uniform, no recompile.
+    tint.value = 0.5 + 0.3 * Math.sin(probe.ticks * 0.05);
     try {
       renderer.render(scene, camera);
       probe.frames += 1;

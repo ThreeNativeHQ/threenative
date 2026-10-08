@@ -36,9 +36,21 @@ Type type(const std::string& name) {
     throw std::runtime_error("unsupported TSL type: " + name);
 }
 
-/** A TSL operand: a node (a variable reads its value) or a number as a float constant. */
+/** A TSL operand: a node (a variable reads its value), a number as a float constant, or a three
+ * Color or VectorN as its vector constant, as TSL's nodeObject makes of it. */
 g::Node input(const TslArg& value) {
     if (value.kind == TslArg::Kind::Number) return g::float_(number(value));
+    if (value.kind == TslArg::Kind::Rgb || value.kind == TslArg::Kind::Vector) {
+        std::vector<g::Node> lanes;
+        for (uint8_t i = 0; i < value.lanes; ++i) {
+            if (!std::isfinite(value.numbers[i])) throw std::runtime_error("expected a finite number");
+            lanes.push_back(g::float_(value.numbers[i]));
+        }
+        if (lanes.size() == 2) return g::vec2({lanes[0], lanes[1]});
+        if (lanes.size() == 3) return g::vec3({lanes[0], lanes[1], lanes[2]});
+        if (lanes.size() == 4) return g::vec4({lanes[0], lanes[1], lanes[2], lanes[3]});
+        throw std::runtime_error("a vector has 2, 3 or 4 lanes");
+    }
     if (value.kind != TslArg::Kind::Node || !value.node) throw std::runtime_error("expected a TSL node or number");
     return value.node->kind == g::Kind::Var ? g::Var{value.node, value.node->type}.read() : value.node;
 }
@@ -68,7 +80,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             }
             if (args[0].kind == TslArg::Kind::Number) value.setHex(number(args[0]));
             else if (args[0].kind == TslArg::Kind::String) value.setStyle(args[0].text.c_str());
-            else if (args[0].kind == TslArg::Kind::Rgb) value.setRGB(args[0].rgb[0], args[0].rgb[1], args[0].rgb[2]);
+            else if (args[0].kind == TslArg::Kind::Rgb) value.setRGB(args[0].numbers[0], args[0].numbers[1], args[0].numbers[2]);
             else throw std::runtime_error("color needs a Color, CSS string, hex or RGB components");
         } else if (!args.empty()) throw std::runtime_error("invalid color argument count");
         return g::vec3({g::float_(value.r), g::float_(value.g), g::float_(value.b)});
@@ -244,6 +256,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
                     TERNARY(select) TERNARY(mix) TERNARY(clamp) TERNARY(smoothstep)
 #undef TERNARY
                         return {};
+}
+
+void tslSetUniform(const g::Node& uniform, const double* values, size_t count) {
+    std::vector<float> lanes;
+    for (size_t i = 0; i < count; ++i) {
+        if (!std::isfinite(values[i])) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: values must be finite");
+        lanes.push_back(static_cast<float>(values[i]));
+    }
+    g::setUniformValues(uniform, std::move(lanes));
 }
 
 }  // namespace tn::abi
