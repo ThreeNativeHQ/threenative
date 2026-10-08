@@ -1,3 +1,5 @@
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or rewrite
 // it freely — the tiers below are a starting point, not a framework look.
 //
@@ -20,7 +22,10 @@
 // expensive stage in the reference ablation by a factor of two (~9.2 ms of a 14.7 ms frame with
 // its two denoise passes); in a room this dark, one bounce of indirect light off a flagstone floor
 // buys nothing the three lanterns do not already put there.
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
+import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
+import type { IWorldEnvironmentEffects, IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
  * The three names this game's look comes in.
@@ -71,6 +76,13 @@ export function resolveQualityTier(
 }
 
 /**
+ * The post nodes the tiers below can turn on, and only those. A node no tier enables is never
+ * imported, so it never reaches the bundle; turning a stage on without its node here throws at
+ * `apply` naming the import to add (`WorldEnvironment.requiredEffects`).
+ */
+const effects: IWorldEnvironmentEffects = { ao, bloom, denoise, sharpen, smaa };
+
+/**
  * The look every tier shares: the tone curve, a corner falloff, and bloom over a high threshold.
  *
  * Bloom is the one stage this look cannot do without. Exactly two things in the vault emit — the
@@ -78,6 +90,7 @@ export function resolveQualityTier(
  * is what keeps the glow on the two warm sources and off the forty crates.
  */
 const shared: IWorldEnvironmentOptions = {
+  effects,
   // ~4.6 ms in the ablation named above, at that scene's own strength.
   bloomEnabled: true,
   bloomRadius: 0.42,
@@ -133,6 +146,7 @@ const medium: IWorldEnvironmentOptions = {
  * first thing to go — forty simulated bodies are already the frame's budget on a phone.
  */
 const low: IWorldEnvironmentOptions = {
+  effects,
   // The chain's own quality tier, separate from which stages this preset enables: without it
   // the renderer keeps its `high` default at every tier, so a CPU adapter's low preset still
   // paid for the high chain's denoise and slice counts.

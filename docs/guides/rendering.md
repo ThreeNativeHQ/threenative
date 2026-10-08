@@ -82,7 +82,7 @@ posts.build({ parent: ctx.scene, castShadow: true });
 Level of detail (LOD) swaps in simpler geometry at a distance. The asset build can generate those
 versions. Compare them from the gameplay camera before you keep them.
 
-`GPUSceneBVH` builds a GPU-searchable snapshot of selected scene geometry for ray queries in
+`GPUSceneBVH`, imported from `@threenative/core/gpu-scene-bvh`, builds a GPU-searchable snapshot of selected scene geometry for ray queries in
 shaders. The snapshot stays static until you call `rebuild()`. Use physics queries for gameplay
 collision.
 

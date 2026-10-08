@@ -236,15 +236,6 @@ export { ComputeDrivenRegistry } from "./compute-driven.js";
 export type { IComputeDriven } from "./compute-driven.js";
 export { SoftBody3D } from "./softbody.js";
 export type { ISoftBody3DOptions, ISoftBodyCollision } from "./softbody.js";
-/**
- * Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
- * @situation trace thousands of scene rays inside a TSL kernel
- * @situation build a contact-occlusion or visibility query over loaded meshes
- * @constraint call rebuild() after a scene transform or geometry change; the snapshot is static by default
- * @constraint rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray
- * @example const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));
- */
-export { GPUSceneBVH, bvhIntersectFirstHit, rayStruct } from "./gpu-scene-bvh.js";
 export type {
   GPUSceneBVHTraceFunction,
   IGPUSceneBVHMaterialGroup,
@@ -818,13 +809,14 @@ export {
   VELOCITY_PREVIOUS_WORLD_MATRIX,
   VelocityTracker,
   ensureVelocityOutput,
+  mrtVelocity,
   readVelocityPreviousBoneMatrices,
   readVelocityPreviousMatrices,
   readVelocityPreviousWorldMatrix,
   velocityTexture,
   withVelocityContext,
 } from "./render/velocity.js";
-export type { IVelocityRenderPass } from "./render/velocity.js";
+export type { IVelocityProvision, IVelocityRenderPass } from "./render/velocity.js";
 /**
  * One directional shadow for a whole open world: camera-centred clip levels, each snapped to its
  * own texel grid and re-rendered only when its window moves. Tracked casters draw into a

@@ -1,4 +1,4 @@
-import { GPUSceneBVH, bvhIntersectFirstHit, rayStruct } from "@threenative/core";
+import { GPUSceneBVH, bvhIntersectFirstHit, rayStruct } from "@threenative/core/gpu-scene-bvh";
 import {
   BoxGeometry,
   Group,

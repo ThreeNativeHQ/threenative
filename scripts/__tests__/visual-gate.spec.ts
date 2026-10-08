@@ -85,6 +85,31 @@ describe("visual gate", () => {
     }
   });
 
+  it("reports a render pipeline that never calls the bloom node it is handed", async () => {
+    const root = await makeTempDir("threenative-visual-bloom-");
+    const kit = path.join(root, "bloom-kit");
+    try {
+      await cp(path.resolve("packages/create-threenative/templates/platformer"), kit, {
+        recursive: true,
+      });
+      const manifest = JSON.parse(await readFile(path.join(kit, "kit.json"), "utf8")) as {
+        name: string;
+      };
+      await writeFile(
+        path.join(kit, "kit.json"),
+        `${JSON.stringify({ ...manifest, name: "bloom-kit" })}\n`,
+      );
+      const world = path.join(kit, "src/render/worldEnvironment.ts");
+      const source = await readFile(world, "utf8");
+      expect(source).toContain('effect("bloom")(');
+      await writeFile(world, source.replaceAll('effect("bloom")(', 'effect("smaa")('));
+      const stripped = inspectAllTemplates(root).find(({ template }) => template === "bloom-kit");
+      expect(stripped?.errors).toContain("bloom-kit: render pipeline is missing bloom(");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("discovers an unregistered broken template and reports its missing render file", async () => {
     const root = await makeTempDir("threenative-visual-discovery-");
     const broken = path.join(root, "unregistered-broken");

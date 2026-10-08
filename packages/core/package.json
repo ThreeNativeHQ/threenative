@@ -71,6 +71,10 @@
       "types": "./dist/net.d.ts",
       "import": "./dist/net.js"
     },
+    "./gpu-scene-bvh": {
+      "types": "./dist/gpu-scene-bvh.d.ts",
+      "import": "./dist/gpu-scene-bvh.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

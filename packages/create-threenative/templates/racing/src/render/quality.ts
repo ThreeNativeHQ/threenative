@@ -26,9 +26,13 @@
 // line where a tyre meets tarmac is most of what says the car is *on* the road) and bloom for the
 // sun and the tail lights. The bounded proof is `playtests/performance.playtest.json`: it holds the
 // frame at 33 ms p95 and 30 fps, so if you turn a stage on, that scenario is what tells you it was
-// worth it. Both are one line to turn back on.
+// worth it. Each is its flag plus its node in `effects` to turn back on.
 
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
+import type { IWorldEnvironmentEffects, IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
  * The three names this game's look comes in.
@@ -79,6 +83,13 @@ export function resolveQualityTier(
 }
 
 /**
+ * The post nodes the tiers below can turn on, and only those. A node no tier enables is never
+ * imported, so it never reaches the bundle; turning a stage on without its node here throws at
+ * `apply` naming the import to add (`WorldEnvironment.requiredEffects`).
+ */
+const effects: IWorldEnvironmentEffects = { ao, bloom, denoise, smaa };
+
+/**
  * The look every tier shares: a wide, faint glow on what is genuinely brighter than white — the sun
  * disk, the visor — rather than a haze over the frame (a threshold under 1 blooms lit grey walls and
  * flattens contrast), and a corner falloff. Antialiasing is on in every tier that installs a chain;
@@ -86,9 +97,11 @@ export function resolveQualityTier(
  *
  * No screen-space reflections and no sharpen here, on purpose. Every surface already reflects the
  * captured sky (`sky.ts`), and SSR on rough tarmac traced speckle into the road; RCAS then rang the
- * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
+ * smooth sky gradient into visible bands. Each is its flag plus its node in `effects` to turn back on
+ * for a glossy scene.
  */
 const shared: IWorldEnvironmentOptions = {
+  effects,
   // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
   bloomRadius: 0.55,
