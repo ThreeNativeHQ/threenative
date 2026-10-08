@@ -1,64 +1,0 @@
-C/C++ Structured Log}
-{
-y/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/CMakeLists.txtC
-A
-?com.android.build.gradle.internal.cxx.io.EncodedFileFingerPrint	ÒÑÑ‘4ô¸ Ş£¾‘4Á
-¾
-»/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/additional_project_files.txt	ÒÑÑ‘4»	 ¾ÏÑ‘4¾
-»
-¸/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/android_gradle_build.json	ÒÑÑ‘4ò´ ÅÏÑ‘4Ã
-À
-½/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/android_gradle_build_mini.json	ÒÑÑ‘4¦¢ ÌÑÑ‘4°
-­
-ª/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/build.ninja	ÔÑÑ‘4œİH ¹ÎÑ‘4´
-±
-®/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/build.ninja.txt	ÔÑÑ‘4¹
-¶
-³/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/build_file_index.txt	ÔÑÑ‘4´ ´Œ‘4º
-·
-´/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/compile_commands.json	ÔÑÑ‘4	»•? ¸ÎÑ‘4¾
-»
-¸/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/compile_commands.json.bin	ÔÑÑ‘4
-Œ ¸ÎÑ‘4Ä
-Á
-¾/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/metadata_generation_command.txt	ÕÑÑ‘4Ô ´Œ‘4·
-´
-±/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/prefab_config.json	ÕÑÑ‘4( ´Œ‘4¼
-¹
-¶/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/symbol_folder_index.txt	ÕÑÑ‘4µ ´Œ‘4‰
-†
-ƒ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/cmake/NativeEngine.cmake	ÕÑÑ‘4ÉÜ Ù«Å‘4
-Š
-‡/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/cmake/NativeEngineCore.cmake	ÕÑÑ‘4ç¡ »­îœ‘4œ
-™
-–/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/CMakeLists.txt	ÕÑÑ‘4êˆ ğ€È4¢
-Ÿ
-œ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/3rdparty.cmake	ÕÑÑ‘4 ¹ğ€È4¤
-¡
-/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/FindLibUSB.cmake	ÕÑÑ‘4Ê ¹ğ€È4³
-°
-­/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/GetGitRevisionDescription.cmake	ÕÑÑ‘4áN »ğ€È4°
-­
-ª/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/PreseedEmscriptenCache.cmake	ÕÑÑ‘4Ö‹ ½ğ€È4ª
-§
-¤/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/PreseedMSVCCache.cmake	ÕÑÑ‘4èˆ ½ğ€È4§
-¤
-¡/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/SDL3Config.cmake.in	ÕÑÑ‘4Ø ½ğ€È4 
-
-š/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/macros.cmake	ÕÑÑ‘4Ûx ¾ğ€È4£
- 
-/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlchecks.cmake	ÕÑÑ‘4Šä ¾ğ€È4¦
-£
- /home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlcompilers.cmake	ÕÑÑ‘4ó< ¾ğ€È4 
-
-š/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlcpu.cmake	ÕÑÑ‘4ã( ¾ğ€È4¥
-¢
-Ÿ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlmanpages.cmake	ÕÑÑ‘4— ¾ğ€È4¥
-¢
-Ÿ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdlplatform.cmake	ÕÑÑ‘4  ¾ğ€È4¤
-¡
-/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/cmake/sdltargets.cmake	ÖÑÑ‘4… ¾ğ€È4»
-¸
-µ/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/include/build_config/SDL_build_config.h.cmake	ÖÑÑ‘4åŒ ®ñ€È4·
-´
-±/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/third_party/sdl3/SDL3-3.2.30/include/build_config/SDL_revision.h.cmake	ÖÑÑ‘4™ °ñ€È4
