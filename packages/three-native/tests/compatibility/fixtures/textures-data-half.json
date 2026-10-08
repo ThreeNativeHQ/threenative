@@ -24,11 +24,7 @@
       "op": "new",
       "id": "background",
       "class": "Color",
-      "args": [
-        0.05,
-        0.06,
-        0.08
-      ]
+      "args": [0.05, 0.06, 0.08]
     },
     {
       "op": "set",
@@ -42,12 +38,7 @@
       "op": "new",
       "id": "camera",
       "class": "PerspectiveCamera",
-      "args": [
-        60,
-        2,
-        0.1,
-        100
-      ]
+      "args": [60, 2, 0.1, 100]
     },
     {
       "op": "set",
@@ -59,20 +50,13 @@
       "op": "call",
       "id": "camera",
       "method": "lookAt",
-      "args": [
-        0,
-        0,
-        0
-      ]
+      "args": [0, 0, 0]
     },
     {
       "op": "new",
       "id": "light",
       "class": "DirectionalLight",
-      "args": [
-        16777215,
-        3
-      ]
+      "args": [16777215, 3]
     },
     {
       "op": "set",
@@ -96,11 +80,7 @@
       "op": "new",
       "id": "sky",
       "class": "HemisphereLight",
-      "args": [
-        11189137,
-        2236962,
-        0.6
-      ]
+      "args": [11189137, 2236962, 0.6]
     },
     {
       "op": "new",
@@ -109,22 +89,8 @@
       "args": [
         {
           "array": [
-            10854,
-            11878,
-            13926,
-            15360,
-            12902,
-            14336,
-            14746,
-            15360,
-            14541,
-            13517,
-            12902,
-            15360,
-            15155,
-            14950,
-            11878,
-            15360
+            10854, 11878, 13926, 15360, 12902, 14336, 14746, 15360, 14541, 13517, 12902, 15360,
+            15155, 14950, 11878, 15360
           ],
           "type": "Uint16Array"
         },
@@ -168,10 +134,7 @@
       "op": "new",
       "id": "planeGeometry",
       "class": "PlaneGeometry",
-      "args": [
-        2.0,
-        1.6
-      ]
+      "args": [2.0, 1.6]
     },
     {
       "op": "new",
@@ -232,11 +195,7 @@
       "op": "new",
       "id": "boxGeometry",
       "class": "BoxGeometry",
-      "args": [
-        0.9,
-        0.9,
-        0.9
-      ]
+      "args": [0.9, 0.9, 0.9]
     },
     {
       "op": "new",
@@ -311,9 +270,7 @@
       "op": "call",
       "id": "scene",
       "method": "updateMatrixWorld",
-      "args": [
-        true
-      ]
+      "args": [true]
     }
   ],
   "observe": [

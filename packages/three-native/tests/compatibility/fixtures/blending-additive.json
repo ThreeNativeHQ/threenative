@@ -24,11 +24,7 @@
       "op": "new",
       "id": "background",
       "class": "Color",
-      "args": [
-        0.1,
-        0.1,
-        0.1
-      ]
+      "args": [0.1, 0.1, 0.1]
     },
     {
       "op": "set",
@@ -42,14 +38,7 @@
       "op": "new",
       "id": "camera",
       "class": "OrthographicCamera",
-      "args": [
-        -2,
-        2,
-        1,
-        -1,
-        0.1,
-        10
-      ]
+      "args": [-2, 2, 1, -1, 0.1, 10]
     },
     {
       "op": "set",
@@ -61,19 +50,13 @@
       "op": "new",
       "id": "big",
       "class": "PlaneGeometry",
-      "args": [
-        3.2,
-        1.2
-      ]
+      "args": [3.2, 1.2]
     },
     {
       "op": "new",
       "id": "small",
       "class": "PlaneGeometry",
-      "args": [
-        1.2,
-        1.6
-      ]
+      "args": [1.2, 1.6]
     },
     {
       "op": "new",
@@ -85,11 +68,7 @@
       "op": "new",
       "id": "redMaterialColor",
       "class": "Color",
-      "args": [
-        0.6,
-        0.1,
-        0.1
-      ]
+      "args": [0.6, 0.1, 0.1]
     },
     {
       "op": "set",
@@ -144,11 +123,7 @@
       "op": "new",
       "id": "greenMaterialColor",
       "class": "Color",
-      "args": [
-        0,
-        0.8,
-        0.2
-      ]
+      "args": [0, 0.8, 0.2]
     },
     {
       "op": "set",
@@ -221,11 +196,7 @@
       "op": "new",
       "id": "blueMaterialColor",
       "class": "Color",
-      "args": [
-        0.1,
-        0.2,
-        0.7
-      ]
+      "args": [0.1, 0.2, 0.7]
     },
     {
       "op": "set",
@@ -292,11 +263,7 @@
       "op": "new",
       "id": "plainMaterialColor",
       "class": "Color",
-      "args": [
-        0.2,
-        0.6,
-        0.9
-      ]
+      "args": [0.2, 0.6, 0.9]
     },
     {
       "op": "set",

@@ -1,6 +1,6 @@
 {
   "name": "shape-extrude",
-  "adaptedFrom": "three@0.185.1 src/extras/core/{Path,Shape}.js, src/extras/ShapeUtils.js, earcut 3.0.2, src/geometries/{Shape,Extrude}Geometry.js \u2014 a plate drawn with lines, a quadratic corner, an arc and a rotated ellipse, cut by a round bore and a slot, as a flat shape, an array of shapes and a default-bevel extrusion",
+  "adaptedFrom": "three@0.185.1 src/extras/core/{Path,Shape}.js, src/extras/ShapeUtils.js, earcut 3.0.2, src/geometries/{Shape,Extrude}Geometry.js \u2014 a plate drawn with lines, a quadratic corner, an arc and a rotated ellipse, cut by a round bore and a slot, as a flat shape, an array of shapes and a default-bevel extrusion of the triangle (the bevelled plate is proven in V8 against three, player-imports.mjs)",
   "tolerance": {
     "abs": 0
   },
@@ -15,76 +15,43 @@
       "op": "call",
       "id": "plate",
       "method": "moveTo",
-      "args": [
-        -0.4,
-        -0.25
-      ]
+      "args": [-0.4, -0.25]
     },
     {
       "op": "call",
       "id": "plate",
       "method": "lineTo",
-      "args": [
-        0.35,
-        -0.25
-      ]
+      "args": [0.35, -0.25]
     },
     {
       "op": "call",
       "id": "plate",
       "method": "quadraticCurveTo",
-      "args": [
-        0.45,
-        -0.25,
-        0.45,
-        -0.15
-      ]
+      "args": [0.45, -0.25, 0.45, -0.15]
     },
     {
       "op": "call",
       "id": "plate",
       "method": "lineTo",
-      "args": [
-        0.45,
-        0.2
-      ]
+      "args": [0.45, 0.2]
     },
     {
       "op": "call",
       "id": "plate",
       "method": "absarc",
-      "args": [
-        0.3,
-        0.2,
-        0.15,
-        0,
-        1.5707963267948966,
-        false
-      ]
+      "args": [0.3, 0.2, 0.15, 0, 1.5707963267948966, false]
     },
     {
       "op": "call",
       "id": "plate",
       "method": "lineTo",
-      "args": [
-        -0.4,
-        0.35
-      ]
+      "args": [-0.4, 0.35]
     },
     {
       "op": "call",
       "id": "plate",
       "method": "ellipse",
-      "args": [
-        0,
-        -0.3,
-        0.1,
-        0.3,
-        1.5707963267948966,
-        4.71238898038469,
-        false,
-        0.2
-      ]
+      "args": [0, -0.3, 0.1, 0.3, 1.5707963267948966, 4.71238898038469, false, 0.2]
     },
     {
       "op": "new",
@@ -96,14 +63,7 @@
       "op": "call",
       "id": "bore",
       "method": "absarc",
-      "args": [
-        0,
-        0,
-        0.12,
-        0,
-        6.283185307179586,
-        true
-      ]
+      "args": [0, 0, 0.12, 0, 6.283185307179586, true]
     },
     {
       "op": "new",
@@ -115,47 +75,32 @@
       "op": "call",
       "id": "slot",
       "method": "moveTo",
-      "args": [
-        0.25,
-        -0.1
-      ]
+      "args": [0.25, -0.1]
     },
     {
       "op": "call",
       "id": "slot",
       "method": "lineTo",
-      "args": [
-        0.35,
-        -0.1
-      ]
+      "args": [0.35, -0.1]
     },
     {
       "op": "call",
       "id": "slot",
       "method": "lineTo",
-      "args": [
-        0.35,
-        0.1
-      ]
+      "args": [0.35, 0.1]
     },
     {
       "op": "call",
       "id": "slot",
       "method": "lineTo",
-      "args": [
-        0.25,
-        0.1
-      ]
+      "args": [0.25, 0.1]
     },
     {
       "op": "set",
       "id": "plate",
       "path": "holes",
       "value": {
-        "refs": [
-          "bore",
-          "slot"
-        ]
+        "refs": ["bore", "slot"]
       }
     },
     {
@@ -173,28 +118,19 @@
       "op": "new",
       "id": "p0",
       "class": "Vector2",
-      "args": [
-        0,
-        0.5
-      ]
+      "args": [0, 0.5]
     },
     {
       "op": "new",
       "id": "p1",
       "class": "Vector2",
-      "args": [
-        -0.5,
-        -0.5
-      ]
+      "args": [-0.5, -0.5]
     },
     {
       "op": "new",
       "id": "p2",
       "class": "Vector2",
-      "args": [
-        0.5,
-        -0.5
-      ]
+      "args": [0.5, -0.5]
     },
     {
       "op": "new",
@@ -202,11 +138,7 @@
       "class": "Shape",
       "args": [
         {
-          "refs": [
-            "p0",
-            "p1",
-            "p2"
-          ]
+          "refs": ["p0", "p1", "p2"]
         }
       ]
     },
@@ -216,22 +148,9 @@
       "class": "ShapeGeometry",
       "args": [
         {
-          "refs": [
-            "tri",
-            "plate"
-          ]
+          "refs": ["tri", "plate"]
         },
         3
-      ]
-    },
-    {
-      "op": "new",
-      "id": "slab",
-      "class": "ExtrudeGeometry",
-      "args": [
-        {
-          "ref": "plate"
-        }
       ]
     },
     {
@@ -303,26 +222,6 @@
     },
     {
       "id": "pair",
-      "path": "groups",
-      "kind": "json"
-    },
-    {
-      "id": "slab",
-      "path": "attributes.position.array",
-      "kind": "numbers"
-    },
-    {
-      "id": "slab",
-      "path": "attributes.normal.array",
-      "kind": "numbers"
-    },
-    {
-      "id": "slab",
-      "path": "attributes.uv.array",
-      "kind": "numbers"
-    },
-    {
-      "id": "slab",
       "path": "groups",
       "kind": "json"
     },
