@@ -34,23 +34,23 @@ change requires this opt-in command to refresh the record.
 
 | Coverage floor | Minimum |
 | --- | ---: |
-| `src/async/` | 72.60% |
-| `src/audio/` | 57.37% |
-| `src/canvas/` | 48.39% |
-| `src/cli/` | 0.00% |
-| `src/fs/` | 37.45% |
-| `src/http/` | 43.53% |
-| `src/js/` | 38.23% |
-| `src/platform/` | 21.87% |
-| `src/raytracing/` | 13.10% |
-| `src/runtime.cpp` | 38.88% |
+| `src/async/` | 77.19% |
+| `src/audio/` | 83.10% |
+| `src/canvas/` | 78.21% |
+| `src/cli/` | 68.49% |
+| `src/fs/` | 75.43% |
+| `src/http/` | 86.95% |
+| `src/js/` | 74.43% |
+| `src/platform/` | 63.70% |
+| `src/raytracing/` | 81.55% |
+| `src/runtime.cpp` | 73.26% |
 | `src/screenshot_gate.cpp` | 88.89% |
 | `src/storage/` | 86.54% |
 | `src/utils/` | 0.00% |
-| `src/vfs/` | 73.22% |
-| `src/webgpu/` | 33.82% |
-| `src/webtransport/` | 5.19% |
-| `src/workers/` | 9.05% |
+| `src/vfs/` | 76.59% |
+| `src/webgpu/` | 71.72% |
+| `src/webtransport/` | 72.50% |
+| `src/workers/` | 80.20% |
 
 ## Not compiled in this configuration
 
