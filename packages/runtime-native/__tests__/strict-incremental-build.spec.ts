@@ -15,7 +15,7 @@ import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 // @ts-expect-error -- plain ESM with no type declarations.
 import { provision } from "../../../tools/native-typescript/provision.mjs";
 // @ts-expect-error -- plain ESM with no type declarations.
-import { ENGINE_LIBS, buildStrict } from "../scripts/package-strict.mjs";
+import { ENGINE_LIBS, buildStrict, summarizeCompilerOutput } from "../scripts/package-strict.mjs";
 
 interface IBuild {
   exe: string;
@@ -137,6 +137,98 @@ describe("strict builds are incremental", () => {
     expect(failed.errors[0]).toMatch(/error: refused/u);
     expect(failed.ran).toEqual(["typescript", "shim", "hooks", "link"]);
     expect(build().ran).toEqual(["link", "identity"]);
+  });
+});
+
+describe("a game's source tree is staged with its layout", () => {
+  function tree() {
+    const { root, engineBuild, calls } = setup();
+    const project = join(root, "project");
+    mkdirSync(join(project, "src", "scenes"), { recursive: true });
+    mkdirSync(join(project, "node_modules", "dep"), { recursive: true });
+    writeFileSync(
+      join(project, "src", "game.ts"),
+      'import { Play } from "./scenes/Play.js";\nconsole.log(Play);\n',
+    );
+    writeFileSync(join(project, "src", "scenes", "Play.ts"), "export const Play = 1;\n");
+    writeFileSync(join(project, "threenative.config.ts"), "export default {};\n");
+    writeFileSync(join(project, "node_modules", "dep", "index.ts"), "export {};\n");
+    const build = () =>
+      buildStrict({
+        name: "game",
+        entry: join(project, "src", "game.ts"),
+        sourceRoot: project,
+        outDir: join(root, "out"),
+        engineBuild,
+        compiler: { binaryPath: COMPILER, identity: "perry test" },
+        exec: recordingExec(calls),
+      });
+    return { project, out: join(root, "out"), build, calls };
+  }
+
+  it("keeps folders, copies the config beside them and leaves node_modules out", () => {
+    const { out, build } = tree();
+    expect(build().errors).toEqual([]);
+    expect(existsSync(join(out, "src", "game.ts"))).toBe(true);
+    expect(existsSync(join(out, "src", "scenes", "Play.ts"))).toBe(true);
+    expect(existsSync(join(out, "threenative.config.ts"))).toBe(true);
+    expect(existsSync(join(out, "node_modules", "dep"))).toBe(false);
+  });
+
+  it("recompiles after an edit to a module that is not the entry", () => {
+    const { project, build, calls } = tree();
+    build();
+    calls.length = 0;
+    writeFileSync(join(project, "src", "scenes", "Play.ts"), "export const Play = 2;\n");
+    expect(build().ran).toEqual(["typescript", "link"]);
+    expect(toolsOf(calls)).toEqual(["ar", COMPILER]);
+  });
+
+  it("drops a staged file the game deleted", () => {
+    const { project, out, build } = tree();
+    build();
+    writeFileSync(join(project, "src", "scenes", "Extra.ts"), "export {};\n");
+    build();
+    expect(existsSync(join(out, "src", "scenes", "Extra.ts"))).toBe(true);
+    rmSync(join(project, "src", "scenes", "Extra.ts"));
+    build();
+    expect(existsSync(join(out, "src", "scenes", "Extra.ts"))).toBe(false);
+  });
+});
+
+describe("a compiler failure names what caused it", () => {
+  const perryOutput = [
+    "  Warning: Could not resolve import '@threenative/core' from game.ts",
+    "  Warning: Could not resolve import '@threenative/core' from Play.ts",
+    "  Warning: Could not resolve import 'three/tsl' from fog.ts",
+    "/usr/bin/ld: perry_module:(.text+0x1978): undefined reference to `defineGame'",
+    "Error: Linking failed",
+  ].join("\n");
+
+  it("leads with the unresolved imports, once each, ahead of the link line", () => {
+    expect(summarizeCompilerOutput(perryOutput, 1, "perry")).toBe(
+      "TN_STRICT_UNRESOLVED_IMPORT: 2 import(s) did not resolve: @threenative/core, three/tsl (/usr/bin/ld: perry_module:(.text+0x1978): undefined reference to `defineGame')",
+    );
+  });
+
+  it("keeps Perry's own error when nothing was unresolved", () => {
+    expect(summarizeCompilerOutput("Error: Failed to parse game.ts: Parse error", 1, "perry")).toBe(
+      "Error: Failed to parse game.ts: Parse error",
+    );
+    expect(summarizeCompilerOutput("something odd\n", 3, "cc")).toBe("cc exited 3: something odd");
+  });
+
+  it("keeps Perry's namespace-import error, which already names its module", () => {
+    const output = `  Warning: Could not resolve import 'three/webgpu' from vfx.ts\nError: Could not resolve namespace import \`import * as ... from "three/webgpu"\` in vfx.ts`;
+    expect(summarizeCompilerOutput(output, 1, "perry")).toMatch(
+      /^Error: Could not resolve namespace import/u,
+    );
+  });
+
+  it("says nothing for a clean run, whatever it warned about", () => {
+    expect(
+      summarizeCompilerOutput("  Warning: Could not resolve import 'x' from a.ts\n", 0, "perry"),
+    ).toBeUndefined();
   });
 });
 

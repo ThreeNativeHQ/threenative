@@ -33,7 +33,27 @@ export const ENGINE_LIBS = [
 /** Perry's strict dynamic-code controls (decision 11), the same flags the corpus compiles with. */
 export const STRICT_FLAGS = ["--strict-eval", "--strict-dynamic-import", "--strict-unimplemented"];
 
-/** The first error line of a tool run, or undefined when it succeeded. */
+/** Perry's warning for an import it could not resolve; the link then fails on a bare symbol. */
+const UNRESOLVED_IMPORT = /Could not resolve import '([^']+)' from /gu;
+
+/**
+ * The first error of a tool run's output, or undefined when it succeeded. Perry warns about each
+ * import it cannot resolve and only fails later at the link, naming one bare symbol
+ * (`undefined reference to 'defineGame'`). When imports were unresolved that is the real cause, so
+ * it is named first with every specifier, ahead of the link line it produced.
+ */
+export function summarizeCompilerOutput(output, status, tool = "tool") {
+  const firstError = output
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => /^Error:|error\[|error:|undefined reference/.test(line));
+  if (status === 0 && !firstError) return undefined;
+  const specifiers = [...new Set([...output.matchAll(UNRESOLVED_IMPORT)].map((match) => match[1]))];
+  if (specifiers.length > 0 && !firstError?.startsWith("Error: Could not resolve namespace import"))
+    return `TN_STRICT_UNRESOLVED_IMPORT: ${specifiers.length} import(s) did not resolve: ${specifiers.join(", ")}${firstError ? ` (${firstError})` : ""}`;
+  return firstError ?? `${tool} exited ${status}: ${output.split("\n")[0]}`;
+}
+
 function defaultExec(tool, args, env, opts = {}) {
   const run = spawnSync(tool, args, {
     encoding: "utf8",
@@ -42,12 +62,25 @@ function defaultExec(tool, args, env, opts = {}) {
     cwd: opts.cwd,
   });
   const output = `${run.stdout ?? ""}${run.stderr ?? ""}`;
-  const firstError = output
-    .split("\n")
-    .map((line) => line.trim())
-    .find((line) => /^Error:|error\[|error:|undefined reference/.test(line));
-  if (run.status === 0 && !firstError) return undefined;
-  return firstError ?? `${path.basename(tool)} exited ${run.status}: ${output.split("\n")[0]}`;
+  return summarizeCompilerOutput(output, run.status, path.basename(tool));
+}
+
+/** Directories at a game's root that hold no source Perry compiles. */
+const NOT_GAME_SOURCE = new Set(["node_modules", "dist", "dist-native", ".git", "artifacts", "public", "assets", "docs", "playtests", "native-playtests"]);
+
+/** The TypeScript, JavaScript and JSON files of a game's source tree, as paths relative to `root`. */
+export function listGameSources(root) {
+  const found = [];
+  const walk = (directory, top) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (top && NOT_GAME_SOURCE.has(entry.name)) continue;
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(full, false);
+      else if (/\.(?:tsx?|m?js|json)$/u.test(entry.name) && entry.name !== "package.json") found.push(path.relative(root, full));
+    }
+  };
+  walk(root, true);
+  return found;
 }
 
 function digest(parts) {
@@ -78,6 +111,8 @@ function writeAdapterManifest(packageDir, libDirs, libs) {
 /**
  * Builds `<outDir>/<name>` from `entry` (and the relative modules it imports, `modules`), linked
  * with the three facade, its shim and hooks, and the engine archives in `engineBuild`.
+ * `sourceRoot`, when given, stages the game's whole source tree under `outDir` with its layout kept
+ * (`entry` must lie inside it), so a game whose modules sit in folders keeps its relative imports.
  * `compiler` is the provisioned Perry: `{ binaryPath, identity }`, `identity` naming its version
  * and checksum. Returns the executable, the steps that ran, and the first errors (empty on success).
  */
@@ -85,6 +120,7 @@ export function buildStrict({
   name,
   entry,
   modules = [],
+  sourceRoot,
   outDir,
   engineBuild,
   compiler,
@@ -129,19 +165,31 @@ export function buildStrict({
   // The staged project: the game and its modules beside the `three`, `three-aot` and adapter
   // packages Perry resolves them from.
   const staged = path.join(outDir, "src");
-  const stagedEntry = path.join(staged, path.basename(entry));
+  const tree = sourceRoot ? listGameSources(sourceRoot) : [];
+  const stagedEntry = sourceRoot ? path.join(outDir, path.relative(sourceRoot, entry)) : path.join(staged, path.basename(entry));
   const facadeDir = path.join(outDir, "node_modules", "three");
   const aotDir = path.join(outDir, "node_modules", "three-aot");
   const adapterDir = path.join(outDir, "node_modules", ADAPTER_PACKAGE);
   const bridgeDir = path.join(outDir, "three-bridge");
-  const sources = [path.join(THREE_DIR, "three.ts"), path.join(THREE_DIR, "three-aot.ts"), ...modules, entry];
+  const treeFiles = tree.map((file) => path.join(sourceRoot, file));
+  const sources = [path.join(THREE_DIR, "three.ts"), path.join(THREE_DIR, "three-aot.ts"), ...modules, entry, ...treeFiles.filter((file) => file !== entry)];
   step(
     "typescript",
     [engineBuild, bridgeDir, ...sources.map((file) => fs.readFileSync(file))],
     [stagedEntry, path.join(outDir, "package.json"), path.join(facadeDir, "three.ts"), path.join(adapterDir, "package.json")],
     () => {
-      fs.mkdirSync(staged, { recursive: true });
+      fs.mkdirSync(path.dirname(stagedEntry), { recursive: true });
       for (const file of modules) fs.copyFileSync(file, path.join(staged, path.basename(file)));
+      // A file the game no longer has leaves the staged tree too, or Perry would keep compiling it.
+      const manifestFile = path.join(cache, "tree.json");
+      if (fs.existsSync(manifestFile))
+        for (const old of JSON.parse(fs.readFileSync(manifestFile, "utf8")))
+          if (!tree.includes(old)) fs.rmSync(path.join(outDir, old), { force: true });
+      for (const file of tree) {
+        fs.mkdirSync(path.dirname(path.join(outDir, file)), { recursive: true });
+        fs.copyFileSync(path.join(sourceRoot, file), path.join(outDir, file));
+      }
+      fs.writeFileSync(manifestFile, JSON.stringify(tree));
       fs.copyFileSync(entry, stagedEntry);
       writeStagedPackage(facadeDir, "three", "three.ts");
       fs.copyFileSync(path.join(THREE_DIR, "three.ts"), path.join(facadeDir, "three.ts"));
