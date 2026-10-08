@@ -146,6 +146,13 @@ void registerObject3D(ClassBinding& b) {
     b.members["parent"] = [](void* self, const Args&, Store& store) {
         return foundObject(store, as<Object3D>(self)->parent);
     };
+    // three's `children`, as a fresh array of the attached objects in order (PRD-540). It is read
+    // only: add, remove and attach change the graph, as three's own code does.
+    b.members["children"] = [](void* self, const Args&, Store& store) {
+        Args children;
+        for (Object3D* child : as<Object3D>(self)->children) children.push_back(foundObject(store, child));
+        return Value::array(std::move(children));
+    };
     b.callbacks["onBeforeRender"] = [](void* self, RenderCallback callback) {
         as<Object3D>(self)->onBeforeRender = std::move(callback);
     };
@@ -260,12 +267,15 @@ void registerObject3D(ClassBinding& b) {
     fixedMember(b, "matrixWorld", memberAliasMethod(&Object3D::matrixWorldValue, "Matrix4"));
 
     // Transforms.
+    // three's add(...objects) and remove(...objects) take every argument (PRD-540).
     b.methods["add"] = [](void* self, const Args& a, Store& store) {
-        as<Object3D>(self)->add(objectArg(store, a.at(0)));
+        (void)a.at(0);  // no object is an invalid argument, as before
+        for (const Value& object : a) as<Object3D>(self)->add(objectArg(store, object));
         return chain();
     };
     b.methods["remove"] = [](void* self, const Args& a, Store& store) {
-        as<Object3D>(self)->remove(objectArg(store, a.at(0)));
+        (void)a.at(0);
+        for (const Value& object : a) as<Object3D>(self)->remove(objectArg(store, object));
         return chain();
     };
     b.methods["attach"] = [](void* self, const Args& a, Store& store) {
@@ -619,7 +629,7 @@ void registerGroup(ClassBinding& b) {
 std::shared_ptr<BufferGeometry> geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
-        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "LatheGeometry", "TubeGeometry"};
+        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "LatheGeometry", "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {

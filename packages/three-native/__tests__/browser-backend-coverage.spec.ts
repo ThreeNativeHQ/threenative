@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import {
   type IBrowserRuntime,
   type IRegistryDump,
+  LANGUAGE_MEMBERS,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
 import { type ICatalogClassEntry, loadCatalog } from "../src/catalog.js";
@@ -55,18 +56,28 @@ describe("the browser-JS back end", () => {
     for (const [name, binding] of Object.entries(registry.classes)) {
       const prototype = classes[name]?.prototype as object;
       const exposed = Object.getOwnPropertyNames(prototype).filter((key) => key !== "constructor");
+      // PRD-540: scene-graph classes also carry the JavaScript-side members (browser-surface.spec.ts).
+      const language: readonly string[] = binding.members.includes("parent")
+        ? LANGUAGE_MEMBERS
+        : [];
       const expected = new Set([
         ...binding.methods,
         ...binding.getters.filter((key) => !key.includes(".")),
         ...binding.members.filter((key) => !key.includes(".")),
         ...binding.callbacks,
+        ...language,
         // A write-only setter (`needsUpdate`) is a property of its own, or the write never lands.
         ...binding.setters.filter((key) => !key.includes(".")),
       ]);
       expect(exposed.sort(), name).toEqual([...expected].sort());
       for (const key of exposed) {
         const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
-        if (descriptor?.get === undefined || binding.callbacks.includes(key)) continue;
+        if (
+          descriptor?.get === undefined ||
+          binding.callbacks.includes(key) ||
+          language.includes(key)
+        )
+          continue;
         expect(descriptor.set !== undefined, `${name}.${key} settable`).toBe(
           binding.setters.includes(key),
         );

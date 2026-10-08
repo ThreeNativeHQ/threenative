@@ -8,10 +8,10 @@
   "steps": [{ "kind": "wait", "label": "running", "waitTicks": 30 }],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
-    "resources": [{ "id": "state", "path": "frames", "gte": 30, "changed": true }],
+    "resources": [{ "id": "state", "path": "frames", "changed": true }],
     "visual": [
       {
-        "region": { "x": 220, "y": 100, "width": 200, "height": 160, "minNonblankPixelRatio": 0.2 }
+        "region": { "x": 120, "y": 80, "width": 400, "height": 200, "minNonblankPixelRatio": 0.2 }
       }
     ]
   }

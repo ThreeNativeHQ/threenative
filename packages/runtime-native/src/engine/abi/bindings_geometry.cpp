@@ -44,7 +44,7 @@ Value numbers(const std::vector<double>& values) { return Value::list(values); }
 BufferGeometry& geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
-        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "LatheGeometry", "TubeGeometry"};
+        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "LatheGeometry", "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -623,6 +623,148 @@ void registerCatmullRomCurve3(ClassBinding& b) {
     };
 }
 
+// ------------------------------------------------------------------------------ Path, Shape
+
+std::vector<Vector2> vector2s(const Value& v, Store& store) {
+    std::vector<Vector2> points;
+    for (const Value& ref : refsOf(v)) points.push_back(store.ref<Vector2>(ref, "Vector2"));
+    return points;
+}
+
+/** A Path or a Shape argument, as the Path it is. */
+std::shared_ptr<Path> pathArg(Store& store, const Value& v) {
+    Object* found = store.find(v);
+    if (found != nullptr && found->cls == "Shape") return std::static_pointer_cast<Shape>(found->ptr);
+    if (found != nullptr && found->cls == "Path") return std::static_pointer_cast<Path>(found->ptr);
+    throw Unsupported{"argument is not a Path or a Shape"};
+}
+
+// three's Path and Shape: the drawing commands, autoClose and getPoints. Shape adds `holes`, the
+// caller's own paths. The commands take numbers, as three's do; a profile with no points is refused,
+// as three reads its first point.
+template <class P>
+void registerPath(ClassBinding& b) {
+    b.ctor = [](const Args& a, Store& store) {
+        if (a.empty() || a.at(0).kind == Value::Kind::Undefined || a.at(0).kind == Value::Kind::Null)
+            return std::static_pointer_cast<void>(std::make_shared<P>());
+        const std::vector<Vector2> points = vector2s(a.at(0), store);
+        if (points.empty()) throw Unsupported{"a Path's points must not be empty"};
+        return std::static_pointer_cast<void>(std::make_shared<P>(points));
+    };
+    b.getters["type"] = [](void* self) { return string(as<P>(self)->type); };
+    b.getters["autoClose"] = [](void* self) { return Value::of(as<P>(self)->autoClose); };
+    b.setters["autoClose"] = [](void* self, const Value& v) { as<P>(self)->autoClose = flag(v); };
+    b.methods["moveTo"] = [](void* self, const Args& a, Store&) {
+        as<P>(self)->moveTo(number(a.at(0)), number(a.at(1)));
+        return chain();
+    };
+    b.methods["lineTo"] = [](void* self, const Args& a, Store&) {
+        as<P>(self)->lineTo(number(a.at(0)), number(a.at(1)));
+        return chain();
+    };
+    b.methods["quadraticCurveTo"] = [](void* self, const Args& a, Store&) {
+        as<P>(self)->quadraticCurveTo(number(a.at(0)), number(a.at(1)), number(a.at(2)), number(a.at(3)));
+        return chain();
+    };
+    b.methods["bezierCurveTo"] = [](void* self, const Args& a, Store&) {
+        as<P>(self)->bezierCurveTo(number(a.at(0)), number(a.at(1)), number(a.at(2)), number(a.at(3)), number(a.at(4)),
+                                   number(a.at(5)));
+        return chain();
+    };
+    b.methods["splineThru"] = [](void* self, const Args& a, Store& store) {
+        const std::vector<Vector2> points = vector2s(a.at(0), store);
+        if (points.empty()) throw Unsupported{"splineThru needs points"};
+        as<P>(self)->splineThru(points);
+        return chain();
+    };
+    b.methods["setFromPoints"] = [](void* self, const Args& a, Store& store) {
+        const std::vector<Vector2> points = vector2s(a.at(0), store);
+        if (points.empty()) throw Unsupported{"setFromPoints needs points"};
+        as<P>(self)->setFromPoints(points);
+        return chain();
+    };
+    b.methods["arc"] = [](void* self, const Args& a, Store&) {
+        as<P>(self)->arc(number(a.at(0)), number(a.at(1)), number(a.at(2)), number(a.at(3)), number(a.at(4)), boolean(a, 5, false));
+        return chain();
+    };
+    b.methods["absarc"] = [](void* self, const Args& a, Store&) {
+        as<P>(self)->absarc(number(a.at(0)), number(a.at(1)), number(a.at(2)), number(a.at(3)), number(a.at(4)),
+                            boolean(a, 5, false));
+        return chain();
+    };
+    b.methods["ellipse"] = [](void* self, const Args& a, Store&) {
+        as<P>(self)->ellipse(number(a.at(0)), number(a.at(1)), number(a.at(2)), number(a.at(3)), number(a.at(4)),
+                             number(a.at(5)), boolean(a, 6, false), optional(a, 7, 0));
+        return chain();
+    };
+    b.methods["absellipse"] = [](void* self, const Args& a, Store&) {
+        as<P>(self)->absellipse(number(a.at(0)), number(a.at(1)), number(a.at(2)), number(a.at(3)), number(a.at(4)),
+                                number(a.at(5)), boolean(a, 6, false), optional(a, 7, 0));
+        return chain();
+    };
+    b.methods["closePath"] = [](void* self, const Args&, Store&) {
+        if (as<P>(self)->curves.empty()) throw Unsupported{"closePath on a path with no curves"};
+        as<P>(self)->closePath();
+        return chain();
+    };
+    b.methods["getPoints"] = [](void* self, const Args& a, Store& store) {
+        std::vector<Value> out;
+        for (const Vector2& p : as<P>(self)->getPoints(optional(a, 0, 12)))
+            out.push_back(store.adopt("Vector2", std::make_shared<Vector2>(p)));
+        return Value::array(std::move(out));
+    };
+    b.methods["getLength"] = [](void* self, const Args&, Store&) { return Value::of(as<P>(self)->getLength()); };
+    fixedMember(b, "currentPoint", [](void* self, const Args&, Store& store) {
+        return store.adoptAlias("Vector2", &as<P>(self)->currentPoint, self);
+    });
+}
+
+void registerShape(ClassBinding& b) {
+    registerPath<Shape>(b);
+    b.members["holes"] = [](void* self, const Args&, Store& store) {
+        std::vector<Value> holes;
+        for (const auto& hole : as<Shape>(self)->holes)
+            holes.push_back(store.share(dynamic_cast<Shape*>(hole.get()) ? "Shape" : "Path", hole));
+        return Value::array(std::move(holes));
+    };
+    b.setters["holes"] = [](void* self, const Value& v, Store& store) {
+        std::vector<std::shared_ptr<Path>> holes;
+        for (const Value& ref : refsOf(v)) holes.push_back(pathArg(store, ref));
+        as<Shape>(self)->holes = std::move(holes);
+    };
+}
+
+/** One Shape, or an array of them, as ShapeGeometry and ExtrudeGeometry take; none is three's default. */
+std::vector<std::shared_ptr<Shape>> shapesArg(const Args& a, Store& store, bool& asArray, std::vector<Vector2> fallback) {
+    asArray = false;
+    if (a.empty() || a.at(0).kind == Value::Kind::Undefined) return {std::make_shared<Shape>(fallback)};
+    if (a.at(0).kind == Value::Kind::Ref) return {store.shared<Shape>(a.at(0), "Shape")};
+    asArray = true;
+    std::vector<std::shared_ptr<Shape>> shapes;
+    for (const Value& ref : refsOf(a.at(0))) shapes.push_back(store.shared<Shape>(ref, "Shape"));
+    return shapes;
+}
+
+ExtrudeOptions extrudeOptions(const Value& v) {
+    ExtrudeOptions options;
+    if (v.kind == Value::Kind::Undefined || v.kind == Value::Kind::Null) return options;
+    if (v.kind != Value::Kind::Record) throw Unsupported{"ExtrudeGeometry options must be an object"};
+    for (const auto& [key, value] : v.fields) {
+        if (key == "curveSegments") options.curveSegments = number(value);
+        else if (key == "steps") options.steps = number(value);
+        else if (key == "depth") options.depth = number(value);
+        else if (key == "bevelEnabled") options.bevelEnabled = flag(value);
+        else if (key == "bevelThickness") options.bevelThickness = number(value);
+        else if (key == "bevelSize") options.bevelSize = number(value);
+        else if (key == "bevelOffset") options.bevelOffset = number(value);
+        else if (key == "bevelSegments") options.bevelSegments = number(value);
+        else if (key == "extrudePath" || key == "UVGenerator")
+            throw Unsupported{"ExtrudeGeometry " + key + " is not supported natively"};
+        // three reads only the keys above, so any other key is ignored there too.
+    }
+    return options;
+}
+
 }  // namespace
 
 void registerGeometryBindings(Registry& classes) {
@@ -653,6 +795,22 @@ void registerGeometryBindings(Registry& classes) {
     registerBufferGeometry(classes["BufferGeometry"]);
     registerGeometryGenerators(classes);
     registerCatmullRomCurve3(classes["CatmullRomCurve3"]);
+    registerPath<Path>(classes["Path"]);
+    registerShape(classes["Shape"]);
+    ClassBinding& shapeGeometry = classes["ShapeGeometry"];
+    registerBufferGeometry(shapeGeometry);
+    shapeGeometry.ctor = [](const Args& a, Store& store) {
+        bool asArray = false;
+        const auto shapes = shapesArg(a, store, asArray, {{0, 0.5}, {-0.5, -0.5}, {0.5, -0.5}});
+        return std::static_pointer_cast<void>(makeShapeGeometry(shapes, asArray, optional(a, 1, 12)));
+    };
+    ClassBinding& extrude = classes["ExtrudeGeometry"];
+    registerBufferGeometry(extrude);
+    extrude.ctor = [](const Args& a, Store& store) {
+        bool asArray = false;
+        const auto shapes = shapesArg(a, store, asArray, {{0.5, 0.5}, {-0.5, 0.5}, {-0.5, -0.5}, {0.5, -0.5}});
+        return std::static_pointer_cast<void>(makeExtrudeGeometry(shapes, extrudeOptions(a.size() > 1 ? a.at(1) : Value::undefined())));
+    };
     // three's TubeGeometry(path, tubularSegments, radius, radialSegments, closed). Its default path is
     // a QuadraticBezierCurve3, which is not bound, so a missing path is refused.
     ClassBinding& tube = classes["TubeGeometry"];

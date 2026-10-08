@@ -7604,6 +7604,11 @@
         "source": "three"
       },
       {
+        "symbol": "ExtrudeGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Face",
         "kind": "type",
         "source": "three"
@@ -7774,6 +7779,11 @@
         "source": "three"
       },
       {
+        "symbol": "Path",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "PerspectiveCamera",
         "kind": "class",
         "source": "three/webgpu"
@@ -7820,6 +7830,16 @@
       },
       {
         "symbol": "Scene",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Shape",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "ShapeGeometry",
         "kind": "class",
         "source": "three"
       },

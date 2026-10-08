@@ -78,7 +78,11 @@ export async function bindWebEngine(
   names: readonly string[],
 ): Promise<Record<string, unknown>> {
   const module = await createModule();
-  const { classes } = defineBrowserClasses(registry as IRegistryDump, createWasmRuntime(module));
+  const { classes } = defineBrowserClasses(
+    registry as IRegistryDump,
+    createWasmRuntime(module),
+    catalogJson as unknown as ICatalog,
+  );
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   const bound: Record<string, unknown> = { ...classes };
   if (isWebHostModule(module))

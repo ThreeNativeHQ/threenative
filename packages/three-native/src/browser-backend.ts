@@ -128,10 +128,74 @@ function setValues(target: object, className: string, values: object): void {
   }
 }
 
-/** Defines every registry class over `runtime`. */
+/** What the back end reads from the catalog: each class's parent and three's `is*` flags. */
+export interface ICatalogShape {
+  readonly entries: readonly {
+    readonly name: string;
+    readonly kind: string;
+    readonly extends?: string | null;
+    readonly fields?: readonly {
+      readonly name: string;
+      readonly type: string;
+      readonly mutable?: boolean;
+    }[];
+  }[];
+}
+
+/** Members every scene-graph class gets in JavaScript: game state and walks over `children`. */
+export const LANGUAGE_MEMBERS = [
+  "userData",
+  "traverse",
+  "traverseVisible",
+  "traverseAncestors",
+] as const;
+
+type TraverseCallback = (object: object) => void;
+
+/**
+ * The `traverse` family, written over `children`, as three writes it. A class whose engine binding
+ * has no `children` refuses by name instead of visiting only the root.
+ */
+function defineTraversal(
+  prototype: Record<string, unknown>,
+  className: string,
+  hasChildren: boolean,
+) {
+  const childrenOf = (object: object): object[] => {
+    if (!hasChildren) throw new TypeError(`TN_BROWSER_UNBOUND: ${className}.children`);
+    return (object as { children: object[] }).children;
+  };
+  const methods: Record<string, (this: object, callback: TraverseCallback) => void> = {
+    traverse(callback) {
+      callback(this);
+      for (const child of childrenOf(this))
+        (child as { traverse(c: TraverseCallback): void }).traverse(callback);
+    },
+    traverseVisible(callback) {
+      if ((this as { visible: boolean }).visible === false) return;
+      callback(this);
+      for (const child of childrenOf(this))
+        (child as { traverseVisible(c: TraverseCallback): void }).traverseVisible(callback);
+    },
+    traverseAncestors(callback) {
+      const parent = (this as { parent: object | null }).parent;
+      if (parent === null) return;
+      callback(parent);
+      (parent as { traverseAncestors(c: TraverseCallback): void }).traverseAncestors(callback);
+    },
+  };
+  for (const [name, value] of Object.entries(methods))
+    Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
+}
+
+/**
+ * Defines every registry class over `runtime`. With `catalog`, classes chain as three's do
+ * (`mesh instanceof Object3D`) and carry three's `is*` flags.
+ */
 export function defineBrowserClasses(
   registry: IRegistryDump,
   runtime: IBrowserRuntime,
+  catalog?: ICatalogShape,
 ): IBrowserEngine {
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object }>();
@@ -141,9 +205,14 @@ export function defineBrowserClasses(
   const callbackFunctions = new WeakMap<object, Map<string, (...args: unknown[]) => unknown>>();
   const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
   const held = new Set<object>();
+  // userData is the game's, not the engine's: kept by handle, so a wrapper made again for the same
+  // object finds it. ponytail: an entry outlives an attached object's wrapper by design, and goes
+  // when a detached one is released.
+  const userData = new Map<string, unknown>();
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
       wrappers.delete(ref.key);
+      if (userData.has(ref.key) && runtime.get(ref, "parent") === null) userData.delete(ref.key);
       for (const name of callbackNames.get(ref.key) ?? []) runtime.setCallback(ref, name, null);
       callbackNames.delete(ref.key);
       runtime.release(ref);
@@ -294,8 +363,43 @@ export function defineBrowserClasses(
         },
       });
     }
+    if (binding.members.includes("parent") || binding.getters.includes("parent")) {
+      Object.defineProperty(prototype, "userData", {
+        configurable: true,
+        get(this: object) {
+          const key = refOf(this).key;
+          if (!userData.has(key)) userData.set(key, {});
+          return userData.get(key);
+        },
+        set(this: object, value: unknown) {
+          userData.set(refOf(this).key, value);
+        },
+      });
+      defineTraversal(
+        prototype,
+        name,
+        binding.members.includes("children") || binding.getters.includes("children"),
+      );
+    }
     classes[name] = cls;
     byType.set(runtime.typeId(name), cls);
+  }
+  const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
+  const isFlag = (field: { name: string; type: string; mutable?: boolean }) =>
+    /^is[A-Z]/u.test(field.name) &&
+    (field.type === "true" || (field.type === "boolean" && field.mutable === false));
+  for (const [name, cls] of Object.entries(classes)) {
+    const entry = entries.get(name);
+    const parent = entry?.extends ? classes[entry.extends] : undefined;
+    if (parent !== undefined) Object.setPrototypeOf(cls.prototype, parent.prototype);
+    // Flags come from the whole chain: `Material` is unbound, yet a material is `isMaterial`.
+    for (
+      let link = entry;
+      link !== undefined;
+      link = link.extends ? entries.get(link.extends) : undefined
+    )
+      for (const field of (link.fields ?? []).filter(isFlag))
+        Object.defineProperty(cls.prototype, field.name, { configurable: true, value: true });
   }
   return {
     classes,
