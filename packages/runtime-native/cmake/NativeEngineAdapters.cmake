@@ -127,6 +127,11 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
         # path needs the platform's own blob, so it is proven on the Pixel lane, not here.
         add_test(NAME native_engine_host_snapshot_refuse
             COMMAND sh -c "$<TARGET_FILE:tn-native-engine-host> ${TN_L4_SCRIPT} --v8-snapshot ${CMAKE_CURRENT_BINARY_DIR}/no-such-snapshot.bin --frames 1 2>&1; echo exit=$?")
+        # A mistyped flag and a missing workload are refused by name before any device or V8 starts.
+        add_test(NAME native_engine_host_args_refuse
+            COMMAND sh -c "$<TARGET_FILE:tn-native-engine-host> --no-such-flag 2>&1; echo exit=$?; $<TARGET_FILE:tn-native-engine-host> 2>&1; echo exit=$?")
+        set_tests_properties(native_engine_host_args_refuse PROPERTIES LABELS "native-engine"
+            PASS_REGULAR_EXPRESSION "TN_HOST_ARGS: unknown argument --no-such-flag\nexit=2\nTN_HOST_ARGS: a workload script, --cpp or --crowd\nexit=2")
         set_tests_properties(native_engine_host_snapshot_refuse PROPERTIES LABELS "native-engine"
             PASS_REGULAR_EXPRESSION "TN_HOST_SCRIPT: cannot read the V8 snapshot [^\n]*no-such-snapshot.bin\n.*exit=1")
     endif()
