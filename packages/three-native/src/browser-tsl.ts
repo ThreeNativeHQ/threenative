@@ -15,7 +15,8 @@ export type TslArgValue =
   | { readonly kind: "node"; readonly node: number }
   | { readonly kind: "number"; readonly number: number }
   | { readonly kind: "string" | "named"; readonly text: string }
-  | { readonly kind: "rgb" | "vector"; readonly numbers: readonly number[] };
+  | { readonly kind: "rgb" | "vector"; readonly numbers: readonly number[] }
+  | { readonly kind: "other" };
 
 /** The engine side of TSL: one call by name, node release, and a material's node slot. */
 export interface ITslRuntime {
@@ -24,6 +25,10 @@ export interface ITslRuntime {
   set(material: IEngineRef, path: string, node: number): void;
   /** three's `uniform.value = x`: the uniform's lanes, with no program change. */
   setUniform(node: number, lanes: readonly number[]): void;
+  /** A live post effect's scalar uniform, written first when `value` is given; answers its value. */
+  effectParameter(node: number, name: string, value?: number): number;
+  /** three's RenderPipeline: the post graph the web host draws between scene and output, or none. */
+  setPost(node: number | null): void;
 }
 
 /** Module functions the shared table answers (engine/abi/tsl_call.cpp). */
@@ -75,6 +80,12 @@ const FUNCTIONS = [
   "reflect",
   "convertToTexture",
   "varying",
+  // The live post effects (lane-531's table entries); post-effects.ts publishes them as three's addons.
+  "ao",
+  "denoise",
+  "smaa",
+  "bloom",
+  "oneMinus",
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
@@ -128,6 +139,8 @@ const METHODS = [
   "smoothstep",
   "select",
   "sample",
+  "oneMinus",
+  "dispose",
 ] as const;
 const SWIZZLES: Readonly<Record<string, string>> = {
   x: "x",
@@ -172,6 +185,8 @@ export function defineTsl(runtime: ITslRuntime): {
   };
   const argument = (name: string, index: number, value: unknown): TslArgValue => {
     if (isTslNode(value)) return { kind: "node", node: value[TSL_NODE] };
+    // An omitted optional input (denoise's normal node) has no TSL meaning of its own.
+    if (value === null || value === undefined) return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
     // A texture names its map by the object's `name`; textureLoad also takes a texture node.
@@ -238,6 +253,9 @@ export function defineTsl(runtime: ITslRuntime): {
   prototype.Else = function (this: ITslNode, callback: unknown) {
     statement("Else");
     return wrap(runtime.call("Else", this[TSL_NODE], [node(capture("Else", callback))]));
+  };
+  prototype.__effect = function (this: ITslNode, name: string, value?: number) {
+    return runtime.effectParameter(this[TSL_NODE], name, value);
   };
   // A uniform under the name a material binds: the same wrapper now names the renamed node, so its
   // live `.value` (tsl-uniforms.ts) writes the node the game goes on to use.

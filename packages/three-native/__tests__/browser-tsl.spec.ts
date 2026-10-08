@@ -9,6 +9,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { definePostEffects } from "../src/addons/post-effects.js";
 import {
   type EngineValue,
   type IBrowserRuntime,
@@ -44,6 +45,17 @@ function tslRuntime(calls: ICall[], sets: string[], uniforms: string[] = []): IT
     },
     setUniform(node, lanes) {
       uniforms.push(`${node}=${lanes.join(",")}`);
+    },
+    effectParameter(node, name, value) {
+      calls.push({
+        name: `effect ${name}`,
+        receiver: node,
+        args: value === undefined ? [] : [{ kind: "number", number: value }],
+      });
+      return value ?? 0.25;
+    },
+    setPost(node) {
+      sets.push(`post=${node}`);
     },
   };
 }
@@ -127,6 +139,70 @@ describe("TSL on the browser back end", () => {
     values.y = 5; // Midway: origin.value.set(camera.x, camera.z)
     tsl.sync();
     expect(uniforms).toEqual(["1=2.5", "2=4,5"]);
+  });
+
+  it("runs Fn, If, Else and Loop callbacks inside engine scopes, as V8's adapter does", () => {
+    const calls: ICall[] = [];
+    const tsl = defineTsl(tslRuntime(calls, [])).exports;
+    const shade = (tsl.Fn as (callback: () => void) => () => unknown)(() => {
+      const acc = ((tsl.float as Fn)(0).toVar as Fn)();
+      (tsl.Loop as Fn)(2, ({ i }: { i: Record<string, unknown> }) => {
+        const branch = (tsl.If as Fn)((i.lessThan as Fn)(1), () => (acc.assign as Fn)(1));
+        (branch.Else as Fn)(() => (acc.assign as Fn)(2));
+      });
+    });
+    expect(shade()).toBe(shade()); // built once, at definition
+    expect(calls.map(({ name }) => name)).toEqual([
+      "scope:open",
+      "float",
+      "toVar",
+      "Loop:index",
+      "scope:open",
+      "lessThan",
+      "scope:open",
+      "assign",
+      "scope:close",
+      "If",
+      "scope:open",
+      "assign",
+      "scope:close",
+      "Else",
+      "scope:close",
+      "Loop",
+      "scope:close",
+    ]);
+    // A callback that throws still closes its scope, and the original error comes through.
+    calls.length = 0;
+    expect(() =>
+      (tsl.Fn as Fn)(() => {
+        throw new Error("original");
+      }),
+    ).toThrow("original");
+    expect(calls.map(({ name }) => name)).toEqual(["scope:open", "scope:close"]);
+    // A statement form outside any Fn refuses before it reaches the engine.
+    expect(() => (tsl.If as Fn)((tsl.float as Fn)(1), () => {})).toThrow("statement outside Fn");
+  });
+
+  it("publishes a live effect's uniforms as three's ao(...).radius.value", () => {
+    const calls: ICall[] = [];
+    const tsl = defineTsl(tslRuntime(calls, [])).exports;
+    const effects = definePostEffects(tsl as never);
+    const depth = (tsl.uv as Fn)();
+    const ao = effects.ao(depth, undefined, undefined) as unknown as Record<
+      string,
+      { value: number }
+    >;
+    expect(calls.at(-1)).toEqual({
+      name: "ao",
+      receiver: null,
+      args: [{ kind: "node", node: 1 }, { kind: "other" }, { kind: "other" }],
+    });
+    expect(ao.radius?.value).toBe(0.25);
+    (ao.radius as { value: number }).value = 0.5;
+    expect(calls.slice(-2).map(({ name, args }) => [name, args])).toEqual([
+      ["effect radius", []],
+      ["effect radius", [{ kind: "number", number: 0.5 }]],
+    ]);
   });
 
   it("refuses an argument TSL has no meaning for, by name", () => {

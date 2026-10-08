@@ -743,6 +743,36 @@ extern "C" tn_status_t tn_tsl_build(tn_context_t* context, const char* operation
     });
 }
 
+namespace {
+/** tn_tsl_arg_t values as the shared table takes them; a node id must belong to this context. */
+tn_status_t tslArgs(tn_context_t* context, const tn_tsl_arg_t* args, uint32_t arg_count,
+                    std::vector<tn::abi::TslArg>& converted, tn_diagnostic_t* diagnostic) {
+    const auto node = [&](uint64_t id) {
+        const auto it = context->tslNodes.find(id);
+        if (it == context->tslNodes.end()) throw std::runtime_error("TN_TSL_NODE_INVALID");
+        return it->second;
+    };
+    converted.reserve(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+        const tn_tsl_arg_t& a = args[i];
+        switch (a.kind) {
+            case TN_TSL_ARG_NODE: converted.push_back(tn::abi::TslArg::of(node(a.node))); break;
+            case TN_TSL_ARG_NUMBER: converted.push_back(tn::abi::TslArg::of(a.number)); break;
+            case TN_TSL_ARG_STRING: converted.push_back(tn::abi::TslArg::of(std::string(a.text ? a.text : ""))); break;
+            case TN_TSL_ARG_NAMED: converted.push_back(tn::abi::TslArg::named(a.text ? a.text : "")); break;
+            case TN_TSL_ARG_RGB: converted.push_back(tn::abi::TslArg::rgbOf(a.numbers[0], a.numbers[1], a.numbers[2])); break;
+            case TN_TSL_ARG_VECTOR:
+                if (a.reserved < 2 || a.reserved > 4) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT lanes");
+                converted.push_back(tn::abi::TslArg::vectorOf(static_cast<uint8_t>(a.reserved), a.numbers));
+                break;
+            case TN_TSL_ARG_OTHER: converted.push_back(tn::abi::TslArg::other()); break;
+            default: return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT kind");
+        }
+    }
+    return TN_OK;
+}
+}  // namespace
+
 extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, const uint64_t* receiver,
                                     const tn_tsl_arg_t* args, uint32_t arg_count, uint64_t* out_node,
                                     tn_diagnostic_t* diagnostic) {
@@ -756,22 +786,7 @@ extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, cons
             return it->second;
         };
         std::vector<tn::abi::TslArg> converted;
-        converted.reserve(arg_count);
-        for (uint32_t i = 0; i < arg_count; ++i) {
-            const tn_tsl_arg_t& a = args[i];
-            switch (a.kind) {
-                case TN_TSL_ARG_NODE: converted.push_back(tn::abi::TslArg::of(node(a.node))); break;
-                case TN_TSL_ARG_NUMBER: converted.push_back(tn::abi::TslArg::of(a.number)); break;
-                case TN_TSL_ARG_STRING: converted.push_back(tn::abi::TslArg::of(std::string(a.text ? a.text : ""))); break;
-                case TN_TSL_ARG_NAMED: converted.push_back(tn::abi::TslArg::named(a.text ? a.text : "")); break;
-                case TN_TSL_ARG_RGB: converted.push_back(tn::abi::TslArg::rgbOf(a.numbers[0], a.numbers[1], a.numbers[2])); break;
-                case TN_TSL_ARG_VECTOR:
-                    if (a.reserved < 2 || a.reserved > 4) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT lanes");
-                    converted.push_back(tn::abi::TslArg::vectorOf(static_cast<uint8_t>(a.reserved), a.numbers));
-                    break;
-                default: return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT kind");
-            }
-        }
+        if (const tn_status_t s = tslArgs(context, args, arg_count, converted, diagnostic); s != TN_OK) return s;
         const tn::abi::TslArg self = receiver ? tn::abi::TslArg::of(node(*receiver)) : tn::abi::TslArg{};
         tn::engine::shader::graph::Node result;
         if (context->tslScopes.call(name, receiver ? &self : nullptr, converted, result)) {
@@ -784,6 +799,17 @@ extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, cons
         return ok(diagnostic);
     });
 }
+
+extern "C" tn_status_t tn_tsl_effect_parameter(tn_context_t* context, const uint64_t* node, const char* name,
+                                               const double* value, double* out, tn_diagnostic_t* diagnostic) {
+    if (!context || !node || !name || !out || !context->tslNodes.contains(*node))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        *out = tn::abi::tslEffectParameter(context->tslNodes.at(*node), name, value);
+        return ok(diagnostic);
+    });
+}
+
 
 extern "C" tn_status_t tn_tsl_set_uniform(tn_context_t* context, const uint64_t* node, const double* values,
                                            uint32_t count, tn_diagnostic_t* diagnostic) {

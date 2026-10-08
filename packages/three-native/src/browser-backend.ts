@@ -12,7 +12,7 @@
  * collected wrapper releases its object.
  */
 
-import type { ITslRuntime } from "./browser-tsl.js";
+import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 
 export interface IRegistryClass {
   readonly constructor: boolean;
@@ -500,8 +500,14 @@ const KIND = {
 // wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, lanes 4, node 8 (u64), number 16, text 24,
 // numbers 32 (four f64); 64 bytes.
 const TSL_ARG = 64;
-const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4, vector: 5 } as const;
-type TslCall = "_tn_tsl_call" | "_tn_tsl_release" | "_tn_tsl_set" | "_tn_tsl_set_uniform";
+const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4, vector: 5, other: 6 } as const;
+type TslCall =
+  | "_tn_tsl_call"
+  | "_tn_tsl_release"
+  | "_tn_tsl_set"
+  | "_tn_tsl_set_uniform"
+  | "_tn_tsl_effect_parameter"
+  | "_tnw_web_set_post";
 
 interface IAbiHelpers {
   scoped<T>(work: () => T): T;
@@ -528,30 +534,46 @@ function tslOf(
     _tn_tsl_release: release,
     _tn_tsl_set: set,
     _tn_tsl_set_uniform: setUniform,
+    _tn_tsl_effect_parameter: effectParameter,
+    _tnw_web_set_post: setPost,
   } = calls;
-  if (call === undefined || release === undefined || set === undefined || setUniform === undefined)
+  if (
+    call === undefined ||
+    release === undefined ||
+    set === undefined ||
+    setUniform === undefined ||
+    effectParameter === undefined
+  )
     return undefined;
+  // Writes tn_tsl_arg_t values; text is allocated first, since an allocation can grow the memory.
+  const writeArgs = (args: readonly TslArgValue[]): number => {
+    const pointer = h.alloc(Math.max(TSL_ARG, args.length * TSL_ARG));
+    args.forEach((arg, i) => {
+      const at = pointer + i * TSL_ARG;
+      const text = arg.kind === "string" || arg.kind === "named" ? h.string(arg.text).pointer : 0;
+      const v = h.view();
+      v.setUint32(at, TSL_KIND[arg.kind], true);
+      if (arg.kind === "node") v.setBigUint64(at + 8, BigInt(arg.node), true);
+      else if (arg.kind === "number") v.setFloat64(at + 16, arg.number, true);
+      else if (arg.kind === "rgb" || arg.kind === "vector") {
+        v.setUint32(at + 4, arg.numbers.length, true);
+        arg.numbers.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
+      } else v.setUint32(at + 24, text, true);
+    });
+    return pointer;
+  };
+  const nodeOf = (node: number | null): number => {
+    if (node === null) return 0;
+    const pointer = h.alloc(8);
+    h.view().setBigUint64(pointer, BigInt(node), true);
+    return pointer;
+  };
   return {
     tsl: {
       call: (name, receiver, args) =>
         h.scoped(() => {
-          const pointer = h.alloc(Math.max(TSL_ARG, args.length * TSL_ARG));
-          args.forEach((arg, i) => {
-            const at = pointer + i * TSL_ARG;
-            // Text is allocated before the view is taken: an allocation can grow the memory.
-            const text =
-              arg.kind === "string" || arg.kind === "named" ? h.string(arg.text).pointer : 0;
-            const v = h.view();
-            v.setUint32(at, TSL_KIND[arg.kind], true);
-            if (arg.kind === "node") v.setBigUint64(at + 8, BigInt(arg.node), true);
-            else if (arg.kind === "number") v.setFloat64(at + 16, arg.number, true);
-            else if (arg.kind === "rgb" || arg.kind === "vector") {
-              v.setUint32(at + 4, arg.numbers.length, true);
-              arg.numbers.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
-            } else v.setUint32(at + 24, text, true);
-          });
-          const self = receiver === null ? 0 : h.alloc(8);
-          if (receiver !== null) h.view().setBigUint64(self, BigInt(receiver), true);
+          const pointer = writeArgs(args);
+          const self = nodeOf(receiver);
           const out = h.alloc(8);
           const diag = h.diagnostic();
           h.check(
@@ -575,6 +597,26 @@ function tslOf(
             diag,
             `set ${path}`,
           );
+        }),
+      effectParameter: (node, name, value) =>
+        h.scoped(() => {
+          const self = nodeOf(node);
+          const input = value === undefined ? 0 : h.alloc(8);
+          if (value !== undefined) h.view().setFloat64(input, value, true);
+          const out = h.alloc(8);
+          const diag = h.diagnostic();
+          h.check(
+            effectParameter(context, self, h.string(name).pointer, input, out, diag),
+            diag,
+            `effect ${name}`,
+          );
+          return h.view().getFloat64(out, true);
+        }),
+      // three's RenderPipeline on the product web host: the graph between scene and output.
+      setPost: (node) =>
+        h.scoped(() => {
+          if (setPost === undefined) throw new Error("TN_WASM_POST: this module has no web host");
+          if (setPost(context, nodeOf(node)) !== 0) throw new Error("TN_WASM_POST: refused");
         }),
       setUniform: (node, lanes) =>
         h.scoped(() => {

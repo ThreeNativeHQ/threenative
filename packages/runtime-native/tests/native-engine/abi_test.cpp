@@ -712,8 +712,105 @@ void tsl_uniform_value() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-540: Fn/If/Else/Loop/toVar/assign through the C ABI for a back end that runs the callbacks
+// itself (the Wasm browser back end), building the very graph g::Block builds. The statement forms
+// are tn_tsl_call names, over the engine's TslScopes (tsl_call.h) that V8 shares.
+void tsl_statements() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto number = [](double n) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NUMBER; a.number = n; return a; };
+    const auto nodeArg = [](uint64_t id) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NODE; a.node = id; return a; };
+    const auto open = [&] { uint64_t none = 0; return tn_tsl_call(ctx, "scope:open", nullptr, nullptr, 0, &none, &d.value); };
+    const auto close = [&](const tn_tsl_arg_t* result, uint64_t* out) {
+        return tn_tsl_call(ctx, "scope:close", nullptr, result, result ? 1 : 0, out, &d.value);
+    };
+    uint64_t zero = 0, acc = 0, index = 0, cond = 0, then = 0, branch = 0, otherwise = 0, body = 0, fn = 0, done = 0;
+    const tn_tsl_arg_t z = number(0), one = number(1), two = number(2);
+    CHECK(tn_tsl_call(ctx, "float", nullptr, &z, 1, &zero, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "toVar", &zero, nullptr, 0, &acc, &d.value) != TN_OK);  // outside any Fn
+    tn_diagnostic_release(&d.value);
+
+    CHECK(open() == TN_OK);
+    CHECK(tn_tsl_call(ctx, "toVar", &zero, nullptr, 0, &acc, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "Loop:index", nullptr, nullptr, 0, &index, &d.value) == TN_OK);
+    CHECK(open() == TN_OK);
+    CHECK(tn_tsl_call(ctx, "lessThan", &index, &one, 1, &cond, &d.value) == TN_OK);
+    CHECK(open() == TN_OK);
+    CHECK(tn_tsl_call(ctx, "assign", &acc, &one, 1, &done, &d.value) == TN_OK);
+    CHECK(close(nullptr, &then) == TN_OK);
+    const tn_tsl_arg_t ifArgs[2] = {nodeArg(cond), nodeArg(then)};
+    CHECK(tn_tsl_call(ctx, "If", nullptr, ifArgs, 2, &branch, &d.value) == TN_OK);
+    CHECK(open() == TN_OK);
+    CHECK(tn_tsl_call(ctx, "assign", &acc, &two, 1, &done, &d.value) == TN_OK);
+    CHECK(close(nullptr, &otherwise) == TN_OK);
+    const tn_tsl_arg_t elseArg = nodeArg(otherwise);
+    uint64_t withElse = 0;
+    CHECK(tn_tsl_call(ctx, "Else", &branch, &elseArg, 1, &withElse, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "Else", &withElse, &elseArg, 1, &done, &d.value) != TN_OK);  // one Else
+    tn_diagnostic_release(&d.value);
+    CHECK(close(nullptr, &body) == TN_OK);
+    const tn_tsl_arg_t loopArgs[3] = {two, nodeArg(index), nodeArg(body)};
+    CHECK(tn_tsl_call(ctx, "Loop", nullptr, loopArgs, 3, &done, &d.value) == TN_OK);
+    CHECK(close(nullptr, &fn) == TN_OK);
+
+    namespace g = tn::engine::shader::graph;
+    g::Block block;
+    const auto variable = block.var(g::float_(0));
+    block.Loop(2, [&](g::Node i) {
+        block.IfElse(g::lessThan(i, g::float_(1)), [&] { block.assign(variable.declaration, g::float_(1)); },
+                     [&] { block.assign(variable.declaration, g::float_(2)); });
+    });
+    // The graph itself is checked through a material, where the ABI keeps it.
+    uint64_t color = 0;
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", fn, &d.value) == TN_OK);
+    CHECK(g::key(tn::abi::shaderNode(material, "colorNode")) == g::key(block.node()));
+    // A callback that adds nothing answers its result: Fn(() => vec3(1)).
+    CHECK(open() == TN_OK);
+    CHECK(close(&one, &color) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", color, &d.value) == TN_OK);
+    CHECK(g::key(tn::abi::shaderNode(material, "colorNode")) == g::key(g::float_(1)));
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// PRD-540: a live post effect's scalar uniform through the C ABI (lane-531's tslEffectParameter), as
+// three's `ao(...).radius.value`; an omitted optional input is an OTHER argument.
+void tsl_effect_parameter() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    uint64_t uv = 0, depth = 0, ao = 0, plain = 0;
+    CHECK(tn_tsl_call(ctx, "uv", nullptr, nullptr, 0, &uv, &d.value) == TN_OK);
+    tn_tsl_arg_t map[2]{};
+    map[0].kind = TN_TSL_ARG_NAMED;
+    map[0].text = "depth";
+    map[1].kind = TN_TSL_ARG_NODE;
+    map[1].node = uv;
+    CHECK(tn_tsl_call(ctx, "texture", nullptr, map, 2, &depth, &d.value) == TN_OK);
+    tn_tsl_arg_t args[2]{};
+    args[0].kind = TN_TSL_ARG_NODE;
+    args[0].node = depth;
+    args[1].kind = TN_TSL_ARG_OTHER;  // no normal node
+    CHECK(tn_tsl_call(ctx, "ao", nullptr, args, 2, &ao, &d.value) == TN_OK);
+    double out = 0;
+    const double radius = 0.5;
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "radius", &radius, &out, &d.value) == TN_OK && out == 0.5);
+    out = 0;
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "radius", nullptr, &out, &d.value) == TN_OK && out == 0.5);
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "noSuchUniform", nullptr, &out, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_tsl_call(ctx, "uv", nullptr, nullptr, 0, &plain, &d.value) == TN_OK);
+    CHECK(tn_tsl_effect_parameter(ctx, &plain, "radius", nullptr, &out, &d.value) != TN_OK);  // not an effect
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter})

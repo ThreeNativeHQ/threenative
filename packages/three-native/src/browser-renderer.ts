@@ -29,6 +29,8 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
 const READY = 1;
+/** The facade's own redraw, for RenderPipeline (browser-entry.ts). */
+export const RENDER_AGAIN = Symbol("tn.renderAgain");
 const FAILED = 2;
 
 interface IAdapterInfo {
@@ -110,6 +112,7 @@ export function defineWebRenderer(
     #clear: [number, number, number, number] = [0, 0, 0, 1];
     #initialized: Promise<this> | undefined;
     #adapter: IAdapterInfo | undefined;
+    #last: [unknown, unknown] | undefined;
 
     constructor(parameters: Record<string, unknown> = {}) {
       if (claimed)
@@ -219,6 +222,7 @@ export function defineWebRenderer(
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       beforeRender();
+      this.#last = [scene, camera];
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
       check(module._tnw_web_render(handles, handles + 12, ...this.#clear));
@@ -227,6 +231,11 @@ export function defineWebRenderer(
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls = this.info.render.frameCalls;
       this.info.render.triangles = module._tnw_web_frame(1);
+    }
+
+    /** The last scene and camera again: RenderPipeline.render() draws through its post graph. */
+    [RENDER_AGAIN](): void {
+      if (this.#last !== undefined) this.render(...this.#last);
     }
 
     compileAsync(): Promise<void> {

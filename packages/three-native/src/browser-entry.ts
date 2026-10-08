@@ -13,12 +13,13 @@ import { DataUtils } from "./addons/data-utils.js";
 import {
   type IBrowserRuntime,
   type IRegistryDump,
+  TSL_NODE,
   type TnAbiModule,
   createWasmRuntime,
   defineBrowserClasses,
 } from "./browser-backend.js";
-import { defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
-import { defineTsl } from "./browser-tsl.js";
+import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
+import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -98,6 +99,12 @@ export async function bindWebEngine(
   // Edited Color/VectorN uniform values reach the engine before each frame.
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, tsl?.sync);
+  if (tsl !== undefined && runtime.tsl !== undefined) {
+    // The engine's TSL functions three does not export by name (ao, bloom, ...), for the shared post
+    // effects (addons/post-effects-web.ts), and three's RenderPipeline over the web host.
+    bound.__tnTsl = tsl.exports;
+    bound.RenderPipeline = defineRenderPipeline(runtime.tsl);
+  }
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
 
@@ -110,4 +117,33 @@ export function withTextureSources(
   runtime: IBrowserRuntime,
 ): Record<string, unknown> {
   return { ...classes, ...defineTextureSources(classes, runtime), DataUtils };
+}
+
+/**
+ * three's RenderPipeline on the Wasm engine, as on the V8 player: render() hands the output graph to
+ * the web host, which draws it between the scene and the output, then draws the renderer's last
+ * scene. ponytail: the scene comes from the renderer's last render() until `pass(scene, camera)` is
+ * in the shared table (lane-531); then it comes from the graph.
+ */
+function defineRenderPipeline(tsl: ITslRuntime) {
+  return class RenderPipeline {
+    outputNode: unknown;
+    readonly renderer: { [RENDER_AGAIN]?: () => void };
+
+    constructor(renderer: { [RENDER_AGAIN]?: () => void }, outputNode?: unknown) {
+      this.renderer = renderer;
+      this.outputNode = outputNode;
+    }
+
+    render(): void {
+      if (!isTslNode(this.outputNode))
+        throw new TypeError("TN_WASM_POST: RenderPipeline.outputNode is not a TSL node");
+      tsl.setPost(this.outputNode[TSL_NODE]);
+      this.renderer[RENDER_AGAIN]?.();
+    }
+
+    dispose(): void {
+      tsl.setPost(null);
+    }
+  };
 }

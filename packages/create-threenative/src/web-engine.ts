@@ -6,6 +6,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "native"`. */
 export const WEB_ENGINE_ID = "\0threenative:web-engine";
 const UPSTREAM = ["three", "three/webgpu", "three/tsl"] as const;
+const POST_EFFECT_ADDONS: readonly string[] = [
+  "GTAONode",
+  "DenoiseNode",
+  "SMAANode",
+  "BloomNode",
+].map((node) => `three/addons/tsl/display/${node}.js`);
 /** The product Wasm entry inside the installed `@threenative/runtime-native` (PRD-540 phase 2). */
 export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
 
@@ -97,6 +103,9 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       // decodes with the same RGBE parser into an engine DataTexture.
       if (source === "three/addons/loaders/HDRLoader.js")
         return browserModule("web-engine-hdr-loader.js", "addons/hdr-loader.ts");
+      // GTAO, Denoise, SMAA and Bloom are the engine's live post effects (lane-531), shared with V8.
+      if (POST_EFFECT_ADDONS.includes(source))
+        return browserModule("web-engine-post-effects.js", "addons/post-effects-web.ts");
       if (/^three\/(?:src|build)\//u.test(source))
         throw new Error(
           `TN_NATIVE_UPSTREAM_IMPORT: ${source} would bundle upstream three under engine "native"; import from three, three/webgpu or three/tsl.`,
@@ -105,7 +114,9 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
     },
     async load(id) {
       if (!native || id !== WEB_ENGINE_ID) return null;
-      const names = await upstreamNames(projectRoot());
+      // `__tnTsl` rides along for the post effects module: the engine TSL functions three does not
+      // export by name (ao, bloom, ...).
+      const names = [...(await upstreamNames(projectRoot())), "__tnTsl"];
       return [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
         `import createModule from ${JSON.stringify(wasmModule(projectRoot()))};`,

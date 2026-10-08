@@ -138,7 +138,7 @@ describe("createWebEnginePlugin", () => {
     const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
     for (const id of ["three", "three/webgpu", "three/tsl"])
       expect(plugin.resolveId(id)).toBe(WEB_ENGINE_ID);
-    expect(plugin.resolveId("three/addons/tsl/display/BloomNode.js")).toBeNull();
+    expect(plugin.resolveId("three/addons/geometries/RoundedBoxGeometry.js")).toBeNull();
     expect(() => plugin.resolveId("three/src/nodes/Nodes.js")).toThrow("TN_NATIVE_UPSTREAM_IMPORT");
   });
 
@@ -152,10 +152,20 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves three's HDRLoader addon to the engine's own loader, never upstream", () => {
-    const resolved = createWebEnginePlugin("/game").resolveId("three/addons/loaders/HDRLoader.js");
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+      "three/addons/loaders/HDRLoader.js",
+    );
     expect(resolved).toMatch(
       /(?:three-native\/src\/addons\/hdr-loader\.ts|web-engine-hdr-loader\.js)$/u,
     );
+  });
+
+  it("resolves three's GTAO, Denoise, SMAA and Bloom addons to the engine's live effects", () => {
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    for (const node of ["GTAONode", "DenoiseNode", "SMAANode", "BloomNode"])
+      expect(plugin.resolveId(`three/addons/tsl/display/${node}.js`)).toMatch(
+        /(?:three-native\/src\/addons\/post-effects-web\.ts|web-engine-post-effects\.js)$/u,
+      );
   });
 
   it("fails the build when the Wasm engine is not installed", async () => {
@@ -170,6 +180,7 @@ describe("createWebEnginePlugin", () => {
     const native = await bundle(root, true);
     expect(native).toContain("is not available on the Wasm engine");
     expect(native).toContain("createModule");
+    expect(native).toContain("__tnTsl");
     expect(native).not.toContain(UPSTREAM_VECTOR3);
     await rm(path.join(root, "dist"), { recursive: true });
     const legacy = await bundle(root, false);

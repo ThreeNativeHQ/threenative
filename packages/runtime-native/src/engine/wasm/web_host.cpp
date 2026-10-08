@@ -30,6 +30,7 @@ WGPUTextureFormat surfaceFormat = WGPUTextureFormat_Undefined;
 EventQueue events;
 std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
+tn::engine::shader::graph::Node pendingPost;  // a RenderPipeline set before the device was ready
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -61,6 +62,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     queue = wgpuDeviceGetQueue(device);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
     configureSurface();
+    if (pendingPost) renderer->setPostGraph(pendingPost);
     state = Ready;
 }
 
@@ -175,6 +177,25 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(frame.texture);
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
+    return 0;
+}
+
+/**
+ * three's RenderPipeline: the TSL graph between the scene and the output, by its tn_tsl_* id in
+ * `context`, or none (null). The same graph again is a no-op, as RenderPipeline.render() hands it
+ * every frame (PRD-540; the V8 player's setPostGraph).
+ */
+extern "C" int tnw_web_set_post(tn_context_t* context, const uint64_t* node) {
+    static shader::graph::Node current;
+    shader::graph::Node graph;
+    if (node != nullptr) {
+        graph = tn::abi::tslNode(context, *node);
+        if (!graph) return fail("TN_WASM_POST: not a TSL node of this context");
+    }
+    if (graph == current) return 0;
+    current = graph;
+    if (state == Ready && renderer) renderer->setPostGraph(graph);
+    else pendingPost = graph;
     return 0;
 }
 
