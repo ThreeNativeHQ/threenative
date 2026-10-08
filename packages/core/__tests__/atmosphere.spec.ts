@@ -11,6 +11,7 @@ import {
   updateAtmosphereParameters,
   zenithTransmittance,
 } from "../src/atmosphere/index.js";
+import { resolveAtmosphereLutResolutions } from "../src/atmosphere/luts.js";
 import type { IRendererLike } from "../src/renderer.js";
 
 const earth: IAtmosphereParameters = {
@@ -413,5 +414,33 @@ describe("Atmosphere instance surface", () => {
     expect(() => atmosphere.attachRenderer(renderer([]))).toThrow(
       "Atmosphere cannot be attached after release",
     );
+  });
+});
+
+describe("resolveAtmosphereLutResolutions", () => {
+  it("throws on zero, NaN and fractional LUT resolutions", () => {
+    expect(() => resolveAtmosphereLutResolutions({ skyView: { width: 0, height: 72 } })).toThrow(
+      /resolution must contain positive integers/,
+    );
+    expect(() =>
+      resolveAtmosphereLutResolutions({ skyView: { width: Number.NaN, height: 72 } }),
+    ).toThrow(/resolution must contain positive integers/);
+    expect(() =>
+      resolveAtmosphereLutResolutions({ skyView: { width: 128.5, height: 72 } }),
+    ).toThrow(/resolution must contain positive integers/);
+    expect(() =>
+      resolveAtmosphereLutResolutions({ transmittance: { width: 256, height: -4 } }),
+    ).toThrow(/resolution must contain positive integers/);
+    expect(() =>
+      resolveAtmosphereLutResolutions({ multiScattering: { width: Number.NaN, height: 32 } }),
+    ).toThrow(/resolution must contain positive integers/);
+  });
+
+  it("keeps the shipped defaults and accepts positive integer sizes", () => {
+    const defaults = resolveAtmosphereLutResolutions(undefined);
+    expect(defaults.skyView).toEqual({ width: 192, height: 108 });
+    expect(
+      resolveAtmosphereLutResolutions({ skyView: { width: 128, height: 72 } }).skyView,
+    ).toEqual({ width: 128, height: 72 });
   });
 });
