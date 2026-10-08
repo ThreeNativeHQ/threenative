@@ -200,6 +200,15 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      # The default debug key Android Studio leaves on a developer machine. runtime-native 0.3.4
+      # re-signs with it and refuses when it is absent; the packager creates it itself from the
+      # next cohort on (PRD-196). Remove this step once `latest` carries that packager.
+      - name: Create the default Android debug keystore
+        run: |
+          mkdir -p ~/.android
+          test -f ~/.android/debug.keystore || keytool -genkeypair -keystore ~/.android/debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
       - run: pnpm install --frozen-lockfile
       # `libwebkit2gtk-4.1-0` is the desktop prebuilt's overlay webview: without it the host exits
       # 127 before `--version`, and doctor and the native step both fail on a loader error.
