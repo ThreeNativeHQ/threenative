@@ -180,8 +180,8 @@ export class ComputeTimingScopes {
       this.#readSource() !== raw ||
       raw !== this.#raw ||
       raw.backend.device !== this.#device ||
-      !Number.isSafeInteger(raw.info.frame) ||
-      raw.info.frame < this.#lastCall
+      // Three's own animation loop rewrites info.frame lower every rAF; per-call order is checked in #compute.
+      !Number.isSafeInteger(raw.info.frame)
     )
       throw new Error("TN_COMPUTE_TIMING_STALE: renderer, device or compute frame changed.");
     const pool = poolOf(raw);

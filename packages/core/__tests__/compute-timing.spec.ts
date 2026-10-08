@@ -333,18 +333,39 @@ describe("timing receipt retirement regressions", () => {
     expect(() => scopes.capture(() => undefined)).toThrow(/TN_COMPUTE_TIMING_STALE/);
   });
 
-  it("rejects a reset call frame instead of completing an old generation", async () => {
+  it("survives Three's animation loop rewriting info.frame lower between captures", async () => {
+    // Three's always-running loop sets info.frame to its own rAF counter; core's sampler sets
+    // each compute call's frame from the engine clock, which runs far ahead of it.
     const f = fixture();
     const scopes = new ComputeTimingScopes(() => f.raw);
-    const receipt = scopes.capture(() => {
-      for (let i = 0; i < 4; i++) {
-        f.raw.compute({});
-        f.raw.info.frame += 1;
-      }
-    });
+    let engine = 100;
+    const run = (count: number) =>
+      scopes.capture(() => {
+        for (let i = 0; i < count; i++) {
+          f.raw.info.frame = engine++;
+          f.raw.compute({});
+        }
+      });
+    const first = run(2);
+    f.raw.info.frame = 3;
     await f.raw.resolveTimestampsAsync("compute");
-    f.raw.info.frame = 0;
-    expect(() => receipt.read()).toThrow(/TN_COMPUTE_TIMING_STALE/);
+    expect(first.read()?.length).toBe(2);
+    f.raw.info.frame = 4;
+    expect(run(2).calls).toEqual([102, 103]);
+  });
+
+  it("still rejects a compute call that reuses an already timed frame", () => {
+    const f = fixture();
+    const scopes = new ComputeTimingScopes(() => f.raw);
+    const run = (frames: number[]) =>
+      scopes.capture(() => {
+        for (const frame of frames) {
+          f.raw.info.frame = frame;
+          f.raw.compute({});
+        }
+      });
+    run([100, 101]);
+    expect(() => run([101])).toThrow(/TN_COMPUTE_TIMING_STALE: compute call frame was reused/);
   });
 
   it("rejects a swallowed undefined dispatch failure rather than returning a partial receipt", () => {
