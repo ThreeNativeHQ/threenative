@@ -90,7 +90,11 @@ try {
   // A smooth sphere: its shading gradient keeps every capture far from a flat, near-blank frame.
   // Its checker map is a texture upload (queue.writeTexture) out of the engine's Wasm memory.
   const checker = new DataTexture(
-    new Uint8Array(Array.from({ length: 16 }, (_, i) => ((i + (i >> 2)) % 2 ? [255, 255, 255, 255] : [40, 40, 40, 255])).flat()),
+    new Uint8Array(
+      Array.from({ length: 16 }, (_, i) =>
+        (i + (i >> 2)) % 2 ? [255, 255, 255, 255] : [40, 40, 40, 255],
+      ).flat(),
+    ),
     4,
     4,
   );

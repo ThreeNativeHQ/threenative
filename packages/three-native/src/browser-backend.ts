@@ -612,7 +612,16 @@ const KIND = {
 // wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, lanes 4, node 8 (u64), number 16, text 24,
 // numbers 32 (four f64); 64 bytes. A handle argument's 12 bytes start at lanes (4) and run through node.
 const TSL_ARG = 64;
-const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4, vector: 5, other: 6, handle: 7 } as const;
+const TSL_KIND = {
+  node: 0,
+  number: 1,
+  string: 2,
+  named: 3,
+  rgb: 4,
+  vector: 5,
+  other: 6,
+  handle: 7,
+} as const;
 type TslCall =
   | "_tn_tsl_call"
   | "_tn_tsl_release"

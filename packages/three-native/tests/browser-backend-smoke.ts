@@ -251,8 +251,7 @@ engine.collect();
 // attribute.array is a view of the engine's memory; over a fixed-size heap, memory growth would
 // detach a kept view, so the getter refuses by name (checked below) and the checks that read arrays
 // need a module whose heap is resizable (none is built so: GPUQueue uploads reject resizable views).
-const resizable =
-  (abi.HEAPU8.buffer as unknown as { resizable?: boolean }).resizable === true;
+const resizable = (abi.HEAPU8.buffer as unknown as { resizable?: boolean }).resizable === true;
 if (!resizable) {
   const web = (await bindWebEngine(createTnAbi, [
     "Float32BufferAttribute",
