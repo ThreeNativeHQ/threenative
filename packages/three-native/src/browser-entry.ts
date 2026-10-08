@@ -10,14 +10,18 @@
 import catalogJson from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
 import { type IAudioEngine, defineAudioClasses } from "./audio.js";
+import { DataUtils } from "./addons/data-utils.js";
 import {
+  type IBrowserRuntime,
   type IRegistryDump,
   type TnAbiModule,
   createWasmRuntime,
   defineBrowserClasses,
 } from "./browser-backend.js";
 import { defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
+import { defineTsl } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
+import { defineTextureSources } from "./texture-sources.js";
 
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
 
@@ -231,15 +235,16 @@ export async function bindWebEngine(
   names: readonly string[],
 ): Promise<Record<string, unknown>> {
   const module = await createModule();
+  const runtime = createWasmRuntime(module);
   const { classes } = defineBrowserClasses(
     registry as IRegistryDump,
-    createWasmRuntime(module),
+    runtime,
     catalogJson as unknown as ICatalog,
   );
   liveHoles(classes.Shape);
   attributeViews(classes);
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
-  const bound: Record<string, unknown> = { ...classes };
+  const bound: Record<string, unknown> = withTextureSources(classes, runtime);
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
   // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
   const audio = defineAudioClasses({
@@ -254,5 +259,18 @@ export async function bindWebEngine(
   Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, audio.updateAudio);
+  // TSL through the engine's shared name table (tn_tsl_call), when the module carries it.
+  if (runtime.tsl) Object.assign(bound, defineTsl(runtime.tsl));
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
+}
+
+/**
+ * The engine classes plus what plain JS adds over them: three's texture sources (typed array,
+ * canvas, image, ImageBitmapLoader) and `DataUtils`, which touches no engine object at all.
+ */
+export function withTextureSources(
+  classes: Readonly<Record<string, unknown>>,
+  runtime: IBrowserRuntime,
+): Record<string, unknown> {
+  return { ...classes, ...defineTextureSources(classes, runtime), DataUtils };
 }

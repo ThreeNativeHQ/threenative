@@ -226,6 +226,10 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
     const assets::PackageEntry* entry = nullptr;
     for (const auto& candidate : game.assets_.entries)
         if (candidate.name == path) { entry = &candidate; break; }
+    // As on the web, a relative path the cook does not name is a web-root URL: the package names
+    // hand-placed web-root files `/` plus their path there (packages/assets nativePackageEntries).
+    for (const auto& candidate : game.assets_.entries)
+        if (!entry && !path.empty() && path[0] != '/' && candidate.name == "/" + path) entry = &candidate;
     if (!entry) return refuse("TN_NATIVE_ASSET_MISSING: " + path + " in " + game.assetPath_);
     auto data = game.assets_.data(*entry);
     v8::Local<v8::Value> value;

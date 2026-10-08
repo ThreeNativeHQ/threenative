@@ -35,13 +35,13 @@
         "entity": "wasm-renderer",
         "component": "probe",
         "path": "triangles",
-        "gte": 12,
-        "allowTrivial": "ready() resolves after the first engine frame; 12 box triangles plus the output pass."
+        "gte": 24,
+        "allowTrivial": "ready() resolves after the first engine frame; two boxes of 12 triangles plus the output pass."
       }
     ],
     "visual": [
       {
-        "region": { "x": 220, "y": 100, "width": 200, "height": 160, "minNonblankPixelRatio": 0.2 }
+        "region": { "x": 120, "y": 80, "width": 400, "height": 200, "minNonblankPixelRatio": 0.2 }
       }
     ]
   }

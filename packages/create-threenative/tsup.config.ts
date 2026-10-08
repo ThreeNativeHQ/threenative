@@ -35,8 +35,9 @@ export default defineConfig([
       "web-engine-runtime": "../three-native/src/browser-entry.ts",
       "web-engine-mesh-bvh": "../three-native/src/addons/mesh-bvh.ts",
       "web-engine-buffer-geometry-utils": "../three-native/src/addons/buffer-geometry-utils.ts",
+      "web-engine-hdr-loader": "../three-native/src/addons/hdr-loader.ts",
     },
-    // An addon's `three` is the game's, which the plugin routes to the engine.
+    // `three` is the engine binding the web build aliases it to, never upstream three.
     external: ["three"],
     format: ["esm"],
     platform: "browser",

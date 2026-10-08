@@ -9,51 +9,31 @@
       "op": "new",
       "id": "p0",
       "class": "Vector3",
-      "args": [
-        0,
-        -0.11,
-        1.21
-      ]
+      "args": [0, -0.11, 1.21]
     },
     {
       "op": "new",
       "id": "p1",
       "class": "Vector3",
-      "args": [
-        0.02,
-        -0.24,
-        1.26
-      ]
+      "args": [0.02, -0.24, 1.26]
     },
     {
       "op": "new",
       "id": "p2",
       "class": "Vector3",
-      "args": [
-        0.06,
-        -0.35,
-        1.32
-      ]
+      "args": [0.06, -0.35, 1.32]
     },
     {
       "op": "new",
       "id": "p3",
       "class": "Vector3",
-      "args": [
-        0.085,
-        -0.42,
-        1.37
-      ]
+      "args": [0.085, -0.42, 1.37]
     },
     {
       "op": "new",
       "id": "p4",
       "class": "Vector3",
-      "args": [
-        0.3,
-        -0.2,
-        1.1
-      ]
+      "args": [0.3, -0.2, 1.1]
     },
     {
       "op": "new",
@@ -61,13 +41,7 @@
       "class": "CatmullRomCurve3",
       "args": [
         {
-          "refs": [
-            "p0",
-            "p1",
-            "p2",
-            "p3",
-            "p4"
-          ]
+          "refs": ["p0", "p1", "p2", "p3", "p4"]
         }
       ]
     },
@@ -77,13 +51,7 @@
       "class": "CatmullRomCurve3",
       "args": [
         {
-          "refs": [
-            "p0",
-            "p1",
-            "p2",
-            "p3",
-            "p4"
-          ]
+          "refs": ["p0", "p1", "p2", "p3", "p4"]
         },
         true,
         "catmullrom",
@@ -96,13 +64,7 @@
       "class": "CatmullRomCurve3",
       "args": [
         {
-          "refs": [
-            "p0",
-            "p1",
-            "p2",
-            "p3",
-            "p4"
-          ]
+          "refs": ["p0", "p1", "p2", "p3", "p4"]
         },
         false,
         "chordal"
@@ -214,9 +176,7 @@
       "op": "call",
       "id": "open",
       "method": "getPoint",
-      "args": [
-        0.83
-      ],
+      "args": [0.83],
       "result": "fresh_open"
     },
     {
@@ -325,9 +285,7 @@
       "op": "call",
       "id": "loop",
       "method": "getPoint",
-      "args": [
-        0.83
-      ],
+      "args": [0.83],
       "result": "fresh_loop"
     },
     {
@@ -436,9 +394,7 @@
       "op": "call",
       "id": "chord",
       "method": "getPoint",
-      "args": [
-        0.83
-      ],
+      "args": [0.83],
       "result": "fresh_chord"
     },
     {

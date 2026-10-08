@@ -11,7 +11,8 @@ import {
   PerspectiveCamera,
   Scene,
 } from "three";
-import { WebGPURenderer } from "three/webgpu";
+import { uniform, vec4 } from "three/tsl";
+import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
 
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
 const probe = {
@@ -77,7 +78,14 @@ try {
     new BoxGeometry(1.6, 1.6, 1.6),
     new MeshStandardMaterial({ color: 0xff8030 }),
   );
-  scene.add(box);
+  box.position.x = -1;
+  // A TSL graph through the engine's shared name table: Midway's first TSL call is `uniform(0)`.
+  const tint = uniform(0.5);
+  const tinted = new MeshBasicNodeMaterial();
+  tinted.colorNode = vec4(tint.mul(0.2), tint, tint.mul(1.6), 1);
+  const tile = new Mesh(new BoxGeometry(1, 1, 1), tinted);
+  tile.position.x = 1.2;
+  scene.add(box, tile);
   const sun = new DirectionalLight(0xffffff, 3);
   sun.position.set(3, 5, 4);
   scene.add(sun, new AmbientLight(0xffffff, 0.4));
