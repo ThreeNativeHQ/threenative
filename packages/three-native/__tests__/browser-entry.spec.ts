@@ -39,7 +39,11 @@ const bound = bindUpstreamExports(names, catalog, classes);
 
 describe("bindUpstreamExports", () => {
   it("binds every registry class and keeps catalog constant values", () => {
-    for (const name of Object.keys(classes)) expect(bound[name], name).toBe(classes[name]);
+    // A class three does not export (DirectionalLightShadow is only ever `light.shadow`) has no
+    // import name to bind; every class it does export binds to the engine's.
+    const exported = Object.keys(classes).filter((name) => names.includes(name));
+    expect(exported.length).toBeGreaterThan(0);
+    for (const name of exported) expect(bound[name], name).toBe(classes[name]);
     expect(bound.ACESFilmicToneMapping).toBe(4);
     expect(bound.SRGBColorSpace).toBe("srgb");
   });
