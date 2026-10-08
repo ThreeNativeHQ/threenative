@@ -54,14 +54,51 @@ for (const name of ["Object3D", "Scene", "Mesh", "Group", "SkinnedMesh", "Instan
   prototype.traverseVisible = function(callback) { globalThis.tn.traverse(this, callback, true); };
   prototype[`is${name}`] = true;
 }
+const geometries = [BoxGeometry, CircleGeometry, ConeGeometry, CylinderGeometry, PlaneGeometry,
+  RingGeometry, SphereGeometry, TorusGeometry, LatheGeometry, TubeGeometry];
+// three's `geometry.attributes` map over the native named attributes: one live view per geometry,
+// reading through getAttribute and writing through setAttribute/deleteAttribute.
+// ponytail: names are three's standard ones plus those set from JS; a custom-named attribute only a
+// native loader added is readable by name but not enumerated. Add a native name list if one appears.
+const STANDARD_ATTRIBUTES = ["position", "normal", "uv", "uv1", "uv2", "uv3", "color", "tangent",
+  "skinIndex", "skinWeight"];
+const authoredNames = new WeakMap();
+const attributeViews = new WeakMap();
+for (const geometry of [BufferGeometry, ...geometries]) {
+  const { setAttribute, deleteAttribute } = geometry.prototype;
+  geometry.prototype.setAttribute = function(name, attribute) {
+    if (!authoredNames.has(this)) authoredNames.set(this, new Set());
+    authoredNames.get(this).add(String(name));
+    return setAttribute.call(this, name, attribute);
+  };
+  geometry.prototype.deleteAttribute = function(name) {
+    authoredNames.get(this)?.delete(String(name));
+    return deleteAttribute.call(this, name);
+  };
+}
+Object.defineProperty(BufferGeometry.prototype, "attributes", { get() {
+  if (attributeViews.has(this)) return attributeViews.get(this);
+  const names = () => [...new Set([...STANDARD_ATTRIBUTES, ...(authoredNames.get(this) ?? [])])]
+    .filter((name) => this.hasAttribute(name));
+  const view = new Proxy({}, {
+    get: (_, name) => typeof name === "string" && this.hasAttribute(name) ? this.getAttribute(name) : undefined,
+    has: (_, name) => typeof name === "string" && this.hasAttribute(name),
+    set: (_, name, attribute) => { this.setAttribute(name, attribute); return true; },
+    deleteProperty: (_, name) => { this.deleteAttribute(name); return true; },
+    ownKeys: () => names(),
+    getOwnPropertyDescriptor: (_, name) => typeof name === "string" && this.hasAttribute(name)
+      ? { value: this.getAttribute(name), writable: true, enumerable: true, configurable: true } : undefined,
+  });
+  attributeViews.set(this, view);
+  return view;
+} });
 // Adapt wrapper inheritance only; native classes continue to own every scene operation.
 for (const [base, names] of [
   [Object3D, [Scene, Mesh, Group, Camera, Bone, LOD, Sprite, AmbientLight, DirectionalLight,
     HemisphereLight, PointLight, SpotLight]],
   [Camera, [PerspectiveCamera, OrthographicCamera]],
   [Mesh, [SkinnedMesh, InstancedMesh]],
-  [BufferGeometry, [BoxGeometry, CircleGeometry, ConeGeometry, CylinderGeometry, PlaneGeometry,
-    RingGeometry, SphereGeometry, TorusGeometry, LatheGeometry, TubeGeometry]],
+  [BufferGeometry, geometries],
   [BufferAttribute, [Float32BufferAttribute, InstancedBufferAttribute]],
   [Texture, [DataTexture]],
 ]) {

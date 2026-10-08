@@ -70,6 +70,15 @@ check(gripClip.duration === 2 && gripClip.tracks.length === 2 && gripClip.tracks
   gripClip.tracks[0] instanceof THREE.VectorKeyframeTrack, "authored clip from cloned and new tracks");
 const glow = new THREE.MeshBasicMaterial(); glow.blending = THREE.AdditiveBlending;
 check(glow.blending === THREE.AdditiveBlending, "additive blending");
+const authored = new THREE.BufferGeometry();
+authored.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
+authored.setAttribute("instanceOffset", new THREE.Float32BufferAttribute([0, 0, 0], 3));
+check(authored.attributes === authored.attributes && authored.attributes.position === authored.getAttribute("position") &&
+  authored.attributes.position.count === 3 && "instanceOffset" in authored.attributes && !("normal" in authored.attributes) &&
+  Object.keys(authored.attributes).sort().join() === "instanceOffset,position", "geometry.attributes");
+authored.deleteAttribute("instanceOffset");
+check(Object.keys(authored.attributes).join() === "position" && authored.attributes.instanceOffset === undefined, "attributes after delete");
+check(Object.keys(new THREE.PlaneGeometry().attributes).join() === "position,normal,uv", "generator attributes");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");
