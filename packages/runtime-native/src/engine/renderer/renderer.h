@@ -55,6 +55,9 @@ struct DrawItem {
     /** A tangent-space normalMap (decoded image, uv present) and the material's normalScale. */
     const Texture* normalMap = nullptr;
     double normalScaleX = 1, normalScaleY = 1;
+    /** MeshStandardMaterial's roughnessMap, metalnessMap, aoMap and emissiveMap (decoded image, uv present). */
+    std::array<const Texture*, shader::kPbrMapCount> pbrMaps{};
+    double aoMapIntensity = 1;
     /** The environment (scene.environment or material.envMap): its PMREM is sampled for IBL. */
     const Texture* envMap = nullptr;
     double envMapIntensity = 1;
@@ -306,7 +309,8 @@ private:
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
-        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kSlotCount
+        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform,
+        kRoughnessMapUvTransform, kMetalnessMapUvTransform, kAoMapUvTransform, kEmissiveMapUvTransform, kAoMapIntensity, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -332,11 +336,13 @@ private:
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
     Program& depthProgram(const shader::VertexVariant& variant);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
+    struct MaterialTexture;
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler,
                             WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr,
                             WGPUTextureView envView = nullptr, WGPUSampler envSampler = nullptr,
-                            WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr);
+                            WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr,
+                            const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         Handle gpu;

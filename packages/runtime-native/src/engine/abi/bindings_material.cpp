@@ -15,6 +15,7 @@
 #include "engine/scene/material.h"
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
+#include "engine/shader/standard.h"
 
 #include <cmath>
 #include <map>
@@ -197,6 +198,9 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "envMapIntensity", &Material::envMapIntensity);
     materialNumber(b, "roughness", &Material::roughness);
     materialNumber(b, "metalness", &Material::metalness);
+    // The standard program's scalar and emissive maps (shader::kPbrMapNames) and the occlusion strength.
+    for (const char* map : shader::kPbrMapNames) materialMapSlot(b, map);
+    materialNumber(b, "aoMapIntensity", &Material::aoMapIntensity);
     if (type == MaterialType::Standard) return;
     materialNumber(b, "ior", &Material::ior);
     materialNumber(b, "specularIntensity", &Material::specularIntensity);

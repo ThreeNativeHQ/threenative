@@ -1370,15 +1370,19 @@ roughness: number;
 metalness: number;
 map: Texture | null;
 lightMapIntensity: number;
+aoMap: Texture | null;
 aoMapIntensity: number;
 emissive: Color;
 emissiveIntensity: number;
+emissiveMap: Texture | null;
 bumpScale: number;
 normalMap: Texture | null;
 normalMapType: NormalMapTypes;
 normalScale: Vector2;
 displacementScale: number;
 displacementBias: number;
+roughnessMap: Texture | null;
+metalnessMap: Texture | null;
 envMap: Texture | null;
 envMapRotation: Euler;
 envMapIntensity: number;
@@ -1431,6 +1435,11 @@ fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
+aoMapIntensity: number;
+aoMap: Texture | null;
+emissiveMap: Texture | null;
+metalnessMap: Texture | null;
+roughnessMap: Texture | null;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */

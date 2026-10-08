@@ -59,6 +59,11 @@ struct StandardMaterial {
  * positionLocal by it and normalLocal by its inverse transpose. `instanceColor`: the per-instance
  * colour (attribute instanceColor) multiplies the material colour, as setupDiffuseColor does.
  */
+/** The scalar and emissive maps MeshStandardMaterial reads besides map and normalMap, as bits of
+ *  VertexVariant::pbrMaps. Each is sampled at `<name>UvTransform * vec3(uv, 1)` from texture `<name>`. */
+enum PbrMap : uint8_t { kRoughnessMap, kMetalnessMap, kAoMap, kEmissiveMap, kPbrMapCount };
+inline constexpr const char* kPbrMapNames[kPbrMapCount] = {"roughnessMap", "metalnessMap", "aoMap", "emissiveMap"};
+
 struct VertexVariant {
     bool background = false;
     uint8_t fog = 0; // 0 none, 1 Fog (range), 2 FogExp2 (density)
@@ -96,6 +101,12 @@ struct VertexVariant {
      */
     bool normalMap = false;
     /**
+     * MeshStandardMaterial's roughnessMap (.g), metalnessMap (.b), aoMap (.r, aoMapIntensity) and
+     * emissiveMap (.rgb), one bit per PbrMap; read only by the standard and physical programs.
+     */
+    uint8_t pbrMaps = 0;
+    [[nodiscard]] bool reads(PbrMap map) const { return (pbrMaps >> map) & 1u; }
+    /**
      * The map's colorSpace is SRGBColorSpace: the sampled texel is decoded with three's
      * `sRGBTransferEOTF` in the fragment, as upstream's ColorSpaceNode does, rather than by a
      * hardware -srgb texture format (whose rounding differs from the shader formula).
@@ -113,7 +124,7 @@ struct VertexVariant {
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
-               (map ? "t" : "") + (normalMap ? "N" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
+               (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };

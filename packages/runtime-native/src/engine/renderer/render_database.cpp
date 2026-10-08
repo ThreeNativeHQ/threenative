@@ -97,6 +97,17 @@ DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 
     return out;
 }
 
+/** The decoded PbrMaps a standard or physical material reads; none for any other type (refused above). */
+std::array<const Texture*, shader::kPbrMapCount> pbrMapsOf(const Material& material) {
+    std::array<const Texture*, shader::kPbrMapCount> maps{};
+    if (material.type != MaterialType::Standard && material.type != MaterialType::Physical) return maps;
+    for (int k = 0; k < shader::kPbrMapCount; ++k) {
+        const auto found = material.maps.find(shader::kPbrMapNames[k]);
+        if (found != material.maps.end() && found->second && found->second->hasImage()) maps[k] = found->second.get();
+    }
+    return maps;
+}
+
 MaterialKind kindOf(MaterialType type) {
     switch (type) {
     case MaterialType::Basic:
@@ -204,8 +215,12 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         }
         // A decoded map the standard program does not read is refused by name, never drawn without it.
         // (A placeholder with no image was already refused where models load.)
+        const bool standardKind = material->type == MaterialType::Standard || material->type == MaterialType::Physical;
         for (const auto& [slot, texture] : material->maps) {
             if (!texture || !texture->hasImage() || slot == "map" || slot == "normalMap") continue;
+            if (standardKind && std::find(std::begin(shader::kPbrMapNames), std::end(shader::kPbrMapNames), slot) !=
+                                    std::end(shader::kPbrMapNames))
+                continue;
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
                                    " is not read by the native standard program");
             return r;
@@ -244,7 +259,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         const auto normal = material->maps.find("normalMap");
         if (normal != material->maps.end() && normal->second && normal->second->hasImage())
             d.normalMap = normal->second.get();
+        d.pbrMaps = pbrMapsOf(*material);
     }
+    d.aoMapIntensity = material->aoMapIntensity;
     d.normalScaleX = material->normalScale.x;
     d.normalScaleY = material->normalScale.y;
     d.matrixWorld = toArray(mesh.matrixWorld);
@@ -273,6 +290,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.nodes = r.material->nodes;
     d.map = nullptr;
     d.normalMap = nullptr;
+    d.pbrMaps = {};
     if (d.uvs) {
         const auto map = r.material->maps.find("map");
         if (map != r.material->maps.end() && map->second && map->second->hasImage())
@@ -280,7 +298,9 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         const auto normal = r.material->maps.find("normalMap");
         if (normal != r.material->maps.end() && normal->second && normal->second->hasImage())
             d.normalMap = normal->second.get();
+        d.pbrMaps = pbrMapsOf(*r.material);
     }
+    d.aoMapIntensity = r.material->aoMapIntensity;
     d.normalScaleX = r.material->normalScale.x;
     d.normalScaleY = r.material->normalScale.y;
     d.castShadow = mesh.castShadow();

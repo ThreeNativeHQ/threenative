@@ -121,6 +121,10 @@ const bumped = new THREE.MeshStandardMaterial({ normalMap: paramTexture, normalS
 check(bumped.normalMap === paramTexture && bumped.normalScale.x === 0.25 && bumped.normalScale.y === -0.5, "normalMap parameters");
 bumped.normalScale.set(1, 2);
 check(bumped.normalScale.y === 2, "normalScale is the material's own Vector2");
+const orm = new THREE.MeshStandardMaterial({ roughnessMap: paramTexture, metalnessMap: paramTexture, aoMap: paramTexture,
+  aoMapIntensity: 0.6, emissiveMap: paramTexture });
+check(orm.roughnessMap === paramTexture && orm.metalnessMap === paramTexture && orm.aoMap === paramTexture &&
+  orm.emissiveMap === paramTexture && orm.aoMapIntensity === 0.6, "packed ORM and emissive map parameters");
 const sprite = new THREE.SpriteMaterial({ transparent: false });
 check(sprite.transparent === false, "SpriteMaterial parameters after its defaults");
 check(refuses(() => new THREE.MeshBasicMaterial({ wireframe: true }), /material parameter 'wireframe' is not bound natively/), "unbound material parameter refused");

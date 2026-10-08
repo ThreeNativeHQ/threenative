@@ -125,7 +125,8 @@ constexpr const char* kSlotNames[] = {
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
-    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform"};
+    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform",
+    "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform", "aoMapIntensity"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -635,7 +636,15 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
 WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                                   WGPUTextureView view, WGPUSampler sampler, WGPUTextureView mapView,
                                   WGPUSampler mapSampler, WGPUTextureView envView, WGPUSampler envSampler,
-                                  WGPUTextureView normalView, WGPUSampler normalSampler) {
+                                  WGPUTextureView normalView, WGPUSampler normalSampler,
+                                  const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps) {
+    // A PbrMap's texture or sampler, by its `t_<name>` / `smp_<name>` binding; null for any other.
+    const auto pbr = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
+        if (!pbrMaps) return nullptr;
+        for (int k = 0; k < shader::kPbrMapCount; ++k)
+            if (name == (sampler ? "smp_" : "t_") + std::string(shader::kPbrMapNames[k])) return (*pbrMaps)[k];
+        return nullptr;
+    };
     std::vector<WGPUBindGroupEntry> entries;
     for (const shader::Binding& b : stage.bindings) {
         WGPUBindGroupEntry e = {};
@@ -666,10 +675,12 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             else e.sampler = compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
             const auto postView = postEffects_ ? postEffects_->view(b.name.substr(2)) : nullptr;
-            e.textureView = postView ? postView : b.name == "t_map" ? mapView : b.name == "t_normalMap" ? normalView : b.name == "t_env" ? envView : view;
+            const MaterialTexture* pbrTexture = pbr(b.name, false);
+            e.textureView = postView ? postView : pbrTexture ? pbrTexture->view : b.name == "t_map" ? mapView : b.name == "t_normalMap" ? normalView : b.name == "t_env" ? envView : view;
         } else if (b.kind == shader::BindingKind::Sampler) {
             const bool postView = postEffects_ && postEffects_->view(b.name.substr(4));
-            e.sampler = postView ? postEffects_->sampler(b.name.substr(4)) : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler : sampler;
+            const MaterialTexture* pbrTexture = pbr(b.name, true);
+            e.sampler = postView ? postEffects_->sampler(b.name.substr(4)) : pbrTexture ? pbrTexture->sampler : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler : sampler;
         } else {
             throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
         }
@@ -1621,6 +1632,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.environment = item.envMap != nullptr;
         v.map = item.map != nullptr;
         v.normalMap = item.normalMap != nullptr;
+        for (int k = 0; k < shader::kPbrMapCount; ++k)
+            if (item.pbrMaps[k]) v.pbrMaps |= static_cast<uint8_t>(1u << k);
         v.mapSRGB = false;  // WGSLNodeBuilder uses GPU sRGB formats; no shader colour conversion.
         return v;
     };
@@ -1694,6 +1707,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             put(frameUniforms_, f, fs[kFogDensity], std::array<double, 1>{fog.density});
         }
         if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
+        for (int k = 0; k < shader::kPbrMapCount; ++k)
+            if (item.pbrMaps[k]) put(frameUniforms_, f, fs[kRoughnessMapUvTransform + k], uvTransformOf(*item.pbrMaps[k]));
+        if (item.pbrMaps[shader::kAoMap]) put(frameUniforms_, f, fs[kAoMapIntensity], std::array<double, 1>{item.aoMapIntensity});
         if (item.normalMap) {
             put(frameUniforms_, f, fs[kNormalScale], std::array<double, 2>{item.normalScaleX, item.normalScaleY});
             put(frameUniforms_, f, fs[kNormalUvTransform], uvTransformOf(*item.normalMap));
@@ -1856,8 +1872,12 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
-        if (!p.item->map && !p.item->envMap && !p.item->normalMap) continue;
+        const bool readsPbr = std::any_of(p.item->pbrMaps.begin(), p.item->pbrMaps.end(), [](const Texture* t) { return t; });
+        if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr) continue;
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
+        std::array<const MaterialTexture*, shader::kPbrMapCount> pbrTextures{};
+        for (int k = 0; k < shader::kPbrMapCount; ++k)
+            if (p.item->pbrMaps[k]) pbrTextures[k] = materialTexture(*p.item->pbrMaps[k]);
         const MaterialTexture* map = p.item->map && !p.item->background ? materialTexture(*p.item->map) : nullptr;
         const BackgroundCube* cube = p.item->background ? &backgroundCube(*p.item->map) : nullptr;
         const EnvironmentGpu* env = p.item->envMap ? &environment(*p.item->envMap) : nullptr;
@@ -1869,12 +1889,16 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                 std::to_string(reinterpret_cast<uintptr_t>(envView)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->view : nullptr)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->sampler : nullptr));
-        const auto found = mapGroups_.find(key);
+        std::string pbrKey;
+        for (const MaterialTexture* texture : pbrTextures)
+            pbrKey += "|" + std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->view : nullptr)) + "," +
+                      std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->sampler : nullptr));
+        const auto found = mapGroups_.find(key + pbrKey);
         p.mapGroup = found != mapGroups_.end()
                          ? found->second
-                         : mapGroups_.emplace(key, bindGroup(p.program->layouts[1], p.program->fragment, uniformBuffer_,
+                         : mapGroups_.emplace(key + pbrKey, bindGroup(p.program->layouts[1], p.program->fragment, uniformBuffer_,
                                                              lutView_, lutSampler_, mapView, mapSampler, envView, envSampler,
-                                                         normal ? normal->view : nullptr, normal ? normal->sampler : nullptr))
+                                                         normal ? normal->view : nullptr, normal ? normal->sampler : nullptr, &pbrTextures))
                                .first->second;
     }
 
