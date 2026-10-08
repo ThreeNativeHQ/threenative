@@ -41,11 +41,6 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     target_link_libraries(tn-native-engine-host PRIVATE tn_adapter_v8 tn_engine_renderer tn_host_services
         tn_engine_animation)
     set_target_properties(tn-native-engine-host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-    if(ANDROID)
-        # The host is a plain executable for `adb shell` (PRD-534's Pixel lane); wgpu-native's Vulkan
-        # backend and the context log through the NDK's system libraries.
-        target_link_libraries(tn-native-engine-host PRIVATE log android)
-    endif()
     if(NOT APPLE AND NOT WIN32)
         # Dawn and the V8 monolith both carry Abseil, as for mystral-runtime: the same version's
         # duplicate definitions are folded rather than refused.
@@ -155,5 +150,16 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
             PASS_REGULAR_EXPRESSION "ALLOWED_BLOCKED math-core-constructors, math-primitives-frustum\n"
             FAIL_REGULAR_EXPRESSION "(^|\n)FAIL ")
         set_tests_properties(native_engine_v8_scene_fixtures native_engine_v8_math_fixtures PROPERTIES LABELS "native-engine")
+    endif()
+
+    if(ANDROID)
+        # Gradle's native build also links these executables (the shared library is the shipped
+        # artifact, the executables are for `adb shell`: PRD-534's Pixel lane runs the host). The
+        # logger and ANativeWindow that the engine archives call live in the NDK's system libraries,
+        # which only mystral-runtime linked, so the first executable to link broke the whole APK.
+        foreach(tn_android_executable tn-native-engine-v8-test tn-native-engine-tsl-js tn-native-engine-host
+                tn-native-engine-player-v8 tn-native-engine-v8-fixture-driver)
+            target_link_libraries(${tn_android_executable} PRIVATE log android)
+        endforeach()
     endif()
 endif()
