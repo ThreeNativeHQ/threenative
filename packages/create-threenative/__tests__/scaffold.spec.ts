@@ -16,7 +16,7 @@ import {
 import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
@@ -1074,6 +1074,40 @@ describe("create-threenative", () => {
       await rm(root, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("leaves no half-written target after a failed scaffold, so a retry succeeds", async () => {
+    const root = await makeTempDir("threenative-scaffold-rollback-");
+    try {
+      // With no PATH, `pnpm install` cannot start, so the scaffold fails after writing every file.
+      vi.stubEnv("PATH", "");
+      await expect(createProject({ install: true, target: "fresh" }, root)).rejects.toThrow();
+      vi.unstubAllEnvs();
+
+      expect(existsSync(path.join(root, "fresh"))).toBe(false);
+      const retry = await createProject({ install: false, target: "fresh" }, root);
+      expect(retry.installed).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it("empties a pre-existing target directory it wrote into, and keeps that directory", async () => {
+    const root = await makeTempDir("threenative-scaffold-empty-target-");
+    try {
+      await mkdir(path.join(root, "kept"));
+      vi.stubEnv("PATH", "");
+      await expect(createProject({ install: true, target: "kept" }, root)).rejects.toThrow();
+      vi.unstubAllEnvs();
+
+      expect(await readdir(path.join(root, "kept"))).toEqual([]);
+      const retry = await createProject({ install: false, target: "kept" }, root);
+      expect(retry.installed).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   it("should fail closed on a malformed kit manifest with the exact named codes", async () => {
     const templates = path.join(await makeTempDir("threenative-kit-manifest-"), "templates");
