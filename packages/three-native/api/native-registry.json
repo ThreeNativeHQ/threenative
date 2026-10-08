@@ -705,6 +705,7 @@
         "multiply",
         "multiplyScalar",
         "offsetHSL",
+        "set",
         "setColorName",
         "setFromVector3",
         "setHSL",
@@ -1049,10 +1050,19 @@
         "quaternion",
         "rotation",
         "scale",
+        "shadow",
         "target",
         "up"
       ],
       "callbacks": ["onBeforeRender"]
+    },
+    "DirectionalLightShadow": {
+      "constructor": false,
+      "methods": [],
+      "getters": ["bias", "intensity", "normalBias", "radius"],
+      "setters": ["bias", "intensity", "normalBias", "radius"],
+      "members": ["camera", "mapSize"],
+      "callbacks": []
     },
     "Euler": {
       "constructor": true,
@@ -3298,9 +3308,18 @@
         "quaternion",
         "rotation",
         "scale",
+        "shadow",
         "up"
       ],
       "callbacks": ["onBeforeRender"]
+    },
+    "PointLightShadow": {
+      "constructor": false,
+      "methods": [],
+      "getters": ["bias", "intensity", "normalBias", "radius"],
+      "setters": ["bias", "intensity", "normalBias", "radius"],
+      "members": ["camera", "mapSize"],
+      "callbacks": []
     },
     "Quaternion": {
       "constructor": true,
@@ -4107,10 +4126,19 @@
         "quaternion",
         "rotation",
         "scale",
+        "shadow",
         "target",
         "up"
       ],
       "callbacks": ["onBeforeRender"]
+    },
+    "SpotLightShadow": {
+      "constructor": false,
+      "methods": [],
+      "getters": ["bias", "focus", "intensity", "normalBias", "radius"],
+      "setters": ["bias", "focus", "intensity", "normalBias", "radius"],
+      "members": ["camera", "mapSize"],
+      "callbacks": []
     },
     "Sprite": {
       "constructor": true,

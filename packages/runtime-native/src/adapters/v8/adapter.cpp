@@ -88,6 +88,38 @@ void throwStatus(v8::Isolate* isolate, tn_diagnostic_t& diagnostic) {
     isolate->ThrowException(v8::Exception::TypeError(str(isolate, message)));
 }
 
+/**
+ * three's Material.setValues: a Color member takes `set(value)`, every other member is assigned.
+ * Upstream warns and skips a key the material does not have; here an unbound member reads
+ * undefined, so the key is refused by name rather than dropped.
+ */
+void setValues(Adapter& a, v8::Isolate* isolate, const char* cls, v8::Local<v8::Object> material, v8::Local<v8::Object> values) {
+    const auto ctx = isolate->GetCurrentContext();
+    v8::Local<v8::Array> keys;
+    if (!values->GetOwnPropertyNames(ctx).ToLocal(&keys)) return;
+    for (uint32_t i = 0; i < keys->Length(); ++i) {
+        v8::Local<v8::Value> name, value, current;
+        if (!keys->Get(ctx, i).ToLocal(&name) || !values->Get(ctx, name).ToLocal(&value)) return;
+        if (value->IsUndefined()) continue;
+        if (!material->Get(ctx, name).ToLocal(&current)) return;
+        if (current->IsUndefined()) {
+            v8::String::Utf8Value key(isolate, name);
+            isolate->ThrowException(v8::Exception::TypeError(str(isolate,
+                std::string("TN_NATIVE_MATERIAL_PARAMETER: ") + cls + "." + *key + " is not a bound material property")));
+            return;
+        }
+        tn_handle_t member{};
+        if (a.unwrap(current, member) && member.type == tn_type_id("Color")) {
+            v8::Local<v8::Value> set, ignored;
+            if (!current.As<v8::Object>()->Get(ctx, str(isolate, "set")).ToLocal(&set) || !set->IsFunction() ||
+                !set.As<v8::Function>()->Call(ctx, current, 1, &value).ToLocal(&ignored))
+                return;
+        } else if (material->Set(ctx, name, value).IsNothing()) {
+            return;
+        }
+    }
+}
+
 // JS -> ABI values. Arrays become number arrays (fromArray), engine wrappers become handles.
 bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::vector<tn_value_t>& out,
               std::deque<std::string>& texts, std::vector<std::vector<double>>& arrays,
@@ -533,15 +565,20 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     return;
                 }
                 Adapter& a = *adapterOf(info);
+                v8::String::Utf8Value cls(isolate, info.NewTarget().As<v8::Function>()->GetName());
+                // three's Material(parameters): construct, then setValues. Every other class takes
+                // its constructor arguments through the ABI.
+                tn_handle_t argument{};
+                const bool parameters = tn::binding::isMaterialClass(*cls) && info.Length() == 1 && info[0]->IsObject() &&
+                                        !info[0]->IsArray() && !info[0]->IsTypedArray() && !a.unwrap(info[0], argument);
                 std::vector<tn_value_t> args;
                 std::deque<std::string> texts;
                                std::deque<std::vector<tn_value_t>> values;
                 std::vector<std::vector<double>> arrays;
-                if (!toValues(a, info, args, texts, arrays, values)) {
+                if (!parameters && !toValues(a, info, args, texts, arrays, values)) {
                     isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI_VALUE: unsupported argument")));
                     return;
                 }
-                v8::String::Utf8Value cls(isolate, info.NewTarget().As<v8::Function>()->GetName());
                 tn_handle_t h{};
                 tn_diagnostic_t diagnostic{nullptr, 0};
                 if (tn_construct(a.context(), *cls, args.data(), static_cast<uint32_t>(args.size()), &h, &diagnostic) != TN_OK) {
@@ -553,6 +590,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 auto* w = new Wrapper{&a, h, {}};
                 a.track(w, object);
                 a.wrappers_[key(h)] = w;
+                if (parameters) setValues(a, isolate, *cls, object, info[0].As<v8::Object>());
             },
             self);
         ctor->SetClassName(str(isolate_, name));

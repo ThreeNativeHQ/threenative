@@ -7574,6 +7574,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "DirectionalLightShadow",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Euler",
         "kind": "class",
         "source": "three"
@@ -7744,6 +7749,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "PointLightShadow",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Quaternion",
         "kind": "class",
         "source": "three"
@@ -7790,6 +7800,11 @@
       },
       {
         "symbol": "SpotLight",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "SpotLightShadow",
         "kind": "class",
         "source": "three"
       },

@@ -236,7 +236,12 @@ void registerAmbientLight(ClassBinding& b) {
 // renderer re-projects every frame it draws the map (the spot camera's fov, aspect and far are
 // SpotLightShadow.updateMatrices' to set, so only near and far are bound there).
 template <typename L, typename C>
-void shadowBindings(ClassBinding& b, std::vector<const char*> cameraNames, std::vector<double C::*> cameraFields) {
+void shadowBindings(ClassBinding& b, const char* shadowClass, std::vector<const char*> cameraNames,
+                    std::vector<double C::*> cameraFields) {
+    // `light.shadow` as an object: the light's own shadow record, the same one for its life.
+    fixedMember(b, "shadow", [shadowClass](void* self, const Args&, Store& store) {
+        return store.adoptAlias(shadowClass, &as<L>(self)->shadow, self);
+    });
     const auto number = [&b](const std::string& path, double LightShadow::*field) {
         b.getters[path] = [field](void* self) { return Value::of(as<L>(self)->shadow.*field); };
         b.setters[path] = [field](void* self, const Value& v) { as<L>(self)->shadow.*field = tn::binding::number(v); };
@@ -266,6 +271,30 @@ void shadowBindings(ClassBinding& b, std::vector<const char*> cameraNames, std::
     }
 }
 
+// three's DirectionalLightShadow, SpotLightShadow and PointLightShadow, reached through `light.shadow`:
+// its numbers, `mapSize`, and `camera`, which is the shadow camera itself (orthographic for a
+// directional light, perspective otherwise). Only a spot shadow has `focus`.
+void registerLightShadow(ClassBinding& b, bool spot) {
+    if (spot) {
+        b.getters["focus"] = [](void* self) { return Value::of(as<LightShadow>(self)->focus); };
+        b.setters["focus"] = [](void* self, const Value& v) { as<LightShadow>(self)->focus = number(v); };
+    }
+    for (const auto& [name, field] : std::initializer_list<std::pair<const char*, double LightShadow::*>>{
+             {"bias", &LightShadow::bias}, {"normalBias", &LightShadow::normalBias}, {"radius", &LightShadow::radius},
+             {"intensity", &LightShadow::intensity}}) {
+        b.getters[name] = [field](void* self) { return Value::of(as<LightShadow>(self)->*field); };
+        b.setters[name] = [field](void* self, const Value& v) { as<LightShadow>(self)->*field = number(v); };
+    }
+    fixedMember(b, "mapSize", [](void* self, const Args&, Store& store) {
+        return memberAlias(store, self, as<LightShadow>(self)->mapSize, "Vector2");
+    });
+    fixedMember(b, "camera", [](void* self, const Args&, Store& store) {
+        Camera* camera = as<LightShadow>(self)->camera.get();
+        return store.adoptAlias(dynamic_cast<OrthographicCamera*>(camera) ? "OrthographicCamera" : "PerspectiveCamera",
+                                camera, self);
+    });
+}
+
 void registerDirectionalLight(ClassBinding& b) {
     registerObject3DBindings(b);
     b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
@@ -283,7 +312,7 @@ void registerDirectionalLight(ClassBinding& b) {
         Object3D& target = objectArg(store, value);
         as<DirectionalLight>(self)->target = std::shared_ptr<Object3D>(store.find(value)->ptr, &target);
     };
-    shadowBindings<DirectionalLight, OrthographicCamera>(b, {"left", "right", "top", "bottom", "near", "far"},
+    shadowBindings<DirectionalLight, OrthographicCamera>(b, "DirectionalLightShadow", {"left", "right", "top", "bottom", "near", "far"},
                                                          {&OrthographicCamera::left, &OrthographicCamera::right,
                                                           &OrthographicCamera::top, &OrthographicCamera::bottom,
                                                           &OrthographicCamera::near, &OrthographicCamera::far});
@@ -306,7 +335,7 @@ void registerPointLight(ClassBinding& b) {
     registerLightBase(b);
     numberField<PointLight>(b, "distance", &PointLight::distance);
     numberField<PointLight>(b, "decay", &PointLight::decay);
-    shadowBindings<PointLight, PerspectiveCamera>(b, {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
+    shadowBindings<PointLight, PerspectiveCamera>(b, "PointLightShadow", {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
 }
 
 // three's SpotLight(color, intensity, distance = 0, angle = PI / 3, penumbra = 0, decay = 2).
@@ -329,7 +358,7 @@ void registerSpotLight(ClassBinding& b) {
         return store.adoptAlias("Object3D", light->target, self);
     };
     b.fixedMembers.insert("target"); // the light owns its target for its whole life
-    shadowBindings<SpotLight, PerspectiveCamera>(b, {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
+    shadowBindings<SpotLight, PerspectiveCamera>(b, "SpotLightShadow", {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
 }
 
 void registerHemisphereLight(ClassBinding& b) {
@@ -452,6 +481,9 @@ void registerMaterialBindings(Registry& classes) {
     registerMeshMaterial(classes["MeshStandardMaterial"], MaterialType::Standard);
     registerMeshMaterial(classes["MeshPhysicalMaterial"], MaterialType::Physical);
     registerAmbientLight(classes["AmbientLight"]);
+    registerLightShadow(classes["DirectionalLightShadow"], false);
+    registerLightShadow(classes["PointLightShadow"], false);
+    registerLightShadow(classes["SpotLightShadow"], true);
     registerDirectionalLight(classes["DirectionalLight"]);
     registerPointLight(classes["PointLight"]);
     registerSpotLight(classes["SpotLight"]);

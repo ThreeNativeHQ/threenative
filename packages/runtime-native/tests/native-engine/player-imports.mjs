@@ -22,7 +22,7 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", ...constants];
+  "DataTexture", "Texture", "Color", "DirectionalLight", "OrthographicCamera", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", ...constants];
 await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
@@ -68,6 +68,20 @@ basic.colorNode = color(0.1, 0.2, 0.3);
 basic.colorNode = reflect(vec3(1, -1, 0), vec3(0, 1, 0));
 basic.colorNode = textureLoad(source, ivec2(0, 0)).rgb;
 check(cameraViewMatrix !== undefined, "camera view uniform");
+const hex = new THREE.Color(0xff0000);
+check(hex.isColor && hex.r === 1 && hex.g === 0 && hex.b === 0, "Color(hex)");
+check(new THREE.Color("#00ff00").g === 1 && new THREE.Color(hex).r === 1, "Color(style), Color(color)");
+check(hex.set(0x0000ff).b === 1 && hex.set("red").r === 1 && hex.set(0.5, 0.25, 0).g === 0.25, "Color.set");
+const parameters = new THREE.MeshStandardMaterial({ color: 0x00ff00, roughness: 0.25, transparent: true, map: null });
+check(parameters.color.r === 0 && parameters.color.g === 1 && parameters.roughness === 0.25 && parameters.transparent, "material parameters");
+let unboundParameter = false;
+try { new THREE.MeshBasicMaterial({ notAMaterialProperty: 1 }); }
+catch (error) { unboundParameter = /TN_NATIVE_MATERIAL_PARAMETER: MeshBasicMaterial\.notAMaterialProperty/.test(error.message); }
+check(unboundParameter, "an unbound material parameter refuses by name");
+const sun = new THREE.DirectionalLight();
+sun.shadow.mapSize.set(1024, 2048); sun.shadow.camera.near = 2; sun.shadow.bias = -0.5; sun.shadow.radius = 3;
+check(sun.shadow === sun.shadow && sun.shadow.mapSize.y === 2048 && sun.shadow.camera.near === 2 &&
+  sun.shadow.camera instanceof THREE.OrthographicCamera && sun.shadow.bias === -0.5 && sun.shadow.radius === 3, "light shadow");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))

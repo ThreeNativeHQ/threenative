@@ -575,6 +575,7 @@ constructor();
 intensity: number;
 color: Color;
 target: Object3D;
+readonly shadow: DirectionalLightShadow;
 }
 
 /** Catalog partial (native-not-implemented): three/DoubleSide. */
@@ -1752,6 +1753,7 @@ decay: number;
 distance: number;
 intensity: number;
 color: Color;
+readonly shadow: PointLightShadow;
 }
 
 /** Catalog supported: three/Quaternion. */
@@ -2916,6 +2918,7 @@ intensity: number;
 penumbra: number;
 color: Color;
 readonly target: Object3D;
+readonly shadow: SpotLightShadow;
 }
 
 /** Catalog supported: three/AnimationAction. */
@@ -2936,3 +2939,37 @@ export type Face = { a: number; b: number; c: number; normal: Vector3; materialI
 
 /** Catalog supported: three/Intersection. */
 export type Intersection = { distance: number; point: Vector3; object: Object3D; face: Face; faceIndex: number; uv?: Vector2; uv1?: Vector2; normal?: Vector3; barycoord: Vector3; instanceId?: number };
+
+/** Catalog supported: three/DirectionalLightShadow. */
+export declare class DirectionalLightShadow {
+constructor();
+bias: number;
+intensity: number;
+normalBias: number;
+radius: number;
+readonly camera: OrthographicCamera;
+readonly mapSize: Vector2;
+}
+
+/** Catalog supported: three/PointLightShadow. */
+export declare class PointLightShadow {
+constructor();
+bias: number;
+intensity: number;
+normalBias: number;
+radius: number;
+readonly camera: PerspectiveCamera;
+readonly mapSize: Vector2;
+}
+
+/** Catalog supported: three/SpotLightShadow. */
+export declare class SpotLightShadow {
+constructor();
+bias: number;
+focus: number;
+intensity: number;
+normalBias: number;
+radius: number;
+readonly camera: PerspectiveCamera;
+readonly mapSize: Vector2;
+}

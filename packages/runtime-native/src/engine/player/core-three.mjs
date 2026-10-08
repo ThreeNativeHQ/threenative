@@ -65,6 +65,10 @@ for (const [base, names] of [
 ]) {
   for (const derived of names) Object.setPrototypeOf(derived.prototype, base.prototype);
 }
+// The type flags three defines on its value classes (`isColor`, `isVector3`, ...).
+for (const value of [Color, Vector2, Vector3, Vector4, Quaternion, Euler, Matrix3, Matrix4, Box3, Plane,
+  Texture, DataTexture, BufferGeometry, BufferAttribute, InstancedBufferAttribute])
+  value.prototype[`is${value.name}`] = true;
 for (const light of [AmbientLight, DirectionalLight, HemisphereLight, PointLight, SpotLight])
   light.prototype.isLight = true;
 for (const material of [MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial,
