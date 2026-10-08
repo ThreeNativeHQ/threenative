@@ -121,7 +121,13 @@ async function loadReference(): Promise<{
     const webgpu = (await import(
       pathToFileURL(path.join(build, "three.webgpu.js")).href
     )) as Record<string, unknown>;
-    const three = { ...webgpu, ...core };
+    // The addons a fixture constructs by class name, over the same core module.
+    const { RoundedBoxGeometry } = (await import(
+      pathToFileURL(
+        path.join(build, "..", "examples", "jsm", "geometries", "RoundedBoxGeometry.js"),
+      ).href
+    )) as Record<string, unknown>;
+    const three = { ...webgpu, ...core, RoundedBoxGeometry };
     return { three, version: manifest.version, root: path.join(build, "..") };
   }
   throw new Error("TN_FIXTURE_THREE_MISSING: no workspace package links the catalog three");

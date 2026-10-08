@@ -30,6 +30,9 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <cmath>
+#include <map>
+#include <optional>
 #include <filesystem>
 #include <cstdlib>
 #include <memory>
@@ -50,6 +53,8 @@
 #include "engine/assets/gltf/loader.h"
 #include "engine/assets/gltf/image_decode.h"
 #include "engine/renderer/renderer.h"
+#include "engine/renderer/render_database.h"
+#include "mystral/webgpu_compat.h"
 #include "adapters/v8/tsl.h"
 #include "engine/shader/graph/serialized.h"
 #include "mystral/audio/audio_bindings.h"
@@ -187,7 +192,32 @@ class V8Game {
     assets::Package assets_;
     shader::graph::Node post_;
     Renderer* renderer_ = nullptr;
+    // three's renderer settings the game last set (WebGPURenderer's defaults until it does).
+    OutputState output_{std::nullopt, 1, true};
+    // The GPU adapter's `info` fields, read before the bundle boots; empty without a GPU (a check).
+    std::vector<std::pair<std::string, std::string>> adapterInfo_;
+    // The last frame the player drew: three's `renderer.info.render` draw calls and triangles.
+    uint32_t drawCalls_ = 0;
+    uint64_t triangles_ = 0;
+    bool shadowMap_ = false;
+    bool outputChanged_ = true;
     static void loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info);
+    v8::Local<v8::Value> adapterValue();
+  public:
+    void setAdapter(std::vector<std::pair<std::string, std::string>> info) { adapterInfo_ = std::move(info); }
+    void frameDrawn(const Renderer& renderer) {
+        drawCalls_ = renderer.lastFrame().draws;
+        triangles_ = renderer.lastFrame().triangles;
+    }
+    void beforeRender(Renderer& renderer, RenderDatabase& database) {
+        if (outputChanged_) renderer.setOutput(output_);
+        outputChanged_ = false;
+        database.shadowMapEnabled = shadowMap_;
+    }
+  private:
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info);
 };
@@ -298,6 +328,84 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
     info.GetReturnValue().Set(record);
 }
 
+// `tn.setRendererState({toneMapping, toneMappingExposure, outputColorSpace, shadowMap: {enabled, type}})`:
+// the facade's WebGPURenderer settings, applied before the next frame. A value the native renderer
+// does not implement is refused by name, never mapped to a neighbour.
+void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    const auto ctx = isolate->GetCurrentContext();
+    const auto refuse = [&](const std::string& reason) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_NATIVE_RENDERER_STATE: " + reason)));
+    };
+    if (info.Length() != 1 || !info[0]->IsObject()) return refuse("expected one settings object");
+    const auto settings = info[0].As<v8::Object>();
+    v8::Local<v8::Value> mapping, exposure, colorSpace, shadowMap, enabled, type;
+    if (!settings->Get(ctx, v8str(isolate, "toneMapping")).ToLocal(&mapping) ||
+        !settings->Get(ctx, v8str(isolate, "toneMappingExposure")).ToLocal(&exposure) ||
+        !settings->Get(ctx, v8str(isolate, "outputColorSpace")).ToLocal(&colorSpace) ||
+        !settings->Get(ctx, v8str(isolate, "shadowMap")).ToLocal(&shadowMap))
+        return;
+    if (!mapping->IsNumber() || !exposure->IsNumber() || !std::isfinite(exposure.As<v8::Number>()->Value()) ||
+        !colorSpace->IsString() || !shadowMap->IsObject())
+        return refuse("toneMapping, toneMappingExposure, outputColorSpace and shadowMap are required");
+    if (!shadowMap.As<v8::Object>()->Get(ctx, v8str(isolate, "enabled")).ToLocal(&enabled) ||
+        !shadowMap.As<v8::Object>()->Get(ctx, v8str(isolate, "type")).ToLocal(&type))
+        return;
+    // three's constants: NoToneMapping 0, Linear 1, Reinhard 2, Cineon 3, ACESFilmic 4, AgX 6, Neutral 7.
+    static const std::map<double, std::optional<shader::ToneMapping>> mappings{
+        {0, std::nullopt}, {1, shader::ToneMapping::Linear}, {2, shader::ToneMapping::Reinhard},
+        {3, shader::ToneMapping::Cineon}, {4, shader::ToneMapping::ACESFilmic}, {6, shader::ToneMapping::AgX},
+        {7, shader::ToneMapping::Neutral}};
+    const auto tone = mappings.find(mapping.As<v8::Number>()->Value());
+    if (tone == mappings.end()) return refuse("toneMapping " + std::to_string(mapping.As<v8::Number>()->Value()));
+    v8::String::Utf8Value space(isolate, colorSpace);
+    const std::string spaceText(*space, space.length());
+    if (spaceText != "srgb" && spaceText != "srgb-linear") return refuse("outputColorSpace " + spaceText);
+    // WebGPU's ShadowNode filters PCFShadowMap and PCFSoftShadowMap alike; the native port is that filter.
+    if (!enabled->IsBoolean() || !type->IsNumber() || (type.As<v8::Number>()->Value() != 1 && type.As<v8::Number>()->Value() != 2))
+        return refuse("shadowMap.enabled must be a boolean and shadowMap.type PCFShadowMap or PCFSoftShadowMap");
+    const OutputState output{tone->second, exposure.As<v8::Number>()->Value(), spaceText == "srgb"};
+    if (output.toneMapping != game.output_.toneMapping || output.toneMappingExposure != game.output_.toneMappingExposure ||
+        output.srgb != game.output_.srgb) {
+        game.output_ = output;
+        game.outputChanged_ = true;
+    }
+    game.shadowMap_ = enabled->IsTrue();
+}
+
+// three's `adapter` as the facade backend hands it out: `{ info: { architecture, ... }, limits: {} }`,
+// or null when this run has no GPU.
+v8::Local<v8::Value> V8Game::adapterValue() {
+    if (adapterInfo_.empty()) return v8::Null(isolate_);
+    auto ctx = isolate_->GetCurrentContext();
+    auto info = v8::Object::New(isolate_);
+    for (const auto& [name, value] : adapterInfo_) info->Set(ctx, v8str(isolate_, name), v8str(isolate_, value)).Check();
+    auto adapter = v8::Object::New(isolate_);
+    adapter->Set(ctx, v8str(isolate_, "info"), info).Check();
+    adapter->Set(ctx, v8str(isolate_, "limits"), v8::Object::New(isolate_)).Check();
+    return adapter;
+}
+
+// `tn.renderInfo()`: { drawCalls, triangles } of the last frame the player drew.
+void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    auto record = v8::Object::New(isolate);
+    record->Set(ctx, v8str(isolate, "drawCalls"), v8::Number::New(isolate, game.drawCalls_)).Check();
+    record->Set(ctx, v8str(isolate, "triangles"), v8::Number::New(isolate, static_cast<double>(game.triangles_))).Check();
+    info.GetReturnValue().Set(record);
+}
+
+void V8Game::requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto ctx = info.GetIsolate()->GetCurrentContext();
+    auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
+    resolver->Resolve(ctx, game.adapterValue()).Check();
+    info.GetReturnValue().Set(resolver->GetPromise());
+}
+
 // createImageBitmap's decode: PNG or JPEG bytes through the engine's image decoder (PRD-515) into
 // an RGBA8 Texture, rows as stored. `{ texture, width, height }`, or a TN_NATIVE_IMAGE_DECODE refusal.
 void V8Game::decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -346,6 +454,7 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
     shader::graph::Node graph;
     const auto apply = [&](shader::graph::Node value) {
+        if (value == game.post_) return;  // RenderPipeline.render() hands the same graph every frame
         if (game.renderer_) game.renderer_->setPostGraph(value);
         game.post_ = std::move(value);
     };
@@ -483,6 +592,9 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "decodeImage"), v8::Function::New(ctx, &decodeImage, self).ToLocalChecked()).Check();
 #endif
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "renderInfo"), v8::Function::New(ctx, &renderInfo, self).ToLocalChecked()).Check();
     v8::Local<v8::Script> script;
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
@@ -596,6 +708,50 @@ json::Value V8Game::resource(const std::string& id, uint64_t tick) const {
 
 }  // namespace
 
+/** The high-performance adapter's `info` fields, empty ones left out; empty when there is none. */
+std::vector<std::pair<std::string, std::string>> adapterIdentity() {
+    struct Request {
+        WGPUAdapter adapter = nullptr;
+        bool done = false;
+    } request;
+    WGPUInstance instance = wgpuCreateInstance(nullptr);
+    if (!instance) return {};
+    WGPURequestAdapterOptions options = {};
+    options.powerPreference = WGPUPowerPreference_HighPerformance;
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+    WGPURequestAdapterCallbackInfo callback = {};
+    callback.mode = WGPUCallbackMode_AllowProcessEvents;
+    callback.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView, void* data, void*) {
+        auto& r = *static_cast<Request*>(data);
+        if (status == WGPURequestAdapterStatus_Success) r.adapter = adapter;
+        r.done = true;
+    };
+    callback.userdata1 = &request;
+    wgpuInstanceRequestAdapter(instance, &options, callback);
+#else
+    wgpuInstanceRequestAdapter(instance, &options, [](WGPURequestAdapterStatus status, WGPUAdapter adapter, char const*, void* data) {
+        auto& r = *static_cast<Request*>(data);
+        if (status == WGPURequestAdapterStatus_Success) r.adapter = adapter;
+        r.done = true;
+    }, &request);
+#endif
+    for (int i = 0; i < 1000000 && !request.done; ++i) wgpuInstanceProcessEvents(instance);
+    std::vector<std::pair<std::string, std::string>> fields;
+    if (request.adapter) {
+        WGPUAdapterInfo info = {};
+        wgpuAdapterGetInfo(request.adapter, &info);
+        for (const auto& [name, value] : {std::pair{"architecture", WGPU_PRINT_STRING_VIEW(info.architecture)},
+                                          std::pair{"description", WGPU_PRINT_STRING_VIEW(info.description)},
+                                          std::pair{"device", WGPU_PRINT_STRING_VIEW(info.device)},
+                                          std::pair{"vendor", WGPU_PRINT_STRING_VIEW(info.vendor)}})
+            if (!value.empty() && value != "unknown") fields.emplace_back(name, value);  // the macro's empty
+        wgpuAdapterInfoFreeMembers(info);
+        wgpuAdapterRelease(request.adapter);
+    }
+    wgpuInstanceRelease(instance);
+    return fields;
+}
+
 int main(int argc, char** argv) {
     std::string gamePath;
     std::string checkRequest;
@@ -619,6 +775,9 @@ int main(int argc, char** argv) {
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --check-request requires --check-game\n"), 2;
 
     V8Game game;
+    // The adapter's identity, read the way core reads it (a request of its own beside the renderer's):
+    // what the game's `adapter.info` and the playtest's adapter class come from. A check has no GPU.
+    if (!checkGame) game.setAdapter(adapterIdentity());
     std::string error;
     if (!game.start(gamePath, error))
         return std::fprintf(stderr, "TN_PLAYER_V8_GAME: %s\n", error.c_str()), 1;
@@ -649,6 +808,8 @@ int main(int argc, char** argv) {
     configured.gameRuntime = "v8";
     configured.update = [&game](double dt) { game.tick(dt); };
     configured.initialize = [&game](Renderer& renderer) { game.initialize(renderer); };
+    configured.beforeRender = [&game](Renderer& renderer, RenderDatabase& database) { game.beforeRender(renderer, database); };
+    configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.observe = [&game](const std::string& method, const json::Value* argument,
                                  json::Value& result, std::string& error) {
         return game.observe(method, argument, result, error);

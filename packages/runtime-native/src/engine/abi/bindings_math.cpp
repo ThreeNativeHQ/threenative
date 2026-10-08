@@ -834,17 +834,34 @@ void registerMatrix4(ClassBinding& b) {
 
 // ------------------------------------------------------------------------------------ Color
 
+/** three's Color.set(r, g, b): one argument is a Color, a hex number or a CSS style; three are RGB. */
+void setColor(Color& c, const Args& a, Store& d) {
+    const auto absent = [&](size_t i) {
+        return a.size() <= i || a.at(i).kind == Value::Kind::Undefined || a.at(i).kind == Value::Kind::Null;
+    };
+    const bool single = absent(1) && absent(2);
+    if (!single) {
+        c.setRGB(number(a.at(0)), number(a.at(1)), number(a.at(2)), space(a, 3, ColorSpace::LinearSRGB));
+        return;
+    }
+    const Value& value = a.at(0);
+    if (value.kind == Value::Kind::Ref) c.copy(d.ref<Color>(value, "Color"));
+    else if (value.kind == Value::Kind::Number) c.setHex(value.number);
+    else if (value.kind == Value::Kind::String) c.setStyle(value.text.c_str());
+    else throw Unsupported{"Color.set needs a Color, a hex number, a CSS style or three numbers"};
+}
+
 void registerColor(ClassBinding& b) {
-    b.ctor = [](const Args& a, Store& store) {
+    b.ctor = [](const Args& a, Store& d) {
         auto c = std::make_shared<Color>();
-        // three's no-argument Color stays white, untouched by any conversion. One argument is
-        // Color.set(): a hex in sRGB, a CSS string, or another Color to copy (PRD-540).
-        if (a.size() == 1 && a[0].kind == Value::Kind::Number) c->setHex(number(a[0]), ColorSpace::SRGB);
-        else if (a.size() == 1 && a[0].kind == Value::Kind::String) c->setStyle(a[0].text.c_str(), ColorSpace::SRGB);
-        else if (a.size() == 1 && a[0].kind == Value::Kind::Ref) c->copy(store.ref<Color>(a[0], "Color"));
-        else if (!a.empty())
-            c->setRGB(optional(a, 0, 0), optional(a, 1, 0), optional(a, 2, 0), space(a, 3, ColorSpace::LinearSRGB));
+        // three's no-argument Color stays white, untouched by any conversion; one argument is set().
+        if (!a.empty() && a.at(0).kind != Value::Kind::Undefined && a.at(0).kind != Value::Kind::Null) setColor(*c, a, d);
         return std::static_pointer_cast<void>(c);
+    };
+    b.methods["set"] = [](void* self, const Args& a, Store& d) {
+        if (a.empty()) throw Unsupported{"Color.set needs a value"};
+        setColor(*as<Color>(self), a, d);
+        return chain();
     };
     members<Color>(b, {"r", "g", "b"}, {&Color::r, &Color::g, &Color::b});
 

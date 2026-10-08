@@ -3,6 +3,7 @@
 #include "engine/abi/tsl_call.h"
 
 #include "engine/foundation/math/Color.h"
+#include "engine/shader/graph/post_effects.h"
 
 #include <bit>
 #include <cmath>
@@ -56,6 +57,38 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "nodeObject") {
         arity(1);
         return arg(0);
+    }
+    // three r185's post addons, built live as the engine's effects (PRD-531 slice 4): ao(depth, normal,
+    // camera), denoise(input, depth, normal, camera), smaa(input), bloom(input, strength, radius,
+    // threshold). The camera three takes is the render camera here: a pass reads its matrices each
+    // frame. A missing normal (null) derives normals from depth, as three does.
+    if (name == "ao" || name == "denoise") {
+        const bool denoise = name == "denoise";
+        if (args.size() < (denoise ? 3u : 2u)) throw std::runtime_error("expected the effect's texture inputs");
+        const auto optional = [&](size_t i) { return args[i].kind == TslArg::Kind::Node ? arg(i) : g::Node{}; };
+        const auto effect = denoise ? g::denoiseEffect(arg(0), arg(1), optional(2), static_cast<uint32_t>(++serial))
+                                    : g::gtaoEffect(arg(0), optional(1));
+        return g::effectNode(effect);
+    }
+    if (name == "smaa") {
+        arity(1);
+        return g::effectNode(g::smaaEffect(arg(0)));
+    }
+    if (name == "bloom") {
+        if (args.empty() || args.size() > 4) throw std::runtime_error("expected input, strength, radius, threshold");
+        const auto scalar = [&](size_t i, double fallback) {
+            return args.size() <= i || args[i].kind == TslArg::Kind::Other ? fallback : number(args[i]);
+        };
+        return g::bloom(arg(0), scalar(1, 1), scalar(2, 0), scalar(3, 0));
+    }
+    if (name == "oneMinus") {
+        arity(method ? 0 : 1);
+        return g::sub(g::float_(1), lhs());
+    }
+    // A graph node is a value: `dispose()` releases nothing (the renderer owns what it builds from one).
+    if (name == "dispose" && method) {
+        arity(0);
+        return lhs();
     }
     if (name == "color") {
         engine::Color value;
@@ -244,6 +277,26 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
                     TERNARY(select) TERNARY(mix) TERNARY(clamp) TERNARY(smoothstep)
 #undef TERNARY
                         return {};
+}
+
+double tslEffectParameter(const g::Node& node, const std::string& name, const double* value) {
+    if (!node || node->kind != g::Kind::PostEffect || !node->post) throw std::runtime_error("not a live post effect");
+    auto& effect = const_cast<g::PostEffect&>(*node->post);  // ponytail: live effects are built mutable
+    if (name == "resolutionScale") {
+        if (value) {
+            if (!(*value > 0 && *value <= 8)) throw std::runtime_error("resolutionScale must be in (0, 8]");
+            effect.resolutionScale = static_cast<float>(*value);
+        }
+        return effect.resolutionScale;
+    }
+    const auto found = effect.parameters.find(name);
+    if (found == effect.parameters.end() || found->second.size() != 1 || name.front() == '_')
+        throw std::runtime_error(effect.kind + " has no scalar uniform " + name);
+    if (value) {
+        if (!std::isfinite(*value)) throw std::runtime_error("expected a finite number");
+        found->second[0] = static_cast<float>(*value);
+    }
+    return found->second[0];
 }
 
 }  // namespace tn::abi

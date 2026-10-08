@@ -12,6 +12,7 @@ namespace tn::engine {
 
 class Camera;
 class Renderer;
+class RenderDatabase;
 
 namespace inspect {
 class Endpoint;
@@ -36,6 +37,8 @@ struct Game {
     /** Streaming proofs render every driven tick, including ticks in a batched advance request. */
     bool renderEachTick = false;
     std::function<void(Renderer&)> initialize;
+    /** Before each frame is drawn: the game applies the renderer settings it changed since the last. */
+    std::function<void(Renderer&, RenderDatabase&)> beforeRender;
     std::function<void(Renderer&, const std::vector<std::string>&)> frameComplete;
     /** Releases game-owned GPU resources before the loop destroys its renderer. */
     std::function<void()> shutdown;

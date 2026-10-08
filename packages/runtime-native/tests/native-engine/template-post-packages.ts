@@ -153,6 +153,35 @@ source.name = "scene";
 let failures = (await compile("export-control", texture(source, vec2(0.25, 0.75)).mul(0.5)))
   ? 0
   : 1;
+/** mulberry32: the seeded Math.random the native DenoiseNode draws its noise permutation from. */
+function seeded<T>(build: () => T): T {
+  let state = 1;
+  const random = Math.random;
+  Math.random = () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  try {
+    return build();
+  } finally {
+    Math.random = random;
+  }
+}
+
+/** PRD-531 slice 4: the native live effect equals what three's node exported. */
+async function compareLive(name: string, kind: string): Promise<boolean> {
+  const compared = await run(native as string, [
+    "--live",
+    kind,
+    path.join(directory, `${name}.json`),
+  ]);
+  if (compared.status !== 0) console.error(compared.stderr || compared.stdout);
+  else console.info(compared.stdout.trim());
+  return compared.status === 0;
+}
+
 const lowering = process.env.TN_POST_LOWERING;
 if (lowering) {
   const camera = new PerspectiveCamera(60, 4 / 3, 0.1, 1000);
@@ -163,19 +192,24 @@ if (lowering) {
   const nodes = {
     ...functionFixtures(source),
     GTAONode: () => ao(texture(depth), null, camera).getTextureNode(),
-    DenoiseNode: () => denoise(input, texture(depth), null, camera),
+    DenoiseNode: () => seeded(() => denoise(input, texture(depth), null, camera)),
     SMAANode: () => smaa(input),
   };
   if (!(lowering in nodes)) throw new Error(`Unknown lowering ${lowering}`);
   const output = nodes[lowering as keyof typeof nodes]();
   if (!(await compile(lowering, output))) failures++;
+  const live = ["GTAONode", "DenoiseNode", "SMAANode"].includes(lowering);
+  if (live && !(await compareLive(lowering, lowering))) failures++;
   if (lowering === "GTAONode" || lowering === "DenoiseNode") {
     const normal = new Texture();
     normal.name = "normal";
     const ambient = ao(texture(depth), texture(normal), camera).getTextureNode();
     const graph =
-      lowering === "GTAONode" ? ambient : denoise(ambient, texture(depth), texture(normal), camera);
+      lowering === "GTAONode"
+        ? ambient
+        : seeded(() => denoise(ambient, texture(depth), texture(normal), camera));
     if (!(await compile(`${lowering}-normals`, graph))) failures++;
+    if (!(await compareLive(`${lowering}-normals`, lowering))) failures++;
   }
   console.info(`TN_POST_LOWERING ${lowering} failures=${failures}`);
   process.exit(failures === 0 ? 0 : 1);

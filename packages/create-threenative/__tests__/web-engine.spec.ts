@@ -2,6 +2,7 @@
  * PRD-540 phase 1: `engine: "native"` routes a web build's `three`, `three/webgpu` and `three/tsl`
  * imports to the Wasm engine; the legacy build is unchanged.
  */
+import { readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -63,7 +64,7 @@ async function bundle(root: string, native: boolean): Promise<string> {
     logLevel: "silent",
     root,
     build: { outDir: "dist", minify: false, target: "es2022" },
-    plugins: native ? [createWebEnginePlugin(root)] : [],
+    plugins: native ? [createWebEnginePlugin({ root, engine: "native" })] : [],
   });
   const assets = path.join(root, "dist/assets");
   const files = (await readdir(assets)).filter((name) => name.endsWith(".js"));
@@ -94,7 +95,7 @@ describe("web build driver", () => {
   it("adds the web engine plugin only under engine native, and always uses the driver", () => {
     const native = webBuildDriver("/game", "/game/public", "native");
     expect(native).toContain('import { createWebEnginePlugin } from "create-threenative";');
-    expect(native).toContain("plugins: [createWebEnginePlugin(root)],");
+    expect(native).toContain('plugins: [createWebEnginePlugin({ root, engine: "native" })],');
     expect(ownConfigArgs([], "/driver.mjs", true, "native")).toEqual(["--config", "/driver.mjs"]);
     expect(() => ownConfigArgs(["--config", "own.ts"], "/driver.mjs", true, "native")).toThrow(
       "TN_WEB_ENGINE_CONFIG_NAMED",
@@ -103,8 +104,38 @@ describe("web build driver", () => {
 });
 
 describe("createWebEnginePlugin", () => {
+  it("does nothing for a legacy project, so the same dev config serves both engines", () => {
+    for (const plugin of [createWebEnginePlugin(), createWebEnginePlugin({ engine: "legacy" })])
+      for (const id of ["three", "three/webgpu", "three/tsl", "three-mesh-bvh"])
+        expect(plugin.resolveId(id)).toBeNull();
+  });
+
+  it("takes its root from Vite when the dev config names none", async () => {
+    const root = await project(true);
+    const plugin = createWebEnginePlugin({ engine: "native" });
+    plugin.configResolved({ root });
+    expect(await plugin.load(WEB_ENGINE_ID)).toContain(WASM_ENGINE_ENTRY);
+  });
+
+  it("finds the Wasm engine where the runtime-native package ships it", () => {
+    // Producer and consumer of one path: the packed tarball carries what the plugin resolves.
+    const manifest = JSON.parse(
+      readFileSync(path.resolve(import.meta.dirname, "../../runtime-native/package.json"), "utf8"),
+    ) as { files: string[] };
+    expect(manifest.files).toContain(WASM_ENGINE_ENTRY);
+    expect(manifest.files).toContain(WASM_ENGINE_ENTRY.replace(/\.mjs$/u, ".wasm"));
+  });
+
+  it("is in every template's Vite config, so pnpm dev routes engine native too", () => {
+    const templates = path.resolve(import.meta.dirname, "../templates");
+    for (const template of readdirSync(templates)) {
+      const config = readFileSync(path.join(templates, template, "vite.config.ts"), "utf8");
+      expect(config, template).toContain("createWebEnginePlugin({ engine: config.engine })");
+    }
+  });
+
   it("resolves the three entry points to the engine and refuses deep upstream imports", () => {
-    const plugin = createWebEnginePlugin("/game");
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
     for (const id of ["three", "three/webgpu", "three/tsl"])
       expect(plugin.resolveId(id)).toBe(WEB_ENGINE_ID);
     expect(plugin.resolveId("three/addons/tsl/display/BloomNode.js")).toBeNull();
@@ -112,7 +143,9 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves three-mesh-bvh to the engine's own MeshBVH, never the upstream package", () => {
-    const resolved = createWebEnginePlugin("/game").resolveId("three-mesh-bvh");
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+      "three-mesh-bvh",
+    );
     expect(resolved).toMatch(
       /(?:three-native\/src\/addons\/mesh-bvh\.ts|web-engine-mesh-bvh\.js)$/u,
     );
@@ -127,9 +160,9 @@ describe("createWebEnginePlugin", () => {
 
   it("fails the build when the Wasm engine is not installed", async () => {
     const root = await project(false);
-    await expect(createWebEnginePlugin(root).load(WEB_ENGINE_ID)).rejects.toThrow(
-      "TN_WASM_ENGINE_MISSING",
-    );
+    await expect(
+      createWebEnginePlugin({ root, engine: "native" }).load(WEB_ENGINE_ID),
+    ).rejects.toThrow("TN_WASM_ENGINE_MISSING");
   });
 
   it("bundles the Wasm engine binding instead of upstream three; legacy still bundles three", async () => {

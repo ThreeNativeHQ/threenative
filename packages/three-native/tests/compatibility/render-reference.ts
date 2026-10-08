@@ -169,6 +169,11 @@ async function withServer(
   for (const addon of [
     "loaders/GLTFLoader.js",
     "tsl/display/TRAANode.js",
+    "tsl/display/GTAONode.js",
+    "tsl/display/DenoiseNode.js",
+    "tsl/display/BloomNode.js",
+    "tsl/display/SMAANode.js",
+    "math/SimplexNoise.js",
     "utils/BufferGeometryUtils.js",
     "utils/SkeletonUtils.js",
   ])

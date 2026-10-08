@@ -12,6 +12,7 @@ export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
 export interface IWebEnginePlugin {
   readonly name: string;
   readonly enforce: "pre";
+  configResolved(config: { readonly root: string }): void;
   resolveId(source: string): string | null;
   load(id: string): Promise<string | null>;
 }
@@ -59,15 +60,34 @@ async function upstreamNames(root: string): Promise<string[]> {
     .sort();
 }
 
+export interface IWebEngineOptions {
+  /** The project root; Vite's own root when omitted. */
+  readonly root?: string;
+  /** `threenative.config.ts`'s `engine`: anything but `"native"` leaves upstream three alone. */
+  readonly engine?: "legacy" | "native";
+}
+
 /**
- * Routes a web build's upstream three imports to the Wasm engine (PRD-540). Deep imports into
- * three's own source would bundle the upstream engine beside it, so they fail the build.
+ * Routes a web build's upstream three imports to the Wasm engine (PRD-540) when `engine` is
+ * `"native"`. Deep imports into three's own source would bundle the upstream engine beside it, so
+ * they fail the build. Every template's Vite config lists it, so `pnpm dev` follows the setting.
  */
-export function createWebEnginePlugin(root: string): IWebEnginePlugin {
+export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEnginePlugin {
+  let root = options.root;
+  const native = options.engine === "native";
+  const projectRoot = (): string => {
+    if (root === undefined)
+      throw new Error("TN_WEB_ENGINE_ROOT: Vite has not resolved its config yet.");
+    return root;
+  };
   return {
     name: "threenative-web-engine",
     enforce: "pre",
+    configResolved(config) {
+      root ??= config.root;
+    },
     resolveId(source) {
+      if (!native) return null;
       if ((UPSTREAM as readonly string[]).includes(source)) return WEB_ENGINE_ID;
       // The engine's MeshBVH answers picking with its own raycast; the upstream package extends
       // three's math classes and cannot load over the engine.
@@ -84,11 +104,11 @@ export function createWebEnginePlugin(root: string): IWebEnginePlugin {
       return null;
     },
     async load(id) {
-      if (id !== WEB_ENGINE_ID) return null;
-      const names = await upstreamNames(root);
+      if (!native || id !== WEB_ENGINE_ID) return null;
+      const names = await upstreamNames(projectRoot());
       return [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
-        `import createModule from ${JSON.stringify(wasmModule(root))};`,
+        `import createModule from ${JSON.stringify(wasmModule(projectRoot()))};`,
         `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
         `export const { ${names.join(", ")} } = engine;`,
         "",

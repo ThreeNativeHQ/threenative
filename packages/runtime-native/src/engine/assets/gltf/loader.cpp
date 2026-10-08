@@ -511,7 +511,7 @@ class Builder {
             copyMaterial(*base, *cached);
             if (vertexColors) cached->vertexColors = true;
             if (flatShading) cached->flatShading = true;
-            if (derivativeTangents && base->maps.count("normalMap")) cached->normalScaleY *= -1;
+            if (derivativeTangents && base->maps.count("normalMap")) cached->normalScale.y *= -1;
         }
         return cached;
     }
@@ -532,8 +532,7 @@ class Builder {
         to.metalness = from.metalness;
         to.vertexColors = from.vertexColors;
         to.flatShading = from.flatShading;
-        to.normalScaleX = from.normalScaleX;
-        to.normalScaleY = from.normalScaleY;
+        to.normalScale = from.normalScale;
         to.aoMapIntensity = from.aoMapIntensity;
         to.ior = from.ior;
         to.specularIntensity = from.specularIntensity;
@@ -582,7 +581,7 @@ class Builder {
         if (!unlit) {
             if (const Value* normal = member(def, "normalTexture")) {
                 assignTexture(*material, "normalMap", normal);
-                material->normalScaleX = material->normalScaleY = number(member(normal, "scale"), 1);
+                material->normalScale.x = material->normalScale.y = number(member(normal, "scale"), 1);
             }
             if (const Value* occlusion = member(def, "occlusionTexture")) {
                 assignTexture(*material, "aoMap", occlusion);

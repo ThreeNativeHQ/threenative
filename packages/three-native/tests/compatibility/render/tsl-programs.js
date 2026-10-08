@@ -17,18 +17,26 @@ import {
 } from "three";
 import {
   Fn,
+  convertToTexture,
   float,
   instanceIndex,
   instancedArray,
   length,
+  max,
+  metalness,
+  mrt,
+  normalView,
   normalViewGeometry,
   normalWorld,
   normalize,
+  output,
   pass,
   positionLocal,
   positionWorld,
+  roughness,
   screenUV,
   sin,
+  smoothstep,
   uint,
   uniform,
   uv,
@@ -58,6 +66,78 @@ function chromatic(renderer, scene, camera) {
   const vignette = float(1).sub(length(screenUV.sub(0.5)).mul(0.6));
   pipeline.outputNode = vec4(vec3(r, g, b).mul(vignette), 1);
   return pipeline;
+}
+
+/** mulberry32: the seeded Math.random the native port draws DenoiseNode's noise permutation from. */
+function mulberry32(seed) {
+  let state = seed;
+  return () => {
+    state |= 0;
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * PRD-531 slice 4: three r185's post addons over one scene pass, composed as the minimal template's
+ * WorldEnvironment composes them; the native twin builds the same graph live.
+ */
+async function postAddons(program, renderer, scene, camera) {
+  const [{ ao }, { denoise }, { bloom }, { smaa }] = await Promise.all([
+    import("/addons/tsl/display/GTAONode.js"),
+    import("/addons/tsl/display/DenoiseNode.js"),
+    import("/addons/tsl/display/BloomNode.js"),
+    import("/addons/tsl/display/SMAANode.js"),
+  ]);
+  const scenePass = pass(scene, camera);
+  scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
+  const depth = scenePass.getTextureNode("depth");
+  const normal = scenePass.getTextureNode("normal");
+  const colour = scenePass.getTextureNode("output");
+  const peak = (c) => max(c.r, max(c.g, c.b));
+  const occlusion = (input) => {
+    const contact = ao(depth, normal, camera);
+    contact.radius.value = 0.35;
+    const random = Math.random;
+    Math.random = mulberry32(1);
+    try {
+      return input.mul(denoise(contact.getTextureNode(), depth, normal, camera).r);
+    } finally {
+      Math.random = random;
+    }
+  };
+  const tables = [];
+  const antialias = (input) => {
+    const squeezed = input.div(peak(input).add(1));
+    const filtered = smaa(squeezed);
+    tables.push(filtered._areaTexture, filtered._searchTexture);
+    return filtered.div(float(1).sub(peak(filtered)).max(1e-4));
+  };
+  let node;
+  if (program === "post-ao") node = occlusion(colour);
+  else if (program === "post-ao-raw") {
+    const contact = ao(depth, normal, camera);
+    contact.radius.value = 0.35;
+    node = colour.mul(contact.getTextureNode().r);
+  } else if (program === "post-bloom") node = colour.add(bloom(colour, 0.7, 0.5, 0.2));
+  else if (program === "post-smaa") node = antialias(colour);
+  else {
+    let input = occlusion(colour.mul(0.62));
+    input = input.add(bloom(convertToTexture(input), 0.22, 0.6, 1));
+    const radius = screenUV.sub(vec2(0.5, 0.5)).mul(vec2(1.78, 1)).length().mul(1.04);
+    const fall = smoothstep(float(0.55), float(1.02), radius).mul(0.22);
+    node = antialias(input.mul(fall.oneMinus()));
+  }
+  // SMAANode decodes its two lookup tables asynchronously; the captured frame must have them.
+  for (const table of tables) {
+    await table.image.decode();
+    table.needsUpdate = true;
+  }
+  const pipeline = new RenderPipeline(renderer);
+  pipeline.outputNode = node;
+  return { render: () => pipeline.render() };
 }
 
 export const GRID_COUNT = 10_000;
@@ -561,6 +641,22 @@ export const programs = {
     })().compute(GRID_COUNT);
     await renderer.computeAsync(kernel);
     target.positionNode = positionLocal.add(positions.element(instanceIndex).xyz);
+  },
+
+  async "post-ao"({ renderer, scene, camera }) {
+    return postAddons("post-ao", renderer, scene, camera);
+  },
+  async "post-ao-raw"({ renderer, scene, camera }) {
+    return postAddons("post-ao-raw", renderer, scene, camera);
+  },
+  async "post-bloom"({ renderer, scene, camera }) {
+    return postAddons("post-bloom", renderer, scene, camera);
+  },
+  async "post-smaa"({ renderer, scene, camera }) {
+    return postAddons("post-smaa", renderer, scene, camera);
+  },
+  async "post-template-high"({ renderer, scene, camera }) {
+    return postAddons("post-template-high", renderer, scene, camera);
   },
 
   async "post-chromatic"({ renderer, scene, camera }) {

@@ -276,8 +276,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
             d.normalMap = normal->second.get();
         assignDataMaps(*material, d);
     }
-    d.normalScaleX = material->normalScaleX;
-    d.normalScaleY = material->normalScaleY;
+    d.normalScaleX = material->normalScale.x;
+    d.normalScaleY = material->normalScale.y;
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
@@ -314,8 +314,8 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
             d.normalMap = normal->second.get();
         assignDataMaps(*r.material, d);
     }
-    d.normalScaleX = r.material->normalScaleX;
-    d.normalScaleY = r.material->normalScaleY;
+    d.normalScaleX = r.material->normalScale.x;
+    d.normalScaleY = r.material->normalScale.y;
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     return d;

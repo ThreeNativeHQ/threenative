@@ -1,5 +1,9 @@
 import { watchAssets } from "@threenative/assets";
-import { createEngineFreshnessPlugin, createWebBrandPlugin } from "create-threenative";
+import {
+  createEngineFreshnessPlugin,
+  createWebBrandPlugin,
+  createWebEnginePlugin,
+} from "create-threenative";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import config from "./threenative.config.js";
@@ -23,7 +27,13 @@ function assetsWatchPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [createEngineFreshnessPlugin(), createWebBrandPlugin(), assetsWatchPlugin()],
+  plugins: [
+    createEngineFreshnessPlugin(),
+    // engine: "native" in threenative.config.ts runs the game on the Wasm engine; legacy by default.
+    createWebEnginePlugin({ engine: config.engine }),
+    createWebBrandPlugin(),
+    assetsWatchPlugin(),
+  ],
   server: {
     watch: {
       ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],

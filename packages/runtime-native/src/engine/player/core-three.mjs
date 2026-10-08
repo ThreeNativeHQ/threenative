@@ -8,12 +8,12 @@ export const {
   MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshPhysicalMaterial,
   MeshStandardMaterial, NumberKeyframeTrack, Object3D, OrthographicCamera, Path, PerspectiveCamera, Plane, PlaneGeometry,
   QuaternionKeyframeTrack, VectorKeyframeTrack, Shape, ShapeGeometry, ExtrudeGeometry,
-  PointLight, Quaternion, Ray, Raycaster, RingGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
+  PointLight, Quaternion, Ray, Raycaster, RingGeometry, RoundedBoxGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
   SphereGeometry, SpotLight, Sprite, SpriteMaterial, TorusGeometry, TubeGeometry, Vector2, Vector3,
   Vector4, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, PCFSoftShadowMap,
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
-  EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, AttachedBindMode, FrontSide, BackSide, DoubleSide, StaticDrawUsage, DynamicDrawUsage,
+  EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, LoopPingPong, AttachedBindMode, FrontSide, BackSide, DoubleSide, StaticDrawUsage, DynamicDrawUsage,
   NoBlending, NormalBlending, AdditiveBlending, PropertyBinding, getConsoleFunction, setConsoleFunction,
 } = globalThis;
 // Texture sources (typed array, canvas, ImageBitmap) the engine copies; see core-textures.mjs.
@@ -59,7 +59,8 @@ for (const name of ["Object3D", "Scene", "Mesh", "Group", "SkinnedMesh", "Instan
   prototype[`is${name}`] = true;
 }
 const geometries = [BoxGeometry, CircleGeometry, ConeGeometry, CylinderGeometry, PlaneGeometry,
-  RingGeometry, SphereGeometry, TorusGeometry, LatheGeometry, TubeGeometry, ShapeGeometry, ExtrudeGeometry];
+  RingGeometry, RoundedBoxGeometry, SphereGeometry, TorusGeometry, LatheGeometry, TubeGeometry, ShapeGeometry,
+  ExtrudeGeometry];
 // three's `geometry.attributes` map over the native named attributes: one live view per geometry,
 // reading through getAttribute and writing through setAttribute/deleteAttribute.
 // ponytail: names are three's standard ones plus those set from JS; a custom-named attribute only a
@@ -116,6 +117,10 @@ for (const [base, names] of [
 ]) {
   for (const derived of names) Object.setPrototypeOf(derived.prototype, base.prototype);
 }
+// The type flags three defines on its value classes (`isColor`, `isVector3`, ...).
+for (const value of [Color, Vector2, Vector3, Vector4, Quaternion, Euler, Matrix3, Matrix4, Box3, Plane,
+  Texture, DataTexture, BufferGeometry, BufferAttribute, InstancedBufferAttribute])
+  value.prototype[`is${value.name}`] = true;
 CatmullRomCurve3.prototype.isCatmullRomCurve3 = true;
 // three's `shape.holes` is the plain array a game pushes paths into: each change writes the whole
 // array through the native setter, so the geometry built from the shape sees it.
@@ -140,8 +145,17 @@ Object.defineProperty(Shape.prototype, "holes", {
 });
 for (const light of [AmbientLight, DirectionalLight, HemisphereLight, PointLight, SpotLight])
   light.prototype.isLight = true;
+// three's abstract Material: the base the native material classes share for `instanceof` and its
+// default hooks. The engine compiles no WebGL program, so the hooks stay three's no-op defaults;
+// a bare Material has no native class and refuses construction.
+export class Material {
+  constructor() { throw new Error("TN_NATIVE_MATERIAL_ABSTRACT: construct a concrete material class"); }
+  onBeforeCompile() {}
+  customProgramCacheKey() { return this.onBeforeCompile.toString(); }
+}
+Material.prototype.isMaterial = true;
 for (const material of [MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial,
   MeshPhysicalMaterial, MeshStandardMaterial, SpriteMaterial]) {
-  material.prototype.isMaterial = true;
+  Object.setPrototypeOf(material.prototype, Material.prototype);
   material.prototype[`is${material.name}`] = true;
 }

@@ -38,4 +38,10 @@ struct TslArg {
 engine::shader::graph::Node tslCall(const std::string& name, const TslArg* receiver, const std::vector<TslArg>& args,
                                     uint64_t& serial);
 
+/**
+ * A live post effect's scalar uniform (`radius`, `samples`, ...) or its `resolutionScale`: read, or
+ * written when `value` is given, which a pass reads again every frame. Throws for anything else.
+ */
+double tslEffectParameter(const engine::shader::graph::Node& node, const std::string& name, const double* value);
+
 }  // namespace tn::abi

@@ -71,6 +71,11 @@ private:
                                       uint32_t capacity);
     static void setCallback(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void getCallback(const v8::FunctionCallbackInfo<v8::Value>& info);
+    // three's EventDispatcher over a class's native events: the listeners are JS functions kept on
+    // the wrapper, and the engine calls back once per dispatched event of a type with a listener.
+    static void eventListener(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static tn_status_t invokeEvent(void* context, const tn_value_t* args, uint32_t count, char* error, uint32_t capacity);
+    static bool callListeners(Adapter& a, v8::Local<v8::Object> self, v8::Local<v8::Object> event);
 
     uint64_t genericArguments_ = 0;
     std::unique_ptr<Tsl> tsl_;
@@ -82,6 +87,7 @@ private:
     std::set<Wrapper*> withCallbacks_;  // what collect() visits
     v8::Global<v8::Context> context_v8_;  // where callbacks run; set by install
     std::unordered_map<std::string, v8::Global<v8::Private>> callbackKeys_;  // by callback name
+    v8::Global<v8::Private> listenersKey_;  // a wrapper's EventDispatcher listeners: {type: [fn, ...]}
 };
 
 }  // namespace tn::adapters::v8adapter

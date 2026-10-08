@@ -40,7 +40,7 @@ void uniformBatchPreparation() {
         &a.shininess, &a.ior, &a.specularIntensity, &a.specularColor.r,
         &a.specularColor.g, &a.specularColor.b, &a.clearcoat, &a.sheen,
         &a.transmission, &a.iridescence, &a.anisotropy, &a.dispersion,
-        &a.normalScaleX, &a.normalScaleY, &a.aoMapIntensity,
+        &a.normalScale.x, &a.normalScale.y, &a.aoMapIntensity,
     };
     const std::array<double*, 27> right{
         &b.opacity, &b.alphaTest, &b.emissive.r, &b.emissive.g,
@@ -49,7 +49,7 @@ void uniformBatchPreparation() {
         &b.shininess, &b.ior, &b.specularIntensity, &b.specularColor.r,
         &b.specularColor.g, &b.specularColor.b, &b.clearcoat, &b.sheen,
         &b.transmission, &b.iridescence, &b.anisotropy, &b.dispersion,
-        &b.normalScaleX, &b.normalScaleY, &b.aoMapIntensity,
+        &b.normalScale.x, &b.normalScale.y, &b.aoMapIntensity,
     };
     for (std::size_t i = 0; i < left.size(); ++i) {
         const double beforeA = *left[i], beforeB = *right[i];
