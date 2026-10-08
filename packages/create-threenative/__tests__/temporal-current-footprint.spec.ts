@@ -1,9 +1,26 @@
 import { describe, expect, it } from "vitest";
-import {
-  CURRENT_SAMPLE_POSITIONS,
-  nearestCurrentSample,
-  raw4FootprintWeights,
-} from "../templates/starter/src/render/temporalCurrentFootprintMath.js";
+import { CURRENT_SAMPLE_POSITIONS } from "../templates/starter/src/render/temporalCurrentFootprintMath.js";
+import { raw4FootprintWeights } from "./fixtures/temporal-footprint-oracle.js";
+
+type Point = readonly [number, number];
+
+/** Four periodic nearest candidates, preserving the exhaustive row/cell/sample tie order. */
+function nearestCurrentSample(point: Point) {
+  let best = { x: 0, y: 0, sample: 0, distance: Number.POSITIVE_INFINITY };
+  for (let sample = 0; sample < 4; sample++) {
+    const site = CURRENT_SAMPLE_POSITIONS[sample] as Point;
+    const x = Math.ceil(point[0] - site[0] - 0.5) + 0;
+    const y = Math.ceil(point[1] - site[1] - 0.5) + 0;
+    const distance = (point[0] - x - site[0]) ** 2 + (point[1] - y - site[1]) ** 2;
+    if (
+      distance < best.distance ||
+      (distance === best.distance &&
+        (y < best.y || (y === best.y && (x < best.x || (x === best.x && sample < best.sample)))))
+    )
+      best = { x, y, sample, distance };
+  }
+  return best;
+}
 
 describe("finite raw4 current footprint", () => {
   it("matches exhaustive prior-site selection at random phases and exact cell/cross-site ties", () => {

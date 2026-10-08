@@ -2,11 +2,11 @@
 // projection primitive and the WGSL polygon primitive are supplied as CPU arithmetic here.
 import { Matrix4, PerspectiveCamera, Vector4, WebGPUCoordinateSystem } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { CURRENT_SAMPLE_POSITIONS } from "../templates/starter/src/render/temporalCurrentFootprintMath.js";
 import {
-  CURRENT_SAMPLE_POSITIONS,
   currentSampleOverlap,
   raw4FootprintWeights,
-} from "../templates/starter/src/render/temporalCurrentFootprintMath.js";
+} from "./fixtures/temporal-footprint-oracle.js";
 import { GridTexture, Value, cpuTSL } from "./temporal-resolve-cpu-grid.js";
 const projectionReads = vi.hoisted(() => [] as number[][]);
 vi.mock("three/tsl", () => ({

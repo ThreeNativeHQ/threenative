@@ -105,7 +105,7 @@ export function setupPost(
     get tier(): QualityTier {
       return policy.tier;
     },
-    debug: () => ({ ...observation, temporal: temporal?.report() }),
+    debug: () => (temporal ? { ...observation, temporal: temporal.report() } : { ...observation }),
     observe(window: IQualityWindow): void {
       if (disposed) return;
       const decision = policy.observe(window);

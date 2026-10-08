@@ -15,7 +15,7 @@ import {
   viewZToPerspectiveDepth,
 } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
-import { currentSampleArea as overlap } from "./temporalCurrentArea.js";
+import { currentSampleArea } from "./temporalCurrentArea.js";
 import { CURRENT_SAMPLE_POSITIONS } from "./temporalCurrentFootprintMath.js";
 import type { TemporalResolveNode } from "./temporalResolveDepth.js";
 import { reconstructNeighbourhood } from "./temporalResolveMath.js";
@@ -45,7 +45,7 @@ export function createTemporalCurrentFootprint(
       .and(inputSize.lessThanEqual(vec2(outputSize)).all())
       .and(inputSize.lessThan(vec2(outputSize)).any());
   const tapArea = (p: Node<"vec2">, half: Node<"vec2">, cell: Node<"vec2">, sample: number) =>
-    overlap(uint(sample), p.sub(half).sub(cell), p.add(half).sub(cell)) as Node<"float">;
+    currentSampleArea(uint(sample), p.sub(half).sub(cell), p.add(half).sub(cell)) as Node<"float">;
 
   function reconstruct(pixelUV: Node<"vec2">, outputSize: Node<"uvec2">) {
     const baseline = reconstructNeighbourhood(
