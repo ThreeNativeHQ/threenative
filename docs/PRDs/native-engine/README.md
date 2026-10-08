@@ -19,7 +19,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | PRD | Work package | Boxes | State |
 | --- | --- | --- | --- |
 | [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md) | Architecture decision, scope and compatibility inventory (N00) | 6/6 | done |
-| [PRD-498](PRD-498-n01-baseline-and-differential-fixture-runner.md) | Baseline and differential fixture runner (N01) | 3/4 | in progress |
+| [PRD-498](../done/native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md) | Baseline and differential fixture runner (N01) | 4/4 | done |
 | [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md) | The host links and runs without a JS engine (N02) | 7/8 | in progress |
 | [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | API catalog, binding ABI and version protocol (N03) | 7/7 | done |
 | [PRD-501](../done/native-engine/N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | Math matches the pinned reference (N04a) | 5/5 | done |
@@ -76,7 +76,7 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 
 | Wave | Start when | PRDs (parallel within a wave) |
 | --- | --- | --- |
-| 1 | now | N00 [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md), N01 [PRD-498](PRD-498-n01-baseline-and-differential-fixture-runner.md), N02 [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md), N03 [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
+| 1 | now | N00 [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md), N01 [PRD-498](../done/native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md), N02 [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md), N03 [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
 | 2 | N02 + N03 land | N04a–d, N07 [PRD-509](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md), N08a [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md); N05 spike alongside, off the critical path |
 | 3 | N04 + N07 land | N06 [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), N08b–d, N10 [PRD-515](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md), N18 phases 1–2 [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) |
 | 4 | N06 + N08 land | N09 [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md), then **CP1 [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) — go/stop** |
@@ -87,7 +87,7 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | Key | PRD | Depends on |
 | --- | --- | --- |
 | N00 | [PRD-497 — Architecture decision, scope and compatibility inventory](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md) | — |
-| N01 | [PRD-498 — Baseline and differential fixture runner](PRD-498-n01-baseline-and-differential-fixture-runner.md) | N00 |
+| N01 | [PRD-498 — Baseline and differential fixture runner](../done/native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md) | N00 |
 | N02 | [PRD-499 — The host links and runs without a JS engine](PRD-499-n02-the-host-links-without-a-js-engine.md) | N00 |
 | N03 | [PRD-500 — API catalog, binding ABI and version protocol](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | N00 |
 | N04 | [Lifetime and numerical foundation](../done/native-engine/N04-lifetime-and-numerics/README.md) | N03 |

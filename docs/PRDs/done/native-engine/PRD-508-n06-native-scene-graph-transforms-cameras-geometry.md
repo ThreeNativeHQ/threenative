@@ -4,7 +4,7 @@
 **Complexity:** 4 — many classes with reference-pinned semantics, but no GPU work and no new dependency
 **Owner:** João
 **Work package:** N06 — [native-engine batch](../../native-engine/README.md)
-**Depends on:** [N04 — Lifetime and numerical foundation](N04-lifetime-and-numerics/README.md) (handles, math, buffers); fixtures from [PRD-498 (N01)](../../native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md)
+**Depends on:** [N04 — Lifetime and numerical foundation](N04-lifetime-and-numerics/README.md) (handles, math, buffers); fixtures from [PRD-498 (N01)](PRD-498-n01-baseline-and-differential-fixture-runner.md)
 
 ## Context
 

@@ -10,6 +10,23 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## Machinefall on the legacy native host: streaming, refresh and shadow baselines — 2026-10-08
+
+PRD-498 phase 3. **Lane: functional-lane timing, not device evidence.** Machinefall `map-walk` and `map-views` in a private client copy (outside this repository) built with this checkout's core, physics and ui, run on the legacy host (`mystral`, V8 13.1, Dawn/Vulkan, RTX 2080) from this checkout, on a private Xvfb, the judge fenced to CPUs 8-11 (`fenced.sh`, CI runners on CPUs 0-5,12-17). The Xvfb fps column is suppressed: only CPU phases, hostGap, draws and the GPU timestamp are claimed. Each client entry drives its own input (`ArrowUp` dispatched on `window`) and logs its phase edges, so `perf --executable` needs no mailbox. One-minute load average at start: 11.98 and 13.12 (walk), 15.53 and 34.91 (`map-views`). `TN_FRAME_BUDGET` windows of 300 frames, the load window dropped.
+
+| Workload | Windows | render p50 | render p95 | update p50 | hostGap p50 | GPU | main draws p50 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| WorldCells streaming (walking, 2 runs) | 2 + 2 | 12.7 to 19.1 ms | 33.4 to 73.5 ms | 0.58 to 0.74 ms | 54 to 106 ms | 22.6 to 31.0 ms | 41 to 64 |
+| Per-object refresh (post-walk, no input, 2 runs) | 12 + 4 | 5.3 to 7.0 ms | 7.1 to 10.2 ms | 0.26 to 0.42 ms | 45 to 55 ms | 14 to 20 ms | 36 and 50 |
+| Shadow, first windows after load (`map-views`, 2 runs) | 2 + 2 | 7.1 to 12.1 ms | 27 to 97 ms | 0.43 to 0.75 ms | 52 to 112 ms | 19.4 to 28.0 ms | 31 to 61 |
+| Shadow, later windows (camera step every 20 s) | 11 + 4 | 4.4 to 6.6 ms | 6.5 to 9.2 ms | 0.24 to 0.45 ms | 45 to 53 ms | 17 to 20 ms | 31 and 69 |
+
+- The walk is 25 resident cells, 27 evictions, no failures, and ends about 50 s after it starts, so a run has two or three walking windows. Streaming costs 2.3 to 3.6 times the idle render p50, 2 to 3 hitches in the first walking window.
+- Shadow draws p50 are 12 to 14 in the first windows after load and absent from every later window, camera steps included: a step is a minority of 300 frames. `gpuShadow` reads 0 in every window on this lane, so shadow GPU time is not isolated here.
+- Draws are not comparable with the 2026-10-01 browser baseline (318 main draws): a render bundle is one draw on this host.
+- One of four unattended walk runs stalled in startup (`TN_STARTUP_STALLED`, 60.7 percent, loading a terrain jpg) and was discarded; it is not explained.
+- Enabling it took two engine fixes: render bundles had no `drawIndirect`/`drawIndexedIndirect` (`0344fffdc`, test `569cea19e`), and `VirtualShadow` destroyed the shadow depth texture a bind group still held (`6bdf71883`).
+
 ## Machinefall open world on develop: the CPU render phase is the frame — 2026-10-01
 
 PRD-475 Phase 1 baseline (`docs/PRDs/unreal-like-features/PRD-475-open-world-120-fps-without-visual-loss.md`). Machinefall `?scene=map-walk` on develop `a602467db` (core 0.3.4, assets 0.3.5, world re-cooked), browser WebGPU on the RTX 2080 (nvidia/turing), private Xvfb, 3 runs started at load 3.4–3.8. Steady `TN_FRAME_BUDGET` windows; medians across runs.
