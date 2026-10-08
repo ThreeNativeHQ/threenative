@@ -1406,6 +1406,8 @@ normalMapType: NormalMapTypes;
 normalScale: Vector2;
 displacementScale: number;
 displacementBias: number;
+roughnessMap: Texture | null;
+metalnessMap: Texture | null;
 envMap: Texture | null;
 envMapRotation: Euler;
 envMapIntensity: number;
@@ -1454,6 +1456,8 @@ color: Color;
 emissive: Color;
 envMap: Texture | null;
 map: Texture | null;
+metalnessMap: Texture | null;
+roughnessMap: Texture | null;
 fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
@@ -3026,6 +3030,8 @@ sheen: number;
 specularIntensity: number;
 transmission: number;
 specularColor: Color;
+specularColorMap: Texture | null;
+specularIntensityMap: Texture | null;
 }
 
 /** Catalog supported: three/Ray. */

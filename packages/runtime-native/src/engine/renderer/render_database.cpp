@@ -16,6 +16,29 @@ namespace tn::engine {
 
 namespace {
 
+/** Standard and Physical read metalnessMap and roughnessMap (three's MaterialNode METALNESS/ROUGHNESS). */
+bool readsDataMaps(const Material& material) {
+    return material.type == MaterialType::Standard || material.type == MaterialType::Physical;
+}
+
+/** Physical also reads specularColorMap and specularIntensityMap (MaterialNode SPECULAR_*). */
+bool readsSpecularMaps(const Material& material) { return material.type == MaterialType::Physical; }
+
+/** The decoded data maps of a material that reads them; the caller checked uv. */
+void assignDataMaps(const Material& material, DrawItem& d) {
+    d.specularColorMap = d.specularIntensityMap = nullptr;
+    if (!readsDataMaps(material)) return;
+    const auto image = [&](const char* slot) -> const Texture* {
+        const auto found = material.maps.find(slot);
+        return found != material.maps.end() && found->second && found->second->hasImage() ? found->second.get() : nullptr;
+    };
+    d.metalnessMap = image("metalnessMap");
+    d.roughnessMap = image("roughnessMap");
+    if (!readsSpecularMaps(material)) return;
+    d.specularColorMap = image("specularColorMap");
+    d.specularIntensityMap = image("specularIntensityMap");
+}
+
 Matrix toArray(const Matrix4& m) {
     Matrix out{};
     for (int i = 0; i < 16; ++i)
@@ -206,6 +229,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         // (A placeholder with no image was already refused where models load.)
         for (const auto& [slot, texture] : material->maps) {
             if (!texture || !texture->hasImage() || slot == "map" || slot == "normalMap") continue;
+            if ((slot == "metalnessMap" || slot == "roughnessMap") && readsDataMaps(*material)) continue;
+            if ((slot == "specularColorMap" || slot == "specularIntensityMap") && readsSpecularMaps(*material)) continue;
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
                                    " is not read by the native standard program");
             return r;
@@ -216,6 +241,11 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) +
                                    ": normalMap needs a uv attribute (drawn without it)");
         }
+        for (const char* slot : {"metalnessMap", "roughnessMap", "specularColorMap", "specularIntensityMap"})
+            if (const auto map = material->maps.find(slot); readsDataMaps(*material) && map != material->maps.end() &&
+                map->second && map->second->hasImage() && !store(*mesh.geometry, "uv"))
+                diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
+                                       " needs a uv attribute (drawn without it)");
         r.buffers = {floatStore(*mesh.geometry, "position"), floatStore(*mesh.geometry, "normal"),
                      floatStore(*mesh.geometry, "uv"), mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
         r.drawable = r.buffers[0] != nullptr;
@@ -244,6 +274,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         const auto normal = material->maps.find("normalMap");
         if (normal != material->maps.end() && normal->second && normal->second->hasImage())
             d.normalMap = normal->second.get();
+        assignDataMaps(*material, d);
     }
     d.normalScaleX = material->normalScale.x;
     d.normalScaleY = material->normalScale.y;
@@ -273,6 +304,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.nodes = r.material->nodes;
     d.map = nullptr;
     d.normalMap = nullptr;
+    d.metalnessMap = d.roughnessMap = d.specularColorMap = d.specularIntensityMap = nullptr;
     if (d.uvs) {
         const auto map = r.material->maps.find("map");
         if (map != r.material->maps.end() && map->second && map->second->hasImage())
@@ -280,6 +312,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
         const auto normal = r.material->maps.find("normalMap");
         if (normal != r.material->maps.end() && normal->second && normal->second->hasImage())
             d.normalMap = normal->second.get();
+        assignDataMaps(*r.material, d);
     }
     d.normalScaleX = r.material->normalScale.x;
     d.normalScaleY = r.material->normalScale.y;

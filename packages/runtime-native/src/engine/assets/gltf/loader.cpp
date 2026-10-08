@@ -65,7 +65,8 @@ const std::set<std::string> kThreeExtensions = {
     "KHR_materials_volume", "KHR_texture_basisu", "KHR_texture_transform", "KHR_mesh_quantization",
     "KHR_materials_emissive_strength", "EXT_materials_bump", "EXT_texture_webp", "EXT_texture_avif",
     "EXT_meshopt_compression", "KHR_meshopt_compression", "EXT_mesh_gpu_instancing"};
-const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit"};
+const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit",
+                                          "KHR_materials_ior", "KHR_materials_specular"};
 
 class Builder {
   public:
@@ -109,6 +110,7 @@ class Builder {
     bool checkExtensions() {
         for (std::size_t i = 0; i < data_.extensions_used_count; ++i) {
             const std::string name = data_.extensions_used[i];
+            if (name == "EXT_texture_webp" && decodesWebP()) continue;
             if (kThreeExtensions.count(name) && !kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
                 return false;
@@ -116,6 +118,7 @@ class Builder {
         }
         for (std::size_t i = 0; i < data_.extensions_required_count; ++i) {
             const std::string name = data_.extensions_required[i];
+            if (name == "EXT_texture_webp" && decodesWebP()) continue;
             if (!kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
                 return false;
@@ -531,14 +534,22 @@ class Builder {
         to.flatShading = from.flatShading;
         to.normalScale = from.normalScale;
         to.aoMapIntensity = from.aoMapIntensity;
+        to.ior = from.ior;
+        to.specularIntensity = from.specularIntensity;
+        to.specularColor = from.specularColor;
         to.maps = from.maps;
     }
 
     std::shared_ptr<Material> baseMaterial(long index) {
         if (const auto found = materials_.find(index); found != materials_.end()) return found->second;
         const Value* def = index < 0 ? nullptr : item(member(&json_, "materials"), static_cast<std::size_t>(index));
-        const bool unlit = member(member(def, "extensions"), "KHR_materials_unlit") != nullptr;
-        auto material = std::make_shared<Material>(unlit ? MaterialType::Basic : MaterialType::Standard);
+        const Value* extensions = member(def, "extensions");
+        const bool unlit = member(extensions, "KHR_materials_unlit") != nullptr;
+        const Value* ior = member(extensions, "KHR_materials_ior");
+        const Value* specular = member(extensions, "KHR_materials_specular");
+        // loadMaterial: unlit wins; otherwise the ior and specular plugins choose MeshPhysicalMaterial.
+        auto material = std::make_shared<Material>(unlit ? MaterialType::Basic
+                                                   : ior || specular ? MaterialType::Physical : MaterialType::Standard);
         if (index < 0) {
             // createDefaultMaterial
             material->metalness = 1;
@@ -579,6 +590,19 @@ class Builder {
             if (const Value* emissive = member(def, "emissiveFactor"))
                 material->emissive = Color(number(item(emissive, 0), 0), number(item(emissive, 1), 0), number(item(emissive, 2), 0));
             assignTexture(*material, "emissiveMap", member(def, "emissiveTexture"));
+            // GLTFMaterialsIorExtension: ior, 1.5 when absent, and 0 read as 1000 (three #26167).
+            if (ior) {
+                material->ior = number(member(ior, "ior"), 1.5);
+                if (material->ior == 0) material->ior = 1000;
+            }
+            // GLTFMaterialsSpecularExtension: intensity (map alpha) and a linear colour (map sRGB).
+            if (specular) {
+                material->specularIntensity = number(member(specular, "specularFactor"), 1.0);
+                assignTexture(*material, "specularIntensityMap", member(specular, "specularTexture"));
+                if (const Value* color = member(specular, "specularColorFactor"); color && color->isArray())
+                    material->specularColor = Color(number(item(color, 0), 1), number(item(color, 1), 1), number(item(color, 2), 1));
+                assignTexture(*material, "specularColorMap", member(specular, "specularColorTexture"));
+            }
         }
         if (truthyName(member(def, "name"))) material->name = text(member(def, "name"));
         return materials_[index] = material;
@@ -592,17 +616,23 @@ class Builder {
             refuse(std::string("TN_NATIVE_GLTF_TEXTURE_INVALID ") + slot);
             return;
         }
-        std::shared_ptr<const Texture>& texture = textures_[index];
+        std::shared_ptr<Texture>& texture = textures_[index];
         if (!texture) {
             auto made = std::make_shared<Texture>();
             made->name = text(member(def, "name"));
-            made->source = static_cast<int>(number(member(def, "source"), -1));
+            // GLTFTextureWebPExtension: a texture with EXT_texture_webp draws its WebP source when
+            // WebP decodes (checkExtensions refused the file otherwise); `source` is the fallback.
+            const Value* webp = member(member(def, "extensions"), "EXT_texture_webp");
+            made->source = static_cast<int>(number(member(webp ? webp : def, "source"), -1));
             made->flipY = false;
             applySampler(*made, index);
             decodeImage(*made);
-            if (std::string_view(slot) == "map" || std::string_view(slot) == "emissiveMap") made->colorSpace = TextureColorSpace::SRGB;
             texture = made;
         }
+        // parser.assignTexture sets the colour space on the shared texture, so the last sRGB slot that
+        // names it wins for every material that uses it, as upstream.
+        if (std::string_view(slot) == "map" || std::string_view(slot) == "emissiveMap" || std::string_view(slot) == "specularColorMap")
+            texture->colorSpace = TextureColorSpace::SRGB;
         material.maps[slot] = texture;
     }
 
@@ -808,7 +838,7 @@ class Builder {
     std::map<std::size_t, std::string> lightNames_;
     std::map<long, std::shared_ptr<Material>> materials_;
     std::map<std::string, std::shared_ptr<Material>> finalMaterials_;
-    std::map<std::size_t, std::shared_ptr<const Texture>> textures_;
+    std::map<std::size_t, std::shared_ptr<Texture>> textures_;
 };
 
 } // namespace

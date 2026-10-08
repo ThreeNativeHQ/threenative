@@ -70,14 +70,17 @@ async function loadGltf(
     Texture: new () => { name: string };
   };
   const loader = new GLTFLoader();
-  loader.register((parser) => ({
-    name: "tn_no_image_decode",
-    loadTexture(index: number) {
-      const texture = new three.Texture();
-      texture.name = parser.json.textures[index]?.name ?? "";
-      return Promise.resolve(texture);
-    },
-  }));
+  // A plugin takes its name's slot, so the stand-in also replaces the WebP extension's loader,
+  // which runs before any plugin registered later and would decode the image.
+  for (const name of ["tn_no_image_decode", "EXT_texture_webp"])
+    loader.register((parser) => ({
+      name,
+      loadTexture(index: number) {
+        const texture = new three.Texture();
+        texture.name = parser.json.textures[index]?.name ?? "";
+        return Promise.resolve(texture);
+      },
+    }));
   const bytes = readFileSync(path.join(REPO_ROOT, file));
   const gltf = await loader.parseAsync(
     bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),

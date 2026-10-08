@@ -246,6 +246,25 @@ int main() {
         unlitMesh->material->emissive.g != 0 || unlitMesh->material->maps.count("metalnessMap")) {
         std::printf("unlit: wrong material/alpha or lit-only inputs were not ignored: %s\n", unlit.error.c_str()); ++differ;
     }
+    // KHR_materials_ior / KHR_materials_specular make a MeshPhysicalMaterial (GLTFLoader's
+    // getMaterialType); the tangent-less clone keeps its inputs; ior 0 reads as 1000.
+    const std::string physicalBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/three-native/tests/compatibility/fixtures/gltf-model-physical.glb");
+    auto physical = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(physicalBytes.data()), physicalBytes.size()));
+    const auto materialOf = [&](const char* name) -> const Material* {
+        auto* mesh = physical.scene ? dynamic_cast<Mesh*>(physical.scene->getObjectByName(name)) : nullptr;
+        return mesh ? mesh->material.get() : nullptr;
+    };
+    const Material* plain = materialOf("standard");
+    const Material* ior = materialOf("ior");
+    const Material* specular = materialOf("specular");
+    const Material* infinite = materialOf("iorInfinite");
+    if (!physical.error.empty() || !plain || !ior || !specular || !infinite || plain->type != MaterialType::Standard ||
+        ior->type != MaterialType::Physical || ior->ior != 2.2 || ior->specularIntensity != 1 || ior->specularColor.g != 1 ||
+        specular->type != MaterialType::Physical || specular->ior != 1.5 || specular->specularIntensity != 0.7 ||
+        specular->specularColor.r != 1 || specular->specularColor.g != 0.45 || specular->specularColor.b != 0.15 ||
+        infinite->ior != 1000 || infinite->specularColor.b != 0.3) {
+        std::printf("physical: wrong material type or ior/specular inputs: %s\n", physical.error.c_str()); ++differ;
+    }
     // PRD-526: a texture's image decodes at load (PNG and JPEG), with the sampler GLTFLoader applies.
     const std::string imageBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/runtime-native/tests/native-engine/assets/image-textures.gltf");
     auto images = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(imageBytes.data()), imageBytes.size()));

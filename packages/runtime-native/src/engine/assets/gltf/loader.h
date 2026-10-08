@@ -4,7 +4,7 @@
 // game finds the same names, parents and transforms it would under the upstream loader.
 //
 // Supported: core glTF 2.0 in a GLB or a glTF with embedded (data URI) buffers, and
-// KHR_mesh_quantization, KHR_lights_punctual and KHR_materials_unlit. An extension GLTFLoader implements and this loader does not is refused
+// KHR_mesh_quantization, KHR_lights_punctual, KHR_materials_unlit, KHR_materials_ior and KHR_materials_specular. An extension GLTFLoader implements and this loader does not is refused
 // by name (TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED) instead of being dropped, as is a required
 // extension nobody knows; an unknown optional extension is ignored, as GLTFLoader ignores it.
 // Images: PNG and JPEG decode to RGBA8 (a texture also takes its sampler); WebP, AVIF, KTX2 and

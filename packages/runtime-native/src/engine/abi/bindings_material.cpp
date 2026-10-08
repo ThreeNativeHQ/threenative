@@ -194,10 +194,14 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "envMapIntensity", &Material::envMapIntensity);
     materialNumber(b, "roughness", &Material::roughness);
     materialNumber(b, "metalness", &Material::metalness);
+    materialMapSlot(b, "metalnessMap");
+    materialMapSlot(b, "roughnessMap");
     if (type == MaterialType::Standard) return;
     materialNumber(b, "ior", &Material::ior);
     materialNumber(b, "specularIntensity", &Material::specularIntensity);
     materialColor(b, "specularColor", &Material::specularColor);
+    materialMapSlot(b, "specularColorMap");
+    materialMapSlot(b, "specularIntensityMap");
     materialNumber(b, "clearcoat", &Material::clearcoat);
     materialNumber(b, "sheen", &Material::sheen);
     materialNumber(b, "transmission", &Material::transmission);

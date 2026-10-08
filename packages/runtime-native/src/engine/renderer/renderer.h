@@ -7,6 +7,7 @@
 #include <span>
 #include <unordered_map>
 #include <memory>
+#include <tuple>
 #include <vector>
 
 #include <webgpu/webgpu.h>
@@ -55,6 +56,12 @@ struct DrawItem {
     /** A tangent-space normalMap (decoded image, uv present) and the material's normalScale. */
     const Texture* normalMap = nullptr;
     double normalScaleX = 1, normalScaleY = 1;
+    /** Standard/Physical metalnessMap and roughnessMap (decoded, uv present): blue and green scale the uniforms. */
+    const Texture* metalnessMap = nullptr;
+    const Texture* roughnessMap = nullptr;
+    /** Physical specularColorMap (rgb) and specularIntensityMap (alpha), decoded, uv present. */
+    const Texture* specularColorMap = nullptr;
+    const Texture* specularIntensityMap = nullptr;
     /** The environment (scene.environment or material.envMap): its PMREM is sampled for IBL. */
     const Texture* envMap = nullptr;
     double envMapIntensity = 1;
@@ -303,7 +310,7 @@ private:
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
-        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kCameraPosition, kCameraProjectionMatrix, kSlotCount
+        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kCameraPosition, kCameraProjectionMatrix, kMetalnessUvTransform, kRoughnessUvTransform, kSpecularColorUvTransform, kSpecularIntensityUvTransform, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -332,7 +339,8 @@ private:
                             WGPUTextureView view, WGPUSampler sampler,
                             WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr,
                             WGPUTextureView envView = nullptr, WGPUSampler envSampler = nullptr,
-                            WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr);
+                            WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr,
+                            const std::vector<std::tuple<std::string, WGPUTextureView, WGPUSampler>>* named = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         Handle gpu;

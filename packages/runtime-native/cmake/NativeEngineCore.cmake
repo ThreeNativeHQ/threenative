@@ -147,6 +147,30 @@ if(EXISTS ${TN_CGLTF_DIR}/cgltf.h AND NOT EMSCRIPTEN)
     # cgltf is third-party C in a C++ unit: its own warnings are not this engine's.
     set_source_files_properties(src/engine/assets/gltf/cgltf_impl.cpp src/engine/assets/gltf/image_decode.cpp
         PROPERTIES COMPILE_OPTIONS "-w")
+    # EXT_texture_webp: libwebp built from the pinned `webp-source` (download-deps.mjs), one build
+    # for desktop, Android and iOS. Without the source the extension stays refused by name.
+    file(GLOB TN_WEBP_SOURCE_CANDIDATES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/webp-source/libwebp-*)
+    set(TN_WEBP_SOURCE_DIR "")
+    foreach(candidate ${TN_WEBP_SOURCE_CANDIDATES})
+        if(EXISTS ${candidate}/CMakeLists.txt)
+            set(TN_WEBP_SOURCE_DIR ${candidate})
+        endif()
+    endforeach()
+    if(TN_WEBP_SOURCE_DIR)
+        if(NOT TARGET webp)
+            set(WEBP_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+            set(WEBP_LINK_STATIC ON CACHE BOOL "" FORCE)
+            foreach(tool WEBP_BUILD_ANIM_UTILS WEBP_BUILD_CWEBP WEBP_BUILD_DWEBP WEBP_BUILD_GIF2WEBP
+                    WEBP_BUILD_IMG2WEBP WEBP_BUILD_VWEBP WEBP_BUILD_WEBPINFO WEBP_BUILD_LIBWEBPMUX WEBP_BUILD_EXTRAS)
+                set(${tool} OFF CACHE BOOL "" FORCE)
+            endforeach()
+            add_subdirectory(${TN_WEBP_SOURCE_DIR} ${CMAKE_BINARY_DIR}/libwebp-build EXCLUDE_FROM_ALL)
+        endif()
+        target_link_libraries(tn_engine_gltf PRIVATE webp)
+        target_compile_definitions(tn_engine_gltf PRIVATE TN_ENGINE_WEBP=1)
+    else()
+        message(STATUS "webp-source not found: the native glTF loader refuses EXT_texture_webp. Run 'node scripts/download-deps.mjs --only webp-source'.")
+    endif()
     tn_native_engine_test(tn-native-engine-gltf-hierarchy-test tests/native-engine/assets/gltf_hierarchy_test.cpp
         native_engine_gltf_hierarchy=hierarchy)
     target_link_libraries(tn-native-engine-gltf-hierarchy-test PRIVATE tn_engine_gltf)
