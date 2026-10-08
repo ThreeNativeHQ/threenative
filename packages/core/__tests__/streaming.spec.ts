@@ -490,3 +490,41 @@ describe("loadAll", () => {
     expect(calls()).toBe(4);
   });
 });
+
+describe("addInSlices yield", () => {
+  // A nested setTimeout(0) is clamped to 4 ms in Chrome (measured 4.56 ms against 0.009 ms for
+  // scheduler.yield), and the native host's timer queue is frame-coupled. Both hosts provide
+  // scheduler.yield, so the slice yield must take it whenever it exists.
+  test("yields through scheduler.yield when the host provides it", async () => {
+    const scope = globalThis as { scheduler?: unknown };
+    const previous = scope.scheduler;
+    const yieldSpy = vi.fn(() => Promise.resolve());
+    const timeout = vi.spyOn(globalThis, "setTimeout");
+    scope.scheduler = { yield: yieldSpy };
+    try {
+      const added: number[] = [];
+      await addInSlices([1, 2, 3], (n) => added.push(n), { sliceSize: 1 });
+      expect(added).toEqual([1, 2, 3]);
+      expect(yieldSpy).toHaveBeenCalled();
+      expect(timeout).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+      if (previous === undefined) delete scope.scheduler;
+      else scope.scheduler = previous;
+    }
+  });
+
+  test("falls back to setTimeout where no scheduler.yield exists", async () => {
+    const scope = globalThis as { scheduler?: unknown };
+    const previous = scope.scheduler;
+    delete scope.scheduler;
+    const timeout = vi.spyOn(globalThis, "setTimeout");
+    try {
+      await addInSlices([1, 2], () => {}, { sliceSize: 1 });
+      expect(timeout).toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+      if (previous !== undefined) scope.scheduler = previous;
+    }
+  });
+});
