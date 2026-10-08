@@ -199,7 +199,7 @@ ExprId Lowerer::emit(Node node) {
             for (const Node& part : d.args) ids.push_back(expression(part));
             // `vec3(0.5)` splats a constant, as the builder's join does.
             if (ids.size() == 1 && ids[0] != kInvalid && program_.expr(ids[0]).op == Op::Constant)
-                ids.assign(d.type.rows, ids[0]);
+                ids.assign(d.type.rows, ExprId{ids[0]});  // a copy: assign's value must not alias the vector
             return program_.construct(d.type, ids);
         }
         case Kind::Convert: return convert(expression(d.args[0]), d.type);
