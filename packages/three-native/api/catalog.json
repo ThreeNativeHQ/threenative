@@ -1565,8 +1565,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -5078,8 +5077,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "35048"
@@ -18159,8 +18157,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "35044"

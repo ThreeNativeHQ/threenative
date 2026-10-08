@@ -11,7 +11,7 @@ export const {
   Vector4, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, PCFSoftShadowMap,
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
-  EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, AttachedBindMode, FrontSide, BackSide, DoubleSide, PropertyBinding, getConsoleFunction, setConsoleFunction,
+  EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, AttachedBindMode, FrontSide, BackSide, DoubleSide, StaticDrawUsage, DynamicDrawUsage, PropertyBinding, getConsoleFunction, setConsoleFunction,
 } = globalThis;
 
 export const clone = globalThis.__tnCloneSkeleton;

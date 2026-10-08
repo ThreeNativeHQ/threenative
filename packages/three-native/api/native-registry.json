@@ -394,6 +394,7 @@
         "getY",
         "getZ",
         "setComponent",
+        "setUsage",
         "setW",
         "setX",
         "setXY",
@@ -416,7 +417,7 @@
         "usage",
         "version"
       ],
-      "setters": ["name", "needsUpdate"],
+      "setters": ["name", "needsUpdate", "usage"],
       "members": [],
       "callbacks": []
     },
@@ -1107,6 +1108,7 @@
         "getY",
         "getZ",
         "setComponent",
+        "setUsage",
         "setW",
         "setX",
         "setXY",
@@ -1129,7 +1131,7 @@
         "usage",
         "version"
       ],
-      "setters": ["name", "needsUpdate"],
+      "setters": ["name", "needsUpdate", "usage"],
       "members": [],
       "callbacks": []
     },
@@ -1470,6 +1472,7 @@
         "getY",
         "getZ",
         "setComponent",
+        "setUsage",
         "setW",
         "setX",
         "setXY",
@@ -1493,7 +1496,7 @@
         "usage",
         "version"
       ],
-      "setters": ["name", "needsUpdate"],
+      "setters": ["name", "needsUpdate", "usage"],
       "members": [],
       "callbacks": []
     },

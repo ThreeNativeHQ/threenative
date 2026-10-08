@@ -620,7 +620,7 @@ export declare const DstColorFactor: 208;
 /** Catalog partial (native-not-implemented): three/DynamicCopyUsage. */
 export declare const DynamicCopyUsage: 35050;
 
-/** Catalog partial (native-not-implemented): three/DynamicDrawUsage. */
+/** Catalog supported: three/DynamicDrawUsage. */
 export declare const DynamicDrawUsage: 35048;
 
 /** Catalog partial (native-not-implemented): three/DynamicReadUsage. */
@@ -2244,7 +2244,7 @@ export declare const SrcColorFactor: 202;
 /** Catalog partial (native-not-implemented): three/StaticCopyUsage. */
 export declare const StaticCopyUsage: 35046;
 
-/** Catalog partial (native-not-implemented): three/StaticDrawUsage. */
+/** Catalog supported: three/StaticDrawUsage. */
 export declare const StaticDrawUsage: 35044;
 
 /** Catalog partial (native-not-implemented): three/StaticReadUsage. */

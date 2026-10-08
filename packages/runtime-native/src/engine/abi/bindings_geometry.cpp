@@ -149,6 +149,19 @@ void registerBufferAttribute(ClassBinding& b) {
     b.getters["itemSize"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->itemSize)); };
     b.getters["normalized"] = [](void* self) { return Value::of(as<BufferAttribute>(self)->normalized); };
     b.getters["usage"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->usage)); };
+    // three's usage is a hint the WebGPU backend keeps and the engine uploads on needsUpdate either
+    // way; a value that is none of three's nine *Usage constants is refused.
+    const auto setUsage = [](void* self, const Value& v) {
+        const double usage = number(v);
+        if (usage < 35040 || usage > 35050 || usage == 35043 || usage == 35047 || usage != std::floor(usage))
+            throw Unsupported{"usage must be one of three's *DrawUsage, *ReadUsage or *CopyUsage constants"};
+        as<BufferAttribute>(self)->usage = static_cast<uint32_t>(usage);
+    };
+    b.setters["usage"] = setUsage;
+    b.methods["setUsage"] = [setUsage](void* self, const Args& a, Store&) {
+        setUsage(self, a.at(0));
+        return chain();
+    };
     b.getters["gpuType"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->gpuType)); };
     b.getters["version"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->version())); };
     b.getters["updateRanges"] = [](void* self) { return updateRangesJson(*as<BufferAttribute>(self)); };

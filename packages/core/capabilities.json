@@ -7589,6 +7589,11 @@
         "source": "three"
       },
       {
+        "symbol": "DynamicDrawUsage",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Euler",
         "kind": "class",
         "source": "three"
@@ -7832,6 +7837,11 @@
         "symbol": "SpriteNodeMaterial",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "StaticDrawUsage",
+        "kind": "constant",
+        "source": "three"
       },
       {
         "symbol": "Texture",

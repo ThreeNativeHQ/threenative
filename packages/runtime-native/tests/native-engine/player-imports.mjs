@@ -20,7 +20,7 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NoColorSpace", "LinearSRGBColorSpace", "SRGBColorSpace", "RepeatWrapping", "ClampToEdgeWrapping",
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
-  "FrontSide", "BackSide", "DoubleSide"];
+  "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", ...constants];
@@ -56,6 +56,8 @@ check(JSON.stringify(curveAnswers) === ${JSON.stringify(JSON.stringify((() => {
 const tube = new THREE.TubeGeometry(curve, 12, 0.05, 10, false);
 check(tube instanceof THREE.BufferGeometry && JSON.stringify(Array.from(tube.getAttribute("position").array)) ===
   ${JSON.stringify(JSON.stringify(Array.from(new three.TubeGeometry(new three.CatmullRomCurve3([[0, -0.11, 1.21], [0.02, -0.24, 1.26], [0.06, -0.35, 1.32], [0.085, -0.42, 1.37]].map(([x, y, z]) => new three.Vector3(x, y, z)), false, "centripetal"), 12, 0.05, 10, false).attributes.position.array)))}, "tube geometry");
+const streamed = new THREE.Float32BufferAttribute([0, 1, 2], 3).setUsage(THREE.DynamicDrawUsage);
+check(streamed.usage === THREE.DynamicDrawUsage, "attribute usage");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");

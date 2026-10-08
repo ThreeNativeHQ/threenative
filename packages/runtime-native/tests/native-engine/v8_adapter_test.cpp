@@ -402,6 +402,8 @@ void catalogCoverage() {
         {"FrontSide", static_cast<double>(tn::engine::Side::Front)},
         {"BackSide", static_cast<double>(tn::engine::Side::Back)},
         {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},
+        {"StaticDrawUsage", 35044},
+        {"DynamicDrawUsage", 35048},
     };
     const std::map<std::string, std::string> strings = {
         {"NoColorSpace", tn::engine::NoColorSpace},
