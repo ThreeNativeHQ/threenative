@@ -117,6 +117,8 @@ globalThis.tn.__startupError = "TEXTURES_CHECK: the async checks did not finish"
   dial.flipY = false;
   check(dial instanceof THREE.Texture && dial.flipY === false, "bitmap texture");
   refuses(() => new THREE.Texture(bitmap), /TN_NATIVE_IMAGE_BITMAP_CLOSED/, "adopted twice");
+  // A relative URL reaches a web-root file, as the web serves assets/x from /assets/x.
+  check(new THREE.Texture(await loader.loadAsync("assets/cockpit/dial.png")) instanceof THREE.Texture, "relative web-root URL");
   await rejects(() => loader.loadAsync("/assets/cockpit/absent.png"), /TN_NATIVE_ASSET_MISSING/, "missing bitmap");
 
   // createImageBitmap decodes encoded bytes through the engine decoder, as three's loader calls it.
