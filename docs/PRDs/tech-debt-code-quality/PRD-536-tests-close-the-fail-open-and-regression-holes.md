@@ -83,7 +83,8 @@ missing test.
 
 ### Phase 1 — the proof harness fails closed
 
-- [ ] 1.1 Record the baseline line and branch coverage per package, each run alone on an idle machine. Put the numbers in this PRD. proof: `pnpm exec vitest run packages/<pkg>/__tests__ --coverage --coverage.include='packages/<pkg>/src/**'`
+- [x] 1.1 Record the baseline line and branch coverage per package, each run alone on an idle machine. Put the numbers in this PRD.
+  Measured at `3222c74ec` (v8, `reportOnFailure`), line % / branch %: assets 90.76 / 77.30, blender-mcp 80.63 / 70.74, core 92.76 / 84.54 (desktop, load 40–120), create-threenative 88.95 / 80.65, engine-mcp 92.21 / 89.06, metahuman 91.45 / 78.37, physics 90.36 / 76.15, playtest 85.58 / 80.77, raw-unreal 91.84 / 78.21, ueformat 86.08 / 77.77, ui 86.62 / 71.33 (idle laptop lane). runtime-native has no TypeScript coverage (0 / 0 is an empty include). Several runs exited 1 on specs that need git history or gitignored files the laptop lane lacks, and assets and core exited 1 on load timeouts, so a few percent of lines may be under-counted. proof: `pnpm exec vitest run packages/<pkg>/__tests__ --coverage --coverage.include='packages/<pkg>/src/**'`
 - [ ] 1.2 A1–A3: the scenario loader rejects dropped, vacuous and out-of-range fields. Fix every in-repo scenario that the stricter loader rejects. proof: `pnpm exec vitest run packages/playtest/__tests__` + `pnpm test:playtest` + `pnpm test:templates`
 - [ ] 1.3 A4–A5: evaluators fail on missing evidence and use clamped projection math. proof: `pnpm exec vitest run packages/playtest/__tests__`
 - [ ] 1.4 A6–A7: runner, perf and gate scripts never exit 0 on a broken input, and the native floors ratchet. proof: `pnpm exec vitest run packages/playtest/__tests__ scripts/__tests__` + `pnpm budgets`
@@ -109,6 +110,15 @@ send a fresh read-only scout to that file before you write the test. Do not gues
 - [ ] The full board passes with the stricter loader. proof: `pnpm typecheck && pnpm lint && pnpm test` + `pnpm test:templates`
 
 ## Decisions
+
+- **A1, frozen sweep records.** The base loader already rejected 72 scenarios under `docs/benchmark/sweeps/` (`allowTrivial: true` and similar). The stricter loader rejects two more (`performance: {}`). No spec loads them, so the benchmark records stay as recorded.
+- **A1, `artifacts.screenshots: true`.** It stays valid and captures like `"after"`, because the runner only branches on `false` and `"before-after"`. 52 authored scenarios keep their value. The rain template's `"both"` becomes `"after"`, and its scaffold hash is repinned.
+- **A5, fps median.** `fpsFromFrameTimes` is the one helper for `minFps` and parity. An even-length series uses the nearest-rank p50. `minFps` judges the exact fps, so `minFps: 30` fails at 29.9967.
+- **A6, logcat.** `adb logcat -c` would clear the run it reads, so `readLogcat` keeps only the newest process. `config.ts:253` ("No scenario files matched") is unreachable and gets no test. The empty assertion set fails at the evaluator (`TN_PLAYTEST_SCENARIO_NO_ASSERTIONS`); `exitCodeForReport` is unchanged.
+- **A7, dropped claims.** `check-flight-cost.ts` already exits 2 on every malformed argument tried, and `generate-assertion-validators.ts` already throws on an unmapped type and fails `--check` on stale output. Neither got a test. The native floors ratchet to measured − 5 points (`NATIVE_COVERAGE_FLOOR_MARGIN`).
+- **B3, residual ceiling.** `decompressBody` caps output at the declared size. A streaming inflate would remove the up-front reservation. `raw-unreal` `decompressBulkData` also allocates the declared `totalRaw`; this row does not name it.
+- **C2.** Every item is a pin. No source bug was found.
+- **C3, native items dropped.** The `runtime.cpp:dispatchResizeEvent` contract test needs a new native contract target and the native build lane. Conformance row `52-skinned-mesh-animation` has `desktopGate: false`, and no commit restores its handle-count baseline. Both move to the native lane; this PR does not claim them.
 
 ## Blocked on
 
