@@ -138,7 +138,7 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 
 ## Housekeeping (any session; docs-only, commit straight to `develop` per AGENTS.md)
 
-- [x] Three PRDs share the number 339: AAA-visuals auto exposure, performance loading screen, critical compile walk. Renumber two of them and fix their links. **Result 2026-10-03:** auto exposure keeps 339 (PR #397); the other two are now 495 (compile walk) and 496 (loading screen), max before this was 494. proof: `git mv` + `rg --no-ignore 'PRD-339'` returns only auto-exposure mentions.
+- [x] Three PRDs share the number 339: AAA-visuals auto exposure, performance loading screen, critical compile walk. Renumber two of them and fix their links. **Result 2026-10-03:** auto exposure keeps 339 (PR #397); the other two are now 540 (compile walk; first 495, renumbered 2026-10-08 because #439 took 495) and 496 (loading screen). proof: `git mv` + `rg --no-ignore 'PRD-339'` returns only auto-exposure mentions.
 - [x] Fix status drift:
   - critical [PRD-386](../performance/critical/PRD-386-gpu-driven-rendering-compute-culling-and-indirect-draws.md) and [PRD-390](../performance/critical/PRD-390-do-not-submit-what-the-render-camera-cannot-resolve.md) say NOT STARTED, but their mechanisms shipped in PRD-473 and #263; **Result 2026-10-03:** both now read PARTIAL and cite `8c182343f` (#263) and `a602467db` (#375, PRD-473 Phase 1). proof: `git show --stat 8c182343f a602467db`.
   - PRD-269 has landed (`3630847a`); **Result 2026-10-03:** PROPOSED → PARTIAL, cited to `3630847a`. Kept out of `done/` — criterion 3's playtest does not exist. proof: `git show --stat 3630847a`.
