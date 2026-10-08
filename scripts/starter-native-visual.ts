@@ -26,6 +26,20 @@ type Snapshot = IStarterVisualSnapshot;
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DEFAULT_OUT = path.join(ROOT, "artifacts/visuals/starter-native");
 
+/** three's tone mapping constants the fixture format can name. */
+const TONE_MAPPING_NAMES: Record<
+  number,
+  "none" | "linear" | "reinhard" | "cineon" | "aces" | "agx" | "neutral"
+> = {
+  0: "none",
+  1: "linear",
+  2: "reinhard",
+  3: "cineon",
+  4: "aces",
+  6: "agx",
+  7: "neutral",
+};
+
 export function starterSnapshotFixture(snapshot: Snapshot, sceneFile: string): IFixture {
   const ops: FixtureOp[] = [
     { op: "new", id: "scene", class: "Scene", args: [] },
@@ -180,8 +194,8 @@ export function starterSnapshotFixture(snapshot: Snapshot, sceneFile: string): I
       camera: "camera",
       width: 1280,
       height: 720,
-      toneMapping: "none",
-      toneMappingExposure: 1,
+      toneMapping: toneMappingName(snapshot.toneMapping),
+      toneMappingExposure: snapshot.toneMappingExposure,
       outputColorSpace: "srgb",
       shadowMap: snapshot.shadowMap,
     },
@@ -189,6 +203,12 @@ export function starterSnapshotFixture(snapshot: Snapshot, sceneFile: string): I
       { id: "scene", kind: "pixels", metric: { maxPixelMismatchRatio: 0, maxPerceptualDeltaE: 0 } },
     ],
   };
+}
+
+function toneMappingName(constant: number) {
+  const name = TONE_MAPPING_NAMES[constant];
+  if (!name) throw new Error(`TN_VISUAL_TONE_MAPPING_UNSUPPORTED: ${constant}`);
+  return name;
 }
 
 export function renderStarterArm(
