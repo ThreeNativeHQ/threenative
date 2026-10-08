@@ -110,6 +110,7 @@ class Builder {
     bool checkExtensions() {
         for (std::size_t i = 0; i < data_.extensions_used_count; ++i) {
             const std::string name = data_.extensions_used[i];
+            if (name == "EXT_texture_webp" && decodesWebP()) continue;
             if (kThreeExtensions.count(name) && !kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
                 return false;
@@ -117,6 +118,7 @@ class Builder {
         }
         for (std::size_t i = 0; i < data_.extensions_required_count; ++i) {
             const std::string name = data_.extensions_required[i];
+            if (name == "EXT_texture_webp" && decodesWebP()) continue;
             if (!kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
                 return false;
@@ -620,7 +622,10 @@ class Builder {
         if (!texture) {
             auto made = std::make_shared<Texture>();
             made->name = text(member(def, "name"));
-            made->source = static_cast<int>(number(member(def, "source"), -1));
+            // GLTFTextureWebPExtension: a texture with EXT_texture_webp draws its WebP source when
+            // WebP decodes (checkExtensions refused the file otherwise); `source` is the fallback.
+            const Value* webp = member(member(def, "extensions"), "EXT_texture_webp");
+            made->source = static_cast<int>(number(member(webp ? webp : def, "source"), -1));
             made->flipY = false;
             applySampler(*made, index);
             decodeImage(*made);

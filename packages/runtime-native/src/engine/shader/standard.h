@@ -96,6 +96,13 @@ struct VertexVariant {
      */
     bool normalMap = false;
     /**
+     * Standard and Physical only: `metalnessMap` and `roughnessMap` (linear data, as glTF packs them in
+     * one metallicRoughness texture) scale the uniforms by their blue and green channels, sampled at
+     * `metalnessUvTransform` / `roughnessUvTransform` (three's MaterialNode METALNESS / ROUGHNESS).
+     */
+    bool metalnessMap = false;
+    bool roughnessMap = false;
+    /**
      * The map's colorSpace is SRGBColorSpace: the sampled texel is decoded with three's
      * `sRGBTransferEOTF` in the fragment, as upstream's ColorSpaceNode does, rather than by a
      * hardware -srgb texture format (whose rounding differs from the shader formula).
@@ -113,7 +120,7 @@ struct VertexVariant {
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
-               (map ? "t" : "") + (normalMap ? "N" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
+               (map ? "t" : "") + (normalMap ? "N" : "") + (metalnessMap ? "M" : "") + (roughnessMap ? "R" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };

@@ -1,6 +1,7 @@
 #pragma once
-// PNG and JPEG bytes to straight RGBA8, row 0 first (glTF images are not flipped). stb_image is
-// compiled static in image_decode.cpp so it cannot collide with the host runtime's own copy.
+// PNG, JPEG and (with libwebp, TN_ENGINE_WEBP) WebP bytes to straight RGBA8, row 0 first (glTF
+// images are not flipped). stb_image is compiled static in image_decode.cpp so it cannot collide
+// with the host runtime's own copy.
 
 #include <cstddef>
 #include <cstdint>
@@ -8,12 +9,15 @@
 
 namespace tn::engine::gltf {
 
-enum class ImageFormat { Unknown, Png, Jpeg };
+enum class ImageFormat { Unknown, Png, Jpeg, WebP };
 
-/** The format the bytes' magic announces; Unknown means this loader does not decode it. */
+/** The format the bytes' magic announces; Unknown means this build does not decode it. */
 ImageFormat imageFormat(const uint8_t* bytes, std::size_t size);
 
-/** Decodes a PNG or JPEG into `rgba` (width * height * 4 bytes); false for a damaged or oversized image. */
+/** True when this build decodes WebP (EXT_texture_webp). */
+bool decodesWebP();
+
+/** Decodes a PNG, JPEG or WebP into `rgba` (width * height * 4 bytes); false for a damaged or oversized image. */
 bool decodeImage(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32_t& height,
                  std::vector<uint8_t>& rgba);
 

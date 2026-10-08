@@ -936,7 +936,10 @@ if(ANDROID)
                           WEBP_BUILD_WEBPINFO WEBP_BUILD_LIBWEBPMUX WEBP_BUILD_EXTRAS)
             set(${WEBP_TOOL} OFF CACHE BOOL "" FORCE)
         endforeach()
-        add_subdirectory(${WEBP_SOURCE_DIR} ${CMAKE_BINARY_DIR}/libwebp-build EXCLUDE_FROM_ALL)
+        # The engine's glTF loader may have built the same source already (NativeEngineCore.cmake).
+        if(NOT TARGET webp)
+            add_subdirectory(${WEBP_SOURCE_DIR} ${CMAKE_BINARY_DIR}/libwebp-build EXCLUDE_FROM_ALL)
+        endif()
         # The dependency link block below keys on these target names; alias the
         # upstream targets so desktop and Android share one linkage path.
         add_library(webp::webp ALIAS webp)

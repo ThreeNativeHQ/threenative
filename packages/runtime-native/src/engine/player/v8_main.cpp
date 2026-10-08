@@ -323,7 +323,7 @@ void V8Game::decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info) {
     if (gltf::imageFormat(bytes.data(), bytes.size()) == gltf::ImageFormat::Unknown ||
         !gltf::decodeImage(bytes.data(), bytes.size(), texture->width, texture->height, texture->data)) {
         isolate->ThrowException(v8::Exception::Error(v8str(isolate,
-            "TN_NATIVE_IMAGE_DECODE: the bytes are not a PNG or JPEG this decoder reads, or the image is damaged or larger than 8192")));
+            "TN_NATIVE_IMAGE_DECODE: the bytes are not a PNG, JPEG or WebP this decoder reads, or the image is damaged or larger than 8192")));
         return;
     }
     texture->needsUpdate();
