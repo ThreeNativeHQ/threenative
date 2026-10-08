@@ -113,6 +113,8 @@ function writeAdapterManifest(packageDir, libDirs, libs) {
  * with the three facade, its shim and hooks, and the engine archives in `engineBuild`.
  * `sourceRoot`, when given, stages the game's whole source tree under `outDir` with its layout kept
  * (`entry` must lie inside it), so a game whose modules sit in folders keeps its relative imports.
+ * `stageOnly` stops after staging, the shim and the hooks, before Perry runs: a caller that drives
+ * Perry itself (the survey in compile-game.mjs) gets the project, the facade and the adapter.
  * `compiler` is the provisioned Perry: `{ binaryPath, identity }`, `identity` naming its version
  * and checksum. Returns the executable, the steps that ran, and the first errors (empty on success).
  */
@@ -121,6 +123,7 @@ export function buildStrict({
   entry,
   modules = [],
   sourceRoot,
+  stageOnly = false,
   outDir,
   engineBuild,
   compiler,
@@ -240,7 +243,7 @@ export function buildStrict({
   step("hooks", [fs.readFileSync(hooksSource), engineDigest], [hooks], () =>
     run("c++", ["-c", "-fPIC", "-std=c++20", `-I${include}`, `-I${path.join(NATIVE, "src")}`, hooksSource, "-o", hooks]),
   );
-  if (errors.length > 0) return { exe, ran, errors };
+  if (errors.length > 0 || stageOnly) return { exe, ran, errors };
 
   // Perry compiles the staged game and links it in one invocation, resolving the shim archive, the
   // engine archives and the C++ runtime through the staged adapter's manifest.
