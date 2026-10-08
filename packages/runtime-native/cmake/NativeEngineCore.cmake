@@ -424,6 +424,15 @@ if(EMSCRIPTEN)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         DEPENDS tn-native-engine-wasm-browser
         COMMENT "Bundle the catalog browser adapter and cook TNPK geometry (no upstream three.js)")
+    # PRD-533: the warm-cache update scaling case as Wasm under node, the CPU screen for the engine's
+    # per-object cost with V8's code generator and no browser or GPU. It never touches the device.
+    add_executable(tn-native-engine-wasm-update-screen EXCLUDE_FROM_ALL tests/native-engine/update_scaling_test.cpp)
+    target_link_libraries(tn-native-engine-wasm-update-screen PRIVATE tn_engine_renderer)
+    target_include_directories(tn-native-engine-wasm-update-screen PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    tn_native_engine_target(tn-native-engine-wasm-update-screen)
+    target_link_options(tn-native-engine-wasm-update-screen PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1
+        --profiling-funcs -sWARN_ON_UNDEFINED_SYMBOLS=0 -sERROR_ON_UNDEFINED_SYMBOLS=0 -sASSERTIONS=0 -sEXIT_RUNTIME=1
+        --pre-js ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/wasm/update_screen_pre.js)
     # The browser preset builds this renderer/ABI slice; the full Wasm CPU lane remains unchanged.
     option(TN_ENGINE_WASM_BROWSER_ONLY "Configure the browser renderer and ABI slice only" OFF)
     if(TN_ENGINE_WASM_BROWSER_ONLY)

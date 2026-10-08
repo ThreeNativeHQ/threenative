@@ -56,11 +56,13 @@ double measure(int count) {
     }
     std::vector<double> times;
     std::array<std::vector<double>, 4> phases;
+    std::vector<double> writes;
     for (int frame = 0; frame < 300; ++frame) {
         const double angle = frame * 0.0045;
         camera.position.set(std::cos(angle) * extent * 0.34, extent * 0.09 + 4, std::sin(angle) * extent * 0.34);
         camera.lookAt(std::cos(angle + 3.141592653589793) * extent * 0.12, 1.5,
                       std::sin(angle + 3.141592653589793) * extent * 0.12);
+        const auto writeStart = std::chrono::steady_clock::now();
         for (int i = 0; i < count; ++i) {
             meshes[i]->position.y = base[i].y + std::sin(frame * 0.05 + i * 0.3) * 0.5;
             meshes[i]->rotation.set(i * 0.011 + frame * 0.013, i * 0.017 + frame * 0.02, 0);
@@ -73,6 +75,7 @@ double measure(int count) {
         CHECK(database.rebuilds() == static_cast<uint64_t>(count + 1));
         if (frame >= 60) {
             times.push_back(ms);
+            writes.push_back(std::chrono::duration<double, std::milli>(start - writeStart).count());
             for (int phase = 0; phase < 4; ++phase)
                 phases[phase].push_back(database.lastPrepareMs()[phase]);
         }
@@ -80,8 +83,10 @@ double measure(int count) {
     std::sort(times.begin(), times.end());
     for (auto& phase : phases)
         std::sort(phase.begin(), phase.end());
-    std::printf("warm-cache update %d: %.4f ms (matrix %.4f, records %.4f, batch %.4f, other %.4f)\n", count,
-                times[times.size() / 2], phases[0][120], phases[1][120], phases[2][120], phases[3][120]);
+    std::sort(writes.begin(), writes.end());
+    std::printf("warm-cache update %d: %.4f ms (matrix %.4f, records %.4f, batch %.4f, other %.4f, writes %.4f)\n", count,
+                times[times.size() / 2], phases[0][120], phases[1][120], phases[2][120], phases[3][120],
+                writes[writes.size() / 2]);
     return times[times.size() / 2];
 }
 
