@@ -118,6 +118,15 @@ describe("createWebEnginePlugin", () => {
     );
   });
 
+  it("resolves BufferGeometryUtils to the engine's mergeGeometries, never the upstream addon", () => {
+    const resolved = createWebEnginePlugin("/game").resolveId(
+      "three/addons/utils/BufferGeometryUtils.js",
+    );
+    expect(resolved).toMatch(
+      /(?:three-native\/src\/addons\/buffer-geometry-utils\.ts|web-engine-buffer-geometry-utils\.js)$/u,
+    );
+  });
+
   it("fails the build when the Wasm engine is not installed", async () => {
     const root = await project(false);
     await expect(createWebEnginePlugin(root).load(WEB_ENGINE_ID)).rejects.toThrow(

@@ -5,7 +5,7 @@ import { rmSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleNativeEngine } from "../../scripts/bundle-native-engine.mjs";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -188,6 +188,43 @@ const run = spawnSync(resolve(executable), ["--check-game", outfile], {
   encoding: "utf8", env: { ...process.env, SDL_AUDIO_DRIVER: "dummy" } });
 assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
 assert.match(run.stdout, /engine=native gameRuntime=v8 startup=passed/);
+// BufferGeometryUtils.mergeGeometries over engine geometries equals three's over its own: indexed
+// parts with groups and morph targets, the arrays' types included; then core's mergeParts on it.
+{
+  const fromNative = createRequire(resolve(native, "package.json"));
+  const T = await import(pathToFileURL(fromNative.resolve("three/webgpu")).href);
+  const { mergeGeometries } = await import(pathToFileURL(fromNative.resolve("three/addons/utils/BufferGeometryUtils.js")).href);
+  const parts = (K) => {
+    const box = new K.BoxGeometry(1, 2, 3);
+    const sphere = new K.SphereGeometry(1, 5, 4);
+    for (const g of [box, sphere]) {
+      const p = g.getAttribute("position");
+      g.morphAttributes.position = [new K.Float32BufferAttribute(new Float32Array(p.count * 3).map((_, i) => i / 9), 3)];
+    }
+    return [box, sphere];
+  };
+  const dump = (g) => JSON.stringify([g.index.array.constructor.name, ...["position", "normal", "uv"].map((n) =>
+    [g.getAttribute(n).array.constructor.name, Array.from(g.getAttribute(n).array)]), Array.from(g.index.array),
+    g.morphAttributes.position.map((a) => Array.from(a.array)), g.groups]);
+  const expected = dump(mergeGeometries(parts(T), true));
+  await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { BoxGeometry, SphereGeometry, Float32BufferAttribute, Scene, PerspectiveCamera, Color } from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { mergeParts } from "@threenative/core";
+function check(value, name) { if (!value) throw Error("MERGE_CHECK: " + name); }
+const parts = ${parts.toString()};
+const merged = mergeGeometries(parts({ BoxGeometry, SphereGeometry, Float32BufferAttribute }), true);
+check((${dump.toString()})(merged) === ${JSON.stringify(expected)}, "mergeGeometries equals three's");
+const baked = mergeParts([{ geometry: new BoxGeometry(), color: new Color(1, 0, 0) },
+  { geometry: new SphereGeometry(1, 5, 4), color: new Color(0, 0, 1), position: [2, 0, 0] }], { label: "probe" });
+check(baked.getAttribute("color").count === baked.getAttribute("position").count, "mergeParts paints every vertex");
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+  await bundleNativeEngine({ entry, outfile, boot: false });
+  const merged = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+  assert.equal(merged.status, 0, `${merged.stdout}\n${merged.stderr}`);
+}
 const { build } = createRequire(resolve(native, "package.json"))("esbuild");
 const writer = resolve(work, "package-writer.mjs");
 await build({ entryPoints: [resolve(native, "../assets/src/native-package.ts")], outfile: writer,

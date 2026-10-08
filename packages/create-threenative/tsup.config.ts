@@ -34,7 +34,10 @@ export default defineConfig([
     entry: {
       "web-engine-runtime": "../three-native/src/browser-entry.ts",
       "web-engine-mesh-bvh": "../three-native/src/addons/mesh-bvh.ts",
+      "web-engine-buffer-geometry-utils": "../three-native/src/addons/buffer-geometry-utils.ts",
     },
+    // An addon's `three` is the game's, which the plugin routes to the engine.
+    external: ["three"],
     format: ["esm"],
     platform: "browser",
     target: "es2022",

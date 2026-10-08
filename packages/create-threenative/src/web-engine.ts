@@ -73,6 +73,13 @@ export function createWebEnginePlugin(root: string): IWebEnginePlugin {
       // three's math classes and cannot load over the engine.
       if (source === "three-mesh-bvh")
         return browserModule("web-engine-mesh-bvh.js", "addons/mesh-bvh.ts");
+      // three's mergeGeometries over the engine's geometries; the upstream addon builds attributes
+      // around arrays it fills afterwards, which an engine attribute has already copied.
+      if (source === "three/addons/utils/BufferGeometryUtils.js")
+        return browserModule(
+          "web-engine-buffer-geometry-utils.js",
+          "addons/buffer-geometry-utils.ts",
+        );
       if (/^three\/(?:src|build)\//u.test(source))
         throw new Error(
           `TN_NATIVE_UPSTREAM_IMPORT: ${source} would bundle upstream three under engine "native"; import from three, three/webgpu or three/tsl.`,

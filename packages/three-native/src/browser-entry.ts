@@ -109,6 +109,122 @@ function liveHoles(Shape: { prototype: object } | undefined): void {
   });
 }
 
+// three's `geometry.attributes` map and `groups` array over the engine's, as the V8 facade gives them:
+// one live view per geometry, reading through getAttribute and writing through setAttribute and
+// deleteAttribute. ponytail: names are three's standard ones plus those set from JS; a custom name
+// only a native loader added is readable by name but not enumerated.
+const STANDARD_ATTRIBUTES = [
+  "position",
+  "normal",
+  "uv",
+  "uv1",
+  "uv2",
+  "uv3",
+  "color",
+  "tangent",
+  "skinIndex",
+  "skinWeight",
+];
+
+interface IGeometryLike {
+  hasAttribute(name: string): boolean;
+  getAttribute(name: string): unknown;
+  setAttribute(name: string, attribute: unknown): unknown;
+  deleteAttribute(name: string): unknown;
+}
+
+function attributeViews(classes: Readonly<Record<string, { prototype: object }>>): void {
+  const base = classes.BufferGeometry?.prototype;
+  if (base === undefined) return;
+  const authored = new WeakMap<object, Set<string>>();
+  const views = new WeakMap<object, object>();
+  for (const { prototype } of Object.values(classes)) {
+    const own = prototype as Partial<IGeometryLike>;
+    if (
+      !Object.hasOwn(prototype, "setAttribute") ||
+      own.setAttribute === undefined ||
+      own.deleteAttribute === undefined
+    )
+      continue;
+    const { setAttribute, deleteAttribute } = own as IGeometryLike;
+    // The registry answers `groups` as canonical JSON text (the fixtures' protocol); three's is an
+    // array of { start, count, materialIndex }. ponytail: a fresh array per read, as on V8.
+    const groups = Object.getOwnPropertyDescriptor(prototype, "groups")?.get;
+    if (groups !== undefined)
+      Object.defineProperty(prototype, "groups", {
+        configurable: true,
+        get(this: object) {
+          const parsed = JSON.parse(groups.call(this) as string) as {
+            start: number;
+            count: number;
+            materialIndex: number;
+          }[];
+          return parsed.map(({ start, count, materialIndex }) => ({ start, count, materialIndex }));
+        },
+      });
+    Object.defineProperties(prototype, {
+      setAttribute: {
+        configurable: true,
+        writable: true,
+        value(this: IGeometryLike, name: string, attribute: unknown) {
+          const names = authored.get(this) ?? new Set<string>();
+          authored.set(this, names.add(String(name)));
+          return setAttribute.call(this, name, attribute);
+        },
+      },
+      deleteAttribute: {
+        configurable: true,
+        writable: true,
+        value(this: IGeometryLike, name: string) {
+          authored.get(this)?.delete(String(name));
+          return deleteAttribute.call(this, name);
+        },
+      },
+    });
+  }
+  Object.defineProperty(base, "attributes", {
+    configurable: true,
+    get(this: IGeometryLike) {
+      const cached = views.get(this);
+      if (cached !== undefined) return cached;
+      const names = () =>
+        [...new Set([...STANDARD_ATTRIBUTES, ...(authored.get(this) ?? [])])].filter((name) =>
+          this.hasAttribute(name),
+        );
+      const view = new Proxy(
+        {},
+        {
+          get: (_, name) =>
+            typeof name === "string" && this.hasAttribute(name)
+              ? this.getAttribute(name)
+              : undefined,
+          has: (_, name) => typeof name === "string" && this.hasAttribute(name),
+          set: (_, name, attribute) => {
+            this.setAttribute(String(name), attribute);
+            return true;
+          },
+          deleteProperty: (_, name) => {
+            this.deleteAttribute(String(name));
+            return true;
+          },
+          ownKeys: () => names(),
+          getOwnPropertyDescriptor: (_, name) =>
+            typeof name === "string" && this.hasAttribute(name)
+              ? {
+                  value: this.getAttribute(name),
+                  writable: true,
+                  enumerable: true,
+                  configurable: true,
+                }
+              : undefined,
+        },
+      );
+      views.set(this, view);
+      return view;
+    },
+  });
+}
+
 /** Boots the Wasm module and returns every upstream export name bound over it. */
 export async function bindWebEngine(
   createModule: () => Promise<TnAbiModule>,
@@ -121,6 +237,7 @@ export async function bindWebEngine(
     catalogJson as unknown as ICatalog,
   );
   liveHoles(classes.Shape);
+  attributeViews(classes);
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   const bound: Record<string, unknown> = { ...classes };
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes

@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 
 import type * as THREE from "three";
 
+import { defineBufferGeometryUtils } from "../src/addons/merge-geometries.js";
 import type { defineAudioClasses } from "../src/audio.js";
 import {
   type IRegistryDump,
@@ -344,5 +345,53 @@ engine.collect();
     morphs.normal.length,
   ].join();
   check(got === "true,BoxGeometry,true,1,9,36,1,true,0", `geometry lifecycle ${got}`);
+}
+// BufferGeometryUtils.mergeGeometries over the web engine's geometries equals three's over its own:
+// indexed parts with groups and morph targets, the arrays' types included.
+{
+  // biome-ignore lint/suspicious/noExplicitAny: three's and the engine's classes, compared by value.
+  type Loose = any;
+  const fromCore = createRequire(path.join(import.meta.dirname, "../../core/package.json"));
+  const T: Loose = await import(pathToFileURL(fromCore.resolve("three/webgpu")).href);
+  const utils: Loose = await import(
+    pathToFileURL(fromCore.resolve("three/addons/utils/BufferGeometryUtils.js")).href
+  );
+  const web: Loose = await bindWebEngine(createTnAbi, [
+    "BoxGeometry",
+    "SphereGeometry",
+    "Float32BufferAttribute",
+    "BufferAttribute",
+    "BufferGeometry",
+  ]);
+  const parts = (K: Loose) => {
+    const box = new K.BoxGeometry(1, 2, 3);
+    const sphere = new K.SphereGeometry(1, 5, 4);
+    for (const g of [box, sphere]) {
+      const count = g.getAttribute("position").count;
+      g.morphAttributes.position = [
+        new K.Float32BufferAttribute(
+          new Float32Array(count * 3).map((_, i) => i / 9),
+          3,
+        ),
+      ];
+    }
+    return [box, sphere];
+  };
+  const dump = (g: Loose) =>
+    JSON.stringify([
+      g.index.array.constructor.name,
+      ...["position", "normal", "uv"].map((n) => [
+        g.getAttribute(n).array.constructor.name,
+        Array.from(g.getAttribute(n).array),
+      ]),
+      Array.from(g.index.array),
+      g.morphAttributes.position.map((a: Loose) => Array.from(a.array)),
+      g.groups,
+    ]);
+  const ported = defineBufferGeometryUtils(web).mergeGeometries(parts(web) as never, true);
+  check(
+    dump(ported) === dump(utils.mergeGeometries(parts(T), true)),
+    "web mergeGeometries equals three's",
+  );
 }
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

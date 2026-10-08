@@ -131,10 +131,12 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
     "three/addons/utils/SkeletonUtils.js": resolve(player, "core-three.mjs"),
     "three/addons/loaders/HDRLoader.js": resolve(player, "core-hdr.mjs"),
     "three-mesh-bvh": resolve(repo, "packages/three-native/src/addons/mesh-bvh.ts"),
+    "three/addons/utils/BufferGeometryUtils.js": resolve(repo, "packages/three-native/src/addons/buffer-geometry-utils.ts"),
   };
   const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
+    // A facade's own exports; `three` inside one (an addon over the engine) is the facade above.
     const result = await build({ entryPoints: [facade], bundle: true, write: false, format: "esm",
-      metafile: true, logLevel: "silent" });
+      metafile: true, logLevel: "silent", external: ["three"] });
     return [facade, Object.values(result.metafile.outputs)[0].exports];
   })));
   const unresolved = new Map();
