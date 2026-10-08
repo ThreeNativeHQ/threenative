@@ -237,6 +237,7 @@ struct MethodData {
     int slot = 0;                // a fixed member's internal-field cache slot; 0: none left, use the private key
     bool own = false;            // a read-only fixed member: once read, it becomes an own data property of the wrapper, as three defines it
     uint16_t type = 0;           // the catalog type whose wrappers own that slot: a getter borrowed by another class must not read it
+    std::string cls;             // the registry class, for a method that reads its binding
 };
 
 // three defines position, rotation, quaternion and scale as read-only own data properties. Once a
@@ -384,6 +385,136 @@ tn_status_t Adapter::invokeCallback(void* context, const tn_value_t* args, uint3
         return TN_ERROR_INVALID_STATE;
     }
     return TN_OK;
+}
+
+// The listener arrays by type, created on demand.
+static v8::Local<v8::Object> listenerTable(v8::Isolate* isolate, v8::Local<v8::Object> self, v8::Local<v8::Private> key,
+                                           bool create) {
+    const auto ctx = isolate->GetCurrentContext();
+    v8::Local<v8::Value> table;
+    if (self->GetPrivate(ctx, key).ToLocal(&table) && table->IsObject()) return table.As<v8::Object>();
+    if (!create) return {};
+    auto made = v8::Object::New(isolate, v8::Null(isolate), nullptr, nullptr, 0);
+    self->SetPrivate(ctx, key, made).Check();
+    return made;
+}
+
+bool Adapter::callListeners(Adapter& a, v8::Local<v8::Object> self, v8::Local<v8::Object> event) {
+    v8::Isolate* isolate = a.isolate_;
+    const auto ctx = isolate->GetCurrentContext();
+    v8::Local<v8::Value> type;
+    if (!event->Get(ctx, str(isolate, "type")).ToLocal(&type)) return false;
+    const auto table = listenerTable(isolate, self, a.listenersKey_.Get(isolate), false);
+    v8::Local<v8::Value> list;
+    if (table.IsEmpty() || !table->Get(ctx, type).ToLocal(&list) || !list->IsArray()) return true;
+    // three dispatches over a copy, with `target` set while the listeners run.
+    const auto copy = list.As<v8::Array>();
+    std::vector<v8::Local<v8::Value>> listeners(copy->Length());
+    for (uint32_t i = 0; i < copy->Length(); ++i)
+        if (!copy->Get(ctx, i).ToLocal(&listeners[i])) return false;
+    if (event->Set(ctx, str(isolate, "target"), self).IsNothing()) return false;
+    for (const auto& listener : listeners) {
+        v8::Local<v8::Value> argument = event, ignored;
+        if (!listener.As<v8::Function>()->Call(ctx, self, 1, &argument).ToLocal(&ignored)) return false;
+    }
+    return !event->Set(ctx, str(isolate, "target"), v8::Null(isolate)).IsNothing();
+}
+
+tn_status_t Adapter::invokeEvent(void* context, const tn_value_t* args, uint32_t count, char* error, uint32_t capacity) {
+    const auto* data = static_cast<CallbackData*>(context);
+    Adapter& a = *data->adapter;
+    v8::Isolate* isolate = a.isolate_;
+    v8::Isolate::Scope isolateScope(isolate);
+    v8::HandleScope scope(isolate);
+    v8::Local<v8::Context> ctx = a.context_v8_.Get(isolate);
+    v8::Context::Scope contextScope(ctx);
+    const auto it = a.wrappers_.find(data->wrapper);
+    if (it == a.wrappers_.end()) return TN_OK;  // the wrapper and its listeners are gone
+    v8::Local<v8::Value> event = count == 1 ? fromValue(a, args[0]) : v8::Local<v8::Value>();
+    if (event.IsEmpty() || !event->IsObject()) {
+        std::snprintf(error, capacity, "TN_V8_EVENT_INVALID %s", data->name.c_str());
+        return TN_ERROR_INVALID_STATE;
+    }
+    v8::TryCatch tryCatch(isolate);
+    if (!callListeners(a, it->second->object.Get(isolate), event.As<v8::Object>())) {
+        v8::String::Utf8Value message(isolate, tryCatch.Exception());
+        std::snprintf(error, capacity, "%s", *message ? *message : "the listener threw");
+        return TN_ERROR_INVALID_STATE;
+    }
+    return TN_OK;
+}
+
+// addEventListener / removeEventListener / hasEventListener / dispatchEvent, by `d->name`.
+void Adapter::eventListener(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+    Adapter& a = *d->adapter;
+    v8::Isolate* isolate = info.GetIsolate();
+    v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+    tn_handle_t h{};
+    if (!a.unwrap(info.This(), h)) {
+        isolate->ThrowException(v8::Exception::TypeError(str(isolate, "not an engine object")));
+        return;
+    }
+    const v8::Local<v8::Private> listeners = a.listenersKey_.Get(isolate);
+    if (d->name == "dispatchEvent") {
+        if (!info[0]->IsObject()) {
+            isolate->ThrowException(v8::Exception::TypeError(str(isolate, "dispatchEvent needs an event object")));
+            return;
+        }
+        callListeners(a, info.This(), info[0].As<v8::Object>());
+        return;
+    }
+    if (!info[0]->IsString() || !info[1]->IsFunction()) {
+        isolate->ThrowException(v8::Exception::TypeError(str(isolate, d->name + " needs a type and a function")));
+        return;
+    }
+    v8::String::Utf8Value typeText(isolate, info[0]);
+    const std::string type(*typeText, typeText.length());
+    const auto table = listenerTable(isolate, info.This(), listeners, d->name == "addEventListener");
+    v8::Local<v8::Value> found;
+    v8::Local<v8::Array> list;
+    if (!table.IsEmpty() && table->Get(ctx, info[0]).ToLocal(&found) && found->IsArray()) list = found.As<v8::Array>();
+    int at = -1;
+    for (uint32_t i = 0; !list.IsEmpty() && i < list->Length(); ++i) {
+        v8::Local<v8::Value> item;
+        if (list->Get(ctx, i).ToLocal(&item) && item->StrictEquals(info[1])) at = static_cast<int>(i);
+    }
+    if (d->name == "hasEventListener") {
+        info.GetReturnValue().Set(at >= 0);
+        return;
+    }
+    const auto& native = registry().at(d->cls).events;
+    tn_diagnostic_t diagnostic{nullptr, 0};
+    if (d->name == "addEventListener") {
+        if (at >= 0) return;
+        if (list.IsEmpty()) {
+            list = v8::Array::New(isolate);
+            // The engine calls back for a native event type only once something listens to it.
+            if (native.contains(type)) {
+                auto* data = new CallbackData{&a, key(h), type};
+                if (tn_set_callback(h, type.c_str(), &Adapter::invokeEvent, data,
+                                    [](void* c) { delete static_cast<CallbackData*>(c); }, &diagnostic) != TN_OK) {
+                    delete data;
+                    throwStatus(isolate, diagnostic);
+                    return;
+                }
+            }
+            table->Set(ctx, info[0], list).Check();
+        }
+        list->Set(ctx, list->Length(), info[1]).Check();
+        return;
+    }
+    if (at < 0) return;  // removeEventListener of a listener that is not there
+    auto rest = v8::Array::New(isolate);
+    for (uint32_t i = 0; i < list->Length(); ++i)
+        if (static_cast<int>(i) != at) rest->Set(ctx, rest->Length(), list->Get(ctx, i).ToLocalChecked()).Check();
+    if (rest->Length() > 0) {
+        table->Set(ctx, info[0], rest).Check();
+        return;
+    }
+    table->Delete(ctx, info[0]).Check();
+    if (native.contains(type) && tn_set_callback(h, type.c_str(), nullptr, nullptr, nullptr, &diagnostic) != TN_OK)
+        throwStatus(isolate, diagnostic);
 }
 
 void Adapter::getCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -598,6 +729,10 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         v8::Local<v8::ObjectTemplate> proto = ctor->PrototypeTemplate();
         for (const auto& [method, fn] : binding.methods) {
             (void)fn;
+            // EventDispatcher's methods keep JS listeners; the adapter installs them below.
+            if (!binding.events.empty() && (method == "addEventListener" || method == "removeEventListener" ||
+                                            method == "hasEventListener" || method == "dispatchEvent"))
+                continue;
             auto* data = new MethodData{this, method};  // ponytail: lives for the process; one per method per install
             data->intersections = method == "intersectObject" || method == "intersectObjects";
             proto->Set(str(isolate_, method),
@@ -925,6 +1060,15 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     }
                     info.GetReturnValue().Set(holder);
                 }, v8::External::New(isolate_, tails)));
+        }
+        if (!binding.events.empty()) {
+            if (listenersKey_.IsEmpty()) listenersKey_.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:listeners")));
+            for (const char* method : {"addEventListener", "removeEventListener", "hasEventListener", "dispatchEvent"}) {
+                auto* data = new MethodData{this, method, {}};
+                data->cls = name;
+                proto->Set(str(isolate_, method), v8::FunctionTemplate::New(isolate_, &Adapter::eventListener,
+                                                                            v8::External::New(isolate_, data)));
+            }
         }
         for (const auto& [name, set] : binding.callbacks) {
             (void)set;

@@ -210,6 +210,8 @@ class AnimationMixer {
 
     double time = 0;
     double timeScale = 1;
+    /** Owned for a language binding that listens to this mixer's events; dies with the mixer. */
+    std::shared_ptr<void> languageListeners;
 
     // three's `stats`.
     [[nodiscard]] std::size_t actionsTotal() const { return actions_.size(); }

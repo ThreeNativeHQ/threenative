@@ -834,6 +834,31 @@ void skeletal() {
         check(nativeClip.name==='walk' && nativeClip.duration===1, 'native clip');
         const track=nativeClip.tracks[0];
         check(track.name==='hip.position' && track.ValueTypeName==='vector' && track.times.join()==='0,1' && track.values.join()==='0,0,0,1,2,3', 'clip track reflection');
+        // AnimationAction's members and the mixer's EventDispatcher, as core's AnimationPlayer drives them.
+        const mixer = new AnimationMixer(root);
+        const action = mixer.clipAction(nativeClip);
+        check(mixer.getRoot()===root && action.getClip()===nativeClip, 'mixer root and action clip');
+        action.setLoop(LoopOnce, 1); action.clampWhenFinished = true; action.play();
+        check(action.loop===LoopOnce && action.isScheduled() && action.getEffectiveWeight()===1, 'action state');
+        const events = [];
+        const onFinished = (event) => events.push(event);
+        mixer.addEventListener('finished', onFinished);
+        check(mixer.hasEventListener('finished', onFinished), 'listener registered');
+        mixer.update(0.5); check(events.length===0 && Math.abs(hip.position.x-0.5)<1e-6, 'no event mid-clip');
+        mixer.update(1);
+        check(events.length===1 && events[0].type==='finished' && events[0].action===action && events[0].direction===1, 'finished event');
+        check(!action.isRunning() && action.time===1, 'clamped at the end');
+        mixer.removeEventListener('finished', onFinished);
+        check(!mixer.hasEventListener('finished', onFinished), 'listener removed');
+        const loops = [];
+        mixer.addEventListener('loop', (event) => loops.push(event.loopDelta));
+        action.reset(); action.setLoop(LoopRepeat, Infinity); action.play(); mixer.update(1.25);
+        check(loops.length===1 && loops[0]===1, 'loop event');
+        mixer.addEventListener('loop', () => { throw new Error('listener boom'); });
+        let thrown=false; try { mixer.update(1); } catch (e) { thrown=e.message.includes('listener boom'); }
+        check(thrown, 'a throwing listener throws from update');
+        let custom=null; mixer.addEventListener('custom', (e) => { custom=e.target; }); mixer.dispatchEvent({ type: 'custom' });
+        check(custom===mixer, 'dispatchEvent');
         return 'ok';
       })()
     )JS";

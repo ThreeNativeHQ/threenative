@@ -52,6 +52,10 @@ struct Value {
 };
 
 struct ClassBinding;
+class Store;
+
+/** A language listener for one event type: called with the event as one Record value. */
+using EventCallback = std::shared_ptr<const std::function<bool(const Value& event, std::string& error)>>;
 
 /** A native object as a caller holds it: its class name and shared ownership of the value. */
 struct Object {
@@ -133,6 +137,9 @@ struct ClassBinding {
     // Callbacks a language sets on the object (`onBeforeRender`): set through tn_set_callback, never
     // a Value, because the engine calls back into the language that set them.
     std::map<std::string, std::function<void(void* self, tn::engine::RenderCallback)>> callbacks;
+    // Event types a language listens for (`mixer.addEventListener("finished", fn)`), set through
+    // tn_set_callback by type name; a null callback stops listening. The event arrives as a Record.
+    std::map<std::string, std::function<void(void* self, EventCallback, Store&)>> events;
 };
 
 /** Registers a member that names a field of the object itself (see ClassBinding::fixedMembers). */

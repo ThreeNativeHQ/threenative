@@ -71,7 +71,21 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
 };
 
 /** Bound methods whose binding signature differs from three's richer overloads. */
+// EventDispatcher's generic event-map overloads, as the native mixer binds them: any event type,
+// one listener function. @types/three spells them over AnimationMixerEventMap, which no catalog
+// entry publishes.
+const LISTENER: ICatalogParameter[] = [
+  { name: "type", type: "string", optional: false },
+  { name: "listener", type: "EventListener", optional: false, callback: "EventListener" },
+];
+
 const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns: string }[]> = {
+  "AnimationMixer.addEventListener": [{ parameters: LISTENER, returns: "void" }],
+  "AnimationMixer.removeEventListener": [{ parameters: LISTENER, returns: "void" }],
+  "AnimationMixer.hasEventListener": [{ parameters: LISTENER, returns: "boolean" }],
+  "AnimationMixer.dispatchEvent": [
+    { parameters: [{ name: "event", type: "BaseEvent", optional: false }], returns: "void" },
+  ],
   // The native port intersects Object3D geometry, independent of @types/three's generic overloads.
   "Raycaster.intersectObject": [
     {

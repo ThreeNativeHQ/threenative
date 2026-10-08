@@ -576,7 +576,29 @@ tn_status_t tn_set_callback(tn_handle_t self, const char* name, tn_object_callba
     tn::binding::Object* object = nullptr;
     if (!name) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: name");
     if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
-    const auto& callbacks = classRegistry().at(object->cls).callbacks;
+    const auto& binding = classRegistry().at(object->cls);
+    if (const auto event = binding.events.find(name); event != binding.events.end()) {
+        if (!invoke) {
+            event->second(object->ptr.get(), nullptr, *context);
+            return ok(diagnostic);
+        }
+        std::shared_ptr<void> owner(callback_context, [release](void* c) {
+            if (release) release(c);
+        });
+        auto callback = std::make_shared<const std::function<bool(const tn::binding::Value&, std::string&)>>(
+            [invoke, owner, context, self](const tn::binding::Value& value, std::string& error) {
+                tn_value_t arg{};
+                fromBinding(context, self, value, &arg);
+                char message[512] = {};
+                if (invoke(owner.get(), &arg, 1, message, sizeof message) == TN_OK) return true;
+                message[sizeof message - 1] = '\0';
+                error = message[0] ? message : "the listener failed";
+                return false;
+            });
+        event->second(object->ptr.get(), std::move(callback), *context);
+        return ok(diagnostic);
+    }
+    const auto& callbacks = binding.callbacks;
     const auto set = callbacks.find(name);
     if (set == callbacks.end())
         return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + name + " callback").c_str());
