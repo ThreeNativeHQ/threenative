@@ -1637,7 +1637,7 @@ export declare const OneMinusSrcColorFactor: 203;
 
 /** Catalog supported: three/webgpu/OrthographicCamera. */
 export declare class OrthographicCamera extends Camera {
-constructor();
+constructor(left?: number, right?: number, top?: number, bottom?: number, near?: number, far?: number);
 bottom: number;
 far: number;
 left: number;
@@ -1661,7 +1661,7 @@ export declare const PCFSoftShadowMap: 2;
 
 /** Catalog supported: three/webgpu/PerspectiveCamera. */
 export declare class PerspectiveCamera extends Camera {
-constructor();
+constructor(fov?: number, aspect?: number, near?: number, far?: number);
 aspect: number;
 far: number;
 filmGauge: number;

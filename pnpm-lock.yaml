@@ -1168,6 +1168,9 @@ importers:
       '@threenative/playtest':
         specifier: workspace:*
         version: link:../playtest
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
       esbuild:
         specifier: 'catalog:'
         version: 0.27.0

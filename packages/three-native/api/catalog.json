@@ -13608,7 +13608,38 @@
         "kind": "supported"
       },
       "extends": "Camera",
-      "constructor": [],
+      "constructor": [
+        {
+          "name": "left",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "right",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "top",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "bottom",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "near",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "far",
+          "type": "number",
+          "optional": true
+        }
+      ],
       "fields": [
         {
           "name": "bottom",
@@ -13802,7 +13833,28 @@
         "kind": "supported"
       },
       "extends": "Camera",
-      "constructor": [],
+      "constructor": [
+        {
+          "name": "fov",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "aspect",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "near",
+          "type": "number",
+          "optional": true
+        },
+        {
+          "name": "far",
+          "type": "number",
+          "optional": true
+        }
+      ],
       "fields": [
         {
           "name": "aspect",
