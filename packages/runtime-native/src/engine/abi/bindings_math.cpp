@@ -613,6 +613,7 @@ void registerEuler(ClassBinding& b) {
         static const char* const NAMES[] = {"XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"};
         return Value{Value::Kind::String, 0, NAMES[static_cast<int>(as<Euler>(self)->order)]};
     };
+    auto orderName = b.getters["order"];
     b.setters["order"] = [](void* self, const Value& v) {
         Args one;
         one.push_back(v);
@@ -646,11 +647,10 @@ void registerEuler(ClassBinding& b) {
         return chain();
     };
     fromArray<Euler>(b, "fromArray");
-    b.methods["toArray"] = [](void* self, const Args&, Store&) {
+    b.methods["toArray"] = [orderName](void* self, const Args&, Store&) {
         const std::array<double, 3> angles = as<Euler>(self)->toArray();
-        // three's fourth slot holds the order string, which a numeric list cannot carry: the
-        // reference records that slot as NaN and so does this.
-        return Value::list({angles[0], angles[1], angles[2], QUIET_NAN});
+        // three returns [x, y, z, order]: the fourth slot is the order string, so a mixed array.
+        return Value::array({Value::of(angles[0]), Value::of(angles[1]), Value::of(angles[2]), orderName(self)});
     };
     b.methods["clone"] = cloneAs<Euler>("Euler");
     b.methods["equals"] = [](void* self, const Args& a, Store& d) {

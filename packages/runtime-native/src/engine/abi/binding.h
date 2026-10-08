@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <map>
 #include <set>
 #include <memory>
@@ -184,6 +185,19 @@ public:
         return *static_cast<T*>(object->ptr.get());
     }
 };
+
+/**
+ * A numeric array argument as doubles: a Numbers value, or a mixed Array (Euler.toArray()'s
+ * [x, y, z, order]) whose non-number items read as NaN, as `+"XYZ"` does. Anything else is empty.
+ */
+inline std::vector<double> numbersOf(const Value& v) {
+    if (v.kind == Value::Kind::Numbers) return v.numbers;
+    std::vector<double> out;
+    if (v.kind == Value::Kind::Array)
+        for (const auto& item : v.items)
+            out.push_back(item.kind == Value::Kind::Number ? item.number : std::numeric_limits<double>::quiet_NaN());
+    return out;
+}
 
 /** Each Ref in a Refs argument, in order. */
 inline std::vector<Value> refsOf(const Value& v) {

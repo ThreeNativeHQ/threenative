@@ -135,7 +135,7 @@ struct tn_context : tn::binding::Store {
         return shared ? valueOf(std::string(object->type()), shared) : tn_value_t{};
     }
     std::vector<double> numbers(const tn::binding::Value& arg) override {
-        return arg.kind == tn::binding::Value::Kind::Numbers ? arg.numbers : std::vector<double>{};
+        return tn::binding::numbersOf(arg);
     }
     // `primary`: the handle names the object itself, not a member alias at the same address.
     bool hold(std::string cls, std::shared_ptr<void> ptr, tn_handle_t& out, bool primary = true) {

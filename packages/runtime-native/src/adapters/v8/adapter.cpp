@@ -126,6 +126,14 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                 if (!array->Get(ctx, k).ToLocal(&e)) return false;
                 if (e->IsNumber()) { elements[k].kind = TN_VALUE_NUMBER; elements[k].number = e.As<v8::Number>()->Value(); }
                 else if (a.unwrap(e, h)) { elements[k].kind = TN_VALUE_HANDLE; elements[k].handle = h; a.holdIfCallback(h); }
+                else if (e->IsString()) {
+                    // Euler.toArray()'s order slot, handed back to a fromArray.
+                    v8::String::Utf8Value utf8(isolate, e);
+                    texts.emplace_back(*utf8 ? *utf8 : "");
+                    elements[k].kind = TN_VALUE_STRING;
+                    elements[k].text = texts.back().c_str();
+                    elements[k].count = texts.back().size();
+                }
                 else return false;
             }
             if (std::all_of(elements.begin(), elements.end(), [](const auto& e) { return e.kind == TN_VALUE_NUMBER; })) {
