@@ -159,6 +159,9 @@ let unboundParameter = false;
 try { new THREE.MeshBasicMaterial({ notAMaterialProperty: 1 }); }
 catch (error) { unboundParameter = /TN_NATIVE_MATERIAL_PARAMETER: MeshBasicMaterial\.notAMaterialProperty/.test(error.message); }
 check(unboundParameter, "an unbound material parameter refuses by name");
+class Tinted extends THREE.MeshStandardMaterial {}
+const tinted = new Tinted({ roughness: 0.25, color: 0xff0000 });
+check(tinted instanceof THREE.MeshStandardMaterial && tinted.roughness === 0.25 && tinted.color.r === 1, "a material subclass takes parameters");
 const sun = new THREE.DirectionalLight();
 sun.shadow.mapSize.set(1024, 2048); sun.shadow.camera.near = 2; sun.shadow.bias = -0.5; sun.shadow.radius = 3;
 check(sun.shadow === sun.shadow && sun.shadow.mapSize.y === 2048 && sun.shadow.camera.near === 2 &&

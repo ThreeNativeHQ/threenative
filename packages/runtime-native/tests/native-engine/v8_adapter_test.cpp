@@ -896,6 +896,15 @@ void skeletal() {
         check(thrown, 'a throwing listener throws from update');
         let custom=null; mixer.addEventListener('custom', (e) => { custom=e.target; }); mixer.dispatchEvent({ type: 'custom' });
         check(custom===mixer, 'dispatchEvent');
+        // A "finished" listener that uncaches its action runs after the update's loops, so the
+        // other active action still advances and the loop never reads past the shrunk list.
+        const mixer2 = new AnimationMixer(root);
+        const once = mixer2.clipAction(nativeClip); once.setLoop(LoopOnce, 1); once.play();
+        const clip2 = new AnimationClip('walk2', 1, [new VectorKeyframeTrack('hip.position', [0, 1], [0, 0, 0, 1, 2, 3])]);
+        const looping = mixer2.clipAction(clip2); looping.setLoop(LoopRepeat, Infinity); looping.play();
+        mixer2.addEventListener('finished', () => mixer2.uncacheAction(nativeClip));
+        mixer2.update(1.5);
+        check(mixer2.existingAction(nativeClip) === null && Math.abs(looping.time - 0.5) < 1e-9, 'uncache on finished');
         return 'ok';
       })()
     )JS";
