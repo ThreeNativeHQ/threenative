@@ -696,6 +696,11 @@ constructor();
 /** Catalog partial (native-not-implemented): three/EventListener. */
 export type EventListener = (event: unknown & Event) => void;
 
+/** Catalog supported: three/ExtrudeGeometry. */
+export declare class ExtrudeGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog supported: three/webgpu/Float32BufferAttribute. */
 export declare class Float32BufferAttribute extends BufferAttribute {
 constructor(array: TypedArray, itemSize: number, normalized?: boolean);
@@ -1708,6 +1713,40 @@ export declare const PCFShadowMap: 1;
 /** Catalog supported: three/PCFSoftShadowMap. */
 export declare const PCFSoftShadowMap: 2;
 
+/** Catalog supported: three/Path. */
+export declare class Path {
+constructor();
+autoClose: boolean;
+readonly type: string | "Curve";
+readonly currentPoint: Vector2;
+
+  absarc(aX: number, aY: number, aRadius: number, aStartAngle: number, aEndAngle: number, aClockwise?: boolean): this;
+
+  absellipse(aX: number, aY: number, xRadius: number, yRadius: number, aStartAngle: number, aEndAngle: number, aClockwise?: boolean, aRotation?: number): this;
+
+  arc(aX: number, aY: number, aRadius: number, aStartAngle: number, aEndAngle: number, aClockwise?: boolean): this;
+
+  bezierCurveTo(aCP1x: number, aCP1y: number, aCP2x: number, aCP2y: number, aX: number, aY: number): this;
+
+  closePath(): this;
+
+  ellipse(aX: number, aY: number, xRadius: number, yRadius: number, aStartAngle: number, aEndAngle: number, aClockwise?: boolean, aRotation?: number): this;
+
+  getLength(): number;
+
+  getPoints(divisions?: number): Vector2[];
+
+  lineTo(x: number, y: number): this;
+
+  moveTo(x: number, y: number): this;
+
+  quadraticCurveTo(aCPx: number, aCPy: number, aX: number, aY: number): this;
+
+  setFromPoints(vectors: Vector2[]): this;
+
+  splineThru(pts: Vector2[]): this;
+}
+
 /** Catalog supported: three/webgpu/PerspectiveCamera. */
 export declare class PerspectiveCamera extends Camera {
 constructor(fov?: number, aspect?: number, near?: number, far?: number);
@@ -2081,6 +2120,17 @@ environmentIntensity: number;
 environmentRotation: Euler;
 
   copy(source: Scene, recursive?: boolean): this;
+}
+
+/** Catalog supported: three/Shape. */
+export declare class Shape extends Path {
+constructor();
+holes: Path[];
+}
+
+/** Catalog supported: three/ShapeGeometry. */
+export declare class ShapeGeometry extends BufferGeometry {
+constructor();
 }
 
 /** Catalog partial (native-not-implemented): three/ShortType. */

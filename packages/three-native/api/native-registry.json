@@ -1094,6 +1094,73 @@
       "members": [],
       "callbacks": []
     },
+    "ExtrudeGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index"
+      ],
+      "callbacks": []
+    },
     "Float32BufferAttribute": {
       "constructor": true,
       "methods": [
@@ -3015,6 +3082,28 @@
       ],
       "callbacks": ["onBeforeRender"]
     },
+    "Path": {
+      "constructor": true,
+      "methods": [
+        "absarc",
+        "absellipse",
+        "arc",
+        "bezierCurveTo",
+        "closePath",
+        "ellipse",
+        "getLength",
+        "getPoints",
+        "lineTo",
+        "moveTo",
+        "quadraticCurveTo",
+        "setFromPoints",
+        "splineThru"
+      ],
+      "getters": ["autoClose", "type"],
+      "setters": ["autoClose"],
+      "members": ["currentPoint"],
+      "callbacks": []
+    },
     "PerspectiveCamera": {
       "constructor": true,
       "methods": [
@@ -3704,6 +3793,95 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"]
+    },
+    "Shape": {
+      "constructor": true,
+      "methods": [
+        "absarc",
+        "absellipse",
+        "arc",
+        "bezierCurveTo",
+        "closePath",
+        "ellipse",
+        "getLength",
+        "getPoints",
+        "lineTo",
+        "moveTo",
+        "quadraticCurveTo",
+        "setFromPoints",
+        "splineThru"
+      ],
+      "getters": ["autoClose", "type"],
+      "setters": ["autoClose", "holes"],
+      "members": ["currentPoint", "holes"],
+      "callbacks": []
+    },
+    "ShapeGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index"
+      ],
+      "callbacks": []
     },
     "Skeleton": {
       "constructor": true,
