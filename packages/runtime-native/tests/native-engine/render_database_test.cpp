@@ -1341,9 +1341,46 @@ void convertedCopiesAreSwept() {
     CHECK(database.convertedCount() <= 130);
 }
 
+// The frame's GPU time starts at its first shadow pass, which runs before the scene pass; before the
+// fix it started at the scene pass and a shadowed scene's shadow work was never timed.
+void gpuTimerCoversShadows() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    if (!wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_TimestampQuery)) {
+        std::printf("no timestamp-query on this device: nothing to time\n");
+        return;
+    }
+    for (const bool shadows : {true, false}) {
+        LitScene s;
+        s.light.setCastShadow(shadows);
+        s.mesh.setCastShadow(shadows);
+        RenderDatabase database;
+        database.shadowMapEnabled = shadows;
+        const uint64_t before = renderer.gpuSamples();
+        // A sample is read back asynchronously: render a few frames, as a game does, until one lands.
+        for (int frame = 0; frame < 8 && renderer.gpuSamples() == before; ++frame) {
+            database.render(renderer, s.scene, s.camera);
+            while (renderer.gpu().completedSerial() < renderer.gpu().submittedSerial()) {
+                renderer.poll();
+                events.drain();
+            }
+            const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+            while (renderer.gpuSamples() == before && std::chrono::steady_clock::now() < until) {
+                renderer.poll();
+                events.drain();
+            }
+        }
+        CHECK(renderer.gpuSamples() > before);  // a timestamp-query device times the frame
+        CHECK(renderer.gpuTimerBeganAtShadow() == shadows);
+    }
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows})

@@ -3,11 +3,134 @@ import { Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Vector3 }
 import type { Texture } from "three";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
+import type { IStarterMeter } from "./starter-meter.js";
 import {
   type IStarterVisualSnapshot,
   prepareStarterExportTextures,
 } from "./starter-visual-cook.js";
 import { exportTslGraph } from "./tsl-export.js";
+export type { IStarterMeter } from "./starter-meter.js";
+
+const quantile = (samples: number[], fraction: number): number => {
+  const sorted = [...samples].sort((a, b) => a - b);
+  return (
+    sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(fraction * sorted.length) - 1))] ?? 0
+  );
+};
+const series = (samples: number[]) => ({
+  p50: quantile(samples, 0.5),
+  p95: quantile(samples, 0.95),
+});
+
+/**
+ * The paused starter drawn `frames` more times through its own renderer wrapper, post chain and
+ * all: the legacy arm of the GPU-heavy holdout. Run before prepareStarterSnapshot, which stubs
+ * the render calls.
+ */
+export async function meterStarterFrames(frames: number): Promise<IStarterMeter> {
+  const gameUrl = "/src/game.ts";
+  const { default: game } = await import(/* @vite-ignore */ gameUrl);
+  const ctx = game.ctx;
+  if (!ctx || !ctx.camera?.isPerspectiveCamera || !ctx.scene?.isScene || !ctx.renderer?.raw)
+    throw new Error("TN_VISUAL_STARTER_NOT_READY");
+  game.pause();
+  // pause() stops the simulation, not the draw: the game's own animation loop keeps rendering and
+  // presenting between these calls, which is the frame being measured plus every frame it draws
+  // itself. End it (the pending callback fires once and cannot re-arm) and measure alone.
+  window.requestAnimationFrame = () => 0;
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const raw = ctx.renderer.raw;
+  // A post chain renders several times per frame; three would reset its counters at each, leaving
+  // only the last pass. The frame's totals are the sum, so this loop owns the reset.
+  raw.info.autoReset = false;
+  const device = raw.backend?.device;
+  if (typeof device?.queue?.onSubmittedWorkDone !== "function")
+    throw new Error("TN_VISUAL_GPU_QUEUE_MISSING: ctx.renderer.raw.backend.device.queue");
+  const nodeFrame = raw._nodes?.nodeFrame;
+  if (typeof nodeFrame?.update !== "function") throw new Error("TN_VISUAL_NODE_FRAME_MISSING");
+  const warmup = Math.min(30, Math.floor(frames / 4));
+  const submit: number[] = [];
+  const wall: number[] = [];
+  const gpu: number[] = [];
+  let draws = 0;
+  let triangles = 0;
+  let gpuPasses = 0;
+  for (let i = 0; i < frames + warmup; i += 1) {
+    raw.info.reset?.();
+    // The world pass updates once per node frame, and three advances that clock in its own animation
+    // loop, which is stopped above: advance it as the loop would, or only the output quad redraws.
+    nodeFrame.update();
+    const t0 = performance.now();
+    ctx.renderer.render(ctx.scene, ctx.camera);
+    const t1 = performance.now();
+    await device.queue.onSubmittedWorkDone();
+    const t2 = performance.now();
+    // The wrapper tracks timestamps on a stride; only a tracked frame has a GPU reading to resolve.
+    const tracked = raw.backend.trackTimestamp === true;
+    let timestamp: number | undefined;
+    if (tracked) timestamp = await raw.resolveTimestampsAsync?.("render");
+    if (tracked && i >= warmup) {
+      // The pool names each pass `<context>:f<frame>`; its `frames` list ends at the resolved frame.
+      const pool = raw.backend.timestampQueryPool?.render;
+      const last = pool?.frames?.[pool.frames.length - 1];
+      gpuPasses =
+        pool && last !== undefined
+          ? [...pool.timestamps.keys()].filter((uid: string) => uid.endsWith(`:f${last}`)).length
+          : 0;
+    }
+    if (i < warmup) continue;
+    submit.push(t1 - t0);
+    wall.push(t2 - t0);
+    if (typeof timestamp === "number" && timestamp > 0) gpu.push(timestamp);
+    draws = raw.info.render.drawCalls;
+    triangles = raw.info.render.triangles;
+  }
+  // Back to back with one wait: the cost a game loop without vsync pays per frame.
+  const burst = 30;
+  const b0 = performance.now();
+  for (let i = 0; i < burst; i += 1) {
+    nodeFrame.update();
+    ctx.renderer.render(ctx.scene, ctx.camera);
+  }
+  await device.queue.onSubmittedWorkDone();
+  const throughputMs = (performance.now() - b0) / burst;
+  let sceneMeshes = 0;
+  let sceneTriangles = 0;
+  ctx.scene.traverseVisible((object: import("three").Object3D) => {
+    if (Reflect.get(object, "isMesh") !== true) return;
+    const geometry = (object as import("three").Mesh).geometry;
+    sceneMeshes += 1;
+    const counted = geometry.index ?? geometry.getAttribute("position");
+    if (!counted)
+      throw new Error("TN_HOLDOUT_SCENE_GEOMETRY_EMPTY: a visible mesh has no position");
+    sceneTriangles += counted.count / 3;
+  });
+  const adapter = device.adapterInfo;
+  return {
+    frames,
+    warmup,
+    size: [raw.domElement.width, raw.domElement.height],
+    submitMs: series(submit),
+    frameMs: series(wall),
+    gpuMs: gpu.length === 0 ? null : series(gpu),
+    throughputMs,
+    gpuPasses,
+    gpuSamples: gpu.length,
+    gpuSample: gpu.slice(0, 12),
+    draws,
+    triangles,
+    sceneMeshes,
+    sceneTriangles,
+    adapter: adapter
+      ? {
+          vendor: adapter.vendor,
+          architecture: adapter.architecture,
+          device: adapter.device,
+          description: adapter.description,
+        }
+      : null,
+  };
+}
 
 export async function prepareStarterSnapshot(): Promise<IStarterVisualSnapshot> {
   const gameUrl = "/src/game.ts";
@@ -91,13 +214,16 @@ export async function prepareStarterSnapshot(): Promise<IStarterVisualSnapshot> 
     const existing = textureIds.get(texture);
     if (existing !== undefined) return existing;
     if (texture.mapping !== 303) throw new Error("TN_VISUAL_SKY_MAPPING_UNSUPPORTED");
-    const image = texture.image;
+    const image = texture.image as { width?: unknown; height?: unknown } | null | undefined;
+    const width = image?.width;
+    const height = image?.height;
     if (
-      !image ||
-      !Number.isSafeInteger(image.width) ||
-      !Number.isSafeInteger(image.height) ||
-      image.width < 1 ||
-      image.height < 1
+      typeof width !== "number" ||
+      typeof height !== "number" ||
+      !Number.isSafeInteger(width) ||
+      !Number.isSafeInteger(height) ||
+      width < 1 ||
+      height < 1
     )
       throw new Error("TN_VISUAL_SKY_IMAGE_MISSING");
     // glTF's existing image decoder transports a full-resolution sky without a >512MB
@@ -111,8 +237,8 @@ export async function prepareStarterSnapshot(): Promise<IStarterVisualSnapshot> 
     const id = textures.length;
     textures.push({
       node: carrier.name,
-      width: image.width,
-      height: image.height,
+      width,
+      height,
       mapping: texture.mapping,
       colorSpace: texture.colorSpace,
       flipY: texture.flipY,

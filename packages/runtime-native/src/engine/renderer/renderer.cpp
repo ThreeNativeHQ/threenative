@@ -402,9 +402,9 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     if (wgpuDeviceHasFeature(device, WGPUFeatureName_TimestampQuery)) {
         WGPUQuerySetDescriptor queries = {};
         queries.type = WGPUQueryType_Timestamp;
-        queries.count = 4;
+        queries.count = 6;
         timestamps_ = wgpuDeviceCreateQuerySet(device, &queries);
-        timestampResolve_ = gpu_.createBuffer(32, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
+        timestampResolve_ = gpu_.createBuffer(48, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
     }
     setOutput(OutputState{});
     setSize(1, 1);
@@ -2009,6 +2009,11 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         graph.pass("vsm-receivers", graph::PassKind::Render, reads, {});
         if (!graph.compile().ok()) throw std::runtime_error("TN_GRAPH_INVALID: virtual shadows");
     }
+    // The frame's GPU time starts at its first shadow pass, which runs before the scene pass.
+    const bool shadowTimed = timed && !shadowPasses.empty();
+    if (timed) timerBeganAtShadow_ = shadowTimed;
+    WGPURenderPassTimestampWrites_Compat shadowTimes = {};
+    bool shadowTimesTaken = false;
     for (const ShadowPass& shadowPlan : shadowPasses) {
         WGPURenderPassDepthStencilAttachment shadowDepth = {};
         shadowDepth.view = shadowPlan.target;
@@ -2017,6 +2022,13 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         shadowDepth.depthClearValue = 1.0f;
         WGPURenderPassDescriptor shadowDesc = {};
         shadowDesc.depthStencilAttachment = &shadowDepth;
+        if (shadowTimed && !shadowTimesTaken) {
+            shadowTimes.querySet = timestamps_;
+            shadowTimes.beginningOfPassWriteIndex = 4;
+            shadowTimes.endOfPassWriteIndex = 5;
+            shadowDesc.timestampWrites = &shadowTimes;
+            shadowTimesTaken = true;
+        }
         WGPURenderPassEncoder shadowPass = wgpuCommandEncoderBeginRenderPass(encoder, &shadowDesc);
         if (shadowPlan.size) {
             wgpuRenderPassEncoderSetViewport(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size, 0, 1);
@@ -2109,22 +2121,23 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     }
     if (postEffects_) postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_);
     outputPass(encoder, timed, presentTarget, presentFormat);
-    if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 4, gpu_.buffer(timestampResolve_), 0);
+    if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 6, gpu_.buffer(timestampResolve_), 0);
     WGPUCommandBufferDescriptor commandDesc = {};
     gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
     if (timed) {
         timing_->pending = true;
         std::weak_ptr<Timing> timing = timing_;
-        gpu_.readBuffer(timestampResolve_, 0, 32, [timing](GpuStatus status, std::vector<uint8_t> bytes) {
+        gpu_.readBuffer(timestampResolve_, 0, 48, [timing, shadowTimed](GpuStatus status, std::vector<uint8_t> bytes) {
             const std::shared_ptr<Timing> t = timing.lock();
             if (!t) return;  // the renderer is gone
             t->pending = false;
-            uint64_t ns[4];
+            uint64_t ns[6];
             if (status != GpuStatus::Ok || bytes.size() != sizeof ns) return;
             std::memcpy(ns, bytes.data(), sizeof ns);
-            if (ns[3] <= ns[0]) return;  // a reset clock reads as no sample
-            t->lastMs = double(ns[3] - ns[0]) / 1e6;
+            const uint64_t begin = shadowTimed ? ns[4] : ns[0];
+            if (ns[3] <= begin) return;  // a reset clock reads as no sample
+            t->lastMs = double(ns[3] - begin) / 1e6;
             ++t->samples;
         });
     }

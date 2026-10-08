@@ -10,7 +10,9 @@
 #include "engine/shader/graph/serialized.h"
 #include "mystral/webgpu/context.h"
 
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
@@ -46,6 +48,77 @@ struct Gpu {
     std::vector<std::shared_ptr<void>> fixtureResources;
     shader::graph::Node postGraph;
 };
+
+double percentileOf(std::vector<double> samples, double fraction) {
+    if (samples.empty()) return 0;
+    std::sort(samples.begin(), samples.end());
+    const double rank = std::ceil(fraction * double(samples.size())) - 1;
+    return samples[size_t(std::clamp(rank, 0.0, double(samples.size() - 1)))];
+}
+
+// The drawn scene's own census, the way GLTFExporter's onlyVisible walks it: a hidden object hides its
+// subtree. Meshes (skinned ones too) and the triangles their geometry holds.
+struct Census { uint64_t meshes = 0, triangles = 0; };
+void countVisible(const Object3D& object, Census& census) {
+    if (!object.visible()) return;
+    const std::string_view type = object.type();
+    if (type == "Mesh" || type == "SkinnedMesh") {
+        const auto& mesh = static_cast<const Mesh&>(object);
+        ++census.meshes;
+        if (mesh.geometry) {  // three's count: the index when there is one, else the positions
+            const auto position = mesh.geometry->attributes.find("position");
+            census.triangles += mesh.geometry->index ? mesh.geometry->index->count() / 3
+                                : position != mesh.geometry->attributes.end() ? position->second->count() / 3 : 0;
+        }
+    }
+    for (const Object3D* child : object.children) countVisible(*child, census);
+}
+
+std::string meterFrames(Gpu& gpu, Renderer& renderer, Scene& scene, Camera& camera, const std::array<double, 4>& clear,
+                        unsigned long count, uint32_t width, uint32_t height, const char* reportFile) {
+    using Clock = std::chrono::steady_clock;
+    const auto ms = [](Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+    std::vector<double> submit, frame, gpuMs;
+    const unsigned long warmup = std::min<unsigned long>(count / 4, 30);
+    for (unsigned long i = 0; i < count + warmup; ++i) {
+        const uint64_t seen = renderer.gpuSamples();
+        const auto t0 = Clock::now();
+        gpu.database.render(renderer, scene, camera, clear);
+        const auto t1 = Clock::now();
+        while (renderer.gpu().completedSerial() < renderer.gpu().submittedSerial()) {
+            renderer.poll();
+            gpu.events.drain();
+        }
+        const auto t2 = Clock::now();
+        // The renderer times one frame at a time: wait (bounded) for this frame's sample.
+        const auto until = t2 + std::chrono::milliseconds(250);
+        while (renderer.gpuSamples() == seen && Clock::now() < until) {
+            renderer.poll();
+            gpu.events.drain();
+        }
+        if (!gpu.database.diagnostics().empty()) return gpu.database.diagnostics().front();
+        if (i < warmup) continue;
+        submit.push_back(ms(t0, t1));
+        frame.push_back(ms(t0, t2));
+        if (renderer.gpuSamples() != seen) gpuMs.push_back(renderer.lastGpuMs());
+    }
+    const auto series = [](const std::vector<double>& samples) {
+        char buffer[96];
+        std::snprintf(buffer, sizeof buffer, "{\"p50\": %.4f, \"p95\": %.4f}", percentileOf(samples, 0.5), percentileOf(samples, 0.95));
+        return std::string(buffer);
+    };
+    const auto& stats = renderer.lastFrame();
+    Census census;
+    countVisible(scene, census);
+    std::ofstream out(reportFile);
+    out << "{\n  \"arm\": \"native-render-driver\",\n  \"frames\": " << count << ",\n  \"warmup\": " << warmup
+        << ",\n  \"submitMs\": " << series(submit) << ",\n  \"frameMs\": " << series(frame)
+        << ",\n  \"gpuMs\": " << (gpuMs.empty() ? std::string("null") : series(gpuMs)) << ",\n  \"gpuSamples\": " << gpuMs.size()
+        << ",\n  \"draws\": " << stats.draws << ",\n  \"triangles\": " << stats.triangles
+        << ",\n  \"sceneMeshes\": " << census.meshes << ",\n  \"sceneTriangles\": " << census.triangles
+        << ",\n  \"size\": [" << width << ", " << height << "]\n}\n";
+    return out ? "" : std::string("cannot write ") + reportFile;
+}
 
 std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object& cameraObject, const tn::fixture::RenderRequest& r) {
     if (sceneObject.cls != "Scene") return "render scene is a " + sceneObject.cls;
@@ -93,6 +166,15 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     if (!gpu.database.diagnostics().empty()) return gpu.database.diagnostics().front();
     if (const auto error = finishDump(true); !error.empty()) return error;
     for (const std::string& note : renderer.diagnostics()) std::fprintf(stderr, "%s\n", note.c_str());
+    // TN_FIXTURE_FRAMES=<n> with TN_FIXTURE_REPORT=<file>: the same frame rendered n more times with
+    // the per-frame meter (CPU submit, frame wall time, GPU timestamps, draws, triangles), the
+    // GPU-heavy holdout's native arm. Each frame waits for the GPU and for its own timestamp sample.
+    if (const char* frames = std::getenv("TN_FIXTURE_FRAMES"); frames && *frames) {
+        const char* report = std::getenv("TN_FIXTURE_REPORT");
+        if (!report || !*report) return "TN_FIXTURE_FRAMES needs TN_FIXTURE_REPORT";
+        const std::string failed = meterFrames(gpu, renderer, scene, *camera, clear, std::stoul(frames), r.width, r.height, report);
+        if (!failed.empty()) return failed;
+    }
     // TN_FIXTURE_NORMAL_DUMP=<file>: the post normal target as raw RGBA16Float, packed rows.
     if (const char* normals = std::getenv("TN_FIXTURE_NORMAL_DUMP"); normals && *normals) {
         std::vector<uint8_t> bytes;

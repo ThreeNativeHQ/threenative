@@ -271,12 +271,14 @@ public:
     };
     const FrameStats& lastFrame() const { return lastFrame_; }
     /**
-     * GPU time of the most recent frame whose timestamps came back, scene pass start to output pass
-     * end, in milliseconds; negative until one has, and always on a device without timestamp-query.
+     * GPU time of the most recent frame whose timestamps came back, first shadow pass (else scene
+     * pass) start to output pass end, in milliseconds; negative until one has, and always on a device without timestamp-query.
      */
     double lastGpuMs() const { return timing_->lastMs; }
     /** How many GPU times have come back, so a caller samples each one once. */
     uint64_t gpuSamples() const { return timing_->samples; }
+    /** Whether the last timed frame's GPU time began at its first shadow pass (else at the scene pass). */
+    bool gpuTimerBeganAtShadow() const { return timerBeganAtShadow_; }
 
     GpuResources& gpu() { return gpu_; }
     const GeometryCache& geometry() const { return geometry_; }
@@ -435,7 +437,8 @@ private:
     WGPURenderBundle mainBundle_ = nullptr;
     std::vector<uint64_t> mainBundleKey_;
     FrameStats mainBundleStats_;
-    WGPUQuerySet timestamps_ = nullptr;  // scene pass begin/end [0, 1], output pass begin/end [2, 3]
+    bool timerBeganAtShadow_ = false;
+    WGPUQuerySet timestamps_ = nullptr;  // scene pass begin/end [0, 1], output pass begin/end [2, 3], first shadow pass begin [4, 5]
     Handle timestampResolve_;
     // Shared with the readback callback by weak reference: a backend may deliver it after this
     // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.

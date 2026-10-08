@@ -53,6 +53,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The production desktop runner removes its owned mailbox root in finally.",
   ],
   [
+    "scripts/engine-load-test/holdout.ts",
+    "The holdout benchmark removes its scratch page directory in finally.",
+  ],
+  [
     "scripts/check-publish-state.ts",
     "The tarball gate packs into a scratch directory removed in finally.",
   ],
