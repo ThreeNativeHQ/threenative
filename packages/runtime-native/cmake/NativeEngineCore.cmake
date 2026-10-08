@@ -216,7 +216,8 @@ target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
-    native_engine_fog_math=fog)
+    native_engine_fog_math=fog
+    native_engine_material_node_key=node_key)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
 
 tn_native_engine_test(tn-native-engine-members-test tests/native-engine/members_test.cpp

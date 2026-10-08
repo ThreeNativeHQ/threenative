@@ -259,6 +259,26 @@ void builds() {
     }
 }
 
+// The program key of a material's node slots is what caches its programs: the empty-slot shortcut
+// must give exactly the text the general serializer gives, for empty and for filled slots.
+void nodeKey() {
+    const auto general = [](const MaterialNodes& nodes) {
+        std::string out;
+        for (const auto& node : nodes.graphs()) { const auto k = graph::key(node); out += std::to_string(k.size()) + ":" + k; }
+        return out;
+    };
+    MaterialNodes empty;
+    CHECK(graph::key(nullptr) == "null;");
+    CHECK(empty.key() == general(empty) && !empty.key().empty());
+    MaterialNodes filled;
+    filled.roughnessNode = std::make_shared<graph::NodeData>();
+    filled.colorNode = std::make_shared<graph::NodeData>();
+    CHECK(filled.key() == general(filled) && filled.key() != empty.key());
+    MaterialNodes other = filled;
+    other.colorNode.reset();
+    CHECK(other.key() == general(other) && other.key() != filled.key());
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"unsupported", unsupported}, {"builds", builds}, {"fog", fog})
+TN_TEST_MAIN({"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey})

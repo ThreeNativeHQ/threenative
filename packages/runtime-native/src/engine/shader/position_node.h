@@ -21,7 +21,13 @@ struct MaterialNodes {
                                          roughnessNode, metalnessNode, opacityNode}; }
     std::string key() const {
         std::string out;
-        for (const auto& node : graphs()) { const auto k = graph::key(node); out += std::to_string(k.size()) + ":" + k; }
+        for (const auto& node : graphs()) {
+            // An empty slot is most slots on most frames: graph::key(null) is "null;", without its
+            // hash map, std::function and string.
+            if (!node) { out += "5:null;"; continue; }
+            const auto k = graph::key(node);
+            out += std::to_string(k.size()) + ":" + k;
+        }
         return out;
     }
 };
