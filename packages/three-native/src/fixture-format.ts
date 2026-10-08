@@ -136,6 +136,11 @@ export interface IFixtureRefs {
   readonly refs: readonly string[];
 }
 
+/** A plain options object of scalars, as `new ExtrudeGeometry(shape, { depth: 2 })` takes. */
+export interface IFixtureRecord {
+  readonly record: Readonly<Record<string, number | string | boolean | null>>;
+}
+
 /** Every argument an op or observation carries. */
 export type FixtureArg =
   | number
@@ -145,7 +150,8 @@ export type FixtureArg =
   | IFixtureRef
   | IFixtureNumber
   | IFixtureArray
-  | IFixtureRefs;
+  | IFixtureRefs
+  | IFixtureRecord;
 
 /** `abs` is an absolute difference; `ulps` is a distance in representable doubles. At least one. */
 export interface IFixtureTolerance {
@@ -432,8 +438,24 @@ export function fixtureErrors(value: unknown, expectedName?: string): readonly s
       }
       return;
     }
+    if (keys.length === 1 && "record" in node) {
+      const fields = record(node.record);
+      if (node.record === null || typeof node.record !== "object" || Array.isArray(node.record))
+        errors.push(`${path}.record: must be an object of scalars`);
+      for (const [key, value] of Object.entries(fields)) {
+        if (!TOKEN.test(key))
+          errors.push(`${path}.record.${key}: keys must match /^[A-Za-z_$][\\w$]*$/`);
+        const scalar =
+          value === null ||
+          ["boolean", "string"].includes(typeof value) ||
+          (typeof value === "number" && Number.isFinite(value));
+        if (!scalar)
+          errors.push(`${path}.record.${key}: must be a finite number, string, boolean or null`);
+      }
+      return;
+    }
     errors.push(
-      `${path}: must be a number, string, boolean, null, { "ref": id }, { "num": name }, { "array": [...], "type": name } or { "refs": [...] }`,
+      `${path}: must be a number, string, boolean, null, { "ref": id }, { "num": name }, { "array": [...], "type": name }, { "refs": [...] } or { "record": {...} }`,
     );
   };
 

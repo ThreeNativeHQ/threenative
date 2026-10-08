@@ -168,6 +168,12 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
             PASS_REGULAR_EXPRESSION "ALLOWED_BLOCKED math-core-constructors, math-primitives-frustum\n"
             FAIL_REGULAR_EXPRESSION "(^|\n)FAIL ")
         set_tests_properties(native_engine_v8_scene_fixtures native_engine_v8_math_fixtures PROPERTIES LABELS "native-engine")
+        # The native Shape, ShapeGeometry and ExtrudeGeometry through JS, options objects included.
+        add_test(NAME native_engine_v8_shape_fixtures
+            COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx tests/compatibility/run-native.ts
+                --driver $<TARGET_FILE:tn-native-engine-v8-fixture-driver> --only "shapes-*"
+                --out ${CMAKE_CURRENT_BINARY_DIR}/v8_shapes.json)
+        set_tests_properties(native_engine_v8_shape_fixtures PROPERTIES LABELS "native-engine")
     endif()
 
     # Midway's texture slice through V8: HalfFloatType DataTextures and `image.data` re-sends.
