@@ -10621,6 +10621,19 @@
             "kind": "partial",
             "gaps": ["native-not-bound"]
           }
+        },
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -10843,7 +10856,21 @@
           }
         }
       ],
-      "methods": []
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "MeshLambertNodeMaterial",
@@ -11660,6 +11687,19 @@
             "kind": "partial",
             "gaps": ["native-not-bound"]
           }
+        },
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -11999,7 +12039,21 @@
           }
         }
       ],
-      "methods": []
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "MinEquation",
@@ -18502,7 +18556,21 @@
           }
         }
       ],
-      "methods": []
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "SpriteNodeMaterial",
@@ -18731,7 +18799,21 @@
           }
         }
       ],
-      "methods": []
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "SrcAlphaFactor",
@@ -24905,7 +24987,21 @@
           }
         }
       ],
-      "methods": []
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "MeshPhongMaterial",
@@ -25107,7 +25203,21 @@
           }
         }
       ],
-      "methods": []
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "MeshPhysicalMaterial",

@@ -10,6 +10,13 @@ Material::Material(MaterialType t, bool node) : type(t), nodeMaterial(node), id(
     specular.setHex(0x111111);  // MeshPhongMaterial's default, through ColorManagement as setHex does
 }
 
+std::shared_ptr<Material> Material::clone() const {
+    auto copy = std::make_shared<Material>(*this);
+    copy->id = nextMaterialId++;
+    copy->version_ = 0;
+    return copy;
+}
+
 std::string_view Material::typeName() const {
     if (spriteMaterial) return nodeMaterial ? "SpriteNodeMaterial" : "SpriteMaterial";
     if (nodeMaterial) return type == MaterialType::Basic ? "MeshBasicNodeMaterial" : "MeshStandardNodeMaterial";

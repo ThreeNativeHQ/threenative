@@ -2399,7 +2399,7 @@
     },
     "MeshBasicMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2442,7 +2442,7 @@
     },
     "MeshBasicNodeMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2499,7 +2499,7 @@
     },
     "MeshLambertMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2553,7 +2553,7 @@
     },
     "MeshPhongMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2616,7 +2616,7 @@
     },
     "MeshPhysicalMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "anisotropy",
@@ -2718,7 +2718,7 @@
     },
     "MeshStandardMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "aoMapIntensity",
@@ -2796,7 +2796,7 @@
     },
     "MeshStandardNodeMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "aoMapIntensity",
@@ -4754,7 +4754,7 @@
     },
     "SpriteMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -4801,7 +4801,7 @@
     },
     "SpriteNodeMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",

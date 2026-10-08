@@ -125,6 +125,10 @@ const orm = new THREE.MeshStandardMaterial({ roughnessMap: paramTexture, metalne
   aoMapIntensity: 0.6, emissiveMap: paramTexture });
 check(orm.roughnessMap === paramTexture && orm.metalnessMap === paramTexture && orm.aoMap === paramTexture &&
   orm.emissiveMap === paramTexture && orm.aoMapIntensity === 0.6, "packed ORM and emissive map parameters");
+const twin = painted.clone();
+check(twin instanceof THREE.MeshStandardMaterial && twin !== painted && twin.map === painted.map && twin.roughness === painted.roughness, "material clone");
+twin.roughness = 0.95;
+check(painted.roughness !== 0.95, "a clone is independent");
 const sprite = new THREE.SpriteMaterial({ transparent: false });
 check(sprite.transparent === false, "SpriteMaterial parameters after its defaults");
 check(refuses(() => new THREE.MeshBasicMaterial({ wireframe: true }), /material parameter 'wireframe' is not bound natively/), "unbound material parameter refused");

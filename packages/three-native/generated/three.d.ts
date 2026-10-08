@@ -1288,6 +1288,8 @@ readonly id: number;
 readonly type: string;
 
   setValues(values?: MeshBasicMaterialParameters): void;
+
+  clone(): this;
 }
 
 /** Catalog partial (shader-parameters): three/MeshBasicMaterialParameters. */
@@ -1318,6 +1320,8 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+
+  clone(): this;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1397,6 +1401,8 @@ readonly id: number;
 readonly type: string;
 
   setValues(values?: MeshStandardMaterialParameters): void;
+
+  clone(): this;
 }
 
 /** Catalog partial (shader-parameters): three/MeshStandardMaterialParameters. */
@@ -1440,6 +1446,8 @@ aoMap: Texture | null;
 emissiveMap: Texture | null;
 metalnessMap: Texture | null;
 roughnessMap: Texture | null;
+
+  clone(): this;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -2289,6 +2297,8 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+
+  clone(): this;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2318,6 +2328,8 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+
+  clone(): this;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -2959,6 +2971,8 @@ fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
+
+  clone(): this;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -2985,6 +2999,8 @@ fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
+
+  clone(): this;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */
