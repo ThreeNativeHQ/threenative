@@ -23,7 +23,8 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", ...constants];
+  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
+  "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", ...constants];
 await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
@@ -58,6 +59,14 @@ check(tube instanceof THREE.BufferGeometry && JSON.stringify(Array.from(tube.get
   ${JSON.stringify(JSON.stringify(Array.from(new three.TubeGeometry(new three.CatmullRomCurve3([[0, -0.11, 1.21], [0.02, -0.24, 1.26], [0.06, -0.35, 1.32], [0.085, -0.42, 1.37]].map(([x, y, z]) => new three.Vector3(x, y, z)), false, "centripetal"), 12, 0.05, 10, false).attributes.position.array)))}, "tube geometry");
 const streamed = new THREE.Float32BufferAttribute([0, 1, 2], 3).setUsage(THREE.DynamicDrawUsage);
 check(streamed.usage === THREE.DynamicDrawUsage, "attribute usage");
+const sit = new THREE.AnimationClip("sit", 2, [new THREE.VectorKeyframeTrack("hip.position", [0, 2], [0, 0, 0, 1, 2, 3]),
+  new THREE.QuaternionKeyframeTrack("arm.quaternion", [0, 2], [0, 0, 0, 1, 0, 0, 0, 1])]);
+const gripTracks = sit.tracks.map((track) => track.name.endsWith(".quaternion")
+  ? new THREE.QuaternionKeyframeTrack(track.name, [0, sit.duration], [0, 0.6, 0, 0.8, 0, 0.6, 0, 0.8]) : track.clone());
+const gripClip = new THREE.AnimationClip("grip", sit.duration, gripTracks);
+check(gripClip.duration === 2 && gripClip.tracks.length === 2 && gripClip.tracks[0].name === "hip.position" &&
+  gripClip.tracks[1].ValueTypeName === "quaternion" && Array.from(gripClip.tracks[1].values).join() === Array.from(new Float32Array([0, 0.6, 0, 0.8, 0, 0.6, 0, 0.8])).join() &&
+  gripClip.tracks[0] instanceof THREE.VectorKeyframeTrack, "authored clip from cloned and new tracks");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");

@@ -7739,6 +7739,11 @@
         "source": "three"
       },
       {
+        "symbol": "NumberKeyframeTrack",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Object3D",
         "kind": "class",
         "source": "three"
@@ -7775,6 +7780,11 @@
       },
       {
         "symbol": "Quaternion",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "QuaternionKeyframeTrack",
         "kind": "class",
         "source": "three"
       },
@@ -7870,6 +7880,11 @@
       },
       {
         "symbol": "Vector4",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "VectorKeyframeTrack",
         "kind": "class",
         "source": "three"
       }

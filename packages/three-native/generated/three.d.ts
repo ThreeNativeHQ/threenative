@@ -1530,6 +1530,17 @@ export declare const NotEqualDepth: 7;
 /** Catalog partial (native-not-implemented): three/NotEqualStencilFunc. */
 export declare const NotEqualStencilFunc: 517;
 
+/** Catalog supported: three/NumberKeyframeTrack. */
+export declare class NumberKeyframeTrack {
+constructor();
+readonly ValueTypeName: string;
+readonly name: string;
+readonly times: Float32Array;
+readonly values: Float32Array;
+
+  clone(): this;
+}
+
 /** Catalog supported: three/Object3D. */
 export declare class Object3D extends EventDispatcher {
 constructor();
@@ -1850,6 +1861,17 @@ readonly isQuaternion: true;
   toArray(array: ArrayLike<number>, offset?: number): ArrayLike<number>;
 
   random(): this;
+}
+
+/** Catalog supported: three/QuaternionKeyframeTrack. */
+export declare class QuaternionKeyframeTrack {
+constructor();
+readonly ValueTypeName: string;
+readonly name: string;
+readonly times: Float32Array;
+readonly values: Float32Array;
+
+  clone(): this;
 }
 
 /** Catalog partial (native-not-implemented): three/QuaternionLike. */
@@ -2806,6 +2828,17 @@ export type Vector4Like = { x: number; y: number; z: number; w: number; };
 
 /** Catalog partial (native-not-implemented): three/Vector4Tuple. */
 export type Vector4Tuple = [ number, number, number, number ];
+
+/** Catalog supported: three/VectorKeyframeTrack. */
+export declare class VectorKeyframeTrack {
+constructor();
+readonly ValueTypeName: string;
+readonly name: string;
+readonly times: Float32Array;
+readonly values: Float32Array;
+
+  clone(): this;
+}
 
 /** Catalog partial (native-not-implemented): three/WebGLCoordinateSystem. */
 export declare const WebGLCoordinateSystem: 2000;

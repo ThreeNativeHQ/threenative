@@ -139,11 +139,11 @@
       "callbacks": []
     },
     "AnimationClip": {
-      "constructor": false,
+      "constructor": true,
       "methods": [],
-      "getters": ["duration", "name", "tracks"],
+      "getters": ["duration", "name"],
       "setters": [],
-      "members": [],
+      "members": ["tracks"],
       "callbacks": []
     },
     "AnimationMixer": {
@@ -2729,6 +2729,14 @@
       "members": ["color", "emissive", "envMap", "map"],
       "callbacks": []
     },
+    "NumberKeyframeTrack": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": ["ValueTypeName", "name", "times", "values"],
+      "setters": [],
+      "members": [],
+      "callbacks": []
+    },
     "Object3D": {
       "constructor": true,
       "methods": [
@@ -3421,6 +3429,14 @@
       ],
       "getters": ["w", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
+      "members": [],
+      "callbacks": []
+    },
+    "QuaternionKeyframeTrack": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": ["ValueTypeName", "name", "times", "values"],
+      "setters": [],
       "members": [],
       "callbacks": []
     },
@@ -4922,6 +4938,14 @@
       ],
       "getters": ["height", "w", "width", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
+      "members": [],
+      "callbacks": []
+    },
+    "VectorKeyframeTrack": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": ["ValueTypeName", "name", "times", "values"],
+      "setters": [],
       "members": [],
       "callbacks": []
     }
