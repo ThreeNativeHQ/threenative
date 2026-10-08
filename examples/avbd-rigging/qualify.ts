@@ -43,7 +43,7 @@ if (typeof cli !== "string")
   throw new Error("TN_AVBD_QUALIFICATION: installed runner entry is missing.");
 const result = spawnSync(process.execPath, [join(dirname(packagePath), cli), ...args], {
   encoding: "utf8",
-  maxBuffer: 16 * 1024 * 1024,
+  maxBuffer: 512 * 1024 * 1024, // the comparison report carries every staged resource sample
   stdio: ["ignore", "pipe", "inherit"],
 });
 if (result.error !== undefined)

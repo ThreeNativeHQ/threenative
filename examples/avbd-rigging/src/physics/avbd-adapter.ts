@@ -318,7 +318,11 @@ export class AvbdRigging extends Group implements IComputeDriven {
         this.#timingRows.push({
           receipt: timing.finish(),
           cpuSubmissionMs: submissionEnd - submissionStart,
-          diagnosticSubmissionMs: diagnosticEnd - submissionEnd,
+          // Two back-to-back clock reads around no work can still differ by one timer tick.
+          diagnosticSubmissionMs:
+            this.#checks === undefined && this.#readback === undefined
+              ? 0
+              : diagnosticEnd - submissionEnd,
         });
       }
     } catch (error) {
