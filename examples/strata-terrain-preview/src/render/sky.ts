@@ -309,7 +309,9 @@ export function installOutdoorOcclusion(
                 smoothstep(400, 1500, world.getViewZNode().negate()),
               ),
             ),
-            (input as Node<"vec4">).a,
+            // Opaque frame: cutout edges keep coverage alpha through the chain, and an alpha
+            // canvas composited them over the page background (a blue-grey fringe on every blade).
+            1,
           ),
       },
     ],
