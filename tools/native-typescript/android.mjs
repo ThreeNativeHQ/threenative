@@ -7,11 +7,13 @@
 // stdlib and UI — so the page size comes from the NDK driver Perry invokes.
 //
 // Everything this builds is cached outside the repository and keyed by the target's own pins.
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLock, provisionCross, readRuntimeStamp } from "./provision.mjs";
+import { ndkTools } from "./three-bridge.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TARGETS = path.join(HERE, "targets");
@@ -135,4 +137,39 @@ export async function ensureAndroidRuntime(
   const provisioned = await provisionCross(target.triple, { lock, env, log });
   const stamp = readRuntimeStamp(path.join(provisioned.dir, "libperry_runtime.a"));
   return { ...provisioned, ndk, stamps: stamp === undefined ? undefined : { build: stamp.build } };
+}
+
+/** The SDK's adb: `ANDROID_HOME`/`ANDROID_SDK_ROOT` or the default SDK, which are usually off `PATH`. */
+export function resolveAdb(env = process.env) {
+  const roots = [env.ANDROID_HOME, env.ANDROID_SDK_ROOT, path.join(os.homedir(), "Android", "Sdk")];
+  for (const root of roots) {
+    if (!root) continue;
+    const adb = path.join(root, "platform-tools", "adb");
+    if (fs.existsSync(adb)) return adb;
+  }
+  throw named("TN_NATIVE_TS_ADB", `no adb under ${roots.filter(Boolean).join(", ")}`);
+}
+
+/**
+ * The loader that runs a Perry Android library as a program, built with the target's NDK clang and
+ * rebuilt only when its source is newer. Perry's Android output is a shared library, so a pushed
+ * case needs this to execute.
+ */
+export function buildSoRunner(target, ndk, outDir) {
+  const source = path.join(HERE, "android", "tn_so_runner.c");
+  const binary = path.join(outDir, "tn_so_runner");
+  if (fs.existsSync(binary) && fs.statSync(binary).mtimeMs >= fs.statSync(source).mtimeMs) {
+    return binary;
+  }
+  fs.mkdirSync(outDir, { recursive: true });
+  const { cc } = ndkTools(ndk, target);
+  const compile = spawnSync(
+    cc,
+    ["-fPIE", "-pie", `-Wl,-z,max-page-size=${target.maxPageSize}`, source, "-o", binary],
+    { encoding: "utf8" },
+  );
+  if (compile.status !== 0) {
+    throw named("TN_NATIVE_TS_RUNNER", `${cc} failed: ${compile.stderr.split("\n")[0]}`);
+  }
+  return binary;
 }

@@ -31,17 +31,15 @@ function stamp(build: string) {
 /** A staged cross tree: three archives and the Perry-style manifest that lists them. */
 function stagedTree(runtimeStamp: string) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tn-cross-"));
-  const files = ["libperry_runtime.a", "libperry_stdlib.a", "libperry_ui_android.a"].map(
-    (name) => {
-      const bytes = Buffer.from(name === "libperry_runtime.a" ? runtimeStamp : `${name} bytes`);
-      fs.writeFileSync(path.join(dir, name), bytes);
-      return {
-        path: name,
-        sha256: createHash("sha256").update(bytes).digest("hex"),
-        size: bytes.length,
-      };
-    },
-  );
+  const files = ["libperry_runtime.a", "libperry_stdlib.a", "libperry_ui_android.a"].map((name) => {
+    const bytes = Buffer.from(name === "libperry_runtime.a" ? runtimeStamp : `${name} bytes`);
+    fs.writeFileSync(path.join(dir, name), bytes);
+    return {
+      path: name,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      size: bytes.length,
+    };
+  });
   fs.writeFileSync(
     path.join(dir, "manifest.json"),
     JSON.stringify({ perry_version: "0.0.1", target_triple: TRIPLE, files }),
@@ -113,9 +111,9 @@ describe("a runtime built from the pinned source", () => {
   it("rejects a cached tree after its runtime is replaced by one with another stamp", () => {
     const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "tn-cross-cache-"));
     installBuiltCross(TRIPLE, stagedTree(stamp(BUILD_ID)), { lock: lock(), cacheDir });
-    expect(() => provisionBuiltCross(TRIPLE, { lock: lock(`src:${"c".repeat(64)}`), cacheDir })).toThrow(
-      /TN_NATIVE_TS_CROSS_BUILD/u,
-    );
+    expect(() =>
+      provisionBuiltCross(TRIPLE, { lock: lock(`src:${"c".repeat(64)}`), cacheDir }),
+    ).toThrow(/TN_NATIVE_TS_CROSS_BUILD/u);
   });
 });
 
@@ -130,6 +128,12 @@ describe("the NDK build environment", () => {
     expect(env.CXX_aarch64_linux_android).toBe(`${clang}++`);
     expect(env.AR_aarch64_linux_android).toBe(`${ndk.bin}/bin/llvm-ar`);
     expect(env.ANDROID_API_LEVEL).toBe("24");
+  });
+
+  it("points bindgen at the NDK's libclang and sysroot, which libsqlite3-sys needs to build", () => {
+    const env = crossEnv(TRIPLE, ndk, 24, {});
+    expect(env.LIBCLANG_PATH).toBe(`${ndk.bin}/lib`);
+    expect(env.BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android).toBe(`--sysroot=${ndk.bin}/sysroot`);
   });
 
   it("compiles the engine bridge with the same NDK clang", () => {

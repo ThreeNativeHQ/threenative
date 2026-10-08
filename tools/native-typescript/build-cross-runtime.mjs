@@ -93,6 +93,9 @@ export function crossEnv(triple, ndk, apiLevel, env = process.env) {
     [`CXX_${under}`, `${clang}++`],
     [`AR_${under}`, path.join(bin, "llvm-ar")],
     [`CARGO_TARGET_${under.toUpperCase()}_LINKER`, clang],
+    // libsqlite3-sys runs bindgen at build time: the NDK ships the libclang it needs and its sysroot.
+    ["LIBCLANG_PATH", path.join(ndk.bin, "lib")],
+    [`BINDGEN_EXTRA_CLANG_ARGS_${under}`, `--sysroot=${path.join(ndk.bin, "sysroot")}`],
   ];
   return Object.assign({ ...env }, Object.fromEntries(entries));
 }
@@ -109,8 +112,16 @@ export function stage(releaseDir, outDir, triple, version) {
     fs.copyFileSync(path.join(releaseDir, name), target);
     return { path: name, sha256: sha256(target), size: fs.statSync(target).size };
   });
-  const manifest = { perry_version: version, target_triple: triple, files };
-  fs.writeFileSync(path.join(outDir, "manifest.json"), `${JSON.stringify(manifest, undefined, 2)}\n`);
+  // Perry's manifest keys are snake_case and must keep that spelling.
+  const manifest = Object.fromEntries([
+    ["perry_version", version],
+    ["target_triple", triple],
+    ["files", files],
+  ]);
+  fs.writeFileSync(
+    path.join(outDir, "manifest.json"),
+    `${JSON.stringify(manifest, undefined, 2)}\n`,
+  );
   return manifest;
 }
 
@@ -144,7 +155,12 @@ export function buildCrossRuntime(triple, { lock = loadLock(), jobs = 4, work, o
     );
   }
   const staged = out ?? path.join(workDir, "staged");
-  const manifest = stage(path.join(source, "target", triple, "dist"), staged, triple, build.version);
+  const manifest = stage(
+    path.join(source, "target", triple, "dist"),
+    staged,
+    triple,
+    build.version,
+  );
   const stamp = readRuntimeStamp(path.join(staged, "libperry_runtime.a"));
   if (stamp?.build !== build.buildId) {
     throw named(

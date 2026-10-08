@@ -266,7 +266,8 @@ export async function provisionCross(triple, opts = {}) {
   const lock = opts.lock ?? loadLock(opts.lockFile);
   // A triple whose shipped runtime cannot link with the shipped compiler is built from source
   // (build-cross-runtime.mjs); the release archive is not used for it.
-  if (lock.crossBuilds?.[triple] !== undefined) return provisionBuiltCross(triple, { ...opts, lock });
+  if (lock.crossBuilds?.[triple] !== undefined)
+    return provisionBuiltCross(triple, { ...opts, lock });
   const artifact = lock.crossArtifacts?.[triple];
   if (!artifact) {
     throw named("TN_NATIVE_TS_HOST", `no pinned Perry cross runtime for ${triple}`);
@@ -342,7 +343,10 @@ export function readRuntimeStamp(archive) {
   const start = bytes.indexOf(prefix);
   if (start < 0) return undefined;
   const end = bytes.indexOf(0, start);
-  const fields = bytes.subarray(start, end < 0 ? start + 512 : end).toString("utf8").split("|");
+  const fields = bytes
+    .subarray(start, end < 0 ? start + 512 : end)
+    .toString("utf8")
+    .split("|");
   const version = fields.find((field) => field.startsWith("version="))?.slice("version=".length);
   const build = fields.find((field) => field.startsWith("build="))?.slice("build=".length);
   return version && build ? { version, build } : undefined;
