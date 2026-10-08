@@ -139,11 +139,11 @@
       "callbacks": []
     },
     "AnimationClip": {
-      "constructor": false,
+      "constructor": true,
       "methods": [],
-      "getters": ["duration", "name", "tracks"],
+      "getters": ["duration", "name"],
       "setters": [],
-      "members": [],
+      "members": ["tracks"],
       "callbacks": []
     },
     "AnimationMixer": {
@@ -2321,6 +2321,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2338,6 +2339,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2362,6 +2364,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2386,6 +2389,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2417,6 +2421,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2438,6 +2443,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2467,6 +2473,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2492,6 +2499,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2527,6 +2535,7 @@
       "getters": [
         "alphaTest",
         "anisotropy",
+        "blending",
         "clearcoat",
         "color.b",
         "color.g",
@@ -2562,6 +2571,7 @@
       "setters": [
         "alphaTest",
         "anisotropy",
+        "blending",
         "clearcoat",
         "color",
         "color.b",
@@ -2606,6 +2616,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2630,6 +2641,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2663,6 +2675,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2694,6 +2707,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2727,6 +2741,14 @@
         "visible"
       ],
       "members": ["color", "emissive", "envMap", "map"],
+      "callbacks": []
+    },
+    "NumberKeyframeTrack": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": ["ValueTypeName", "name", "times", "values"],
+      "setters": [],
+      "members": [],
       "callbacks": []
     },
     "Object3D": {
@@ -3421,6 +3443,14 @@
       ],
       "getters": ["w", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
+      "members": [],
+      "callbacks": []
+    },
+    "QuaternionKeyframeTrack": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": ["ValueTypeName", "name", "times", "values"],
+      "setters": [],
       "members": [],
       "callbacks": []
     },
@@ -4465,6 +4495,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -4484,6 +4515,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -4510,6 +4542,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -4536,6 +4569,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -4922,6 +4956,14 @@
       ],
       "getters": ["height", "w", "width", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
+      "members": [],
+      "callbacks": []
+    },
+    "VectorKeyframeTrack": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": ["ValueTypeName", "name", "times", "values"],
+      "setters": [],
       "members": [],
       "callbacks": []
     }
