@@ -35,7 +35,7 @@ change requires this opt-in command to refresh the record.
 | Coverage floor | Minimum |
 | --- | ---: |
 | `src/async/` | 77.19% |
-| `src/audio/` | 83.10% |
+| `src/audio/` | 83.44% |
 | `src/canvas/` | 78.21% |
 | `src/cli/` | 68.49% |
 | `src/fs/` | 75.43% |
@@ -50,7 +50,7 @@ change requires this opt-in command to refresh the record.
 | `src/vfs/` | 76.59% |
 | `src/webgpu/` | 71.72% |
 | `src/webtransport/` | 72.50% |
-| `src/workers/` | 80.20% |
+| `src/workers/` | 80.69% |
 
 ## Not compiled in this configuration
 
