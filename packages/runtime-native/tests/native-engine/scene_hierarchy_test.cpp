@@ -360,6 +360,12 @@ void revision() {
     CHECK(fused.revision() == afterZero + 1 && fused.matrixWorld.elements[3] == 0);
     fused.position.set(1, 2, 3);
     CHECK(fused.updateMatrixWorldSelf(false, true, true) && fused.revision() == afterZero + 3);
+    // An unchanged NaN is not a change: a double comparison would bump this object every frame.
+    fused.position.x = std::numeric_limits<double>::quiet_NaN();
+    CHECK(fused.updateMatrixWorldSelf(false, true, true));
+    const auto withNaN = fused.revision();
+    for (int frame = 0; frame < 5; ++frame) CHECK(!fused.updateMatrixWorldSelf(false, true, true));
+    CHECK(fused.revision() == withNaN);
 }
 
 // Ported from three r185 test/unit/src/core/Object3D.tests.js. The source holds 37 QUnit.test
