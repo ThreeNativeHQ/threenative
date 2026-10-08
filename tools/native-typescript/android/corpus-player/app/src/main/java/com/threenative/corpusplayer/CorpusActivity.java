@@ -28,19 +28,24 @@ public final class CorpusActivity extends Activity {
         super.onCreate(state);
         final String lib = getIntent().getStringExtra("lib");
         final File dir = getFilesDir();
-        for (String name : new String[] {"stdout.bin", "stderr.txt", "exit.txt"}) new File(dir, name).delete();
-        if (lib == null) {
-            Log.e(TAG, "TN_CORPUS_NO_LIB: pass --es lib <name>");
+        for (String name : new String[] {"stdout.bin", "stderr.txt", "exit.tmp", "exit.txt"}) new File(dir, name).delete();
+        if (lib == null || !lib.matches("[A-Za-z0-9_-]+")) {
+            Log.e(TAG, "TN_CORPUS_NO_LIB: pass --es lib <name> (letters, digits, - and _)");
             finish();
             return;
         }
         new Thread(null, () -> {
             final int code = runMain("lib" + lib + ".so", new File(dir, "stdout.bin").getPath(),
                     new File(dir, "stderr.txt").getPath());
-            try (FileOutputStream out = new FileOutputStream(new File(dir, "exit.txt"))) {
+            // Written aside and renamed, so a reader never sees a half-written record.
+            final File aside = new File(dir, "exit.tmp");
+            try (FileOutputStream out = new FileOutputStream(aside)) {
                 out.write(Integer.toString(code).getBytes());
             } catch (IOException e) {
                 Log.e(TAG, "TN_CORPUS_EXIT_WRITE " + e);
+            }
+            if (!aside.renameTo(new File(dir, "exit.txt"))) {
+                Log.e(TAG, "TN_CORPUS_EXIT_WRITE: rename failed");
             }
             Log.i(TAG, "TN_CORPUS_DONE " + lib + " exit=" + code);
         }, "corpus-main", STACK_BYTES).start();

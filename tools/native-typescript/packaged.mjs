@@ -101,6 +101,17 @@ async function readRemote(adb, serial, file) {
  * the shape of a host run, so the corpus comparison is the same code.
  */
 export async function runPackaged({ adb, serial, name, library, timeoutMs = 120_000 }) {
+  // The activity takes the name as an intent extra and builds a library path from it.
+  if (!/^[A-Za-z0-9_-]+$/u.test(name)) {
+    throw named("TN_NATIVE_TS_USAGE", `case name ${JSON.stringify(name)} is not a library name`);
+  }
+  // alloc-loop is held to a resident-set ceiling, which an app process cannot report here.
+  if (name === "alloc-loop") {
+    throw named(
+      "TN_NATIVE_TS_USAGE",
+      "alloc-loop checks peak resident set; run it without --packaged",
+    );
+  }
   const apk = buildPlayer(library);
   const expected = `lib/arm64-v8a/lib${name}.so`;
   if (!apkLibraries(apk).includes(expected)) {

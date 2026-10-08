@@ -1,10 +1,20 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { checkDevice, isAarch64Elf, pushRunner, runLibrary } from "../device.mjs";
 
 const TARGET = { abi: "arm64-v8a" };
+
+// The fake adb reads its answers from the environment; put the environment back after each test.
+const FAKE_KEYS = ["FAKE_EXIT", "FAKE_ABI", "FAKE_STATE", "FAKE_QEMU", "FAKE_CHMOD_FAIL"];
+const savedEnv = Object.fromEntries(FAKE_KEYS.map((key) => [key, process.env[key]]));
+afterEach(() => {
+  for (const key of FAKE_KEYS) {
+    if (savedEnv[key] === undefined) Reflect.deleteProperty(process.env, key);
+    else process.env[key] = savedEnv[key];
+  }
+});
 
 /**
  * A stand-in adb that logs each call and answers like a device: `-s` is required, getprop answers
@@ -26,6 +36,7 @@ case "$1" in
   push) echo "1 file pushed" ;;
   shell)
     case "$2" in
+      chmod) if [ -n "$FAKE_CHMOD_FAIL" ]; then echo "chmod: denied" >&2; exit 1; fi ;;
       getprop) case "$3" in
         ro.product.cpu.abi) echo "\${FAKE_ABI:-arm64-v8a}" ;;
         ro.product.model) echo "Pixel 8" ;;
@@ -86,7 +97,25 @@ describe("runLibrary", () => {
     expect(result.stderr).toBe("a diagnostic\n");
     expect(calls()).not.toContain("no serial");
     expect(calls()).toContain(
-      "shell /data/local/tmp/tn-corpus/tn_so_runner /data/local/tmp/tn-corpus/libcase.so",
+      "shell timeout 280 /data/local/tmp/tn-corpus/tn_so_runner /data/local/tmp/tn-corpus/libcase.so",
+    );
+  });
+
+  it("runs the case under a device-side timeout and removes the pushed library afterwards", async () => {
+    const { adb, calls } = fakeAdb();
+    const library = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tn-lib-")), "libcase.so");
+    fs.writeFileSync(library, "x");
+    await runLibrary(adb, "S1", library);
+    expect(calls()).toContain("shell timeout 280 /data/local/tmp/tn-corpus/tn_so_runner");
+    expect(calls()).toContain("shell rm -f /data/local/tmp/tn-corpus/libcase.so");
+  });
+
+  it("names a chmod the device refused instead of running a file that cannot execute", async () => {
+    const { adb } = fakeAdb({ FAKE_CHMOD_FAIL: "1" });
+    const library = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tn-lib-")), "libcase.so");
+    fs.writeFileSync(library, "x");
+    await expect(runLibrary(adb, "S1", library)).rejects.toThrow(
+      /adb chmod 644 libcase\.so failed/u,
     );
   });
 

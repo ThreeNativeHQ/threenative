@@ -49,19 +49,11 @@ function run(command, args, options = {}) {
 }
 
 /** The pinned tag, exported with no .git so the runtime takes the same `src:` stamp as the compiler. */
-export function exportSource(lock, work) {
+export function exportSource(lock, work, remote = `https://github.com/${lock.repository}`) {
   const clone = path.join(work, "clone");
   const exported = path.join(work, "src");
   if (!fs.existsSync(path.join(clone, ".git"))) {
-    run("git", [
-      "clone",
-      "--depth",
-      "1",
-      "--branch",
-      lock.tag,
-      `https://github.com/${lock.repository}`,
-      clone,
-    ]);
+    run("git", ["clone", "--depth", "1", "--branch", lock.tag, remote, clone]);
   }
   const head = spawnSync("git", ["-C", clone, "rev-parse", "HEAD"], { encoding: "utf8" });
   if (head.stdout.trim() !== lock.tagRefSha) {
@@ -79,6 +71,39 @@ export function exportSource(lock, work) {
   const tar = spawnSync("tar", ["-x", "-C", exported], { input: archive.stdout });
   if (tar.status !== 0) throw named("TN_NATIVE_TS_CROSS_BUILD", "tar -x of the export failed");
   return exported;
+}
+
+/**
+ * The Rust toolchain the exported tree pins, which must name a date or a release: a floating
+ * channel would make the same tag build different runtimes on different days.
+ */
+export function assertDatePinnedToolchain(source) {
+  const file = path.join(source, "rust-toolchain.toml");
+  const channel = /^\s*channel\s*=\s*"([^"]+)"/mu.exec(
+    fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "",
+  )?.[1];
+  if (
+    channel === undefined ||
+    !/^(?:(?:nightly|beta|stable)-\d{4}-\d{2}-\d{2}|\d+\.\d+(?:\.\d+)?)$/u.test(channel)
+  ) {
+    throw named(
+      "TN_NATIVE_TS_CROSS_BUILD",
+      `rust-toolchain.toml pins ${channel === undefined ? "no channel" : `the floating channel ${channel}`}; a date or release is required`,
+    );
+  }
+  return channel;
+}
+
+/** A built runtime is accepted only when it carries the stamp the lock pins, which is the compiler's. */
+export function assertBuiltStamp(staged, build) {
+  const stamp = readRuntimeStamp(path.join(staged, "libperry_runtime.a"));
+  if (stamp?.build !== build.buildId) {
+    throw named(
+      "TN_NATIVE_TS_CROSS_BUILD",
+      `the built runtime is stamped ${stamp?.build ?? "unstamped"}, the lock pins ${build.buildId}`,
+    );
+  }
+  return stamp;
 }
 
 /** The sysroot and clang builtin headers (stdarg.h and friends) bindgen needs to parse a C header for the NDK. */
@@ -147,12 +172,15 @@ export function buildCrossRuntime(triple, { lock = loadLock(), jobs = 4, work, o
   fs.mkdirSync(workDir, { recursive: true });
   const source = exportSource(lock, workDir);
   const env = crossEnv(triple, ndk, found.target.apiLevel);
-  // rust-toolchain.toml in the exported tree picks the channel; rustup installs it on first use.
+  // rust-toolchain.toml in the exported tree picks the channel, and rustup installs it on first use.
+  assertDatePinnedToolchain(source);
   for (const packages of PACKAGES) {
     run(
       "cargo",
       [
         "build",
+        // Cargo.lock decides every dependency: a lock that needs updating fails the build.
+        "--locked",
         "-j",
         String(jobs),
         "--profile",
@@ -171,13 +199,7 @@ export function buildCrossRuntime(triple, { lock = loadLock(), jobs = 4, work, o
     triple,
     build.version,
   );
-  const stamp = readRuntimeStamp(path.join(staged, "libperry_runtime.a"));
-  if (stamp?.build !== build.buildId) {
-    throw named(
-      "TN_NATIVE_TS_CROSS_BUILD",
-      `the built runtime is stamped ${stamp?.build ?? "unstamped"}, the lock pins ${build.buildId}`,
-    );
-  }
+  const stamp = assertBuiltStamp(staged, build);
   return { staged, manifest, stamp };
 }
 

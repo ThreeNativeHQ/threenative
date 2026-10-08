@@ -19,22 +19,38 @@ function cc(args: string[]) {
 }
 
 describe.runIf(hasCc)("tn_pthread_keys.c", () => {
-  it("hands out more keys than bionic allows and runs every destructor at thread exit", () => {
+  const fixture = path.join(import.meta.dirname, "fixtures", "pthread_keys_test.c");
+
+  /** The fixture as a shared library, with or without the shim, run by the loader like a Perry library. */
+  function run(withShim: boolean) {
     const dir = scratch();
-    const exe = path.join(dir, "keys");
+    const library = path.join(dir, "libkeys.so");
     cc([
-      "-O1",
+      "-shared",
+      "-fPIC",
+      "-Wl,-Bsymbolic",
       "-pthread",
+      fixture,
+      ...(withShim ? [path.join(ANDROID, "tn_pthread_keys.c")] : []),
       "-o",
-      exe,
-      path.join(ANDROID, "tn_pthread_keys.c"),
-      path.join(import.meta.dirname, "fixtures", "pthread_keys_test.c"),
+      library,
       "-ldl",
     ]);
-    const run = spawnSync(exe, { encoding: "utf8" });
-    expect(run.stderr).toBe("");
-    expect(run.stdout).toBe("keys ok\n");
-    expect(run.status).toBe(0);
+    const runner = path.join(dir, "runner");
+    cc([path.join(ANDROID, "tn_so_runner.c"), "-o", runner, "-ldl", "-pthread"]);
+    return spawnSync(runner, [library], { encoding: "utf8" });
+  }
+
+  it("hands out more keys than the libc allows and runs every destructor at thread exit", () => {
+    const result = run(true);
+    expect(result.stdout).toBe("keys ok\n");
+    expect(result.status).toBe(0);
+  });
+
+  it("red control: without the shim the same library cannot create 2000 keys", () => {
+    const result = run(false);
+    expect(result.stdout).not.toContain("keys ok");
+    expect(result.status).toBe(1);
   });
 });
 

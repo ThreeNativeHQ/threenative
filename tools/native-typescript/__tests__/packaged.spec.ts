@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { apkLibraries, resolveGradle } from "../packaged.mjs";
+import { apkLibraries, resolveGradle, runPackaged } from "../packaged.mjs";
 
 const pinned = /gradle-([\d.]+)-bin\.zip/u.exec(
   fs.readFileSync(
@@ -62,5 +62,21 @@ describe.runIf(spawnSync("unzip", ["-v"]).status === 0)("apkLibraries", () => {
     // python's zipfile CLI writes the archive, so the test needs no `zip` binary.
     spawnSync("python3", ["-m", "zipfile", "-c", apk, "lib", "classes.dex"], { cwd: dir });
     expect(apkLibraries(apk)).toEqual(["lib/arm64-v8a/libcase.so"]);
+  });
+});
+
+describe("runPackaged", () => {
+  const request = { adb: "adb", serial: "S1", library: "/nonexistent/lib.so" };
+
+  it("refuses a case name that is not a library name, before anything is built or pushed", async () => {
+    await expect(runPackaged({ ...request, name: "../etc/passwd" })).rejects.toThrow(
+      /TN_NATIVE_TS_USAGE.*not a library name/u,
+    );
+  });
+
+  it("refuses alloc-loop, whose resident-set ceiling an app run cannot read", async () => {
+    await expect(runPackaged({ ...request, name: "alloc-loop" })).rejects.toThrow(
+      /TN_NATIVE_TS_USAGE: alloc-loop checks peak resident set/u,
+    );
   });
 });

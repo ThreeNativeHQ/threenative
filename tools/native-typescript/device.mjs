@@ -6,6 +6,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const REMOTE_DIR = "/data/local/tmp/tn-corpus";
+/** Seconds a library may run on the device before it is killed (exit 124). */
+export const DEVICE_TIMEOUT_S = 280;
 const PEAK_RSS = /^TN_PEAK_RSS_KB (\d+)\r?\n/m;
 
 function named(code, message) {
@@ -75,7 +77,13 @@ async function pushed(adb, serial, local, remote, mode) {
       `adb push ${path.basename(local)} failed: ${push.stderr.trim()}`,
     );
   }
-  await adbRun(adb, serial, ["shell", "chmod", mode, remote]);
+  const chmod = await adbRun(adb, serial, ["shell", "chmod", mode, remote]);
+  if (chmod.status !== 0) {
+    throw named(
+      "TN_NATIVE_TS_DEVICE",
+      `adb chmod ${mode} ${path.basename(local)} failed: ${chmod.stderr.trim()}`,
+    );
+  }
   return remote;
 }
 
@@ -92,18 +100,24 @@ export async function pushRunner(adb, serial, runner) {
 export async function runLibrary(adb, serial, library) {
   const remote = `${REMOTE_DIR}/${path.basename(library)}`;
   await pushed(adb, serial, library, remote, "644");
-  const run = await adbRun(adb, serial, ["shell", `${REMOTE_DIR}/tn_so_runner ${remote}`], {
-    timeoutMs: 300_000,
-  });
-  await adbRun(adb, serial, ["shell", "rm", "-f", remote]);
-  const stderr = run.stderr;
-  const peakKb = PEAK_RSS.exec(stderr)?.[1];
-  return {
-    stdout: run.stdout,
-    status: run.status,
-    stderr: stderr.replace(PEAK_RSS, ""),
-    peakRssBytes: peakKb === undefined ? 0 : Number(peakKb) * 1024,
-  };
+  try {
+    // `timeout` on the device ends a case that hangs; the host-side timer is a backstop for adb itself.
+    const run = await adbRun(
+      adb,
+      serial,
+      ["shell", `timeout ${DEVICE_TIMEOUT_S} ${REMOTE_DIR}/tn_so_runner ${remote}`],
+      { timeoutMs: (DEVICE_TIMEOUT_S + 20) * 1000 },
+    );
+    const peakKb = PEAK_RSS.exec(run.stderr)?.[1];
+    return {
+      stdout: run.stdout,
+      status: run.status,
+      stderr: run.stderr.replace(PEAK_RSS, ""),
+      peakRssBytes: peakKb === undefined ? 0 : Number(peakKb) * 1024,
+    };
+  } finally {
+    await adbRun(adb, serial, ["shell", "rm", "-f", remote]);
+  }
 }
 
 /** True when `file` is the ELF a device of this ABI can load; guards against pushing a host binary. */

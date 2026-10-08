@@ -794,12 +794,7 @@ async function main() {
     }
   }
 
-  // The ledger is read for every native run: a malformed one fails closed rather than reading as
-  // "no patches", and an ordinary native run is the patched one it declares.
-  const ledger = wantNative ? loadLedger() : undefined;
-  const info = wantNative
-    ? await provision({ patches: withoutPatches ? [] : ledger.patches, log: () => {} })
-    : undefined;
+  // Usage is settled before the toolchain is provisioned: a wrong flag must not cost a download.
   if (serial !== undefined && !cross)
     throw named("TN_NATIVE_TS_USAGE", "--adb needs --native --target <android triple>");
   if (cross && serial === undefined && !buildOnly)
@@ -814,6 +809,13 @@ async function main() {
     );
   if (serial !== undefined && buildOnly)
     throw named("TN_NATIVE_TS_USAGE", "--adb runs the cases; drop --build-only");
+
+  // The ledger is read for every native run: a malformed one fails closed rather than reading as
+  // "no patches", and an ordinary native run is the patched one it declares.
+  const ledger = wantNative ? loadLedger() : undefined;
+  const info = wantNative
+    ? await provision({ patches: withoutPatches ? [] : ledger.patches, log: () => {} })
+    : undefined;
   const plan = cross
     ? { ...(await crossPlan(targetFile.target, outDir, serial, packaged)), buildOnly }
     : { buildOnly, render, outDir };

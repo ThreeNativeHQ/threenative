@@ -1,9 +1,16 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { crossEnv } from "../build-cross-runtime.mjs";
+import {
+  assertBuiltStamp,
+  assertDatePinnedToolchain,
+  crossEnv,
+  exportSource,
+  stage,
+} from "../build-cross-runtime.mjs";
 import {
   installBuiltCross,
   loadLock,
@@ -151,5 +158,91 @@ describe("the NDK build environment", () => {
       cxx: `${ndk.bin}/bin/${TRIPLE}24-clang++`,
       ar: `${ndk.bin}/bin/llvm-ar`,
     });
+  });
+});
+
+describe("exporting the pinned source", () => {
+  /** A local repository with one commit and the tag the lock names. */
+  function repository() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tn-perry-src-"));
+    const git = (...args: string[]) =>
+      spawnSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+        encoding: "utf8",
+      });
+    git("init", "-q");
+    fs.writeFileSync(path.join(dir, "Cargo.toml"), "[workspace]\n");
+    git("add", "Cargo.toml");
+    git("commit", "-q", "-m", "release");
+    git("tag", "v0.0.1");
+    return { dir, sha: git("rev-parse", "HEAD").stdout.trim() };
+  }
+
+  it("exports the tag without .git, so the runtime takes the compiler's source stamp", () => {
+    const { dir, sha } = repository();
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "tn-perry-work-"));
+    const exported = exportSource({ tag: "v0.0.1", tagRefSha: sha, repository: "x/y" }, work, dir);
+    expect(fs.readFileSync(path.join(exported, "Cargo.toml"), "utf8")).toBe("[workspace]\n");
+    expect(fs.existsSync(path.join(exported, ".git"))).toBe(false);
+  });
+
+  it("refuses a tag that no longer points at the pinned commit", () => {
+    const { dir } = repository();
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "tn-perry-work-"));
+    expect(() =>
+      exportSource({ tag: "v0.0.1", tagRefSha: "f".repeat(40), repository: "x/y" }, work, dir),
+    ).toThrow(/the lock pins f+/u);
+  });
+});
+
+describe("the toolchain pin", () => {
+  const withChannel = (channel: string) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tn-toolchain-"));
+    fs.writeFileSync(
+      path.join(dir, "rust-toolchain.toml"),
+      `[toolchain]\nchannel = "${channel}"\n`,
+    );
+    return dir;
+  };
+
+  it("accepts a dated channel or a release and refuses a floating one", () => {
+    expect(assertDatePinnedToolchain(withChannel("nightly-2026-08-20"))).toBe("nightly-2026-08-20");
+    expect(assertDatePinnedToolchain(withChannel("1.97.1"))).toBe("1.97.1");
+    expect(() => assertDatePinnedToolchain(withChannel("nightly"))).toThrow(
+      /floating channel nightly/u,
+    );
+    expect(() => assertDatePinnedToolchain(withChannel("stable"))).toThrow(
+      /floating channel stable/u,
+    );
+    expect(() =>
+      assertDatePinnedToolchain(fs.mkdtempSync(path.join(os.tmpdir(), "tn-toolchain-"))),
+    ).toThrow(/no channel/u);
+  });
+});
+
+describe("staging a build", () => {
+  it("copies the archives beside a manifest that lists each one's checksum and size", () => {
+    const release = fs.mkdtempSync(path.join(os.tmpdir(), "tn-release-"));
+    for (const name of ["libperry_runtime.a", "libperry_stdlib.a", "libperry_ui_android.a"]) {
+      fs.writeFileSync(path.join(release, name), name);
+    }
+    const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tn-staged-")), "out");
+    const manifest = stage(release, out, TRIPLE, "0.0.1");
+    expect(manifest.target_triple).toBe(TRIPLE);
+    expect(manifest.files.map((file: { path: string }) => file.path)).toEqual([
+      "libperry_runtime.a",
+      "libperry_stdlib.a",
+      "libperry_ui_android.a",
+    ]);
+    expect(manifest.files[0].size).toBe("libperry_runtime.a".length);
+    expect(JSON.parse(fs.readFileSync(path.join(out, "manifest.json"), "utf8"))).toEqual(manifest);
+  });
+
+  it("accepts only a runtime carrying the pinned stamp", () => {
+    const build = { version: "0.0.1", buildId: BUILD_ID };
+    expect(assertBuiltStamp(stagedTree(stamp(BUILD_ID)), build).build).toBe(BUILD_ID);
+    expect(() => assertBuiltStamp(stagedTree(stamp(`git:${"b".repeat(40)}`)), build)).toThrow(
+      /stamped git:b+, the lock pins src:a+/u,
+    );
+    expect(() => assertBuiltStamp(stagedTree("no stamp"), build)).toThrow(/unstamped/u);
   });
 });
