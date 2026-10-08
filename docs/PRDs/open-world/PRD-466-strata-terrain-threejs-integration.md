@@ -3800,4 +3800,9 @@ The same judge scores the kept state 5/10 on the meadow and player views. The ga
 light shafts, dappled sun and bright back-lit air, which none of these constant changes produce; the
 next lane needs a volumetric or height-fog light term and a sun disc with bloom, not more rebalancing.
 
+Kept: the TRAA silhouette stair-steps came from the air composite's one-pixel depth dilation, written
+for MSAA; on the single-sampled TRAA path it painted surface air along every edge against the sky.
+Plain depth on that path raises the share of intermediate pixels on the crown/sky boundary from 0.392
+to 0.501 (MSAA reference 0.478), 0 console errors.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.

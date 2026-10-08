@@ -223,7 +223,11 @@ export function installOutdoorOcclusion(
   const daylight = scene.children.find((child) => child instanceof Daylight);
   const depth = world.getTextureNode("depth");
   // An uncovered MSAA depth sample must not leave a one-pixel terrain edge against the sky.
-  const airDepth = depth.r.min(depth.sample(screenUV.add(vec2(0, screenSize.y.reciprocal()))).r);
+  // Single-sampled under TRAA there is no uncovered sample, and the dilation would paint a hard
+  // one-pixel seam of surface air along every silhouette against the sky.
+  const airDepth = temporal
+    ? depth.r
+    : depth.r.min(depth.sample(screenUV.add(vec2(0, screenSize.y.reciprocal()))).r);
   const cameraWorld = uniform(camera.matrixWorld);
   const surface = cameraWorld.mul(
     vec4(getViewPosition(screenUV, airDepth, uniform(camera.projectionMatrixInverse)), 1),
