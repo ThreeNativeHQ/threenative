@@ -22,7 +22,13 @@ export interface INativeDefinitionOptions {
   root?: string;
 }
 
+// One walk per root per process: the engine tree made each lookup re-read thousands of files, and
+// a spec with eleven lookups ran past its 30 s timeout under load.
+const sourceFilesByRoot = new Map<string, INativeSourceFile[]>();
+
 function nativeSourceFiles(root: string): INativeSourceFile[] {
+  const cached = sourceFilesByRoot.get(root);
+  if (cached) return cached;
   const files: INativeSourceFile[] = [];
   const walk = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -37,6 +43,7 @@ function nativeSourceFiles(root: string): INativeSourceFile[] {
     }
   };
   walk(root);
+  sourceFilesByRoot.set(root, files);
   return files;
 }
 
