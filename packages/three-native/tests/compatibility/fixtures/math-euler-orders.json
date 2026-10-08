@@ -441,8 +441,18 @@
   "observe": [
     {
       "id": "e01",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e01",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e01",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e01",
@@ -456,8 +466,18 @@
     },
     {
       "id": "b03",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b03",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b03",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "b03",
@@ -471,13 +491,38 @@
     },
     {
       "id": "b05",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b05",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b05",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b05",
+      "kind": "string",
+      "path": "order"
     },
     {
       "id": "e06",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e06",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e06",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e06",
@@ -491,8 +536,18 @@
     },
     {
       "id": "b08",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b08",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b08",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "b08",
@@ -506,13 +561,38 @@
     },
     {
       "id": "b10",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b10",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b10",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b10",
+      "kind": "string",
+      "path": "order"
     },
     {
       "id": "e11",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e11",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e11",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e11",
@@ -526,8 +606,18 @@
     },
     {
       "id": "b13",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b13",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b13",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "b13",
@@ -541,13 +631,38 @@
     },
     {
       "id": "b15",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b15",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b15",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b15",
+      "kind": "string",
+      "path": "order"
     },
     {
       "id": "e16",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e16",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e16",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e16",
@@ -561,8 +676,18 @@
     },
     {
       "id": "b18",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b18",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b18",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "b18",
@@ -576,13 +701,38 @@
     },
     {
       "id": "b20",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b20",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b20",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b20",
+      "kind": "string",
+      "path": "order"
     },
     {
       "id": "e21",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e21",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e21",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e21",
@@ -596,8 +746,18 @@
     },
     {
       "id": "b23",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b23",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b23",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "b23",
@@ -611,13 +771,38 @@
     },
     {
       "id": "b25",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b25",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b25",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b25",
+      "kind": "string",
+      "path": "order"
     },
     {
       "id": "e26",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e26",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e26",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e26",
@@ -631,8 +816,18 @@
     },
     {
       "id": "b28",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b28",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b28",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "b28",
@@ -646,8 +841,23 @@
     },
     {
       "id": "b30",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b30",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b30",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b30",
+      "kind": "string",
+      "path": "order"
     }
   ]
 }

@@ -156,7 +156,7 @@ describe("the differential runner", () => {
     withDriverMode("short");
     const result = named(run(FAKE_DRIVER), "euler-orders");
     expect(result.status).toBe("fail");
-    expect(result.reason).toMatch(/answered 1 observation\(s\), the fixture asserts 13/u);
+    expect(result.reason).toMatch(/answered 1 observation\(s\), the fixture asserts 28/u);
   });
 
   it("fails a driver that reports an error instead of an answer", () => {

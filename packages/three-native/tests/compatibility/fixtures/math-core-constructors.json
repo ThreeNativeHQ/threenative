@@ -388,8 +388,18 @@
     },
     {
       "id": "e10",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e10",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e10",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e10",
@@ -398,8 +408,18 @@
     },
     {
       "id": "r12",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r12",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r12",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r12",
