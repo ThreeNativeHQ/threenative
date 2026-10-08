@@ -68,7 +68,25 @@ own repository, so its source is never copied here.
 - [ ] That inspected artifact runs its playtest journey end to end on desktop. proof: `node packages/playtest/dist/runner/cli.js <game>.playtest.json --target desktop`
 - [ ] The same game's strict Android artifact passes its journey on the emulator. proof: `node packages/playtest/dist/runner/cli.js <game>.playtest.json --target android`
 
+#### Phase 4: Strict packaging of real games
+**Status:** IN PROGRESS — measured 2026-10-08 on Perry 0.5.1520 over the 13 templates and Midway: Perry
+compiled every module (29 to 56 per game, none rejected as syntax) and no game links, because
+`@threenative/*`, `three/tsl`, `three/webgpu`, `three/addons/*` and many three-facade members are
+missing. The part of Midway's simulation that does link (`src/sim`, 12.7k lines) runs under Perry and
+prints what tsx prints in 28 of 32 valid check scripts, 13 to 16 times slower.
+**Files:** `packages/runtime-native/scripts/package-strict.mjs`, `tools/native-typescript/compile-game.mjs`
+- [x] A survey compiles a game's whole source tree under strict Perry, names missing engine API apart from Perry's own errors, and runs the game's check scripts under tsx and Perry. proof: `pnpm exec vitest run tools/native-typescript/__tests__/compile-game.spec.ts packages/runtime-native/__tests__/strict-incremental-build.spec.ts` — 2026-10-08: 25 tests green. On minimal: 30 modules compiled, 0 Perry errors, 15 unresolved imports, 40 undefined symbols, 28 missing facade members.
+- [ ] The strict build stages `@threenative/core` and its workspace dependencies, so a game's `@threenative/*` imports resolve. proof: `node tools/native-typescript/compile-game.mjs packages/create-threenative/templates/minimal` reports no unresolved `@threenative/*` import (today: `@threenative/core`, `@threenative/core/playtest`, `@threenative/physics`).
+- [ ] Midway's simulation check scripts print the same stdout and exit code under Perry as under tsx, as a regression check for each Perry upgrade. proof: `node tools/native-typescript/compile-game.mjs <midway-open-pacific> --checks <midway-open-pacific>/scripts --package @threenative/core=packages/core/src/flight.ts` (2026-10-08: 28 of 32 valid scripts `same`; `ai-flight-cost` fails its own 4 ms ceiling under Perry; `check-fluid`, `check-particle-render` and `check-hud-transport` need engine API that is not there yet).
+
 ## Blocked on
 
 - Choosing the representative game for gate T: owner decision (João).
 - The strict Android artifact on physical hardware: the owner's attached device.
+- Which native form each web-only import of `@threenative/core` takes under strict mode, one owner decision each: `three/webgpu` and `three/tsl` (the TSL names `Fn`, `uniform`, `float`, `vec2`..`vec4`, `bloom`, `ao`, `denoise` and the rest), `three/addons/*`, the GLTF, KTX2, DRACO and meshopt loaders, `three-mesh-bvh` (its namespace import is a hard Perry error), `zustand/vanilla`, and the `document`, `window` and `ResizeObserver` reads. Perry reports each as an unresolved import and the link then fails on the symbols.
+- Five Perry 0.5.1520 performance cliffs on object-property patterns that game state uses (reading a missing property, the `in` operator on a missing key, reading a frozen object, `Object.freeze`, object spread; 80 to 300 times slower than V8, output identical): upstream Perry; filing is the owner's call. Reproducers: `tools/native-typescript/repros/`.
+
+## Decisions
+
+- 2026-10-08, owner via lead: no workaround for the Perry cliffs in game code, and no strict-build lint for `Object.freeze` or spread, because either would teach games around a compiler bug.
+- 2026-10-08, lead: the strict-packaging work for real games extends this PRD as Phase 4 instead of opening a new PRD (numbers were colliding across worktrees). That is a fourth phase against R5's three; split it into its own PRD if it grows past these three boxes.
