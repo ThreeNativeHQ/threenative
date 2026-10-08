@@ -52,6 +52,8 @@ export function DataTexture(data = null, width = 1, height = 1, ...rest) {
   return texture;
 }
 DataTexture.prototype = NativeDataTexture.prototype;
+// The adapter finds the engine class a subclass constructs by walking new.target's prototype chain.
+Object.setPrototypeOf(DataTexture, NativeDataTexture);
 
 // ponytail: a DataTexture underneath, so it is also `instanceof DataTexture` and keeps one mip level;
 // bind a native CanvasTexture when a game needs mipmapped canvas art.
@@ -94,6 +96,7 @@ export function Texture(image, ...rest) {
   return texture;
 }
 Texture.prototype = NativeTexture.prototype;
+Object.setPrototypeOf(Texture, NativeTexture);
 
 /** An ImageBitmap whose pixels are a native Texture, adopted once by `new Texture(bitmap)`. */
 function imageBitmap(texture, options = {}, width = undefined, height = undefined) {

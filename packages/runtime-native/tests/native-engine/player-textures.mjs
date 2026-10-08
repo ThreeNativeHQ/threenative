@@ -91,6 +91,13 @@ check(map.version === packed + 1, "one upload per needsUpdate");
 map.image = { data: new Uint16Array(4), width: 1, height: 1 };
 refuses(() => { map.needsUpdate = true; }, /image.data must be a typed array of width \\* height \\* 4 values/, "resized source");
 refuses(() => new DataTexture(new Float32Array([0.5, 0, 0, 1]), 1, 1, RGBAFormat, HalfFloatType), /binary16 bits/, "float data as half");
+// Subclasses construct as in three, and keep the facade's source behaviour.
+class TintedData extends DataTexture { constructor(data) { super(data, 1, 1); this.tinted = true; } }
+const tinted = new TintedData(new Uint8Array([1, 2, 3, 4]));
+check(tinted instanceof TintedData && tinted instanceof THREE.DataTexture && tinted instanceof THREE.Texture && tinted.tinted, "DataTexture subclass");
+check(tinted.image.data[3] === 4, "DataTexture subclass keeps its source");
+class Plain extends THREE.Texture {}
+check(new Plain() instanceof Plain && new Plain() instanceof THREE.Texture, "Texture subclass");
 
 // CanvasTexture reads any canvas through the standard 2D API, and again on needsUpdate.
 let reads = 0;
@@ -102,6 +109,9 @@ const drawnVersion = drawn.version;
 drawn.needsUpdate = true;
 check(reads === 3 && drawn.version === drawnVersion + 1, "canvas re-read on needsUpdate");
 refuses(() => new THREE.CanvasTexture({ width: 1, height: 1 }), /TN_NATIVE_CANVAS_TEXTURE_SOURCE/, "canvas without 2D context");
+class Label extends THREE.CanvasTexture {}
+const label = new Label(canvas);
+check(label instanceof Label && label.isCanvasTexture && label instanceof THREE.Texture, "CanvasTexture subclass");
 
 // A Texture takes an ImageBitmapLoader result or nothing; any other image is refused, not blank.
 check(new THREE.Texture() instanceof THREE.Texture, "empty texture");
