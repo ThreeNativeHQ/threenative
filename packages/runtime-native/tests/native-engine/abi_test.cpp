@@ -712,8 +712,67 @@ void tsl_uniform_value() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-540: Fn/If/Else/Loop/toVar/assign through the C ABI for a back end that runs the callbacks
+// itself (the Wasm browser back end), building the very graph g::Block builds.
+void tsl_statements() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto number = [](double n) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NUMBER; a.number = n; return a; };
+    const auto nodeArg = [](uint64_t id) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_NODE; a.node = id; return a; };
+    uint64_t zero = 0, acc = 0, loop = 0, index = 0, cond = 0, then = 0, branch = 0, otherwise = 0, body = 0, fn = 0, done = 0;
+    const tn_tsl_arg_t z = number(0), one = number(1), two = number(2);
+    CHECK(tn_tsl_statement(ctx, "toVar", &zero, nullptr, 0, &acc, &d.value) != TN_OK);  // outside any Fn
+    tn_diagnostic_release(&d.value);
+
+    CHECK(tn_tsl_scope_begin(ctx) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "float", nullptr, &z, 1, &zero, &d.value) == TN_OK);
+    CHECK(tn_tsl_statement(ctx, "toVar", &zero, nullptr, 0, &acc, &d.value) == TN_OK);
+    CHECK(tn_tsl_statement(ctx, "Loop.begin", nullptr, &two, 1, &loop, &d.value) == TN_OK);
+    CHECK(tn_tsl_statement(ctx, "Loop.index", &loop, nullptr, 0, &index, &d.value) == TN_OK);
+    CHECK(tn_tsl_scope_begin(ctx) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "lessThan", &index, &one, 1, &cond, &d.value) == TN_OK);
+    CHECK(tn_tsl_scope_begin(ctx) == TN_OK);
+    CHECK(tn_tsl_statement(ctx, "assign", &acc, &one, 1, &done, &d.value) == TN_OK);
+    CHECK(tn_tsl_scope_end(ctx, nullptr, &then, &d.value) == TN_OK);
+    const tn_tsl_arg_t ifArgs[2] = {nodeArg(cond), nodeArg(then)};
+    CHECK(tn_tsl_statement(ctx, "If", nullptr, ifArgs, 2, &branch, &d.value) == TN_OK);
+    CHECK(tn_tsl_scope_begin(ctx) == TN_OK);
+    CHECK(tn_tsl_statement(ctx, "assign", &acc, &two, 1, &done, &d.value) == TN_OK);
+    CHECK(tn_tsl_scope_end(ctx, nullptr, &otherwise, &d.value) == TN_OK);
+    const tn_tsl_arg_t elseArg = nodeArg(otherwise);
+    CHECK(tn_tsl_statement(ctx, "Else", &branch, &elseArg, 1, &done, &d.value) == TN_OK);
+    CHECK(tn_tsl_statement(ctx, "Else", &branch, &elseArg, 1, &done, &d.value) != TN_OK);  // one Else
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_tsl_scope_end(ctx, nullptr, &body, &d.value) == TN_OK);
+    const tn_tsl_arg_t bodyArg = nodeArg(body);
+    CHECK(tn_tsl_statement(ctx, "Loop.end", &loop, &bodyArg, 1, &done, &d.value) == TN_OK);
+    CHECK(tn_tsl_scope_end(ctx, nullptr, &fn, &d.value) == TN_OK);
+
+    namespace g = tn::engine::shader::graph;
+    g::Block block;
+    const auto variable = block.var(g::float_(0));
+    block.Loop(2, [&](g::Node i) {
+        block.IfElse(g::lessThan(i, g::float_(1)), [&] { block.assign(variable.declaration, g::float_(1)); },
+                     [&] { block.assign(variable.declaration, g::float_(2)); });
+    });
+    // The graph itself is checked through a material, where the ABI keeps it.
+    uint64_t color = 0;
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", fn, &d.value) == TN_OK);
+    CHECK(g::key(tn::abi::shaderNode(material, "colorNode")) == g::key(block.node()));
+    // A callback that adds nothing answers its result: Fn(() => vec3(1)).
+    CHECK(tn_tsl_scope_begin(ctx) == TN_OK);
+    CHECK(tn_tsl_scope_end(ctx, &one, &color, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", color, &d.value) == TN_OK);
+    CHECK(g::key(tn::abi::shaderNode(material, "colorNode")) == g::key(g::float_(1)));
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements})

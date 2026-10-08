@@ -41,6 +41,17 @@ TN_STATIC_ASSERT(offsetof(tn_tsl_arg_t, node) == 8 && offsetof(tn_tsl_arg_t, num
 TN_EXPORT tn_status_t tn_tsl_call(tn_context_t *context, const char *name, const uint64_t *receiver,
                                   const tn_tsl_arg_t *args, uint32_t arg_count, uint64_t *out_node,
                                   tn_diagnostic_t *diagnostic);
+/* TSL's statement forms for a caller that runs the callbacks itself (Fn, If, Else, Loop, toVar,
+ * assign). `tn_tsl_scope_begin` opens a callback's frame; `tn_tsl_scope_end` closes it, giving its
+ * body, or `result` (nullable) when the callback added no statement. `tn_tsl_statement` takes
+ * "toVar" (receiver), "assign" (receiver, value), "If" (condition, body), "Else" (receiver If,
+ * body), "Loop.begin" (count), "Loop.index" (receiver loop) and "Loop.end" (receiver loop, body). */
+TN_EXPORT tn_status_t tn_tsl_scope_begin(tn_context_t *context);
+TN_EXPORT tn_status_t tn_tsl_scope_end(tn_context_t *context, const tn_tsl_arg_t *result, uint64_t *out_node,
+                                       tn_diagnostic_t *diagnostic);
+TN_EXPORT tn_status_t tn_tsl_statement(tn_context_t *context, const char *name, const uint64_t *receiver,
+                                       const tn_tsl_arg_t *args, uint32_t arg_count, uint64_t *out_node,
+                                       tn_diagnostic_t *diagnostic);
 /* three's `uniform.value = x`: one finite value per lane of the uniform node's type. Every draw reads
  * the value afresh, so no program changes. */
 TN_EXPORT tn_status_t tn_tsl_set_uniform(tn_context_t *context, const uint64_t *node, const double *values,

@@ -45,6 +45,17 @@ function tslRuntime(calls: ICall[], sets: string[], uniforms: string[] = []): IT
     setUniform(node, lanes) {
       uniforms.push(`${node}=${lanes.join(",")}`);
     },
+    scopeBegin() {
+      calls.push({ name: "(begin", receiver: null, args: [] });
+    },
+    scopeEnd(result) {
+      calls.push({ name: "end)", receiver: null, args: result === null ? [] : [result] });
+      return ++next;
+    },
+    statement(name, receiver, args) {
+      calls.push({ name, receiver, args });
+      return ++next;
+    },
   };
 }
 
@@ -127,6 +138,47 @@ describe("TSL on the browser back end", () => {
     values.y = 5; // Midway: origin.value.set(camera.x, camera.z)
     tsl.sync();
     expect(uniforms).toEqual(["1=2.5", "2=4,5"]);
+  });
+
+  it("runs Fn, If, Else and Loop callbacks inside engine scopes, as V8's adapter does", () => {
+    const calls: ICall[] = [];
+    const tsl = defineTsl(tslRuntime(calls, [])).exports;
+    const shade = (tsl.Fn as (callback: () => void) => () => unknown)(() => {
+      const acc = ((tsl.float as Fn)(0).toVar as Fn)();
+      (tsl.Loop as Fn)(2, ({ i }: { i: Record<string, unknown> }) => {
+        const branch = (tsl.If as Fn)((i.lessThan as Fn)(1), () => (acc.assign as Fn)(1));
+        (branch.Else as Fn)(() => (acc.assign as Fn)(2));
+      });
+    });
+    expect(shade()).toBe(shade()); // built once, at definition
+    expect(calls.map(({ name }) => name)).toEqual([
+      "(begin",
+      "float",
+      "toVar",
+      "Loop.begin",
+      "Loop.index",
+      "(begin",
+      "lessThan",
+      "(begin",
+      "assign",
+      "end)",
+      "If",
+      "(begin",
+      "assign",
+      "end)",
+      "Else",
+      "end)",
+      "Loop.end",
+      "end)",
+    ]);
+    // A callback that throws still closes its scope, and the original error comes through.
+    calls.length = 0;
+    expect(() =>
+      (tsl.Fn as Fn)(() => {
+        throw new Error("original");
+      }),
+    ).toThrow("original");
+    expect(calls.map(({ name }) => name)).toEqual(["(begin", "end)"]);
   });
 
   it("refuses an argument TSL has no meaning for, by name", () => {

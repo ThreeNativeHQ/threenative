@@ -4,6 +4,7 @@
 
 #include "engine/foundation/math/Color.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <functional>
@@ -265,6 +266,93 @@ void tslSetUniform(const g::Node& uniform, const double* values, size_t count) {
         lanes.push_back(static_cast<float>(values[i]));
     }
     g::setUniformValues(uniform, std::move(lanes));
+}
+
+
+g::Node tslInput(const TslArg& value) { return input(value); }
+
+std::vector<g::Node>& TslStatements::top() {
+    if (frames_.empty()) throw std::runtime_error("statement outside Fn");
+    return frames_.back();
+}
+
+void TslStatements::begin() { frames_.emplace_back(); }
+
+g::Node TslStatements::end(const TslArg* result) {
+    if (frames_.empty()) throw std::runtime_error("no open TSL callback");
+    std::vector<g::Node> body = std::move(frames_.back());
+    frames_.pop_back();
+    if (body.empty() && result != nullptr) return input(*result);
+    auto node = std::make_shared<g::NodeData>();
+    node->kind = g::Kind::Body;
+    node->body = std::move(body);
+    return node;
+}
+
+g::Node TslStatements::toVar(const g::Node& value) {
+    auto& statements = top();
+    g::Block block;
+    const auto variable = block.var(value);
+    statements.push_back(variable.declaration);
+    return variable.declaration;
+}
+
+void TslStatements::assign(const g::Node& target, const g::Node& value) {
+    auto& statements = top();
+    if (!target || (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement))
+        throw std::runtime_error("assign requires a variable or storage element");
+    g::Block block;
+    block.assign(target, value);
+    statements.push_back(block.node()->body[0]);
+}
+
+g::Node TslStatements::ifStatement(const g::Node& condition, const g::Node& body) {
+    auto& statements = top();
+    if (!body || body->kind != g::Kind::Body) throw std::runtime_error("If callback must contain statements");
+    auto node = std::make_shared<g::NodeData>();
+    node->kind = g::Kind::If;
+    node->args = {condition};
+    node->body = body->body;
+    statements.push_back(node);
+    return node;
+}
+
+g::Node TslStatements::elseStatement(const g::Node& branch, const g::Node& body) {
+    auto& statements = top();
+    // The If must be a statement of this very stack and still have no Else, as V8's adapter checks.
+    const auto found = std::find(statements.rbegin(), statements.rend(), branch);
+    if (!branch || branch->kind != g::Kind::If || found == statements.rend() || !branch->otherwise.empty())
+        throw std::runtime_error("Else requires an If in this stack");
+    if (!body || body->kind != g::Kind::Body) throw std::runtime_error("Else callback must contain statements");
+    auto node = std::make_shared<g::NodeData>(*branch);
+    node->otherwise = body->body;
+    *found = node;
+    return node;
+}
+
+g::Node TslStatements::loopBegin(double count) {
+    top();
+    if (!std::isfinite(count) || count < 0 || count > std::numeric_limits<int32_t>::max() || count != std::floor(count))
+        throw std::runtime_error("expected a nonnegative i32 count");
+    // Reuse the graph's loop and index; the body arrives with loopEnd.
+    g::Block block;
+    block.Loop(static_cast<int32_t>(count), {});
+    return block.node()->body[0];
+}
+
+g::Node TslStatements::loopIndex(const g::Node& loop) {
+    if (!loop || loop->kind != g::Kind::Loop || loop->args.size() < 2) throw std::runtime_error("expected a Loop");
+    return loop->args[1];
+}
+
+g::Node TslStatements::loopEnd(const g::Node& loop, const g::Node& body) {
+    auto& statements = top();
+    if (!loop || loop->kind != g::Kind::Loop) throw std::runtime_error("expected a Loop");
+    if (!body || body->kind != g::Kind::Body) throw std::runtime_error("Loop callback must contain statements");
+    auto node = std::make_shared<g::NodeData>(*loop);
+    node->body = body->body;
+    statements.push_back(node);
+    return node;
 }
 
 }  // namespace tn::abi

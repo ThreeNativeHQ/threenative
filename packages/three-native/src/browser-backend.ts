@@ -12,7 +12,7 @@
  * collected wrapper releases its object.
  */
 
-import type { ITslRuntime } from "./browser-tsl.js";
+import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 
 export interface IRegistryClass {
   readonly constructor: boolean;
@@ -501,7 +501,14 @@ const KIND = {
 // numbers 32 (four f64); 64 bytes.
 const TSL_ARG = 64;
 const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4, vector: 5 } as const;
-type TslCall = "_tn_tsl_call" | "_tn_tsl_release" | "_tn_tsl_set" | "_tn_tsl_set_uniform";
+type TslCall =
+  | "_tn_tsl_call"
+  | "_tn_tsl_release"
+  | "_tn_tsl_set"
+  | "_tn_tsl_set_uniform"
+  | "_tn_tsl_scope_begin"
+  | "_tn_tsl_scope_end"
+  | "_tn_tsl_statement";
 
 interface IAbiHelpers {
   scoped<T>(work: () => T): T;
@@ -528,30 +535,49 @@ function tslOf(
     _tn_tsl_release: release,
     _tn_tsl_set: set,
     _tn_tsl_set_uniform: setUniform,
+    _tn_tsl_scope_begin: scopeBegin,
+    _tn_tsl_scope_end: scopeEnd,
+    _tn_tsl_statement: statement,
   } = calls;
-  if (call === undefined || release === undefined || set === undefined || setUniform === undefined)
+  if (
+    call === undefined ||
+    release === undefined ||
+    set === undefined ||
+    setUniform === undefined ||
+    scopeBegin === undefined ||
+    scopeEnd === undefined ||
+    statement === undefined
+  )
     return undefined;
+  // Writes tn_tsl_arg_t values; text is allocated first, since an allocation can grow the memory.
+  const writeArgs = (args: readonly TslArgValue[]): number => {
+    const pointer = h.alloc(Math.max(TSL_ARG, args.length * TSL_ARG));
+    args.forEach((arg, i) => {
+      const at = pointer + i * TSL_ARG;
+      const text = arg.kind === "string" || arg.kind === "named" ? h.string(arg.text).pointer : 0;
+      const v = h.view();
+      v.setUint32(at, TSL_KIND[arg.kind], true);
+      if (arg.kind === "node") v.setBigUint64(at + 8, BigInt(arg.node), true);
+      else if (arg.kind === "number") v.setFloat64(at + 16, arg.number, true);
+      else if (arg.kind === "rgb" || arg.kind === "vector") {
+        v.setUint32(at + 4, arg.numbers.length, true);
+        arg.numbers.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
+      } else v.setUint32(at + 24, text, true);
+    });
+    return pointer;
+  };
+  const nodeOf = (node: number | null): number => {
+    if (node === null) return 0;
+    const pointer = h.alloc(8);
+    h.view().setBigUint64(pointer, BigInt(node), true);
+    return pointer;
+  };
   return {
     tsl: {
       call: (name, receiver, args) =>
         h.scoped(() => {
-          const pointer = h.alloc(Math.max(TSL_ARG, args.length * TSL_ARG));
-          args.forEach((arg, i) => {
-            const at = pointer + i * TSL_ARG;
-            // Text is allocated before the view is taken: an allocation can grow the memory.
-            const text =
-              arg.kind === "string" || arg.kind === "named" ? h.string(arg.text).pointer : 0;
-            const v = h.view();
-            v.setUint32(at, TSL_KIND[arg.kind], true);
-            if (arg.kind === "node") v.setBigUint64(at + 8, BigInt(arg.node), true);
-            else if (arg.kind === "number") v.setFloat64(at + 16, arg.number, true);
-            else if (arg.kind === "rgb" || arg.kind === "vector") {
-              v.setUint32(at + 4, arg.numbers.length, true);
-              arg.numbers.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
-            } else v.setUint32(at + 24, text, true);
-          });
-          const self = receiver === null ? 0 : h.alloc(8);
-          if (receiver !== null) h.view().setBigUint64(self, BigInt(receiver), true);
+          const pointer = writeArgs(args);
+          const self = nodeOf(receiver);
           const out = h.alloc(8);
           const diag = h.diagnostic();
           h.check(
@@ -575,6 +601,28 @@ function tslOf(
             diag,
             `set ${path}`,
           );
+        }),
+      scopeBegin: () => scopeBegin(context),
+      scopeEnd: (result) =>
+        h.scoped(() => {
+          const pointer = result === null ? 0 : writeArgs([result]);
+          const out = h.alloc(8);
+          const diag = h.diagnostic();
+          h.check(scopeEnd(context, pointer, out, diag), diag, "TSL callback");
+          return Number(h.view().getBigUint64(out, true));
+        }),
+      statement: (name, receiver, args) =>
+        h.scoped(() => {
+          const pointer = writeArgs(args);
+          const self = nodeOf(receiver);
+          const out = h.alloc(8);
+          const diag = h.diagnostic();
+          h.check(
+            statement(context, h.string(name).pointer, self, pointer, args.length, out, diag),
+            diag,
+            `TSL ${name}`,
+          );
+          return Number(h.view().getBigUint64(out, true));
         }),
       setUniform: (node, lanes) =>
         h.scoped(() => {

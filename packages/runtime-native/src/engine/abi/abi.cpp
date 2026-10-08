@@ -38,6 +38,7 @@ struct tn_context : tn::binding::Store {
     std::unordered_map<uint64_t, tn::engine::shader::graph::Node> tslNodes;
     uint64_t nextTslNode = 0;
     uint64_t tslSerial = 0;  // names the uniforms and render textures tn_tsl_call makes
+    tn::abi::TslStatements tslStatements;  // the open Fn/If/Else/Loop callbacks of tn_tsl_statement
     std::vector<tn::binding::Object> values;  // by handle index
     // (address, class) -> the one handle naming it: member aliases and shared objects. The class is
     // part of the key because a first member shares its owner's address (Box3::min).
@@ -681,6 +682,41 @@ extern "C" tn_status_t tn_tsl_build(tn_context_t* context, const char* operation
     });
 }
 
+namespace {
+/** tn_tsl_arg_t values as the shared table takes them; a node id must belong to this context. */
+tn_status_t tslArgs(tn_context_t* context, const tn_tsl_arg_t* args, uint32_t arg_count,
+                    std::vector<tn::abi::TslArg>& converted, tn_diagnostic_t* diagnostic) {
+    const auto node = [&](uint64_t id) {
+        const auto it = context->tslNodes.find(id);
+        if (it == context->tslNodes.end()) throw std::runtime_error("TN_TSL_NODE_INVALID");
+        return it->second;
+    };
+    converted.reserve(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+        const tn_tsl_arg_t& a = args[i];
+        switch (a.kind) {
+            case TN_TSL_ARG_NODE: converted.push_back(tn::abi::TslArg::of(node(a.node))); break;
+            case TN_TSL_ARG_NUMBER: converted.push_back(tn::abi::TslArg::of(a.number)); break;
+            case TN_TSL_ARG_STRING: converted.push_back(tn::abi::TslArg::of(std::string(a.text ? a.text : ""))); break;
+            case TN_TSL_ARG_NAMED: converted.push_back(tn::abi::TslArg::named(a.text ? a.text : "")); break;
+            case TN_TSL_ARG_RGB: converted.push_back(tn::abi::TslArg::rgbOf(a.numbers[0], a.numbers[1], a.numbers[2])); break;
+            case TN_TSL_ARG_VECTOR:
+                if (a.reserved < 2 || a.reserved > 4) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT lanes");
+                converted.push_back(tn::abi::TslArg::vectorOf(static_cast<uint8_t>(a.reserved), a.numbers));
+                break;
+            default: return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT kind");
+        }
+    }
+    return TN_OK;
+}
+
+uint64_t keepTslNode(tn_context_t* context, tn::engine::shader::graph::Node node) {
+    const uint64_t id = ++context->nextTslNode;
+    context->tslNodes.emplace(id, std::move(node));
+    return id;
+}
+}  // namespace
+
 extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, const uint64_t* receiver,
                                     const tn_tsl_arg_t* args, uint32_t arg_count, uint64_t* out_node,
                                     tn_diagnostic_t* diagnostic) {
@@ -694,22 +730,7 @@ extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, cons
             return it->second;
         };
         std::vector<tn::abi::TslArg> converted;
-        converted.reserve(arg_count);
-        for (uint32_t i = 0; i < arg_count; ++i) {
-            const tn_tsl_arg_t& a = args[i];
-            switch (a.kind) {
-                case TN_TSL_ARG_NODE: converted.push_back(tn::abi::TslArg::of(node(a.node))); break;
-                case TN_TSL_ARG_NUMBER: converted.push_back(tn::abi::TslArg::of(a.number)); break;
-                case TN_TSL_ARG_STRING: converted.push_back(tn::abi::TslArg::of(std::string(a.text ? a.text : ""))); break;
-                case TN_TSL_ARG_NAMED: converted.push_back(tn::abi::TslArg::named(a.text ? a.text : "")); break;
-                case TN_TSL_ARG_RGB: converted.push_back(tn::abi::TslArg::rgbOf(a.numbers[0], a.numbers[1], a.numbers[2])); break;
-                case TN_TSL_ARG_VECTOR:
-                    if (a.reserved < 2 || a.reserved > 4) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT lanes");
-                    converted.push_back(tn::abi::TslArg::vectorOf(static_cast<uint8_t>(a.reserved), a.numbers));
-                    break;
-                default: return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT kind");
-            }
-        }
+        if (const tn_status_t s = tslArgs(context, args, arg_count, converted, diagnostic); s != TN_OK) return s;
         const tn::abi::TslArg self = receiver ? tn::abi::TslArg::of(node(*receiver)) : tn::abi::TslArg{};
         auto result = tn::abi::tslCall(name, receiver ? &self : nullptr, converted, context->tslSerial);
         if (!result)
@@ -717,6 +738,69 @@ extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, cons
         const uint64_t id = ++context->nextTslNode;
         context->tslNodes.emplace(id, std::move(result));
         *out_node = id;
+        return ok(diagnostic);
+    });
+}
+
+extern "C" tn_status_t tn_tsl_scope_begin(tn_context_t* context) {
+    if (!context) return TN_ERROR_INVALID_ARGUMENT;
+    context->tslStatements.begin();
+    return TN_OK;
+}
+
+extern "C" tn_status_t tn_tsl_scope_end(tn_context_t* context, const tn_tsl_arg_t* result, uint64_t* out_node,
+                                        tn_diagnostic_t* diagnostic) {
+    if (!context || !out_node) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    *out_node = 0;
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        std::vector<tn::abi::TslArg> converted;
+        if (result) {
+            if (const tn_status_t s = tslArgs(context, result, 1, converted, diagnostic); s != TN_OK) {
+                context->tslStatements.end(nullptr);  // the frame closes either way
+                return s;
+            }
+        }
+        *out_node = keepTslNode(context, context->tslStatements.end(result ? &converted[0] : nullptr));
+        return ok(diagnostic);
+    });
+}
+
+extern "C" tn_status_t tn_tsl_statement(tn_context_t* context, const char* name, const uint64_t* receiver,
+                                        const tn_tsl_arg_t* args, uint32_t arg_count, uint64_t* out_node,
+                                        tn_diagnostic_t* diagnostic) {
+    if (!context || !name || !out_node || (arg_count && !args))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    *out_node = 0;
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        std::vector<tn::abi::TslArg> a;
+        if (const tn_status_t s = tslArgs(context, args, arg_count, a, diagnostic); s != TN_OK) return s;
+        const auto self = [&]() {
+            const auto it = receiver ? context->tslNodes.find(*receiver) : context->tslNodes.end();
+            if (it == context->tslNodes.end()) throw std::runtime_error("TN_TSL_NODE_INVALID: no receiver");
+            return it->second;
+        };
+        const auto arity = [&](size_t n) {
+            if (a.size() != n) throw std::runtime_error("expected " + std::to_string(n) + " arguments");
+        };
+        const auto node = [&](size_t i) {
+            if (a.at(i).kind != tn::abi::TslArg::Kind::Node) throw std::runtime_error("expected a TSL node");
+            return a[i].node;
+        };
+        auto& statements = context->tslStatements;
+        const std::string_view op(name);
+        tn::engine::shader::graph::Node result;
+        if (op == "toVar") arity(0), result = statements.toVar(tn::abi::tslInput(tn::abi::TslArg::of(self())));
+        else if (op == "assign") arity(1), statements.assign(self(), tn::abi::tslInput(a[0])), result = self();
+        else if (op == "If") arity(2), result = statements.ifStatement(tn::abi::tslInput(a[0]), node(1));
+        else if (op == "Else") arity(1), result = statements.elseStatement(self(), node(0));
+        else if (op == "Loop.begin") {
+            arity(1);
+            if (a[0].kind != tn::abi::TslArg::Kind::Number) throw std::runtime_error("expected a nonnegative i32 count");
+            result = statements.loopBegin(a[0].number);
+        } else if (op == "Loop.index") arity(0), result = tn::abi::TslStatements::loopIndex(self());
+        else if (op == "Loop.end") arity(1), result = statements.loopEnd(self(), node(0));
+        else return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_TSL_DYNAMIC_UNSUPPORTED " + std::string(op)).c_str());
+        *out_node = keepTslNode(context, std::move(result));
         return ok(diagnostic);
     });
 }

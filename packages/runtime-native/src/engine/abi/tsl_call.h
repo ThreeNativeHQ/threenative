@@ -45,6 +45,36 @@ struct TslArg {
 engine::shader::graph::Node tslCall(const std::string& name, const TslArg* receiver, const std::vector<TslArg>& args,
                                     uint64_t& serial);
 
+/** A TSL operand as the table reads one: a node, or a number/Color/VectorN as its constant. */
+engine::shader::graph::Node tslInput(const TslArg& value);
+
+/**
+ * TSL's statement forms for a back end that runs the callbacks itself: one frame per open Fn, If,
+ * Else or Loop body. The checks and messages are V8's adapter's (src/adapters/v8/tsl.cpp).
+ */
+class TslStatements {
+  public:
+    /** A callback starts collecting statements. */
+    void begin();
+    /** Closes it: its Body, or `result` when it collected no statement (Fn(() => vec3(1))). */
+    engine::shader::graph::Node end(const TslArg* result);
+    engine::shader::graph::Node toVar(const engine::shader::graph::Node& value);
+    void assign(const engine::shader::graph::Node& target, const engine::shader::graph::Node& value);
+    engine::shader::graph::Node ifStatement(const engine::shader::graph::Node& condition,
+                                            const engine::shader::graph::Node& body);
+    /** Replaces the If, still open in this frame, with one that has the Else branch. */
+    engine::shader::graph::Node elseStatement(const engine::shader::graph::Node& branch,
+                                              const engine::shader::graph::Node& body);
+    /** A Loop's graph node before its body exists; loopIndex gives the `i` the body reads. */
+    engine::shader::graph::Node loopBegin(double count);
+    static engine::shader::graph::Node loopIndex(const engine::shader::graph::Node& loop);
+    engine::shader::graph::Node loopEnd(const engine::shader::graph::Node& loop, const engine::shader::graph::Node& body);
+
+  private:
+    std::vector<engine::shader::graph::Node>& top();
+    std::vector<std::vector<engine::shader::graph::Node>> frames_;
+};
+
 /** three's `uniform.value = x` for every back end: the uniform node's live values, one per lane. */
 void tslSetUniform(const engine::shader::graph::Node& uniform, const double* values, size_t count);
 
