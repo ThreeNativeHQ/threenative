@@ -41,12 +41,25 @@ public:
     WGPURenderPipeline get(const shader::StageModule& vertex, const shader::StageModule* fragment, const PipelineTarget& target);
 
     uint64_t compiles() const { return compiles_; }
+    /** Lookups that had to build the text key: the ones an id did not answer. */
+    uint64_t textLookups() const { return textLookups_; }
     size_t size() const { return pipelines_.size(); }
 
 private:
+    /** The same pipeline by the ids of its stages' texts: a lookup that copies and hashes no WGSL. */
+    struct IdKey {
+        uint64_t vertex, fragment;
+        PipelineTarget target;
+        bool operator==(const IdKey& o) const;
+    };
+    struct IdKeyHash {
+        size_t operator()(const IdKey& key) const;
+    };
     WGPUDevice device_;
     std::unordered_map<std::string, WGPURenderPipeline> pipelines_;
+    std::unordered_map<IdKey, WGPURenderPipeline, IdKeyHash> byId_;  // aliases of pipelines_, never owners
     uint64_t compiles_ = 0;
+    uint64_t textLookups_ = 0;
 };
 
 }  // namespace tn::engine

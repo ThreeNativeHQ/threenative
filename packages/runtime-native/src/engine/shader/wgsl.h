@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -10,6 +11,11 @@ namespace tn::engine::shader {
 /** Emitted WGSL, or the reason a program cannot be emitted. */
 struct WgslModule {
     std::string code;
+    /**
+     * Names `code`: emit() gives every text it produces a fresh non-zero id, and copies share it.
+     * Whoever edits `code` afterwards sets this to 0, which means unnamed (keyed by its text).
+     */
+    uint64_t id = 0;
     std::string entryPoint = "main";
     std::vector<std::string> errors;
     bool ok() const { return errors.empty(); }

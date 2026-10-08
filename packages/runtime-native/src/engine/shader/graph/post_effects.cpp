@@ -336,6 +336,7 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
         code += ");\n";
     }
     fragment.wgsl.code = code + body;
+    fragment.wgsl.id = 0;  // edited text: keyed by the text itself
     pass.package.variants.push_back({0, {vertex(), std::move(fragment)}});
     return pass;
 }

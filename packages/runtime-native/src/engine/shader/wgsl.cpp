@@ -1,3 +1,4 @@
+#include <atomic>
 #include "wgsl.h"
 
 #include <bit>
@@ -196,6 +197,8 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         module.errors.push_back("TN_SHADER_PACKAGE_INVALID: the program has construction diagnostics");
         return module;
     }
+    static std::atomic<uint64_t> nextId{1};
+    module.id = nextId.fetch_add(1, std::memory_order_relaxed);
     std::string& out = module.code;
 
     // Resources in first-use order: uniforms in one block at binding 0, then storage buffers.

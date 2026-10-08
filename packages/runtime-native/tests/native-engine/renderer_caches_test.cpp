@@ -103,6 +103,50 @@ void pipelines() {
     CHECK(depthOnly != nullptr && depthOnly != first);
     CHECK(cache.get(vs, nullptr, shadow) == depthOnly);
     CHECK(cache.compiles() == 2);
+
+    // Emitted stages answer from their ids: after the first lookup of each, no text is built.
+    const uint64_t texts = cache.textLookups();
+    for (int frame = 0; frame < 300; ++frame)
+        CHECK(cache.get(vs, &fs, color) == first && cache.get(vs, nullptr, shadow) == depthOnly);
+    CHECK(cache.textLookups() == texts);
+
+    // The same programs emitted again have new ids and the same text: one pipeline, still.
+    const shader::StageModule vs2 = shader::buildStage(standard.vertex, 0);
+    const shader::StageModule fs2 = shader::buildStage(standard.fragment, 1);
+    CHECK(vs2.wgsl.id != 0 && vs2.wgsl.id != vs.wgsl.id && vs2.wgsl.code == vs.wgsl.code);
+    CHECK(cache.get(vs2, &fs2, color) == first);
+    CHECK(cache.get(vs2, &fs2, color) == first && cache.compiles() == 2);
+
+    // An unnamed stage (id 0) is keyed by its text; edited text is a different pipeline.
+    shader::StageModule unnamed = vs;
+    unnamed.wgsl.id = 0;
+    CHECK(cache.get(unnamed, &fs, color) == first && cache.compiles() == 2);
+    shader::StageModule edited = vs;
+    edited.wgsl.id = 0;
+    edited.wgsl.code += "\n// edited\n";
+    WGPURenderPipeline other = cache.get(edited, &fs, color);
+    CHECK(other != nullptr && other != first && cache.compiles() == 3);
+
+    // Every field of the target is part of the key, by id as by text.
+    PipelineTarget blended = color;
+    blended.blend = true;
+    WGPURenderPipeline blend = cache.get(vs, &fs, blended);
+    CHECK(blend != nullptr && blend != first && cache.get(vs, &fs, blended) == blend);
+    PipelineTarget noDepthWrite = color;
+    noDepthWrite.depthWrite = false;
+    PipelineTarget back = color;
+    back.cull = WGPUCullMode_None;
+    PipelineTarget cw = color;
+    cw.frontFace = WGPUFrontFace_CW;
+    PipelineTarget always = color;
+    always.depthCompare = WGPUCompareFunction_Always;
+    PipelineTarget wide = color;
+    wide.skinIndex = WGPUVertexFormat_Uint32x4;
+    for (const PipelineTarget& t : {noDepthWrite, back, cw, always, wide}) {
+        WGPURenderPipeline p = cache.get(vs, &fs, t);
+        CHECK(p != nullptr && p != first && p != blend && cache.get(vs, &fs, t) == p);
+    }
+    CHECK(cache.size() == 9);
 }
 
 }  // namespace
