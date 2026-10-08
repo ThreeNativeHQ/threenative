@@ -3805,4 +3805,8 @@ for MSAA; on the single-sampled TRAA path it painted surface air along every edg
 Plain depth on that path raises the share of intermediate pixels on the crown/sky boundary from 0.392
 to 0.501 (MSAA reference 0.478), 0 console errors.
 
+Rejected: GTAO radius 0.85 → 2 m in the forest brightened the meadow (81.0 → 87.3) and added no
+visible trunk-contact darkening. Trunk grounding needs a dedicated contact term (for example a
+per-trunk ground decal or screen-space contact shadow), not a wider GTAO.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
