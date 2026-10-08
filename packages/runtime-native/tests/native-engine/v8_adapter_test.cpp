@@ -732,6 +732,84 @@ void callbackCycle() {
     tn_diagnostic_release(&d);
 }
 
+// A wrapper the engine still references keeps its JS state through full collections: a parent, a
+// material slot or a mesh's geometry reaches it, the JS reference is gone, and the next access
+// returns the same object. Without the engine's reference it is collected and releases its object.
+void wrapperLifetime() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    v8::HandleScope scope(rt.isolate);
+    v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    const auto js = [&](const char* source) {
+        v8::TryCatch tryCatch(rt.isolate);
+        v8::Local<v8::Value> result;
+        if (!v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, source).ToLocalChecked())
+                 .ToLocalChecked()
+                 ->Run(ctx)
+                 .ToLocal(&result)) {
+            v8::String::Utf8Value error(rt.isolate, tryCatch.Exception());
+            return std::string("THROWN ") + (*error ? *error : "?");
+        }
+        v8::String::Utf8Value text(rt.isolate, result);
+        return std::string(*text ? *text : "");
+    };
+    const auto gc = [&] { for (int i = 0; i < 4; ++i) rt.isolate->LowMemoryNotification(); };
+    // The WeakMap stands in for core-three's userData bags and authored attribute names and for the
+    // texture sources: each is keyed by the wrapper, so a new wrapper finds nothing.
+    const std::string setup = js(R"JS(
+        globalThis.bags = new WeakMap();
+        globalThis.scene = new Group();
+        class Voice extends Object3D { constructor() { super(); this.cue = 7; } }
+        globalThis.Voice = Voice;
+        (() => {
+            const child = new Object3D(); child.name = 'child'; child.hp = 3; bags.set(child, { hp: 3 });
+            scene.add(child);
+            const voice = new Voice(); voice.name = 'voice'; scene.add(voice);
+            const map = new Texture(); map.label = 'albedo'; bags.set(map, 'sources');
+            const geometry = new BoxGeometry(1, 1, 1); bags.set(geometry, 'authored');
+            const material = new MeshBasicMaterial(); material.map = map;
+            const mesh = new Mesh(geometry, material); mesh.name = 'mesh';
+            scene.add(mesh);
+        })();
+        'ok'
+    )JS");
+    if (setup != "ok") std::fprintf(stderr, "setup: %s\n", setup.c_str());
+    CHECK(setup == "ok");
+    adapter.collect();
+    gc();
+    const std::string kept = js(R"JS((() => {
+        const child = scene.getObjectByName('child'), voice = scene.getObjectByName('voice');
+        const mesh = scene.getObjectByName('mesh');
+        return [child.hp, bags.get(child)?.hp, voice instanceof Voice, voice.cue,
+                mesh.material.map.label, bags.get(mesh.material.map), bags.get(mesh.geometry)].join();
+    })())JS");
+    if (kept != "3,3,true,7,albedo,sources,authored") std::fprintf(stderr, "kept: %s\n", kept.c_str());
+    CHECK(kept == "3,3,true,7,albedo,sources,authored");
+
+    // Added and dropped in one tick, with no safe point before the collection: the GC prologue holds it.
+    CHECK(js("(() => { const v = new Voice(); v.name = 'late'; v.cue = 9; scene.add(v); })(); 'ok'") == "ok");
+    gc();
+    CHECK(js("(() => { const late = scene.getObjectByName('late'); return [late instanceof Voice, late.cue].join(); })()") == "true,9");
+
+    // Detached and unreachable from JS: the subtree is collected, and each wrapper releases its object.
+    tn_handle_t root{};
+    {
+        v8::HandleScope inner(rt.isolate);
+        CHECK(adapter.unwrap(ctx->Global()->Get(ctx, v8::String::NewFromUtf8Literal(rt.isolate, "scene")).ToLocalChecked(), root));
+    }
+    CHECK(js("globalThis.scene = null; 'ok'") == "ok");
+    for (int i = 0; i < 4; ++i) {
+        adapter.collect();
+        gc();
+    }
+    CHECK(tn::abi::objectOf(root) == nullptr);
+    if (adapter.liveWrappers() > 2) std::fprintf(stderr, "live wrappers: %zu\n", adapter.liveWrappers());
+    CHECK(adapter.liveWrappers() <= 2);
+}
+
 void raycasterLOD() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
@@ -884,4 +962,4 @@ TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", un
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},
              {"catalog_coverage", catalogCoverage},
-             {"callback_cycle", callbackCycle}, {"tsl_api", tslApi}, {"node_materials", nodeMaterials}, {"skeletal", skeletal})
+             {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"node_materials", nodeMaterials}, {"skeletal", skeletal})

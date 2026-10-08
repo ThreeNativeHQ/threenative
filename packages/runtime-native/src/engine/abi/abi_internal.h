@@ -12,6 +12,13 @@ namespace tn::abi {
 /** The native object a live handle names (class name and shared ownership), or null. */
 tn::binding::Object* objectOf(tn_handle_t handle);
 
+/**
+ * References to a live handle's object held by other engine objects (a parent, a material slot, a
+ * mixer): its use count minus the copies the context itself holds for handles and member aliases.
+ * 0 for a dead handle.
+ */
+uint32_t engineReferences(tn_handle_t handle);
+
 /** Adopt a native loader/clone result into the context's ordinary handle/lifetime table. */
 tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<void> object);
 

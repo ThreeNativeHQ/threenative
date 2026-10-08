@@ -32,11 +32,12 @@ public:
     void install(v8::Local<v8::Context> context, v8::Local<v8::Object> target);
 
     /**
-     * A safe point for callbacks (PRD-531): a wrapper whose object carries a JS callback is held
-     * strongly while the object is attached (it has a parent), since the engine may still call it,
-     * and weakly once detached. A detached object, its closure and the wrapper the closure captured
-     * are then a plain JS cycle the collector reclaims, and the reclaimed wrapper releases the
-     * object. The host calls this between frames.
+     * A safe point (PRD-531): a wrapper is held strongly while other engine objects reference its
+     * object (a parent, a material slot, a mixer), so its JS state (userData, expandos, a subclass)
+     * survives while only the engine reaches it, and weakly otherwise. The JS -> engine reference
+     * does not count, so a detached object, its closures and its wrapper are a plain JS cycle the
+     * collector reclaims, and the reclaimed wrapper releases the object. The host calls this
+     * between frames; a GC prologue also promotes wrappers the engine took since the last one.
      */
     void collect();
     /** An engine object passed into a call is held until the next safe point decides. */
@@ -67,6 +68,7 @@ private:
     void track(Wrapper* wrapper, v8::Local<v8::Object> object);
     void strong(Wrapper* wrapper);
     void weak(Wrapper* wrapper);
+    static void promote(v8::Isolate* isolate, v8::GCType type, v8::GCCallbackFlags flags, void* data);
     static tn_status_t invokeCallback(void* context, const tn_value_t* args, uint32_t count, char* error,
                                       uint32_t capacity);
     static void setCallback(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -79,7 +81,6 @@ private:
     v8::Global<v8::ObjectTemplate> instanceTemplate_;
     std::unordered_map<uint16_t, v8::Global<v8::FunctionTemplate>> classes_;  // by catalog type id
     std::unordered_map<uint64_t, Wrapper*> wrappers_;
-    std::set<Wrapper*> withCallbacks_;  // what collect() visits
     v8::Global<v8::Context> context_v8_;  // where callbacks run; set by install
     std::unordered_map<std::string, v8::Global<v8::Private>> callbackKeys_;  // by callback name
 };
