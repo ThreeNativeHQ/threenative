@@ -92,7 +92,7 @@ The gap is CPU while walking. The costs, as span p95s, which overlap and do not 
 - [ ] **A6 · PRD-478 Phase 3: terrain merges and seams run in a worker.** After: A5. ⏱🌍👁
   - The settled terrain must be byte-identical to the inline path.
 - [ ] **A7 · No pipeline compiles mid-walk:** [PRD-459](PRD-459-smooth-streaming-one-admission-budget-per-frame.md) AC-3 with [PRD-387](../performance/critical/PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md). After: A6. ⏱🌍👁
-- [ ] **A8 · [PRD-455](../done/PRD-455-temporal-reconstruction-from-dynamic-resolution.md): temporal reconstruction closes the GPU gap.** After: A7. ⏱🌍👁
+- [ ] **A8 · [PRD-537](../rendering/PRD-537-low-resolution-temporal-reconstruction-quality-and-cost.md): temporal reconstruction closes the GPU gap (successor of PRD-455).** After: A7. ⏱🌍👁
 - [ ] **A9 · PRD-478 acceptance.** After: A8. ⏱🌍👁
   - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋, and PRD-478 is in `done/`.
 - [ ] **A10 · PRD-477 Phases 2–3 and AC-1: budgets and switches become engine decisions.** After: A9. ⏱🌍👁

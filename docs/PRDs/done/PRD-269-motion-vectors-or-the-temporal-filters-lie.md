@@ -97,24 +97,16 @@ build no mirror and perform no eligibility scan; temporal-off must retain no his
 
 - [x] Add a playtest fixture for an authored moving BatchedMesh with projection disabled. proof: hosted run `36992451504` passed at `095eca85`; `pnpm exec tsx scripts/verify-velocity-history.ts` runs the actual WebGPU fixture and missing-history control
 - [x] Qualify animated skinned geometry against a static wall with actual colour/velocity readbacks. proof: hosted `37006604512` at `68601527` passes the skinned arm; the current-as-previous bone control fails exactly motion/oracle assertions (stationary coverage excludes the conservative moving rectangle)
-- [x] Add the original animated-character ghosting playtest with a measured moving-edge assertion. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-ghosting.ts` exits 0 on nvidia/turing `webgpu` (2026-10-07, `a8b943de7`): temporal moving-edge error `.02805` against no-AA `.04459` (ratio `.629`, pinned `<=.75`); the zero-velocity control measures `.04164` (`1.485x` temporal, pinned `>=1.25x`), and substituting it for the temporal arm gives ratios `.934` and `1.0`, which violate both pins. Decision R4: the metric changed from rejection fraction (see below), 2026-10-07, delegated by the owner ("go with best option").
+- [x] Add the original animated-character ghosting playtest with a measured moving-edge assertion. proof: `TN_WEBGPU_HARDWARE=1 sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-ghosting.ts` exits 0 on nvidia/turing `webgpu` (2026-10-07, script added in `c701f321d`): temporal moving-edge error `.02805` against no-AA `.04459` (ratio `.629`, pin `<=.75`); zero-velocity control `.04164` (`1.485x`, pin `>=1.25x`). The default lane, which is what CI runs, measures temporal `.02905`, no-AA `.04465`, zero-velocity `.04169` (ratios `.651`, `1.435`; CI `temporal` job of run `37725002929` at `899696fac`). The substitution figures (zero-velocity in the temporal slot: ratios `.934` and `1.0`, violating both pins) are computed from those measured arms, not a separately mutated run. Decision R4: the metric changed from rejection fraction (see below), 2026-10-07, delegated by the owner ("go with best option").
 
-The authored BatchedMesh fixture has actual browser GPU readback and screenshot proof. The
-animated-character ghosting fixture remains implementation work; CPU software rasterization is not
-a substitute for that image-space or native proof. The original acceptance and mutation descriptions are preserved
-below and remain unqualified wherever no real lane has run.
+The authored BatchedMesh, instanced and skinned fixtures have actual browser GPU readback and screenshot
+proof, the animated-character ghosting verifier passes on hardware and in CI, and the temporal-off cost
+passes on hardware. CPU software rasterization was never used as a substitute for any of them.
 
 ## Blocked on
 
-Actual relevant runtime screenshots must be attached to the PR before merge (owner requirement,
-2026-10-02). The authored-batch browser pair below now satisfies the relevant screenshot-progress
-requirement; full skinned/instanced, ghosting, frame-cost and native acceptance remain open.
-
-Browser/native GPU execution requires a working WebGPU device or supported native host. This
-cloud environment has no `/dev/dri`, Android device tooling or `/dev/kvm`; the batch's attempted
-Xvfb launch failed with `EPERM`. Keep the PR draft until the original image-space and native
-acceptance has real execution evidence. No GPU, frame-cost, ghosting or platform-parity result
-is inferred from the CPU tests.
+- Native (desktop/device) qualification of per-instance and skinned velocity was not run for this PRD. None
+  of its boxes names a native lane; no owner PRD tracks it yet. This is a gap, not a claim.
 
 ## Acceptance criteria
 

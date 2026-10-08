@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-537 — A lower internal raster reconstructs into a stable full-resolution frame
 
 **Status:** NOT STARTED — successor to [PRD-455](../done/PRD-455-temporal-reconstruction-from-dynamic-resolution.md); no reconstructor has cleared the quality gate (2026-10-07).  
-**Priority:** P2 — Opt-in quality/performance work; nothing ships by default and no release depends on it.  
+**Priority:** P1 — Carried over unchanged from PRD-455, whose own note ranked it the highest-value rendering project; the owner may lower it.  
 **Complexity:** 8 → HIGH. Five candidates failed the same gate on hardware; the next one is a new design, not a parameter change.  
 **Depends on:** PRD-455 (opt-in provider, lifecycle, fixture and 31-arm corpus) and PRD-269 (motion history).
 
@@ -29,7 +29,7 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
 
 ### Phase 1 — A reconstructor that clears the unchanged quality gate
 
-- [ ] Thin fences, foliage, sub-pixel edges, a moving character and an instanced object stay within the pinned temporal thresholds against a full-resolution reference, and the temporal arm beats the spatial arm on edge error. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` exits 0 on hardware WebGPU with the original thresholds (`edge <.04778` full-res, `<.04687` low-input).
+- [ ] Thin fences, foliage, sub-pixel edges, a moving character and an instanced object stay within the pinned temporal thresholds against a full-resolution reference, and the temporal arm beats the spatial arm on the named stability metric. proof: an automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` exits 0 on hardware WebGPU with the original thresholds (`edge <.04778` full-res, `<.04687` low-input).
 - [ ] Newly revealed surfaces do not inherit stale colour, and disabling disocclusion rejection fails the check. proof: the same command, `revealRecovery` and `qualityRevealRecovery` true (`<=1%` stale after one frame).
 
 ### Phase 2 — Keep it only if it buys frame time
@@ -41,4 +41,6 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
 
 - The thresholds and the 31-arm corpus carry over unchanged; a candidate that needs them relaxed is rejected, not merged.
 - Candidates already falsified (do not repeat): reactive mask, raw4 current-footprint weighting, variance-clip widening, and a rejection-fraction metric (it is velocity-blind; see PRD-269).
+- CI: `verify-temporal-motion.ts` is not in CI today (its hardware Vulkan flags lose the device on the GPU-less runner, and four checks fail by design). Phase 1 includes returning it to the `temporal` integration job, with the unmet checks fail-closed once they pass.
+- Ghosting margin to keep honest: the pinned moving-edge ratios (`<=.75`, `>=1.25x`) sit against measured `.629`/`.651` and `1.485`/`1.435` (hardware/CI).
 - First step for the owner of this PRD: explain the `.010` camera-drift loss (history resampling) with a one-variable control before designing the next reconstructor.
