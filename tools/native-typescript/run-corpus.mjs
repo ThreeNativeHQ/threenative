@@ -54,6 +54,7 @@ import { format } from "node:util";
 import { compareCaptures } from "../../packages/runtime-native/conformance/metrics.mjs";
 import { inspect } from "../../packages/runtime-native/scripts/inspect-js-free.mjs";
 import {
+  buildPthreadKeys,
   buildSoRunner,
   ensureAndroidRuntime,
   findTarget,
@@ -663,12 +664,15 @@ async function crossPlan(targetFile, outDir, serial) {
   const ndk = resolveNdk(targetFile);
   const runtime = await ensureAndroidRuntime(targetFile, { ndk, log: () => {} });
   const dir = path.join(outDir, targetFile.outDir);
+  // The loader and the keys object are not corpus libraries, so they stay out of the directory the
+  // 16 KB check walks.
+  const helpers = path.join(outDir, `${targetFile.outDir}-tools`);
   await fsp.mkdir(dir, { recursive: true });
   let device;
   if (serial !== undefined) {
     const adb = resolveAdb();
     device = { adb, serial, ...(await checkDevice(adb, serial, targetFile)) };
-    await pushRunner(adb, serial, buildSoRunner(targetFile, ndk, dir));
+    await pushRunner(adb, serial, buildSoRunner(targetFile, ndk, helpers));
   }
   const engineBuild = path.join(
     REPO,
@@ -687,7 +691,12 @@ async function crossPlan(targetFile, outDir, serial) {
     device,
     perryFlags: ["--target", perryTarget(targetFile.triple)],
     // Perry links its own cross runtime from here; without it the target has no runtime to link.
-    env: [["PERRY_RUNTIME_DIR", runtime.dir]],
+    // Perry drives the NDK clang named by ANDROID_NDK_HOME, so the pinned NDK is exported, not inherited.
+    env: [
+      ["PERRY_RUNTIME_DIR", runtime.dir],
+      ["ANDROID_NDK_HOME", ndk.dir],
+      ["PERRY_EXTRA_LINK_ARGS", buildPthreadKeys(targetFile, ndk, helpers)],
+    ],
     blockedThreeImport:
       missing.length === 0
         ? undefined

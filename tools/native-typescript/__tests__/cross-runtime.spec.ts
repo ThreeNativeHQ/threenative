@@ -136,6 +136,15 @@ describe("the NDK build environment", () => {
     expect(env.BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android).toBe(`--sysroot=${ndk.bin}/sysroot`);
   });
 
+  it("adds the NDK's clang builtin headers when the toolchain has them", () => {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), "tn-ndk-"));
+    fs.mkdirSync(path.join(bin, "lib", "clang", "19", "include"), { recursive: true });
+    const env = crossEnv(TRIPLE, { ...ndk, bin }, 24, {});
+    expect(env.BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android).toBe(
+      `--sysroot=${bin}/sysroot -isystem${bin}/lib/clang/19/include`,
+    );
+  });
+
   it("compiles the engine bridge with the same NDK clang", () => {
     expect(ndkTools(ndk, { triple: TRIPLE, apiLevel: 24 })).toEqual({
       cc: `${ndk.bin}/bin/${TRIPLE}24-clang`,

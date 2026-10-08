@@ -81,6 +81,16 @@ export function exportSource(lock, work) {
   return exported;
 }
 
+/** The sysroot and clang builtin headers (stdarg.h and friends) bindgen needs to parse a C header for the NDK. */
+function bindgenArgs(ndk) {
+  const clangDir = path.join(ndk.bin, "lib", "clang");
+  const version = fs.existsSync(clangDir) ? fs.readdirSync(clangDir)[0] : undefined;
+  return [
+    `--sysroot=${path.join(ndk.bin, "sysroot")}`,
+    ...(version === undefined ? [] : [`-isystem${path.join(clangDir, version, "include")}`]),
+  ].join(" ");
+}
+
 /** Cargo's cross environment for an NDK clang, the same variables Perry's release workflow sets. */
 export function crossEnv(triple, ndk, apiLevel, env = process.env) {
   const bin = path.join(ndk.bin, "bin");
@@ -95,7 +105,7 @@ export function crossEnv(triple, ndk, apiLevel, env = process.env) {
     [`CARGO_TARGET_${under.toUpperCase()}_LINKER`, clang],
     // libsqlite3-sys runs bindgen at build time: the NDK ships the libclang it needs and its sysroot.
     ["LIBCLANG_PATH", path.join(ndk.bin, "lib")],
-    [`BINDGEN_EXTRA_CLANG_ARGS_${under}`, `--sysroot=${path.join(ndk.bin, "sysroot")}`],
+    [`BINDGEN_EXTRA_CLANG_ARGS_${under}`, bindgenArgs(ndk)],
   ];
   return Object.assign({ ...env }, Object.fromEntries(entries));
 }

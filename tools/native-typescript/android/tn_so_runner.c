@@ -3,6 +3,12 @@
 // it. This loader opens the library, calls that `main`, and returns its exit code unchanged. It also
 // prints the process's peak resident set to stderr, because the library runs inside this process and
 // the corpus holds alloc-loop to a resident-set ceiling.
+//
+// It also turns native heap pointer tagging off before anything is loaded. From Android 11 bionic
+// returns malloc pointers with a tag in the top byte (0xb4...), and Perry v0.5.1520 compares and
+// range-checks addresses as plain 48-bit values, so a tagged arena misclassifies every object it
+// owns: object shapes read as unknown, stores past the second slot are dropped, and console.log
+// prints empty strings. An app opts out with android:allowNativeHeapPointerTagging="false".
 #include <dlfcn.h>
 #include <stdio.h>
 #include <sys/resource.h>
@@ -10,7 +16,16 @@
 // Exit codes a corpus case never returns (every case exits 0 or a small code of its own).
 enum { TN_USAGE = 120, TN_DLOPEN = 121, TN_NO_MAIN = 122 };
 
+// <malloc.h> declares these from API 26; the corpus targets API 24, so they are spelled here.
+enum { TN_BIONIC_SET_HEAP_TAGGING_LEVEL = -204, TN_HEAP_TAGGING_LEVEL_NONE = 0 };
+
+static void disable_heap_tagging(void) {
+    int (*set_option)(int, int) = (int (*)(int, int))dlsym(RTLD_DEFAULT, "mallopt");
+    if (set_option != NULL) set_option(TN_BIONIC_SET_HEAP_TAGGING_LEVEL, TN_HEAP_TAGGING_LEVEL_NONE);
+}
+
 int main(int argc, char** argv) {
+    disable_heap_tagging();
     if (argc < 2) {
         fprintf(stderr, "usage: tn_so_runner <library.so>\n");
         return TN_USAGE;

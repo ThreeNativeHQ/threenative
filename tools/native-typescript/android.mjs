@@ -150,26 +150,46 @@ export function resolveAdb(env = process.env) {
   throw named("TN_NATIVE_TS_ADB", `no adb under ${roots.filter(Boolean).join(", ")}`);
 }
 
-/**
- * The loader that runs a Perry Android library as a program, built with the target's NDK clang and
- * rebuilt only when its source is newer. Perry's Android output is a shared library, so a pushed
- * case needs this to execute.
- */
-export function buildSoRunner(target, ndk, outDir) {
-  const source = path.join(HERE, "android", "tn_so_runner.c");
-  const binary = path.join(outDir, "tn_so_runner");
-  if (fs.existsSync(binary) && fs.statSync(binary).mtimeMs >= fs.statSync(source).mtimeMs) {
-    return binary;
+/** Compiles one C file of this lane with the target's NDK clang, rebuilding only when it is newer. */
+function compileC(source, output, flags, target, ndk) {
+  if (fs.existsSync(output) && fs.statSync(output).mtimeMs >= fs.statSync(source).mtimeMs) {
+    return output;
   }
-  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(path.dirname(output), { recursive: true });
   const { cc } = ndkTools(ndk, target);
-  const compile = spawnSync(
-    cc,
-    ["-fPIE", "-pie", `-Wl,-z,max-page-size=${target.maxPageSize}`, source, "-o", binary],
-    { encoding: "utf8" },
-  );
+  const compile = spawnSync(cc, [...flags, source, "-o", output], { encoding: "utf8" });
   if (compile.status !== 0) {
     throw named("TN_NATIVE_TS_RUNNER", `${cc} failed: ${compile.stderr.split("\n")[0]}`);
   }
-  return binary;
+  return output;
+}
+
+/**
+ * The loader that runs a Perry Android library as a program. Perry's Android output is a shared
+ * library, so a pushed case needs this to execute.
+ */
+export function buildSoRunner(target, ndk, outDir) {
+  const flags = ["-fPIE", "-pie", `-Wl,-z,max-page-size=${target.maxPageSize}`];
+  return compileC(
+    path.join(HERE, "android", "tn_so_runner.c"),
+    path.join(outDir, "tn_so_runner"),
+    flags,
+    target,
+    ndk,
+  );
+}
+
+/**
+ * The virtual pthread keys object every Android library links (tn_pthread_keys.c): Perry v0.5.1520's
+ * runtime needs more thread-local keys than bionic's 128. Perry appends it to the link line from
+ * PERRY_EXTRA_LINK_ARGS, so neither the compiler nor the runtime archive changes.
+ */
+export function buildPthreadKeys(target, ndk, outDir) {
+  return compileC(
+    path.join(HERE, "android", "tn_pthread_keys.c"),
+    path.join(outDir, "tn_pthread_keys.o"),
+    ["-c", "-fPIC"],
+    target,
+    ndk,
+  );
 }
