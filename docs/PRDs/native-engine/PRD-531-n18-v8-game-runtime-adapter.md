@@ -95,6 +95,60 @@ asserts movement and the native/V8 profile; verified 2026-10-06 on the desktop t
 (box moved, profile native/V8), the earlier V8 and JS-free player scenarios still pass, and the
 JS-free player still inspects JS-free. Red control: the demo's move speed zeroed, the scenario fails. The unchanged minimal-template journey box stays open.
 
+Slice 4 and slice 5, second part (2026-10-08, lane `ne-531`): the minimal template's own code now
+runs on the V8 player up to its post chain and through it. Gaps closed, each with a red-green test:
+`Color(hex)`/`Color.set`, material parameter objects (an unbound key refuses by name), `light.shadow`
+as the light's shadow object, `RoundedBoxGeometry` (fixture `geometry-rounded-box`, bit-exact),
+AnimationAction/AnimationMixer members and mixer events, texture `anisotropy`/`generateMipmaps`/
+`source`, `normalMap`/`normalScale`, write-only `needsUpdate`, the `Material` base,
+`getVertexPosition`, renderer settings (`toneMapping`, `toneMappingExposure`, `outputColorSpace`,
+`shadowMap`), the player's adapter identity and `renderer.info`. Slice 4: GTAO, denoise, SMAA and
+bloom are built live in C++ (`gtaoEffect`, `denoiseEffect`, `smaaEffect`, `bloom`); each live effect
+equals three's exported node byte for byte (`native_engine_post_{GTAONode,DenoiseNode,SMAANode}`),
+and five render fixtures match headed-WebGPU goldens (`native_engine_render_post_addons`; the two
+with denoise allow one level, deltaE 0.04, for the engine's existing DenoiseNode WGSL port). On V8,
+`pass`, `mrt`, the four addons and `RenderPipeline` drive them. The native package carries models
+and JPEGs, and `bundle-native-engine.mjs --assets <project>` cooks them beside the bundle.
+
+Measured on the desktop target with a scratch bundle that stubbed only the unreached imports: the
+journey passed movement, diagnostics and renderChain (tier high, hardware adapter); its performance
+assertions had no samples. The stubs were diagnosis only and never shipped (owner decision below).
+
+## Design: the post chain behind the shared ABI (2026-10-08)
+
+The post chain is engine code. Each language back end reaches it through the same C++ table, so
+the V8 adapter and the Wasm back end (`tn_tsl_call`) build the same graph.
+
+- `tn::abi::tslCall(name, receiver, args, serial)` in `src/engine/abi/tsl_call.cpp` has one
+  `if (name == "...")` case per node: `ao`, `denoise` (seeded from the call serial), `smaa`, `bloom`,
+  `oneMinus` and `dispose`. They return the live effect nodes from `post_effects.h`
+  (`gtaoEffect`, `denoiseEffect`, `smaaEffect`, `bloom`, `effectNode`).
+- `tn::abi::tslEffectParameter(node, name, value)` writes an effect uniform (`radius`,
+  `threshold`, ...); the renderer reads it each frame. The Wasm back end needs one C entry for it.
+- `pass`, `mrt` and `getTextureNode` are thin JS objects in `core-tsl.mjs` that name the engine's
+  render textures (`scene`, `depth`, `normal`). The Wasm lane moves them into `tslCall` as
+  texture-node entries with the same names.
+- `new RenderPipeline(renderer, outputNode)` hands the output node to `Renderer::setPostGraph`,
+  which serializes it with `serializedPost()` and runs it as `postPasses()` (PRD-526).
+- A JS `class X extends Node` (or `TempNode` with its own `setup()`) is refused: the engine
+  compiles only nodes it built itself, because a JS `setup()` has no native form to compile. The
+  bundler refuses the import by name (`TN_NATIVE_ENGINE_UNBOUND`); nothing refuses at call time.
+
+## Blocked on
+
+- lane-tier-imports: the imports the minimal template references but never runs at its tiers
+  (ssgi, ssr, godrays, sharpen, fxaa, TempNode, QuadMesh, RenderTarget, RendererUtils,
+  NodeMaterial and others) leave the bundle through tier-scoped imports in core and the templates.
+  Box 49 closes after that lane lands. MeshBVH is real in `feat/native-engine`.
+
+## Known deviations
+
+- Denoise (2026-10-08): the engine's DenoiseNode WGSL port differs from three's by at most one
+  level (1/255) on 7.6% of pixels in `tsl-post-ao` and `tsl-post-template-high`; those two fixtures
+  allow one level and deltaE 0.04. The live effect's inputs equal three's export byte for byte.
+  The allowance must not grow. Removing it is its own item: find the WGSL rounding difference and
+  return both fixtures to the default tolerance.
+
 ## Decisions
 
 CI repair (2026-10-07): run 37554436342 compiled the Windows adapter with C++20 but without
@@ -179,6 +233,8 @@ instead of silently encoding/coercing them. The regression failed before the fix
 27 focused profile/browser/protocol/quality checks, focused TypeScript and the real Wasm browser
 smoke pass. Biome passes with 6 existing complexity warnings. No quality waiver or baseline change.
 
+- 2026-10-08, owner: no stubs; unreached effects are removed from the bundle by tier-scoped imports (lane-tier-imports).
+- 2026-10-08, owner: the V8 player's performance series reads real wall-clock frame time (CPU frame plus present, the quantity of `TN_FRAME_BUDGET`); GPU time is reported only when the run asks for it. Tick time never satisfies `minFps` or p95.
 - This game runtime is the default until gate T ships, and it is never called a JS-free *application* (§2.1). The engine under it is JS-free (owner, 2026-10-04).
 
 Exact-source coverage refresh completed (2026-10-07): `pnpm --filter @threenative/runtime-native native:coverage` exits 0 on the current sources and rewrites the generated record; `scripts/__tests__/check-native-coverage.spec.ts` passes 6/6. Total 51,484 lines at 83.28% (previous record 24,669 at 78.45%); the record now covers `src/engine/` (25,235 lines, 87.24%) and `src/adapters/` (88.96%). Repairs needed on the way: the Gate E driver joins the engine test aggregate; TS `--check` fixture scripts and the Perry corpus count as uninstrumented; the JS-free player is built so its objects exist; one `llvm-cov export` covers every product object (per-object exports timed out); llvm-cov's "functions have mismatched data" warning (header inline functions compiled into several test binaries) is tolerated and every other warning stays fatal; `update_scaling` runs at one size in this lane only, since instrumented timing cannot judge its 18× ratio, which still runs and fails in test-native. The run surfaced and fixed real reds: V8 writes to `morphAttributes`, `layers.mask` and `morphTargetInfluences[i]`, native inspect `input.wheel`/`input.media`, a Node-version-dependent JSON fixture and three batching-stale expectations. The timing-budget test `native_engine_world_cycles_cpu` failed once under CI host load and passed on rerun; the accepted run was pinned to CCD1.

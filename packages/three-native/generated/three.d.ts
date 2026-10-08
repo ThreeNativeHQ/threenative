@@ -43,6 +43,14 @@ intensity: number;
 color: Color;
 }
 
+/** Catalog supported: three/AnimationActionLoopStyles. */
+export declare const AnimationActionLoopStyles = {
+  LoopOnce: 2200,
+  LoopRepeat: 2201,
+  LoopPingPong: 2202,
+} as const;
+export type AnimationActionLoopStyles = (typeof AnimationActionLoopStyles)[keyof typeof AnimationActionLoopStyles];
+
 /** Catalog supported: three/AnimationClip. */
 export declare class AnimationClip {
 constructor();
@@ -64,6 +72,24 @@ timeScale: number;
   stopAllAction(): AnimationMixer;
 
   update(deltaTime: number): AnimationMixer;
+  /** callback listener: EventListener */
+  addEventListener(type: string, listener: EventListener): void;
+
+  dispatchEvent(event: BaseEvent): void;
+
+  existingAction(clip: AnimationClip, optionalRoot?: Object3D): AnimationAction | null;
+
+  getRoot(): Object3D;
+  /** callback listener: EventListener */
+  hasEventListener(type: string, listener: EventListener): boolean;
+  /** callback listener: EventListener */
+  removeEventListener(type: string, listener: EventListener): void;
+
+  uncacheAction(clip: AnimationClip, optionalRoot?: Object3D): void;
+
+  uncacheClip(clip: AnimationClip): void;
+
+  uncacheRoot(root: Object3D): void;
 }
 
 /** Catalog partial (native-not-implemented): three/AttachedBindMode. */
@@ -606,6 +632,7 @@ constructor();
 intensity: number;
 color: Color;
 target: Object3D;
+readonly shadow: DirectionalLightShadow;
 }
 
 /** Catalog supported: three/DoubleSide. */
@@ -1374,6 +1401,7 @@ aoMapIntensity: number;
 emissive: Color;
 emissiveIntensity: number;
 bumpScale: number;
+normalMap: Texture | null;
 normalMapType: NormalMapTypes;
 normalScale: Vector2;
 displacementScale: number;
@@ -1428,6 +1456,8 @@ envMap: Texture | null;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+normalMap: Texture | null;
+normalScale: Vector2;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -1840,6 +1870,7 @@ decay: number;
 distance: number;
 intensity: number;
 color: Color;
+readonly shadow: PointLightShadow;
 }
 
 /** Catalog supported: three/Quaternion. */
@@ -2085,6 +2116,11 @@ export declare const ReverseSubtractEquation: 102;
 
 /** Catalog supported: three/RingGeometry. */
 export declare class RingGeometry extends BufferGeometry {
+constructor();
+}
+
+/** Catalog supported: three/addons/geometries/RoundedBoxGeometry.js/RoundedBoxGeometry. */
+export declare class RoundedBoxGeometry extends BoxGeometry {
 constructor();
 }
 
@@ -2385,6 +2421,9 @@ readonly offset: Vector2;
 readonly repeat: Vector2;
 mapping: number;
 flipY: boolean;
+anisotropy: number;
+generateMipmaps: boolean;
+readonly source: Source;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */
@@ -2756,6 +2795,8 @@ readonly isVector3: true;
   toArray(array?: Vector3Tuple, offset?: 0): Vector3Tuple;
   toArray(array: ArrayLike<number>, offset?: number): ArrayLike<number>;
 
+  fromBufferAttribute(attribute: BufferAttribute, index: number): this;
+
   random(): this;
 
   randomDirection(): this;
@@ -2943,6 +2984,8 @@ emissive: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+normalMap: Texture | null;
+normalScale: Vector2;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -2967,6 +3010,8 @@ specular: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+normalMap: Texture | null;
+normalScale: Vector2;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */
@@ -3046,11 +3091,22 @@ intensity: number;
 penumbra: number;
 color: Color;
 readonly target: Object3D;
+readonly shadow: SpotLightShadow;
 }
 
 /** Catalog supported: three/AnimationAction. */
 export declare class AnimationAction {
 constructor();
+clampWhenFinished: boolean;
+enabled: boolean;
+loop: AnimationActionLoopStyles;
+paused: boolean;
+repetitions: number;
+time: number;
+timeScale: number;
+weight: number;
+zeroSlopeAtEnd: boolean;
+zeroSlopeAtStart: boolean;
 
   play(): AnimationAction;
 
@@ -3059,6 +3115,44 @@ constructor();
   setEffectiveWeight(weight: number): AnimationAction;
 
   stop(): AnimationAction;
+
+  crossFadeFrom(fadeOutAction: AnimationAction, duration: number, warp?: boolean): AnimationAction;
+
+  crossFadeTo(fadeInAction: AnimationAction, duration: number, warp?: boolean): AnimationAction;
+
+  fadeIn(duration: number): AnimationAction;
+
+  fadeOut(duration: number): AnimationAction;
+
+  getClip(): AnimationClip;
+
+  getEffectiveTimeScale(): number;
+
+  getEffectiveWeight(): number;
+
+  getRoot(): Object3D;
+
+  halt(duration: number): AnimationAction;
+
+  isRunning(): boolean;
+
+  isScheduled(): boolean;
+
+  setDuration(duration: number): AnimationAction;
+
+  setEffectiveTimeScale(timeScale: number): AnimationAction;
+
+  setLoop(mode: AnimationActionLoopStyles, repetitions: number): AnimationAction;
+
+  startAt(time: number): AnimationAction;
+
+  stopFading(): AnimationAction;
+
+  stopWarping(): AnimationAction;
+
+  syncWith(action: AnimationAction): AnimationAction;
+
+  warp(startTimeScale: number, endTimeScale: number, duration: number): AnimationAction;
 }
 
 /** Catalog supported: three/Face. */
@@ -3066,3 +3160,43 @@ export type Face = { a: number; b: number; c: number; normal: Vector3; materialI
 
 /** Catalog supported: three/Intersection. */
 export type Intersection = { distance: number; point: Vector3; object: Object3D; face: Face; faceIndex: number; uv?: Vector2; uv1?: Vector2; normal?: Vector3; barycoord: Vector3; instanceId?: number };
+
+/** Catalog supported: three/DirectionalLightShadow. */
+export declare class DirectionalLightShadow {
+constructor();
+bias: number;
+intensity: number;
+normalBias: number;
+radius: number;
+readonly camera: OrthographicCamera;
+readonly mapSize: Vector2;
+}
+
+/** Catalog supported: three/PointLightShadow. */
+export declare class PointLightShadow {
+constructor();
+bias: number;
+intensity: number;
+normalBias: number;
+radius: number;
+readonly camera: PerspectiveCamera;
+readonly mapSize: Vector2;
+}
+
+/** Catalog supported: three/Source. */
+export declare class Source {
+constructor();
+readonly version: number;
+}
+
+/** Catalog supported: three/SpotLightShadow. */
+export declare class SpotLightShadow {
+constructor();
+bias: number;
+focus: number;
+intensity: number;
+normalBias: number;
+radius: number;
+readonly camera: PerspectiveCamera;
+readonly mapSize: Vector2;
+}

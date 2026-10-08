@@ -71,7 +71,21 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
 };
 
 /** Bound methods whose binding signature differs from three's richer overloads. */
+// EventDispatcher's generic event-map overloads, as the native mixer binds them: any event type,
+// one listener function. @types/three spells them over AnimationMixerEventMap, which no catalog
+// entry publishes.
+const LISTENER: ICatalogParameter[] = [
+  { name: "type", type: "string", optional: false },
+  { name: "listener", type: "EventListener", optional: false, callback: "EventListener" },
+];
+
 const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns: string }[]> = {
+  "AnimationMixer.addEventListener": [{ parameters: LISTENER, returns: "void" }],
+  "AnimationMixer.removeEventListener": [{ parameters: LISTENER, returns: "void" }],
+  "AnimationMixer.hasEventListener": [{ parameters: LISTENER, returns: "boolean" }],
+  "AnimationMixer.dispatchEvent": [
+    { parameters: [{ name: "event", type: "BaseEvent", optional: false }], returns: "void" },
+  ],
   // The native port intersects Object3D geometry, independent of @types/three's generic overloads.
   "Raycaster.intersectObject": [
     {
@@ -194,6 +208,29 @@ const TYPES_ROOT = (() => {
 const classFiles = new Map<string, string>();
 const declarationBodies = new Map<string, string | null>();
 const classParents = new Map<string, string | null>();
+// A generic class's own type parameter names, and the type arguments its `extends` passes its parent
+// (`DirectionalLightShadow extends LightShadow<OrthographicCamera>`), so an inherited `camera: TCamera`
+// is typed as the subclass sees it.
+const classTypeParameters = new Map<string, string[]>();
+const classParentArguments = new Map<string, string[]>();
+
+/** Top-level comma-separated parts of a `<...>` list's inside. */
+function typeList(text: string | undefined): string[] {
+  if (text === undefined) return [];
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const character of text) {
+    if ("([{<".includes(character)) depth++;
+    if (")]}>".includes(character)) depth--;
+    if (character === "," && depth === 0) {
+      parts.push(current.trim());
+      current = "";
+    } else current += character;
+  }
+  if (current.trim() !== "") parts.push(current.trim());
+  return parts;
+}
 
 function indexThreeTypes(): void {
   if (TYPES_ROOT === null) return;
@@ -219,6 +256,8 @@ function indexThreeTypes(): void {
     }
   };
   walk(source);
+  // Addon classes (`RoundedBoxGeometry`) are typed beside their module; core declarations win.
+  walk(path.join(TYPES_ROOT, "examples", "jsm"));
 }
 
 /** The body between a declaration's opening brace and its matching close. */
@@ -232,14 +271,21 @@ function declarationBody(keyword: "class" | "interface", name: string): string |
   }
   const text = readFileSync(file, "utf8");
   const header = new RegExp(
-    `(?:export\\s+)?(?:declare\\s+)?(?:abstract\\s+)?${keyword}\\s+${name}\\b(?:<[^>]*>)?\\s*(?:extends\\s+([A-Za-z_$][\\w$]*))?[^{]*\\{`,
+    `(?:export\\s+)?(?:declare\\s+)?(?:abstract\\s+)?${keyword}\\s+${name}\\b(?:<([^>]*)>)?\\s*(?:extends\\s+([A-Za-z_$][\\w$]*)(?:<([^{]*?)>)?)?[^{]*\\{`,
     "u",
   ).exec(text);
   if (header === null) {
     declarationBodies.set(key, null);
     return null;
   }
-  if (keyword === "class") classParents.set(name, header[1] ?? null);
+  if (keyword === "class") {
+    classParents.set(name, header[2] ?? null);
+    classTypeParameters.set(
+      name,
+      typeList(header[1]).map((parameter) => parameter.split(/\s|=/u)[0] ?? parameter),
+    );
+    classParentArguments.set(name, typeList(header[3]));
+  }
   const start = header.index + header[0].length;
   let depth = 1;
   for (let i = start; i < text.length; i++) {
@@ -320,11 +366,23 @@ function captureMemberType(body: string, member: string): string | null {
 }
 
 function findFieldType(className: string, member: string): string | null {
+  // Type arguments in scope for the class being read: a parent's parameters bound by its child.
+  let bound = new Map<string, string>();
+  const substitute = (type: string): string =>
+    type.replace(/[A-Za-z_$][\w$]*/gu, (word) => bound.get(word) ?? word);
   for (const name of chain(className)) {
     for (const body of bodiesFor(name)) {
       const type = captureMemberType(body, member);
-      if (type !== null) return type;
+      if (type !== null) return substitute(type);
     }
+    const parent = classParents.get(name);
+    if (parent === null || parent === undefined) break;
+    if (!classParents.has(parent)) declarationBody("class", parent);
+    const parameters = classTypeParameters.get(parent) ?? [];
+    const args = (classParentArguments.get(name) ?? []).map(substitute);
+    bound = new Map(
+      parameters.flatMap((parameter, i) => (args[i] === undefined ? [] : [[parameter, args[i]]])),
+    );
   }
   return null;
 }

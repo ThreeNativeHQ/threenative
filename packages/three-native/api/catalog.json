@@ -156,8 +156,7 @@
       "kind": "enum",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_ENUM_ANIMATIONACTIONLOOPSTYLES"
+        "kind": "supported"
       },
       "values": [
         {
@@ -333,6 +332,199 @@
                 }
               ],
               "returns": "AnimationMixer"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "addEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispatchEvent",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": "BaseEvent",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "existingAction",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "clip",
+                  "type": "AnimationClip",
+                  "optional": false
+                },
+                {
+                  "name": "optionalRoot",
+                  "type": "Object3D",
+                  "optional": true
+                }
+              ],
+              "returns": "AnimationAction | null"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getRoot",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "Object3D"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "hasEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "removeEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "uncacheAction",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "clip",
+                  "type": "AnimationClip",
+                  "optional": false
+                },
+                {
+                  "name": "optionalRoot",
+                  "type": "Object3D",
+                  "optional": true
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "uncacheClip",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "clip",
+                  "type": "AnimationClip",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "uncacheRoot",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "root",
+                  "type": "Object3D",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
             }
           ],
           "status": {
@@ -3387,8 +3579,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -5007,6 +5198,15 @@
           "name": "target",
           "type": "Object3D",
           "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "shadow",
+          "type": "DirectionalLightShadow",
+          "mutable": false,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -9923,8 +10123,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11448,8 +11647,7 @@
           "mutable": true,
           "lifetime": "reference",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -11468,8 +11666,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11936,6 +12133,24 @@
         {
           "name": "blending",
           "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalScale",
+          "type": "Vector2",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -15470,6 +15685,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "shadow",
+          "type": "PointLightShadow",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -17059,10 +17283,9 @@
       "kind": "class",
       "source": "three/addons/geometries/RoundedBoxGeometry.js",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_ROUNDEDBOXGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BoxGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -19051,6 +19274,33 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "anisotropy",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "generateMipmaps",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "source",
+          "type": "Source",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -20907,8 +21157,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -22465,7 +22714,7 @@
               "parameters": [
                 {
                   "name": "attribute",
-                  "type": "BufferAttribute | InterleavedBufferAttribute",
+                  "type": "BufferAttribute",
                   "optional": false
                 },
                 {
@@ -22478,8 +22727,7 @@
             }
           ],
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -23559,8 +23807,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -24812,6 +25059,24 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "normalMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalScale",
+          "type": "Vector2",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -24991,6 +25256,24 @@
         {
           "name": "blending",
           "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalScale",
+          "type": "Vector2",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -25722,6 +26005,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "shadow",
+          "type": "SpotLightShadow",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -25735,7 +26027,98 @@
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "clampWhenFinished",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "loop",
+          "type": "AnimationActionLoopStyles",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "paused",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "repetitions",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "time",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "timeScale",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "weight",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "zeroSlopeAtEnd",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "zeroSlopeAtStart",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": [
         {
           "name": "play",
@@ -25794,6 +26177,354 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "crossFadeFrom",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "fadeOutAction",
+                  "type": "AnimationAction",
+                  "optional": false
+                },
+                {
+                  "name": "duration",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "warp",
+                  "type": "boolean",
+                  "optional": true
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "crossFadeTo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "fadeInAction",
+                  "type": "AnimationAction",
+                  "optional": false
+                },
+                {
+                  "name": "duration",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "warp",
+                  "type": "boolean",
+                  "optional": true
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "fadeIn",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "duration",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "fadeOut",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "duration",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getClip",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "AnimationClip"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getEffectiveTimeScale",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getEffectiveWeight",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getRoot",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "Object3D"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "halt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "duration",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "isRunning",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "isScheduled",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setDuration",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "duration",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setEffectiveTimeScale",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "timeScale",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setLoop",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "mode",
+                  "type": "AnimationActionLoopStyles",
+                  "optional": false
+                },
+                {
+                  "name": "repetitions",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "startAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "time",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "stopFading",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "stopWarping",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "syncWith",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "action",
+                  "type": "AnimationAction",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "warp",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "startTimeScale",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "endTimeScale",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "duration",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "AnimationAction"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -25814,6 +26545,238 @@
         "kind": "supported"
       },
       "type": "{ distance: number; point: Vector3; object: Object3D; face: Face; faceIndex: number; uv?: Vector2; uv1?: Vector2; normal?: Vector3; barycoord: Vector3; instanceId?: number }"
+    },
+    {
+      "name": "DirectionalLightShadow",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": null,
+      "constructor": [],
+      "fields": [
+        {
+          "name": "bias",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalBias",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "camera",
+          "type": "OrthographicCamera",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "mapSize",
+          "type": "Vector2",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": []
+    },
+    {
+      "name": "PointLightShadow",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": null,
+      "constructor": [],
+      "fields": [
+        {
+          "name": "bias",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalBias",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "camera",
+          "type": "PerspectiveCamera",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "mapSize",
+          "type": "Vector2",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": []
+    },
+    {
+      "name": "Source",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": null,
+      "constructor": [],
+      "fields": [
+        {
+          "name": "version",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": []
+    },
+    {
+      "name": "SpotLightShadow",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": null,
+      "constructor": [],
+      "fields": [
+        {
+          "name": "bias",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "focus",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "intensity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "normalBias",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "radius",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "camera",
+          "type": "PerspectiveCamera",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "mapSize",
+          "type": "Vector2",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": []
     }
   ]
 }

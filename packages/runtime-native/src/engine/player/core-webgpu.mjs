@@ -11,8 +11,32 @@ for (const material of [MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteN
 }
 
 // Core still owns createRenderer/wrapRenderer; the player owns the GPU and draws these handles.
+// The facade's backend answers three's adapter request with the player's GPU adapter, so core reads
+// the same `adapter.info` identity (and software-adapter verdict) it reads in a browser.
+class NativeBackend {
+  gpu = { requestAdapter: () => globalThis.tn.requestAdapter() };
+}
+
 export class WebGPURenderer {
   constructor({ canvas }) { this.domElement = canvas; }
+  backend = new NativeBackend();
+  // three's `renderer.info`, read from the last frame the player drew (one frame behind the
+  // simulation, as a GPU-timed reading is). `reset` has nothing to clear: the player counts per frame.
+  info = {
+    render: {
+      get drawCalls() { return globalThis.tn.renderInfo().drawCalls; },
+      get calls() { return globalThis.tn.renderInfo().drawCalls; },
+      get triangles() { return globalThis.tn.renderInfo().triangles; },
+    },
+    compute: {},
+    frame: 0,
+    reset() {},
+  };
+  // WebGPURenderer's defaults; the player applies them before each frame it draws.
+  shadowMap = { enabled: false, type: 1 };
+  toneMapping = 0;
+  toneMappingExposure = 1;
+  outputColorSpace = "srgb";
   setPixelRatio() {}
   setSize(width, height) {
     this.domElement.width = width;
@@ -22,15 +46,26 @@ export class WebGPURenderer {
   render(scene, camera) {
     globalThis.tn.scene = scene;
     globalThis.tn.camera = camera;
+    globalThis.tn.setRendererState(this);
   }
   dispose() {}
 }
 
+// three's RenderPipeline(renderer, outputNode): the player installs the node graph as its post pass
+// (once per graph) and draws it with the renderer's settings.
 export class RenderPipeline {
-  constructor(renderer) { this.renderer = renderer; }
-  render() { globalThis.tn.setPostGraph(this.outputNode); }
+  constructor(renderer, outputNode = null) {
+    this.renderer = renderer;
+    this.outputNode = outputNode;
+  }
+  render() {
+    globalThis.tn.setRendererState(this.renderer);
+    globalThis.tn.setPostGraph(this.outputNode);
+  }
   dispose() { globalThis.tn.setPostGraph(null); }
 }
+// three's NodeUpdateType, the constants a node's update schedule names.
+export const NodeUpdateType = Object.freeze({ NONE: "none", FRAME: "frame", RENDER: "render", OBJECT: "object" });
 export const StorageBufferAttribute = unsupported;
 export const MeshLambertNodeMaterial = unsupported;
 export const MeshMatcapNodeMaterial = unsupported;

@@ -2259,7 +2259,7 @@ function isLeftover(relative: string): boolean {
  *
  * Cooked outputs enter under their logical path: one Buffer entry per cooked binary buffer
  * (audio/other), as CPU data at its exact length, and one Texture entry per cooked PNG or JPEG,
- * decoded to RGBA8. A KTX2 texture and a cooked model are not v1 entries.
+ * decoded to RGBA8, and one Scene entry per cooked model. A KTX2 texture is not a v1 entry.
  *
  * Every other file in the output root (the web root) enters under its web URL, `/` plus its path
  * there, because that is the URL a game requests it by on the web (`/assets/sky.hdr` is served
@@ -2277,8 +2277,13 @@ async function nativePackageEntries(
   let skipped = 0;
   for (const logical of Object.keys(entries).sort()) {
     const entry = entries[logical];
-    if (entry === undefined || entry.kind === "model") continue;
+    if (entry === undefined) continue;
     const data = await readFile(path.join(outputRoot, entry.output));
+    if (entry.kind === "model") {
+      // The GLB bytes the native glTF loader reads; it refuses by name any extension it cannot decode.
+      specs.push({ data, kind: NativeEntryKind.Scene, name: logical, uploadSize: 0 });
+      continue;
+    }
     const texture = entry.kind === "texture" ? await nativeTextureEntry(logical, data) : undefined;
     if (texture !== undefined) specs.push(texture);
     else if (entry.kind === "texture" || data.length === 0) skipped += 1;
