@@ -4382,11 +4382,10 @@ describe("levelAtGates impostor terminal scale", () => {
 /**
  * A shadow level's own selection, PRD-478 phase 2.
  *
- * The map is not the camera: its frustum is the light's window, its distance test is measured from
- * the window centre its own map was rendered with, its gate is the texel size it can resolve, and
- * its base is the chain level the cluster path hands it. A selection that took the main camera's
- * numbers instead would draw the forest behind the player into the map and drop the shadow the
- * player is standing in, which is why each of the four is a claim of its own here.
+ * The map is not the camera: its frustum is the light's window, its gate is the texel size it can
+ * resolve, and its base is the chain level the cluster path hands it. Its LOD is the main pass's,
+ * from the eye, because a placement casts from the key the main pass draws it in. A selection that
+ * took the main camera's frustum instead would drop the shadow the player is standing in.
  */
 
 /** Six planes of a top-down `size` box over the origin, which is what a level's light frustum is. */
@@ -4462,13 +4461,12 @@ function drawnPlacements(
 }
 
 describe("a shadow level's own selection", () => {
-  it("takes its planes, its centre and its gate, and never the main camera's", () => {
+  it("takes its planes and its gate, and never the main camera's", () => {
     const { input } = shadowFixture();
     // The map is a 200 m box over the origin; the placement at the origin is inside it and the main
     // camera at 500 m back is not inside it.
     const level = {
       base: 0,
-      centre: { x: 0, z: 0 },
       gate: 1,
       planes: levelPlanes(100),
     };
@@ -4480,25 +4478,54 @@ describe("a shadow level's own selection", () => {
     expect([...(main.get(0) ?? [])]).toEqual([0]);
     expect([...(main.get(1) ?? [])]).toEqual([]);
     expect([...(main.get(2) ?? [])]).toEqual([]);
-    // The map's: the placement at the origin, which the camera sees 40 m away, and the two behind
-    // the camera, which the camera cannot see at all. Its own centre is what named their levels —
-    // 100 m and 60 m from the window centre are both past the 40 m gate and short of the 120 m one,
-    // where the camera's own eye would have put all three past the coarsest level or out of frame.
-    expect([...(byKey.get(0) ?? [])]).toEqual([0]);
-    expect([...(byKey.get(1) ?? [])]).toEqual([1, 3]);
+    // The map's: the placement at the origin, which the camera sees, and the two behind the camera,
+    // which the camera cannot see at all. Their levels are the main pass's, from the eye at
+    // z = -40: 3 is 20 m away (level 0) and 1 is 60 m away, past the 40 m gate (level 1).
+    expect([...(byKey.get(0) ?? [])]).toEqual([0, 3]);
+    expect([...(byKey.get(1) ?? [])]).toEqual([1]);
     expect([...(byKey.get(2) ?? [])]).toEqual([]);
     // The sub-texel placement inside the map's own frustum, dropped by its own gate: the set above
-    // holds placements 1 and 3 and not 2, and with the gate open it holds all three.
-    expect([...(byKey.get(1) ?? [])]).not.toContain(2);
+    // holds placements 0 and 3 and not 2, and with the gate open it holds all three.
+    expect([...(byKey.get(0) ?? [])]).not.toContain(2);
     const open = drawnPlacements(cullAndSelectShadow(input, { ...level, gate: 0 }), input);
-    expect([...(open.get(1) ?? [])]).toEqual([1, 2, 3]);
+    expect([...(open.get(0) ?? [])]).toEqual([0, 2, 3]);
+  });
+
+  it("draws each placement at the main pass's own level, from the eye, and only where that level casts", () => {
+    const { input } = shadowFixture();
+    // The map's window sits 100 m ahead of the eye, where an aerial view's focus is. The eye is at
+    // z = -40: placements 0 and 3 are within its 40 m gate (level 0) and placement 1 is past it
+    // (level 1). From the window centre the levels would invert: 0 → level 1, 1 and 3 → level 0.
+    const level = { base: 0, gate: 1, planes: levelPlanes(100) };
+    const byKey = drawnPlacements(cullAndSelectShadow(input, level), input);
+    expect([...(byKey.get(0) ?? [])]).toEqual([0, 3]);
+    expect([...(byKey.get(1) ?? [])]).toEqual([1]);
+    // `castLevels: 1`: only the finest level has a twin, as on Machinefall. A placement the main
+    // pass draws at a level that casts nothing casts nothing here — what the cluster path does,
+    // where that key has no caster mesh — instead of a write into a region no mesh draws.
+    const uncast: IKernelInput = {
+      ...input,
+      regions: input.regions.map((region, index) =>
+        index === 0 ? region : { ...region, uncast: true },
+      ),
+    };
+    const fine = drawnPlacements(cullAndSelectShadow(uncast, level), uncast);
+    expect([...(fine.get(0) ?? [])]).toEqual([0, 3]);
+    expect([...(fine.get(1) ?? [])]).toEqual([]);
+    // A coarse map asks for the coarsest shape; with one casting level that is level 0, never a
+    // level whose twin was not minted.
+    const coarse = drawnPlacements(
+      cullAndSelectShadow(uncast, { ...level, base: COARSEST_SHADOW_LEVEL }),
+      uncast,
+    );
+    expect([...(coarse.get(0) ?? [])]).toEqual([0, 3]);
+    expect([...(coarse.get(2) ?? [])]).toEqual([]);
   });
 
   it("reads a base past the chain as the coarsest shape the asset has, without reading past its levels", () => {
     const { input } = shadowFixture();
     const level = {
       base: COARSEST_SHADOW_LEVEL,
-      centre: { x: 0, z: 0 },
       gate: 0,
       planes: levelPlanes(100),
     };
@@ -4533,9 +4560,10 @@ describe("a shadow level's own selection", () => {
 
   it("floors the level at the map's base, which is the shape the cluster path hands it", () => {
     const { input } = shadowFixture();
-    const level = { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes: levelPlanes(100) };
+    const level = { base: 0, gate: 0, planes: levelPlanes(100) };
     const fine = drawnPlacements(cullAndSelectShadow(input, level), input);
-    expect([...(fine.get(1) ?? [])]).toEqual([1, 2, 3]);
+    expect([...(fine.get(0) ?? [])]).toEqual([0, 2, 3]);
+    expect([...(fine.get(1) ?? [])]).toEqual([1]);
     // A coarse map draws the coarsest shape whatever the placement's own distance selected, so every
     // placement the frustum holds moves up to the base — the same coarsening `#probe` does to a
     // coarse level's geometry.
@@ -4555,7 +4583,7 @@ describe("the shadow twins of a registered provider", () => {
     } as never;
     const before = scene.footprint();
     const { camera, planes } = cameraAt(0, 0);
-    const level = { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes };
+    const level = { base: 0, gate: 0, planes };
     // No provider: a level's own dispatch is a no-op, and says so.
     expect(scene.shadowKeys).toBe(false);
     scene.dispatchShadow(renderer, level);
@@ -4596,7 +4624,7 @@ describe("the shadow twins of a registered provider", () => {
     } as never;
     const { planes } = cameraAt(0, 0);
     scene.shadowKeysFrom(() => ["a:0:0", "a:1:0"]);
-    scene.dispatchShadow(renderer, { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes });
+    scene.dispatchShadow(renderer, { base: 0, gate: 0, planes });
     // The twin of a named key is the main key's own geometry and run, with the count left at zero
     // for the clear dispatch to write.
     const named = scene.regionOf("a:1:0") as IRegion;
@@ -4607,7 +4635,7 @@ describe("the shadow twins of a registered provider", () => {
     expect(scene.shadowRegionOf("a:2:0")).toBeUndefined();
     // A key the provider names later is a twin of the pass that first needs it.
     scene.shadowKeysFrom(() => ["a:0:0", "a:1:0", "a:2:0"]);
-    scene.dispatchShadow(renderer, { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes });
+    scene.dispatchShadow(renderer, { base: 0, gate: 0, planes });
     expect(scene.shadowRegionOf("a:2:0")?.argsIndex).toBe(
       (scene.regionOf("a:2:0") as IRegion).argsIndex,
     );
@@ -4626,7 +4654,7 @@ describe("the shadow twins of a registered provider", () => {
       },
     } as never;
     const { camera, planes } = cameraAt(0, 0);
-    const level = { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes };
+    const level = { base: 0, gate: 0, planes };
     scene.shadowKeysFrom(() => ["a:0:0", "a:1:0", "a:2:0"]);
     // The frame's own main dispatch is its own two, and a level render is two more.
     scene.dispatch(renderer, camera);
@@ -4658,7 +4686,7 @@ describe("the shadow twins of a registered provider", () => {
       compute: (node: { count: number }) => culls.push(node),
     } as never;
     const { planes } = cameraAt(0, 0);
-    const level = { base: 0, centre: { x: 0, z: 0 }, gate: 0, planes };
+    const level = { base: 0, gate: 0, planes };
     scene.shadowKeysFrom(() => ["a:0:0", "a:1:0", "a:2:0"]);
     placed(scene, 0, 2, 4);
     scene.dispatchShadow(renderer, level);

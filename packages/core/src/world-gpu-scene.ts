@@ -207,6 +207,12 @@ export interface IRegion {
    * know what shape a key draws — and the validation holds the record against it.
    */
   indexCount: number;
+  /**
+   * This key has no shadow twin (its level is past the world's `castLevels`), so a shadow map drops
+   * a placement the main pass draws here. The GPU twin reads the same fact as `keys.w`, which only a
+   * minted twin sets.
+   */
+  readonly uncast?: boolean;
 }
 
 /**
@@ -375,6 +381,29 @@ function drawableLevel(slot: Pick<IAssetSlot, "levels">, level: number): number 
 }
 
 /**
+ * The level a shadow map draws a placement at, or -1 for none. A placement whose main level casts
+ * nothing casts nothing, as its key has no caster mesh on the cluster path. Otherwise the level is
+ * floored at the map's base and clamped to the last level that casts, so a coarse map draws the
+ * coarsest shape that has a twin. `base` past the chain is clamped by the chain length first.
+ */
+function shadowLevel(
+  slot: Pick<IAssetSlot, "levels">,
+  regions: readonly IRegion[],
+  drawn: number,
+  base: number,
+): number {
+  const casts = (at: number): boolean => {
+    const gate = slot.levels[at];
+    return gate !== undefined && gate.parts > 0 && regions[gate.firstKey]?.uncast !== true;
+  };
+  if (casts(drawn) === false) return -1;
+  let level = drawn;
+  for (let at = drawn + 1; at <= Math.min(base, slot.levels.length - 1); at += 1)
+    if (casts(at)) level = at;
+  return level;
+}
+
+/**
  * One representable Float32 step past a gate: `g * (1 + 2^-22)`, two f32 ULPs at `g`'s exponent.
  *
  * A floored terminal gate must start strictly after the source gate it is floored by and must stay
@@ -389,21 +418,18 @@ function strictlyAfterGate(gate: number): number {
 }
 
 /**
- * One shadow map's own four numbers, which is the whole of what a level render knows that the main
+ * One shadow map's own three numbers, which is the whole of what a level render knows that the main
  * camera does not.
  *
- * They are the level's, never the camera's: a map's frustum is the light's window, its distance test
- * is measured from the window centre its own map was rendered with (`offsetU`/`offsetV` exist
- * because a deferred level's map sits where it was drawn), its gate is the texel size it can
- * resolve, and its base is the chain level the cluster path hands it — `#probe` swaps a coarse
- * level's geometry for the coarsest shape, so a coarse map draws that shape whatever a placement's
- * own distance would have selected.
+ * They are the level's, never the camera's: a map's frustum is the light's window, its gate is the
+ * texel size it can resolve, and its base is the chain level the cluster path hands it — `#probe`
+ * swaps a coarse level's geometry for the coarsest shape, so a coarse map draws that shape whatever a
+ * placement's own distance would have selected. The distance itself is the main pass's, from the
+ * eye: a placement's shape and its cast come from the key the main pass draws it in.
  */
 export interface IShadowLevel {
   /** The six frustum planes of this map's own shadow camera. */
   readonly planes: Float32Array;
-  /** The window centre this map was rendered with, in world XZ. */
-  readonly centre: { readonly x: number; readonly z: number };
   /** This map's texel gate in world metres: a placement narrower than it casts nothing here. */
   readonly gate: number;
   /**
@@ -465,8 +491,6 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
   // caster the eye cannot see still casts.
   const occlusion = shadow === undefined ? input.occlusion : undefined;
   const planes = shadow?.planes ?? camera.planes;
-  const eyeX = shadow?.centre.x ?? camera.x;
-  const eyeZ = shadow?.centre.z ?? camera.z;
   const metres = shadow?.gate ?? 0;
   const base = shadow?.base ?? 0;
   const counts = new Uint32Array(input.regionCount);
@@ -506,23 +530,18 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
     // Sub-texel, exactly as `#probe` decides it for a mesh: a caster this map cannot resolve casts
     // no shadow a fragment could tell from ground cover.
     if (radius * 2 < metres) continue;
-    const distance = Math.hypot((at[0] as number) - eyeX, (at[2] as number) - eyeZ);
+    const distance = Math.hypot((at[0] as number) - camera.x, (at[2] as number) - camera.z);
     if (slot.cull !== undefined && distance > slot.cull) continue;
     // Cull above is the authored distance; the level below is the biased one for the main pass — the
     // same multiplier the kernel's uniform carries, so the reference and the dispatch cross a switch
-    // together. A shadow map has no frame budget of its own to be biased by, so it takes the
-    // authored distance and its own base instead.
-    const lodDistance = shadow === undefined ? biasedLodDistance(distance) : distance;
-    const level = drawableLevel(
+    // together. A shadow map takes the main pass's own level, from the eye: that is the key a
+    // placement is drawn in, and the cluster path casts each key's placements from that key's mesh.
+    const drawn = drawableLevel(
       slot,
-      // Clamped to the asset's own last level, so a base past the chain asks for its coarsest
-      // shape rather than walking a million empty indices to find it. Same answer either way:
-      // `drawableLevel` reads a level with no parts as one to skip.
-      Math.max(
-        levelAtGates(slot, lodDistance, placement.scale ?? 1),
-        Math.min(base, slot.levels.length - 1),
-      ),
+      levelAtGates(slot, biasedLodDistance(distance), placement.scale ?? 1),
     );
+    const level = shadow === undefined ? drawn : shadowLevel(slot, regions, drawn, base);
+    if (level < 0) continue;
     const gate = slot.levels[level];
     if (gate === undefined) continue;
     const hidden =
@@ -2051,7 +2070,7 @@ export class WorldGpuScene {
 
   /**
    * One shadow level's set: zero every twin's instance count, then cull and LOD-select every resident
-   * placement against the map's own light frustum, its own rendered window centre, its texel gate
+   * placement against the map's own light frustum, the main pass's eye and level, its texel gate
    * and the chain level it draws at — into the twin buffers, which the main pass cannot be holding.
    *
    * The twin of the main kernel branch for branch, and reading the main pass's own gate table,
@@ -2075,7 +2094,6 @@ export class WorldGpuScene {
         level.planes[at + 3] as number,
       );
     }
-    this.#shadowCentre.value.set(level.centre.x, 0, level.centre.z);
     this.#shadowGate.value = level.gate;
     this.#shadowBase.value = level.base;
     // `(placements, slots, keys, keys)`: the last two are the same count, and the clear dispatch is
@@ -2686,13 +2704,12 @@ export class WorldGpuScene {
   #lodBias = uniform(1);
   #planeUniforms = this.#planeVectors.map((plane) => uniform(plane));
   /**
-   * The shadow kernel's own four, kept apart from the camera's: a level's planes and window centre
-   * are written here and the main pass's own are never disturbed, so the two dispatches in one frame
-   * cannot read each other's uniforms. A shadow map takes no LOD bias — it has no frame budget to
-   * be biased by — and its gate and base are the level's own texel gate and chain level.
+   * The shadow kernel's own three, kept apart from the camera's: a level's planes are written here
+   * and the main pass's own are never disturbed, so the two dispatches in one frame cannot read each
+   * other's uniforms. Its gate and base are the level's own texel gate and chain level; its eye and
+   * LOD bias are the main pass's, which this frame's main dispatch already set.
    */
   #shadowPlaneVectors = Array.from({ length: 6 }, () => new Vector4());
-  #shadowCentre = uniform(new Vector3());
   #shadowGate = uniform(0);
   #shadowBase = uniform(0);
   #shadowPlaneUniforms = this.#shadowPlaneVectors.map((plane) => uniform(plane));
@@ -3043,16 +3060,21 @@ export class WorldGpuScene {
     args[record + 3] = 0;
     args[record + 4] = region.start;
     shadow.args.needsUpdate = true;
+    // The twin's mark on the main key record, which the shadow kernel reads to know a level casts.
+    const buffers = this.#buffers;
+    if (buffers === undefined) return;
+    (buffers.keys.array as Float32Array)[index * VEC4_WORDS + 3] = 1;
+    buffers.keys.addUpdateRange(index * VEC4_WORDS, VEC4_WORDS);
+    buffers.keys.needsUpdate = true;
   }
 
   /**
    * The shadow twin of {@link #buildKernel}: the same clear and the same per-placement selection,
    * reading the same source, gate, level and key tables and writing the twin records and runs.
    *
-   * Three branches are the level's rather than the camera's — the planes it tests against, the
-   * centre it measures distance from, and its texel gate — and one is the level's base instead of
-   * the main pass's LOD bias: a shadow map is not competing for a frame budget, so it takes the
-   * authored distance and floors the level at the shape the cluster path hands it.
+   * Two branches are the level's rather than the camera's — the planes it tests against and its
+   * texel gate — and one is the level's base, which floors the main pass's own level at the shape the
+   * cluster path hands it. A level whose key has no minted twin (`keys.w`) casts nothing.
    */
   #buildShadowKernel(): { readonly cull: unknown; readonly clear: unknown } | undefined {
     const buffers = this.#buffers;
@@ -3067,9 +3089,10 @@ export class WorldGpuScene {
     const gates = nodes(storage(buffers.gates, "vec4", buffers.gates.count));
     const levels = nodes(storage(buffers.levels, "vec4", buffers.levels.count));
     const counts = nodes(this.#counts);
-    // The level's window centre, in the uniform the main kernel measures the eye from: the same
-    // field, this dispatch's own number.
-    const eye = nodes(this.#shadowCentre);
+    // The main pass's own eye and bias, which this frame's main dispatch set: a shadow map draws each
+    // placement at the level the main pass draws it, as the cluster path does.
+    const eye = nodes(this.#eye);
+    const bias = nodes(this.#lodBias);
     const gate = nodes(this.#shadowGate);
     const base = nodes(this.#shadowBase);
     const planes = this.#shadowPlaneUniforms.map((plane) => nodes(plane));
@@ -3110,8 +3133,8 @@ export class WorldGpuScene {
       const asset = gates.element(slot);
       const distance = length(vec3(centre.x.sub(eye.x), 0.0, centre.z.sub(eye.z)));
       If(asset.w.greaterThan(0.5).and(distance.greaterThan(asset.z)), () => Return());
-      // The authored distance, with no bias: this map has no frame budget to be biased by, and its
-      // base is what the cluster path hands it.
+      // The main pass's own biased distance and level; see `shadowLevel`, which the reference runs.
+      const lodDistance = nodes(distance).mul(bias as never);
       const level = int(0).toVar();
       const scale = abs(placement.get("info").y);
       Loop(
@@ -3126,18 +3149,36 @@ export class WorldGpuScene {
           });
           // A level the prewarm has minted no key for is not taken, as in the main kernel: see
           // `drawableLevel`, which the reference mirrors.
-          If(distance.greaterThan(threshold), () => {
+          If(lodDistance.greaterThan(threshold), () => {
             If(candidate.z.greaterThan(0.5), () => {
               level.assign(i as never);
             });
           });
         },
       );
-      // Clamped to the asset's own last level, as the reference clamps it: a base past the chain
-      // asks for its coarsest shape, and reading a level outside the table is not that.
-      const at = levels.element(
-        asset.x.add(int(max(level.toFloat(), min(base as never, asset.y.sub(1.0) as never)))),
+      // A level casts when its first key has a minted twin (`keys.w`). A placement whose own level
+      // casts nothing casts nothing; otherwise the map's base floors it, clamped to the last level
+      // that casts, so a coarse map never asks for a twin that was not minted.
+      const castsAt = (index: unknown): unknown => {
+        const entry = levels.element(asset.x.add(index as never));
+        return nodes(entry.z.greaterThan(0.5)).and(keys.element(entry.y).w.greaterThan(0.5));
+      };
+      If(nodes(castsAt(level)).not(), () => Return());
+      const shape = nodes(level).toVar();
+      Loop(
+        {
+          start: nodes(level).add(1),
+          end: int(min(base as never, asset.y.sub(1.0) as never)).add(1),
+          type: "int",
+          condition: "<",
+        },
+        ({ i }: { i: unknown }) => {
+          If(castsAt(i) as never, () => {
+            shape.assign(i as never);
+          });
+        },
       );
+      const at = levels.element(asset.x.add(shape));
       Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
         const keyIndex = at.y.add(i as never);
         const key = keys.element(keyIndex);

@@ -468,7 +468,7 @@ const CASTER_STRIDE = CASTER_KEY_STRIDE + CASTER_WORLD_STRIDE;
 
 /**
  * What a world publishes on its root for a shadow level to draw a map from GPU-scene keys:
- * `(renderer, level) => void`, the level's own four numbers and the scene that selects against them.
+ * `(renderer, level) => void`, the level's own three numbers and the scene that selects against them.
  *
  * Engine-internal and duck-typed. `WorldCells` publishes it as `tnShadowGpuKeys`; nothing in a
  * template or a manifest names it, and this module cannot import the world package to name the type,
@@ -477,14 +477,13 @@ const CASTER_STRIDE = CASTER_KEY_STRIDE + CASTER_WORLD_STRIDE;
 type IShadowKeyDispatch = (renderer: unknown, level: IShadowLevelNumbers) => void;
 
 /**
- * One shadow map's own four numbers, duck-typed from `world-gpu-scene`'s `IShadowLevel`: the six
- * planes of this map's own shadow camera, the window centre its map was rendered with, its texel
- * gate in world metres, and the chain level it draws at. Typed here rather than imported for the
+ * One shadow map's own three numbers, duck-typed from `world-gpu-scene`'s `IShadowLevel`: the six
+ * planes of this map's own shadow camera, its texel gate in world metres, and the chain level it
+ * draws at. Typed here rather than imported for the
  * same reason as the dispatch above.
  */
 interface IShadowLevelNumbers {
   readonly planes: Float32Array;
-  readonly centre: { readonly x: number; readonly z: number };
   readonly gate: number;
   readonly base: number;
 }
@@ -1616,7 +1615,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #renderLevel(frame: NodeFrame, level: ILevel, mover: boolean, index = 0): void {
     // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
     const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
-    // The level's own keys, selected against this map's own four numbers, before the render that
+    // The level's own keys, selected against this map's own three numbers, before the render that
     // submits them. A mover map is never keyed: it draws the tracked casters and nothing else, so
     // a dispatch there would put the whole world into a 256² map of one moving object.
     if (mover === false) this.#dispatchKeys(frame, level, index);
@@ -1646,7 +1645,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /**
-   * Hand this level's set to whatever published keys on the world's root, in the four numbers that
+   * Hand this level's set to whatever published keys on the world's root, in the three numbers that
    * are the map's own and not the main camera's: its own light frustum, the window centre its map
    * was rendered with, the texel gate `#probe` just decided on, and the chain level it draws at.
    *
@@ -1678,7 +1677,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
       planes[offset + 2] = plane.normal.z;
       planes[offset + 3] = plane.constant;
     }
-    const target = level.light.target.position;
     // Every compute leaves the one node frame every node shares with its fields at their bare
     // defaults — `scene` among them, which `Nodes.getNodeFrame()` sets with no arguments
     // (three.webgpu.js:56215, reached from `Renderer.compute` at 62235) and nothing puts back; the
@@ -1691,7 +1689,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
     try {
       keys(frame.renderer, {
         base: index >= 1 && this.options.shadowLodBias ? COARSEST_SHADOW_LEVEL : 0,
-        centre: { x: target.x, z: target.z },
         gate: level.gateMetres,
         planes,
       });

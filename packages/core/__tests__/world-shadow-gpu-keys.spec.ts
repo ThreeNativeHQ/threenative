@@ -43,7 +43,7 @@ import { type IWorldPackage, WorldCells } from "../src/world.js";
  * this map" is read off the meshes and their instance matrices. The other side is
  * `cullAndSelectShadow` on an input this file builds from the package: the placement spheres, the
  * cull distances and the gate table come from the manifest, and the key layout is this file's own,
- * so a kernel that read the wrong planes, centre, gate or level cannot agree with it by sharing the
+ * so a kernel that read the wrong planes, gate or level cannot agree with it by sharing the
  * mistake. Every frustum test below is three's own, applied here rather than through the reference.
  */
 
@@ -265,17 +265,12 @@ describe("a shadow level's GPU-key selection against the cluster path", () => {
         camera.updateMatrixWorld(true);
         camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
         const frustum = frustumOf(camera);
-        // The window centre this render is made against is where its own light target was put:
-        // `offsetU`/`offsetV` exist because a deferred level's map sits where it was drawn, so the
-        // followed centre is not the one its selection belongs to.
-        const centre = level.light.target.position;
         const extent = node.stats.perLevel[index]?.extent ?? 0;
         const held: ILevelRender = {
           draws: 0,
           gated: new Set<string>(),
           level: {
             base: 0,
-            centre: { x: centre.x, z: centre.z },
             gate: (MIN_CASTER_TEXELS * 2 * extent) / MAP_SIZE,
             planes: planesOf(camera),
           },
@@ -408,10 +403,11 @@ describe("a shadow level's GPU-key selection against the cluster path", () => {
     let drawnTotal = 0;
     for (const [index, held] of renders) {
       const levelCamera = (node.levelNodes[index] as unknown as ILevelNode).shadow.camera;
-      const { base, centre, gate, planes } = held.level;
-      const level: IShadowLevel = { base, centre, gate, planes };
+      const { base, gate, planes } = held.level;
+      const level: IShadowLevel = { base, gate, planes };
+      // The main camera's eye: a map draws each placement at the level the main pass draws it.
       const kernel: IKernelInput = {
-        camera: { planes, x: centre.x, y: 0, z: centre.z },
+        camera: { planes, x: FOLLOW.x, y: 0, z: FOLLOW.z },
         count: placements.length,
         placements: placements.map((one) => ({
           centre: new Float32Array([one.x, 0, one.z, one.radius]),
@@ -468,7 +464,7 @@ describe("a shadow level's GPU-key selection against the cluster path", () => {
         const found = owns(one);
         const beyond =
           found.cull !== undefined &&
-          Math.hypot(found.x - centre.x, found.z - centre.z) > found.cull;
+          Math.hypot(found.x - FOLLOW.x, found.z - FOLLOW.z) > found.cull;
         expect(
           inFrustum(levelCamera, found) === false || found.radius * 2 < gate || beyond,
           `level ${String(index)} dropped ${one}, which its own frustum holds and its own gate resolves`,
