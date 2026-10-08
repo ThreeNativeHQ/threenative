@@ -52,6 +52,9 @@ struct DrawItem {
     const shader::StandardMaterial* material = nullptr;
     /** The material's diffuse `map`, if any: the fragment samples it at `uvTransform * vec3(uv, 1)`. */
     const Texture* map = nullptr;
+    /** A tangent-space normalMap (decoded image, uv present) and the material's normalScale. */
+    const Texture* normalMap = nullptr;
+    double normalScaleX = 1, normalScaleY = 1;
     /** The environment (scene.environment or material.envMap): its PMREM is sampled for IBL. */
     const Texture* envMap = nullptr;
     double envMapIntensity = 1;
@@ -251,7 +254,7 @@ private:
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
-        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kSlotCount
+        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -279,7 +282,8 @@ private:
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler,
                             WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr,
-                            WGPUTextureView envView = nullptr, WGPUSampler envSampler = nullptr);
+                            WGPUTextureView envView = nullptr, WGPUSampler envSampler = nullptr,
+                            WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         Handle gpu;

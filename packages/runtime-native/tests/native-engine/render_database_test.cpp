@@ -982,9 +982,61 @@ void skinnedNormalizedWeights() {
     CHECK(covered > 1000 && differ <= 40);
 }
 
+// PRD-526: a tangent-space normalMap bends the lit normal along the uv axes (three's perturbNormal2Arb).
+// A plane facing the camera, lit from +x: a map tilting every normal toward +x brightens it, one tilting
+// away darkens it, and no map sits between. The native renderer ignored normalMap before this.
+void normalMapTilt() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    renderer.setOutput(OutputState{std::nullopt, 1, true});
+    // The renderer caches a material's GPU texture by the Texture's address and version, so the three
+    // maps stay alive together: a freed one's address can come back with the same version.
+    std::vector<std::shared_ptr<DataTexture>> maps;
+    auto brightness = [&](int redTexel) {
+        Scene scene;
+        PerspectiveCamera camera;
+        camera.fov = 40; camera.aspect = 4.0 / 3; camera.near = 0.1; camera.far = 50;
+        camera.position.z = 3;
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->roughness = 1;
+        if (redTexel >= 0) {
+            auto map = std::make_shared<DataTexture>();
+            std::vector<double> texels;
+            for (int i = 0; i < 4; ++i) texels.insert(texels.end(), {double(redTexel), 128, 220, 255});
+            map->setImage(texels, "Uint8Array", 2, 2, kTextureRGBAFormat, kTextureUnsignedByteType);
+            map->needsUpdate();
+            maps.push_back(map);
+            material->maps["normalMap"] = map;
+        }
+        Mesh plane(makePlaneGeometry(3, 3), material);
+        DirectionalLight light{Color().setHex(0xffffff), 3};
+        light.position.set(4, 0, 2);
+        scene.add(plane);
+        scene.add(light);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+        CHECK(database.diagnostics().empty());
+        const auto px = read(renderer, events);
+        CHECK(px.size() == 160 * 120 * 4);
+        double sum = 0;
+        for (int y = 40; y < 80; ++y)
+            for (int x = 60; x < 100; ++x) sum += px[(size_t(y) * 160 + x) * 4 + 1];
+        return sum / (40 * 40);
+    };
+    const double none = brightness(-1), toward = brightness(191), away = brightness(64);
+    std::printf("normal map tilt: toward %.1f, none %.1f, away %.1f\n", toward, none, away);
+    CHECK(toward > none + 8 && none > away + 8);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt})

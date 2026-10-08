@@ -219,7 +219,12 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         const auto found = material->maps.find("map");
         if (found != material->maps.end() && found->second && found->second->hasImage())
             d.map = found->second.get();
+        const auto normal = material->maps.find("normalMap");
+        if (normal != material->maps.end() && normal->second && normal->second->hasImage())
+            d.normalMap = normal->second.get();
     }
+    d.normalScaleX = material->normalScaleX;
+    d.normalScaleY = material->normalScaleY;
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
@@ -243,11 +248,17 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.positionNode = r.material->positionNode;
     d.nodes = r.material->nodes;
     d.map = nullptr;
+    d.normalMap = nullptr;
     if (d.uvs) {
         const auto map = r.material->maps.find("map");
         if (map != r.material->maps.end() && map->second && map->second->hasImage())
             d.map = map->second.get();
+        const auto normal = r.material->maps.find("normalMap");
+        if (normal != r.material->maps.end() && normal->second && normal->second->hasImage())
+            d.normalMap = normal->second.get();
     }
+    d.normalScaleX = r.material->normalScaleX;
+    d.normalScaleY = r.material->normalScaleY;
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     return d;

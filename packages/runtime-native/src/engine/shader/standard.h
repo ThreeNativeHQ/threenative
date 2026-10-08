@@ -90,6 +90,12 @@ struct VertexVariant {
      */
     bool map = false;
     /**
+     * The material has a tangent-space `normalMap`: the vertex stage passes `uv` through and lit
+     * fragments perturb the view normal with three's perturbNormal2Arb (`t_normalMap`, `normalScale`,
+     * `normalUvTransform`). A material normalNode takes precedence, as upstream.
+     */
+    bool normalMap = false;
+    /**
      * The map's colorSpace is SRGBColorSpace: the sampled texel is decoded with three's
      * `sRGBTransferEOTF` in the fragment, as upstream's ColorSpaceNode does, rather than by a
      * hardware -srgb texture format (whose rounding differs from the shader formula).
@@ -105,7 +111,7 @@ struct VertexVariant {
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
-               (map ? "t" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") +
+               (map ? "t" : "") + (normalMap ? "N" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };

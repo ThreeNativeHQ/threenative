@@ -110,7 +110,8 @@ std::string WgslEmitter::expr(ExprId id) const {
             }
             std::string out = e.op == Op::Call ? p_.names_[e.immediate] : type(e.type);
             if (out == "dFdx") out = "dpdx";
-            if (out == "dFdy") out = "dpdy";
+            // WGSL's dpdy grows downward the framebuffer; three emits `- dpdy` so dFdy grows upward.
+            if (out == "dFdy") out = "-dpdy";
             // TSL lets clamp and smoothstep take scalar bounds on a vector; WGSL has no such overload.
             const bool splat = e.op == Op::Call && e.type.isVector() &&
                                (p_.names_[e.immediate] == "clamp" || p_.names_[e.immediate] == "smoothstep");
