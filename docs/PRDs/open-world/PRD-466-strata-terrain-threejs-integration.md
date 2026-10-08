@@ -3831,4 +3831,9 @@ judge scored that view 5 → 6 ("real aerial perspective at range with no cost u
 unchanged at 6 ([capture](../../benchmark/strata-loading-2026-10-06/forest-haze-player.jpg)).
 Remaining named causes: repeated noise texture on the far hills and uniform tree shapes.
 
+Quieter host (load 9–17): the unchanged `terrain.playtest.json` still fails its first step
+(`worldReady` > 60 s). Readiness from navigation, alternated: TRAA 58.1 s and 50.1 s, `?off=traa`
+68.8 s and 45.4 s, so the forest TRAA change adds no load time. The 60 s step leaves no headroom over
+45–69 s readiness plus runner overhead; this belongs to the loading lane, and the threshold stays.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
