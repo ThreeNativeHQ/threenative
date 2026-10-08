@@ -598,6 +598,18 @@
         u32(opt(z, 1));
       });
     },
+    dispatchWorkgroupsIndirect(b, o) {
+      const passId = receiverId(this, computePassIdKey, "compute pass");
+      if (planMode && reusable(35, passId, bufferId(b), o)) {
+        reuseRecord(0);
+        return;
+      }
+      emit(35, () => {
+        u32(passId);
+        u32(bufferId(b));
+        f64(o);
+      });
+    },
     end() {
       const passId = receiverId(this, computePassIdKey, "compute pass");
       if (planMode && reusable(22, passId)) {

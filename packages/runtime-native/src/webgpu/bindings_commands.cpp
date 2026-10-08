@@ -656,6 +656,17 @@ static js::JSValueHandle handleGpuComputePassEncoderDispatchWorkgroups(BindingsS
                                             return state->engine->newUndefined();
 }
 
+static js::JSValueHandle handleGpuComputePassEncoderDispatchWorkgroupsIndirect(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 2) return state->engine->newUndefined();
+                                            WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                            uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
+                                            if (state->registries.jsComputePass && indirectBuffer) {
+                                                wgpuComputePassEncoderDispatchWorkgroupsIndirect(state->registries.jsComputePass, indirectBuffer, indirectOffset);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] DispatchWorkgroupsIndirect at offset " << indirectOffset << std::endl;
+                                            }
+                                            return state->engine->newUndefined();
+}
+
 static js::JSValueHandle handleGpuComputePassEncoderSetBindGroup(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) return state->engine->newUndefined();
                                             uint32_t index = (uint32_t)state->engine->toNumber(args[0]);
@@ -721,6 +732,10 @@ static js::JSValueHandle handleGpuCommandEncoderBeginComputePass(BindingsState* 
                                     // computePass.dispatchWorkgroups(countX, countY?, countZ?)
                                                                             {"GPUComputePassEncoder", "dispatchWorkgroups", 0, nullptr,
                                         &handleGpuComputePassEncoderDispatchWorkgroups
+                                    , jsComputePass},
+                                    // computePass.dispatchWorkgroupsIndirect(indirectBuffer, indirectOffset)
+                                                                            {"GPUComputePassEncoder", "dispatchWorkgroupsIndirect", 0, nullptr,
+                                        &handleGpuComputePassEncoderDispatchWorkgroupsIndirect
                                     , jsComputePass},
                                     // computePass.end()
                                                                             {"GPUComputePassEncoder", "end", 0, nullptr,

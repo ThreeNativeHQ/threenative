@@ -1145,8 +1145,9 @@ static js::JSValueHandle handleGpuBufferGetMappedRange(BindingsState* state, uin
                                         if (state->verboseLogging) std::cerr << "[WebGPU] getMappedRange: Buffer " << bufferId << " is not mapped" << std::endl;
                                         return state->engine->newUndefined();
                                     }
-                                    uint64_t offset = args.empty() ? 0 : (uint64_t)state->engine->toNumber(args[0]);
-                                    uint64_t rangeSize = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : bufferInfo.size - offset;
+                                    // An explicit undefined means the argument was omitted (WebGPU optional), not NaN.
+                                    uint64_t offset = args.empty() || state->engine->isUndefined(args[0]) ? 0 : (uint64_t)state->engine->toNumber(args[0]);
+                                    uint64_t rangeSize = args.size() > 1 && !state->engine->isUndefined(args[1]) ? (uint64_t)state->engine->toNumber(args[1]) : bufferInfo.size - offset;
                                     // Use wgpuBufferGetConstMappedRange for MAP_READ, wgpuBufferGetMappedRange for MAP_WRITE
                                     // Dawn requires the const version for read-only mapped buffers
                                     const void* mappedData = nullptr;
@@ -1199,10 +1200,10 @@ static js::JSValueHandle handleGpuBufferMapAsync(
                                         // GPUMapMode.READ = 1, GPUMapMode.WRITE = 2
                                         if (jsMode == 2) mode = WGPUMapMode_Write;
                                     }
-                                    uint64_t offset = args.size() > 1
+                                    uint64_t offset = args.size() > 1 && !state->engine->isUndefined(args[1])
                                         ? (uint64_t)state->engine->toNumber(args[1])
                                         : 0;
-                                    uint64_t mapSize = args.size() > 2
+                                    uint64_t mapSize = args.size() > 2 && !state->engine->isUndefined(args[2])
                                         ? (uint64_t)state->engine->toNumber(args[2])
                                         : bufferInfo.size - offset;
 
