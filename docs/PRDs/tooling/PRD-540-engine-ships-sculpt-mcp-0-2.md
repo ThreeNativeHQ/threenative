@@ -59,9 +59,9 @@ Each criterion is a checkbox in the phase that delivers it: AC-1 to AC-3 in Phas
 **Status:** NOT STARTED
 **Files:** `packages/core/package.json`, `packages/core/mcp/servers.mjs`, `pnpm-lock.yaml`, `packages/core/__tests__/mcp-install.spec.ts`.
 **Implementation:** Change both pins to 0.2.1; `pnpm install` to refresh the lockfile only. Add the pin-equality assertion and the stdio `tools/list` spec next to the existing MCP install spec; the spec must fail against 0.1.1.
-- [ ] AC-1 [local]: `packages/core/package.json` and `packages/core/mcp/servers.mjs` both pin `threenative-sculpt-mcp` 0.2.1, and the lockfile resolves it. proof: `pnpm exec vitest run packages/core/__tests__/mcp-install.spec.ts` plus `grep threenative-sculpt-mcp pnpm-lock.yaml` — Evidence: pending.
+- [ ] AC-1 [local]: `packages/core/package.json` and `packages/core/mcp/servers.mjs` name `threenative-sculpt-mcp` 0.2.1 as the same version. proof: `pnpm exec vitest run packages/core/__tests__/mcp-install.spec.ts` — Evidence: pending.
 - [ ] AC-2 [local]: A test fails when the two source pins differ. proof: the same spec, red against a deliberately mismatched pin — Evidence: pending.
-- [ ] AC-3 [local]: Launching `node packages/core/mcp/sculpt.mjs` and calling MCP `tools/list` returns `sculpt_rig_gate` and the six other 0.2.x tools. proof: a spec through the real shim over stdio — Evidence: pending.
-- [ ] AC-4 [shared]: The engine's pull-request board is green with the new pin. proof: the PR's checks (package-size budget and scaffold specs included) — Evidence: pending.
+- [ ] AC-3 [local]: Launching `node packages/core/mcp/sculpt.mjs` and calling MCP `tools/list` lists all seven 0.2.x tools, `sculpt_rig_gate` among them. proof: a spec through the real shim over stdio — Evidence: pending.
+- [ ] AC-4 [shared]: The engine's pull-request board is green with the new pin. proof: the PR's checks (`pnpm install --frozen-lockfile` against the new lockfile, package-size budget and scaffold specs included) — Evidence: pending.
 
 **Verification:** the boxes above.
