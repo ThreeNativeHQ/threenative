@@ -245,9 +245,31 @@ engine.collect();
   check(heard.includes("listener:0,1,5"), `listener pose ${heard.join(" ")}`);
   check(heard.includes("voice:-4,0,1"), `voice pose ${heard.join(" ")}`);
 }
+// attribute.array is a view of the engine's memory; a host without resizable Wasm memory would
+// detach a kept view when memory grows, so there the getter refuses by name (checked below) and the
+// checks that read arrays need a host that has it (Chromium; Node with --experimental-wasm-rab-integration).
+const resizable =
+  typeof (WebAssembly.Memory.prototype as { toResizableBuffer?: unknown }).toResizableBuffer ===
+  "function";
+if (!resizable) {
+  const web = (await bindWebEngine(createTnAbi, [
+    "Float32BufferAttribute",
+  ])) as unknown as typeof THREE;
+  const attribute = new web.Float32BufferAttribute([1, 2, 3] as never, 3);
+  let refused = "";
+  try {
+    void attribute.array;
+  } catch (error) {
+    refused = String(error);
+  }
+  check(
+    refused.includes("TN_WASM_RESIZABLE_MEMORY_MISSING"),
+    `attribute.array refuses by name: ${refused}`,
+  );
+}
 // The engine's Shape and ExtrudeGeometry on the web: a hole pushed onto shape.holes is cut, and the
 // options object reaches the generator; positions, normals and uvs equal the pinned three's.
-{
+if (resizable) {
   type Ctor = new (...args: unknown[]) => Record<string, unknown>;
   const names = ["Shape", "Path", "Vector2", "ExtrudeGeometry", "ShapeGeometry", "BufferGeometry"];
   const web = (await bindWebEngine(createTnAbi, names)) as Record<string, Ctor>;
@@ -288,8 +310,12 @@ engine.collect();
 }
 // three's attribute.array is the attribute's own typed array: of its scalar type, one per attribute,
 // and an element write is what the engine reads back.
-{
-  const web = (await bindWebEngine(createTnAbi, [
+if (resizable) {
+  let grown: TnAbiModule | undefined;
+  const web = (await bindWebEngine(async () => {
+    grown = await createTnAbi();
+    return grown;
+  }, [
     "BufferGeometry",
     "Float32BufferAttribute",
     "BufferAttribute",
@@ -303,6 +329,16 @@ engine.collect();
   const p = g.getAttribute("position") as InstanceType<typeof THREE.BufferAttribute>;
   const a = p.array;
   a[3] = 5;
+  // A view a game keeps stays the attribute's across memory growth: grow the heap by 64 MB.
+  const heap = grown as TnAbiModule;
+  const before = heap.HEAPU8.buffer.byteLength;
+  heap._free(heap._malloc(64 << 20));
+  check(heap.HEAPU8.buffer.byteLength > before, "the heap grew");
+  a[4] = 7;
+  check(
+    a.length === 9 && a[3] === 5 && p.getY(1) === 7,
+    `a kept view survives growth: ${String(a.length)}`,
+  );
   g.computeBoundingBox();
   const index = new web.BoxGeometry().getIndex() as InstanceType<typeof THREE.BufferAttribute>;
   const wide = new web.BufferAttribute(new Uint32Array([7, 8]), 1);
@@ -348,7 +384,7 @@ engine.collect();
 }
 // BufferGeometryUtils.mergeGeometries over the web engine's geometries equals three's over its own:
 // indexed parts with groups and morph targets, the arrays' types included.
-{
+if (resizable) {
   // biome-ignore lint/suspicious/noExplicitAny: three's and the engine's classes, compared by value.
   type Loose = any;
   const fromCore = createRequire(path.join(import.meta.dirname, "../../core/package.json"));
@@ -394,4 +430,4 @@ engine.collect();
     "web mergeGeometries equals three's",
   );
 }
-process.stdout.write("TN_BROWSER_BACKEND_OK\n");
+process.stdout.write(`TN_BROWSER_BACKEND_OK resizable=${resizable ? 1 : 0}\n`);

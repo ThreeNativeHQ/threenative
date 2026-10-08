@@ -395,7 +395,7 @@ if(EMSCRIPTEN)
     target_link_libraries(tn-native-engine-abi-module PRIVATE tn_engine_abi)
     tn_native_engine_target(tn-native-engine-abi-module)
     target_link_options(tn-native-engine-abi-module PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_NAME=createTnAbi
-        -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
+        -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1 -sGROWABLE_ARRAYBUFFERS=1
         "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_fire_before_render,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
     target_include_directories(tn-native-engine-abi-module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -406,6 +406,17 @@ if(EMSCRIPTEN)
                 $<TARGET_FILE:tn-native-engine-abi-module>)
         set_tests_properties(native_engine_wasm_browser_backend PROPERTIES LABELS "native-engine"
             PASS_REGULAR_EXPRESSION "TN_BROWSER_BACKEND_OK")
+    endif()
+    # The same smoke on a host with resizable Wasm memory, where attribute.array is a view a game can
+    # keep across memory growth (Node 22+ needs --experimental-wasm-rab-integration for it).
+    set(TN_NODE_WASM_RAB "" CACHE FILEPATH "A node that supports --experimental-wasm-rab-integration")
+    if(TN_NODE_WASM_RAB)
+        add_test(NAME native_engine_wasm_browser_backend_resizable
+            COMMAND ${TN_NODE_WASM_RAB} --experimental-wasm-rab-integration --import tsx tests/browser-backend-smoke.ts
+                $<TARGET_FILE:tn-native-engine-abi-module>
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../three-native)
+        set_tests_properties(native_engine_wasm_browser_backend_resizable PROPERTIES LABELS "native-engine"
+            PASS_REGULAR_EXPRESSION "TN_BROWSER_BACKEND_OK resizable=1")
     endif()
 endif()
 
@@ -418,7 +429,7 @@ if(EMSCRIPTEN)
     tn_native_engine_target(tn-native-engine-wasm-browser)
     target_link_options(tn-native-engine-wasm-browser PRIVATE --no-entry -sMODULARIZE=1
         --profiling-funcs
-        -sASSERTIONS=0 -sSAFE_HEAP=0 -sEXPORT_NAME=createTnBrowser -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
+        -sASSERTIONS=0 -sSAFE_HEAP=0 -sEXPORT_NAME=createTnBrowser -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1 -sGROWABLE_ARRAYBUFFERS=1
         "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_fire_before_render,_tnw_init,_tnw_render,_tnw_verify_package,_tnw_load_package,_tnw_bench_init,_tnw_bench_step,_tnw_bulk_transforms,_tnw_bench_stats,_tnw_bench_prepare,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction")
     # PRD-540: the product browser host a web game gets under `engine: "native"`. It is an ES
@@ -430,7 +441,7 @@ if(EMSCRIPTEN)
     set_target_properties(tn-native-engine-web PROPERTIES SUFFIX ".mjs"
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/web)
     target_link_options(tn-native-engine-web PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
-        -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
+        -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1 -sGROWABLE_ARRAYBUFFERS=1
         "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
     find_program(TN_WASM_NODE node REQUIRED)

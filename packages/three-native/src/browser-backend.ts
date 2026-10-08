@@ -875,10 +875,15 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   };
 
   // A view over the attribute's storage, leased so it cannot reallocate under the view; the lease
-  // goes back when the collector takes the view. Wasm memory growth replaces the heap's buffer and
-  // detaches every view over the old one, so the attribute's getter asks `current()` each time.
-  // ponytail: a view a game keeps across a growth reads as empty; keep the attribute, not its array.
+  // goes back when the collector takes the view. The module is built with growable array buffers,
+  // so where the host has resizable Wasm memory a view a game keeps survives memory growth. Without
+  // it, growth would detach the view and every later read would be silently empty, so the getter
+  // refuses by name instead.
   const viewAttribute = (handle: number, out: number): number => {
+    if ((abi.HEAPU8.buffer as { resizable?: boolean }).resizable !== true)
+      throw new TypeError(
+        "TN_WASM_RESIZABLE_MEMORY_MISSING: attribute.array shares the engine's Wasm memory, and this host has no resizable Wasm memory (WebAssembly.Memory.toResizableBuffer), so memory growth would empty a kept array",
+      );
     const call = abi._tnw_attribute_view;
     if (call === undefined)
       throw new TypeError("TN_WASM_MODULE: this module exports no attribute views");
