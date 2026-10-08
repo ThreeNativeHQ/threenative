@@ -53,6 +53,7 @@ function source(value: unknown): IComputeSource {
     throw new Error(
       "TN_COMPUTE_TIMING_UNSUPPORTED: initialized WebGPU timestamp queries are required.",
     );
+  // quality-allow: the guard above proved every field of IComputeSource that the renderer needs.
   return value as unknown as IComputeSource;
 }
 function poolOf(raw: IComputeSource): IQueryPool | undefined {
@@ -76,7 +77,7 @@ function poolOf(raw: IComputeSource): IQueryPool | undefined {
     );
   return pool;
 }
-function preflight(pool: IQueryPool | undefined): void {
+function checkQueryCapacity(pool: IQueryPool | undefined): void {
   if (pool === undefined) return; // Three allocates its first pool lazily.
   if (pool.isDisposed) throw new Error("TN_COMPUTE_TIMING_STALE: compute pool retired.");
   if (!pool.trackTimestamp)
@@ -205,7 +206,7 @@ export class ComputeTimingScopes {
     if (captured.length >= maxCalls)
       throw new Error(`TN_COMPUTE_TIMING_CAPACITY: compute calls exceed ${maxCalls}.`);
     const pool = poolOf(raw);
-    preflight(pool); // Three's exhausted allocator otherwise passes null into timestampWrites.
+    checkQueryCapacity(pool); // Three's exhausted allocator otherwise passes null into timestampWrites.
     const call = raw.info.frame;
     if (call <= this.#lastCall)
       throw new Error("TN_COMPUTE_TIMING_STALE: compute call frame was reused.");
