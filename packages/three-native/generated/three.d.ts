@@ -2385,6 +2385,8 @@ readonly offset: Vector2;
 readonly repeat: Vector2;
 mapping: number;
 flipY: boolean;
+anisotropy: number;
+generateMipmaps: boolean;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */

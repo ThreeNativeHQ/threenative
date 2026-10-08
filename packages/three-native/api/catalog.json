@@ -19050,6 +19050,24 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "anisotropy",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "generateMipmaps",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []

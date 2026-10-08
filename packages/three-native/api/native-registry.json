@@ -881,8 +881,10 @@
       "constructor": true,
       "methods": [],
       "getters": [
+        "anisotropy",
         "colorSpace",
         "flipY",
+        "generateMipmaps",
         "magFilter",
         "mapping",
         "minFilter",
@@ -897,8 +899,10 @@
         "wrapT"
       ],
       "setters": [
+        "anisotropy",
         "colorSpace",
         "flipY",
+        "generateMipmaps",
         "image.data",
         "magFilter",
         "mapping",
@@ -4798,8 +4802,10 @@
       "constructor": true,
       "methods": [],
       "getters": [
+        "anisotropy",
         "colorSpace",
         "flipY",
+        "generateMipmaps",
         "magFilter",
         "mapping",
         "minFilter",
@@ -4814,8 +4820,10 @@
         "wrapT"
       ],
       "setters": [
+        "anisotropy",
         "colorSpace",
         "flipY",
+        "generateMipmaps",
         "magFilter",
         "mapping",
         "minFilter",

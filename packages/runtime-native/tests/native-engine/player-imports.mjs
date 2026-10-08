@@ -26,7 +26,7 @@ const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
-  "ExtrudeGeometry", ...constants];
+  "ExtrudeGeometry", "SpriteMaterial", ...constants];
 const panel = (T) => {
   const shape = new T.Shape();
   shape.moveTo(-0.3, -0.2); shape.lineTo(0.25, -0.2); shape.quadraticCurveTo(0.3, -0.2, 0.3, -0.15);
@@ -110,13 +110,25 @@ check(panels[0] instanceof THREE.BufferGeometry && answers(panels) === ${JSON.st
 const refuses = (make, pattern) => { try { make(); return false; } catch (error) { return pattern.test(String(error.message)); } };
 check(refuses(() => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)]),
   { extrudePath: curve }), /extrudePath is not supported/), "extrudePath refused");
-check(refuses(() => new THREE.MeshBasicMaterial({ color: 0xff0000 }), /parameters object is not supported/), "material parameters still refused");
+const paramTexture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+const painted = new THREE.MeshStandardMaterial({ color: 0x336699, emissive: "#ff8800", roughness: 0.4, metalness: 0.2,
+  transparent: true, opacity: 0.5, map: paramTexture, side: THREE.DoubleSide, name: "panel", depthWrite: undefined });
+check(JSON.stringify([painted.color.r, painted.color.g, painted.color.b, painted.emissive.r, painted.emissive.g, painted.emissive.b,
+  painted.roughness, painted.metalness, painted.transparent, painted.opacity, painted.side, painted.name, painted.depthWrite]) ===
+  ${JSON.stringify(JSON.stringify((() => { const m = new three.MeshStandardMaterial({ color: 0x336699, emissive: "#ff8800", roughness: 0.4, metalness: 0.2, transparent: true, opacity: 0.5, side: three.DoubleSide, name: "panel" }); return [m.color.r, m.color.g, m.color.b, m.emissive.r, m.emissive.g, m.emissive.b, m.roughness, m.metalness, m.transparent, m.opacity, m.side, m.name, m.depthWrite]; })()))} &&
+  painted.map === paramTexture, "material parameters as three's setValues");
+const sprite = new THREE.SpriteMaterial({ transparent: false });
+check(sprite.transparent === false, "SpriteMaterial parameters after its defaults");
+check(refuses(() => new THREE.MeshBasicMaterial({ wireframe: true }), /material parameter 'wireframe' is not bound natively/), "unbound material parameter refused");
 const shadowRenderer = new WebGPURenderer({ canvas: { width: 1, height: 1 } });
 check(shadowRenderer.shadowMap.enabled === false && shadowRenderer.shadowMap.type === THREE.PCFShadowMap, "three's shadowMap defaults");
 check(refuses(() => { shadowRenderer.shadowMap.type = 3; }, /TN_NATIVE_SHADOWMAP_TYPE_UNSUPPORTED/), "VSMShadowMap refused");
 shadowRenderer.shadowMap.enabled = true;
 shadowRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
 check(shadowRenderer.shadowMap.enabled && shadowRenderer.shadowMap.type === THREE.PCFSoftShadowMap, "shadowMap settings");
+check(shadowRenderer.getMaxAnisotropy() === 16, "WebGPU's maximum anisotropy");
+paramTexture.anisotropy = 8;
+check(paramTexture.anisotropy === 8 && refuses(() => { paramTexture.anisotropy = 0; }, /anisotropy must be/), "texture anisotropy");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");

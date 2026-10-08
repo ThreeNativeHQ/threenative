@@ -766,7 +766,11 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
                                    texture.minFilter == static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
                                ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
     sampler.lodMaxClamp = 32;  // a zeroed C descriptor clamps the level of detail to 0, which hides the chain
-    sampler.maxAnisotropy = 1;
+    // WebGPUTextureUtils: anisotropy only when every filter is linear; WebGPU clamps it to 16.
+    sampler.maxAnisotropy = sampler.magFilter == WGPUFilterMode_Linear && sampler.minFilter == WGPUFilterMode_Linear &&
+                                    sampler.mipmapFilter == WGPUMipmapFilterMode_Linear
+                                ? static_cast<uint16_t>(std::min(texture.anisotropy, 16.0))
+                                : 1;
     record.sampler = wgpuDeviceCreateSampler(device_, &sampler);
     record.version = texture.version();
     return &record;

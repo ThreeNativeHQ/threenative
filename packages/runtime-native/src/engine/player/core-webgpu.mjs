@@ -35,6 +35,8 @@ export class WebGPURenderer {
     this.shadowMap = new ShadowMap();
   }
   setPixelRatio() {}
+  // WebGPUCapabilities.getMaxAnisotropy: WebGPU samplers clamp maxAnisotropy to 16.
+  getMaxAnisotropy() { return 16; }
   setSize(width, height) {
     this.domElement.width = width;
     this.domElement.height = height;

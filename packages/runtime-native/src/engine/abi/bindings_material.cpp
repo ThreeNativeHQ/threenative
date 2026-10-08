@@ -17,6 +17,7 @@
 #include "engine/scene/texture.h"
 
 #include <cmath>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -200,10 +201,39 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "dispersion", &Material::dispersion);
 }
 
+/**
+ * three's Material.setValues for a constructor's parameters object: an undefined value is skipped,
+ * a Color property takes Color.set (a hex or CSS string in sRGB, or a Color to copy), and any other
+ * key goes through the property's own setter. A key this material does not bind is refused by name;
+ * three would warn and drop it, which would draw a material other than the one asked for.
+ */
+void applyMaterialParameters(const ClassBinding& b, void* self, const Value& params, Store& store) {
+    if (params.kind != Value::Kind::Record) throw Unsupported{"a material's parameters must be an object"};
+    static const std::map<std::string, Color Material::*> kColors = {
+        {"color", &Material::color}, {"emissive", &Material::emissive},
+        {"specular", &Material::specular}, {"specularColor", &Material::specularColor}};
+    for (const auto& [key, value] : params.fields) {
+        if (value.kind == Value::Kind::Undefined) continue;
+        const auto color = kColors.find(key);
+        const auto setter = b.setters.find(key);
+        if (setter == b.setters.end()) throw Unsupported{"material parameter '" + key + "' is not bound natively"};
+        if (color != kColors.end() && value.kind == Value::Kind::Number) {
+            (as<Material>(self)->*color->second).setHex(number(value), ColorSpace::SRGB);
+            as<Material>(self)->needsUpdate();
+        } else if (color != kColors.end() && value.kind == Value::Kind::String) {
+            (as<Material>(self)->*color->second).setStyle(value.text.c_str(), ColorSpace::SRGB);
+            as<Material>(self)->needsUpdate();
+        } else {
+            setter->second(self, value, store);
+        }
+    }
+}
+
 void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false) {
-    b.ctor = [type, node](const Args& a, Store&) -> std::shared_ptr<void> {
-        if (!a.empty()) throw Unsupported{"a material parameters object is not supported"};
-        return std::static_pointer_cast<void>(detail::makeShared<Material>(type, node));
+    b.ctor = [type, node, &b](const Args& a, Store& store) -> std::shared_ptr<void> {
+        auto material = detail::makeShared<Material>(type, node);
+        if (!a.empty() && a[0].kind != Value::Kind::Undefined) applyMaterialParameters(b, material.get(), a[0], store);
+        return std::static_pointer_cast<void>(material);
     };
     registerMaterialBase(b);
     registerTypeFields(b, type);
@@ -400,6 +430,14 @@ void registerTextureFields(ClassBinding& b) {
     b.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) as<Texture>(self)->needsUpdate();
     };
+    b.getters["generateMipmaps"] = [](void* self) { return Value::of(as<Texture>(self)->generateMipmaps); };
+    b.setters["generateMipmaps"] = [](void* self, const Value& v) { as<Texture>(self)->generateMipmaps = flag(v); };
+    b.getters["anisotropy"] = [](void* self) { return Value::of(as<Texture>(self)->anisotropy); };
+    b.setters["anisotropy"] = [](void* self, const Value& v) {
+        const double anisotropy = number(v);
+        if (!(anisotropy >= 1) || !std::isfinite(anisotropy)) throw Unsupported{"anisotropy must be a finite number of at least 1"};
+        as<Texture>(self)->anisotropy = anisotropy;
+    };
     b.getters["flipY"] = [](void* self) { return Value::of(as<Texture>(self)->flipY); };
     b.setters["flipY"] = [](void* self, const Value& v) { as<Texture>(self)->flipY = flag(v); as<Texture>(self)->needsUpdate(); };
     textureNumber<Texture>(b, "mapping", &Texture::mapping);
@@ -465,12 +503,14 @@ void registerMaterialBindings(Registry& classes) {
         auto& b = classes[name];
         registerMeshMaterial(b, MaterialType::Basic, node);
         const auto ctor = b.ctor;
-        b.ctor = [ctor](const Args& a, Store& store) {
-            auto value = ctor(a, store);
+        // SpriteMaterial's defaults first, then its parameters, as three's constructor orders them.
+        b.ctor = [ctor, &b](const Args& a, Store& store) {
+            auto value = ctor({}, store);
             auto* material = static_cast<Material*>(value.get());
             material->spriteMaterial = true;
             material->transparent = true;
             material->fog = false;
+            if (!a.empty() && a[0].kind != Value::Kind::Undefined) applyMaterialParameters(b, material, a[0], store);
             return value;
         };
         b.getters["rotation"] = [](void* self) { return Value::of(as<Material>(self)->rotation); };
