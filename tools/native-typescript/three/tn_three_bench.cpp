@@ -93,6 +93,7 @@ extern "C" const char* tnx_bench(const char* operation, double a, double b, doub
             session->renderer = std::make_unique<Renderer>(session->gpu.getInstance(), session->gpu.getDevice(),
                                                            session->gpu.getQueue(), session->events);
             session->renderer->setSize(session->width, session->height);
+            session->renderer->setGpuTimer(true);  // the report carries gpuMs, as the host arms do
             session->sceneHold = sceneObject->ptr;
             session->cameraHold = cameraObject->ptr;
             session->scene = static_cast<Scene*>(sceneObject->ptr.get());
