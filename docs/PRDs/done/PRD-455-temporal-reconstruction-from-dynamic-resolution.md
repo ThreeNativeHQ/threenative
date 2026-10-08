@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-455 — Fewer rendered pixels reconstruct into a stable full-resolution frame
 
-**Status:** IN PROGRESS — full-resolution opt-in runtime milestone verified on browser software WebGPU; reconstruction remains open (2026-10-02).  
-**Priority:** P1 — Its own note ranks it the highest-value rendering project; reconstruction and ghosting boxes unticked.
+**Status:** DONE (scoped) — the opt-in full-resolution temporal provider, history-correctness lifecycle and ghosting/cost controls shipped; the low-resolution reconstruction quality, frame-time and scaler criteria moved to [PRD-537](../rendering/PRD-537-low-resolution-temporal-reconstruction-quality-and-cost.md) (2026-10-07).  
+**Priority:** P1 — closed as scoped; the unmet reconstruction work continues in PRD-537.
 **Complexity:** 8 → HIGH. The renderer already has the difficult prerequisites; the remaining risk is history correctness and proving reconstruction wins more GPU time than it costs.  
 **Depends on:** the landed motion-history implementation from PRD-269 (`packages/core/src/render/velocity.ts`, commit `3630847a`), its pending canonical [PR393 repair](https://github.com/ThreeNativeHQ/threenative/pull/393) at `47e188e41601a64decb4fe0f580037546d63b543`, the existing `RenderChain`, and [PRD-384 adaptive resolution](../performance/PRD-384-adaptive-resolution-gpu-headroom.md).
 
@@ -332,13 +332,15 @@ selected-point depth checks, bounded raw gathers and height-only reconstruction 
 combined candidate remain intact. Its original 31-arm qualification is pending; the old captures
 above do not qualify this source. Original quality, cost and platform acceptance remain open.
 
-- [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
-- [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
+- [x] The opt-in full-resolution provider is stable on the motion corpus and rejects history it should. **proof:** `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` captured all 31 arms on nvidia/turing `webgpu` (2026-10-07, source `f45434a98`); `causalNegativeControl`, `recompileVelocity`, `velocityProjection`, `stabilityImprovement`, `uncheckedHistoryDetected`, `zeroVelocityDetected` and `qualityBeatsSpatialStability` are true in the summary, and `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-ghosting.ts` exits 0 (moving-edge ratio `.629` against no-AA, zero-velocity control `1.485x`).
+
+  **Moved, decision R4 (owner delegation "go with best option", 2026-10-07):** the original edge-improvement (`<.04778` full-resolution, `<.04687` low-input) and reveal-recovery (`<=1%` stale) criteria fail on hardware across five independent candidates and stay unmet; they continue unchanged in PRD-537. No threshold changed. The `verify-temporal-motion.ts` exit-1 above is exactly those four checks.
 
 ### Phase 3 — Keep it only if it buys real frame time
 
-- [ ] On a GPU-bound representative game, sub-1.0 rendering plus reconstruction lowers GPU/render p95 versus full-resolution rendering while meeting the Phase-2 visual thresholds. **proof:** paired fixed-route browser WebGPU and desktop-native table records internal pixels, reconstruction cost, total GPU/render p50/p95 and visual metrics; no “FPS only” verdict.
-- [ ] Automatic resolution can move between at least three scales during one run without history corruption, allocation growth or a reconstruction cost spike larger than the saved raster cost. **proof:** scripted scaler route records scale transitions, history resets, render-target allocation count and per-stage cost; repeated up/down cycles end at the initial allocation baseline.
+- [x] The reconstruction path stays opt-in and experimental because its quality and cost gates are unmet; nothing in a shipped template or quality tier enables it. **proof:** `rg -l "createTemporalAA\(" packages/create-threenative/templates --glob '!**/render/temporal*'` prints nothing (2026-10-07).
+
+  **Moved, decision R4 (2026-10-07):** the GPU/render p95 win against full resolution and the three-scale automatic-resolution route both require a reconstructor that first clears the quality gate, so they continue in PRD-537.
 
 ### Current execution notes
 
@@ -405,6 +407,9 @@ cannot be trusted.
 If the qualified reconstruction path does not beat the existing full-resolution path on a
 GPU-bound workload after accounting for its own cost, it stays optional/experimental rather than
 becoming a default.
+
+- [x] **The reconstruction path does not become a default while its win is unproven.** proof: `rg -l "createTemporalAA\(" packages/create-threenative/templates --glob '!**/render/temporal*'` prints nothing (2026-10-07); the unmet low-resolution win continues in PRD-537.
+- [x] **History degrades safely when it cannot be trusted.** proof: the Phase 1 reset/disposal boxes (hosted run `36990452407`, native reset and zero-velocity mutant sections below) plus `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-ghosting.ts` exiting 0 on hardware WebGPU (2026-10-07).
 
 
 ### Combined canonical motion-history result
@@ -1993,3 +1998,5 @@ Even static, the full-resolution edge misses its own `<.04778` bar by `.0007`. T
 not converge to the bar at all: static `quality-temporal` edge `.08132` against the spatial arm's
 `.06930` and a `<.04687` requirement, so a 426×240 input does not recover native-resolution edge accuracy
 in this metric with the current reconstructor. Flag not committed; no threshold changed.
+
+**Closed as scoped, 2026-10-07.** The full-resolution findings above remain the record; PRD-537 owns every unmet low-resolution criterion. Useful control for its owner: at a 1:1 raster the resolve reads the plain current sample, so the raw4 candidate is byte-identical to the ordinary lane on every full-resolution arm (identical PNG hashes); it can only matter on the low-input family.

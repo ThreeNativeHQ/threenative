@@ -62,7 +62,7 @@ colour — is a look choice. There is no mechanism in them to own.
 ### 1. Skinned motion vectors are not a gap — upstream shipped them
 
 The lighting README and
-[PRD-269](../../rendering/PRD-269-motion-vectors-or-the-temporal-filters-lie.md) both state that
+[PRD-269](../PRD-269-motion-vectors-or-the-temporal-filters-lie.md) both state that
 `realism-effects`' one contribution upstream does not hand you is correct motion vectors for
 skinned and instanced geometry.
 

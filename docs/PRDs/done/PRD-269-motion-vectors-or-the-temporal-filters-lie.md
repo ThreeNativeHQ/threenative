@@ -4,14 +4,12 @@ prd_contract: v1
 
 # PRD-269 — motion vectors for skinned and instanced geometry, or the temporal filters lie
 
-**Status:** PARTIAL — reopened for qualification on 2026-10-02 at `d7277838`; originally
-filed 2026-08-29, measured at `7e5a9fe1`. Implementation landed in `3630847a`
-(`squash: deliver PRD-269 motion history`), but the acceptance below is not fully qualified. Depends on
-PRD-266; lands before
-[PRD-268](PRD-268-light-that-comes-from-off-screen.md) is judged. Batch:
+**Status:** DONE — all 8 phase boxes and 5 acceptance boxes ticked with hardware proof (2026-10-07). Originally filed 2026-08-29; implementation landed in `3630847a`
+(`squash: deliver PRD-269 motion history`). Depends on PRD-266; lands before
+[PRD-268](../rendering/PRD-268-light-that-comes-from-off-screen.md) is judged. Batch:
 docs/PRDs/lighting.
 
-**Priority:** P2 — Acceptance unticked: per-instance velocity, disocclusion ghosting playtest, no cost when unused.
+**Priority:** P2 — Closed; the ghosting criterion uses the moving-edge metric (decision R4 under Acceptance criteria).
 **Goal: a character that moves does not smear.** This is the one thing `0beqz/realism-effects`
 gives you that upstream's nodes do not — re-implemented in TSL rather than vendored, because that
 library is GLSL against `WebGLRenderer` and cannot reach this stack's native targets.
@@ -99,7 +97,7 @@ build no mirror and perform no eligibility scan; temporal-off must retain no his
 
 - [x] Add a playtest fixture for an authored moving BatchedMesh with projection disabled. proof: hosted run `36992451504` passed at `095eca85`; `pnpm exec tsx scripts/verify-velocity-history.ts` runs the actual WebGPU fixture and missing-history control
 - [x] Qualify animated skinned geometry against a static wall with actual colour/velocity readbacks. proof: hosted `37006604512` at `68601527` passes the skinned arm; the current-as-previous bone control fails exactly motion/oracle assertions (stationary coverage excludes the conservative moving rectangle)
-- [ ] Add the original animated-character ghosting playtest with a measured rejection-fraction assertion. proof: scenario drives the active temporal stage and fails if the velocity source is removed
+- [x] Add the original animated-character ghosting playtest with a measured moving-edge assertion. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-ghosting.ts` exits 0 on nvidia/turing `webgpu` (2026-10-07, `a8b943de7`): temporal moving-edge error `.02805` against no-AA `.04459` (ratio `.629`, pinned `<=.75`); the zero-velocity control measures `.04164` (`1.485x` temporal, pinned `>=1.25x`), and substituting it for the temporal arm gives ratios `.934` and `1.0`, which violate both pins. Decision R4: the metric changed from rejection fraction (see below), 2026-10-07, delegated by the owner ("go with best option").
 
 The authored BatchedMesh fixture has actual browser GPU readback and screenshot proof. The
 animated-character ghosting fixture remains implementation work; CPU software rasterization is not
@@ -132,12 +130,12 @@ is inferred from the CPU tests.
    transform for the whole `InstancedMesh` and the spec fails by marking every instance as moving.
    The same case is asserted for `BatchedMesh` sub-draws.
 
-- [ ] **Ghosting is measured, not judged by eye.** proof: PR #393 ghosting playtest with a pinned threshold and zero-velocity control (pending).
+- [x] **Ghosting is measured, not judged by eye.** proof: `scripts/verify-temporal-ghosting.ts` on hardware WebGPU, pinned moving-edge ratios `<=.75` against no-AA and `>=1.25x` for the zero-velocity control (values above). The original wording asserted a disocclusion-rejection fraction; that counter measured identical in the real and zero-velocity arms at 1x, 4x and 8x character speed, so the metric was changed (R4).
    A playtest drives a character across a
    GI-lit background and asserts the disocclusion-rejection fraction stays below a pinned threshold
    while the temporal stage remains active. *Mutation:* feed the temporal node a zero velocity
-   buffer and the assertion fails on the rejection fraction — the failing number is pasted in the
-   PRD's red before the fix lands.
+   buffer and the assertion fails on the moving-edge error (the zero-velocity arm measures `.04164`
+   against `.02805`).
 
 - [x] **No temporal stage requested, no velocity cost.** proof: `render-velocity.spec.ts` 16/16 pass; `sh scripts/xvfb.sh pnpm exec tsx scripts/verify-velocity-history.ts` at `828db029f` exits 0 on nvidia/turing `webgpu` (2026-10-07): temporal-off has 0 velocity targets, 0 history objects, 0 provisioned stages; 150 balanced FrameBudget render-phase samples, p50 0.8 ms baseline vs 0.9 ms off (noise allowance 0.2), p95 1.5 vs 1.4 ms. Render-phase CPU submission cost only; no native or GPU-time claim.
    With every temporal stage off, no velocity
