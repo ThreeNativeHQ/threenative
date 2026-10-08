@@ -15,12 +15,15 @@ TN_EXPORT tn_status_t tn_tsl_set(tn_context_t *context, tn_handle_t material, co
                                  uint64_t node, tn_diagnostic_t *diagnostic);
 /* PRD-540: TSL authoring by name, over the table the V8 back end calls too (engine/abi/tsl_call.cpp).
  * One argument of a call: a node of this context, a number, a string, a named texture (`text` is its
- * name) or RGB components. Strings are NUL-terminated and borrowed for the call. */
+ * name), RGB components or an engine object of this context (pmremTexture's texture). Strings are
+ * NUL-terminated and borrowed for the call. A handle argument carries the tn_handle_t's bytes 0-3
+ * (type, context) in `reserved` and its bytes 4-11 (index, generation) in `node`. */
 #define TN_TSL_ARG_NODE 0u
 #define TN_TSL_ARG_NUMBER 1u
 #define TN_TSL_ARG_STRING 2u
 #define TN_TSL_ARG_NAMED 3u
 #define TN_TSL_ARG_RGB 4u
+#define TN_TSL_ARG_HANDLE 5u
 typedef struct tn_tsl_arg {
   uint32_t kind;
   uint32_t reserved;

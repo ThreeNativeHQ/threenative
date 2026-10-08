@@ -108,6 +108,24 @@ describe("TSL on the browser back end", () => {
     expect(material.colorNode).toBe(sample);
   });
 
+  it("hands pmremTexture the texture object itself, as an engine handle", () => {
+    const calls: ICall[] = [];
+    const runtime = tslRuntime(calls, []);
+    const { classes } = defineBrowserClasses(registry, engineRuntime(runtime, {}), catalog);
+    const tsl = defineTsl(runtime);
+    const sky = new (classes.DataTexture as Constructor)();
+    (tsl.pmremTexture as Fn)(sky, (tsl.uv as Fn)(), 0.5);
+    expect(calls[1]).toMatchObject({ name: "pmremTexture", receiver: null });
+    expect(calls[1]?.args[0]).toMatchObject({
+      kind: "handle",
+      ref: { key: expect.stringMatching(/^DataTexture:/) },
+    });
+    expect(calls[1]?.args.slice(1)).toEqual([
+      { kind: "node", node: 1 },
+      { kind: "number", number: 0.5 },
+    ]);
+  });
+
   it("refuses an argument TSL has no meaning for, by name", () => {
     const tsl = defineTsl(tslRuntime([], []));
     expect(() => (tsl.sin as Fn)({ plain: true })).toThrow("TN_TSL sin: argument 0");

@@ -18,6 +18,7 @@ import {
   engineRef,
 } from "../src/browser-backend.js";
 import { bindWebEngine } from "../src/browser-entry.js";
+import { defineTsl } from "../src/browser-tsl.js";
 
 const modulePath = process.argv[2];
 if (modulePath === undefined) throw new Error("usage: browser-backend-smoke.ts <abi module .js>");
@@ -30,7 +31,8 @@ const registry = JSON.parse(
 
 // The back end mirrors three's API, so three's declarations type it.
 const abi = await createTnAbi();
-const engine = defineBrowserClasses(registry, createWasmRuntime(abi));
+const runtime = createWasmRuntime(abi);
+const engine = defineBrowserClasses(registry, runtime);
 const {
   Box3,
   BoxGeometry,
@@ -429,5 +431,23 @@ if (resizable) {
     dump(ported) === dump(utils.mergeGeometries(parts(T), true)),
     "web mergeGeometries equals three's",
   );
+}
+// TSL by name over the real ABI: pmremTexture's texture crosses as a handle in tn_tsl_arg_t.
+check(runtime.tsl !== undefined, "the module answers TSL by name");
+if (runtime.tsl !== undefined) {
+  const tsl = defineTsl(runtime.tsl) as Record<string, (...args: unknown[]) => unknown>;
+  const { DataTexture } = engine.classes as unknown as typeof THREE;
+  const direction = tsl.vec3?.(0, 1, 0);
+  check(
+    tsl.pmremTexture?.(new DataTexture(), direction, 0.5) !== undefined,
+    "pmremTexture over a texture",
+  );
+  let refused = "";
+  try {
+    tsl.pmremTexture?.(new MeshStandardMaterial(), direction, 0.5);
+  } catch (error) {
+    refused = String(error);
+  }
+  check(refused.includes("pmremTexture"), `pmremTexture refuses a material: ${refused}`);
 }
 process.stdout.write(`TN_BROWSER_BACKEND_OK resizable=${resizable ? 1 : 0}\n`);

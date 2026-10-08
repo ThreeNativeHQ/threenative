@@ -13,7 +13,8 @@ export type TslArgValue =
   | { readonly kind: "node"; readonly node: number }
   | { readonly kind: "number"; readonly number: number }
   | { readonly kind: "string" | "named"; readonly text: string }
-  | { readonly kind: "rgb"; readonly rgb: readonly [number, number, number] };
+  | { readonly kind: "rgb"; readonly rgb: readonly [number, number, number] }
+  | { readonly kind: "handle"; readonly ref: IEngineRef };
 
 /** The engine side of TSL: one call by name, node release, and a material's node slot. */
 export interface ITslRuntime {
@@ -72,6 +73,7 @@ const FUNCTIONS = [
   "convertToTexture",
   "mx_noise_float",
   "mx_worley_noise_vec2",
+  "pmremTexture",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
@@ -158,6 +160,9 @@ export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
       // A texture names its map; textureLoad also takes a texture node.
       if (index === 0 && (name === "texture" || name === "textureLoad"))
         return { kind: "named", text: String(object.name) };
+      // pmremTexture prefilters the texture object itself, not a map the material names.
+      if (index === 0 && name === "pmremTexture")
+        return { kind: "handle", ref: engineRef(value) as IEngineRef };
       if (name === "color" && count === 1 && object.isColor === true)
         return { kind: "rgb", rgb: [object.r, object.g, object.b] as [number, number, number] };
       // TSL's nodeObject turns a three vector into its constant: vec3(new Vector3(1, 2, 3)).

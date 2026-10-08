@@ -610,8 +610,9 @@ const KIND = {
 } as const;
 
 // wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, node 8 (u64), number 16, text 24, rgb 32; 56 bytes.
+// A handle argument's 12 bytes start at the reserved field (4) and run through node.
 const TSL_ARG = 56;
-const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4 } as const;
+const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4, handle: 5 } as const;
 type TslCall = "_tn_tsl_call" | "_tn_tsl_release" | "_tn_tsl_set";
 
 interface IAbiHelpers {
@@ -621,6 +622,7 @@ interface IAbiHelpers {
   diagnostic(): number;
   check(status: number, diag: number, what: string): void;
   handleOf(ref: IEngineRef): number;
+  writeHandle(pointer: number, ref: IEngineRef): void;
   view(): DataView;
 }
 
@@ -652,6 +654,7 @@ function tslOf(
             else if (arg.kind === "number") v.setFloat64(at + 16, arg.number, true);
             else if (arg.kind === "rgb")
               arg.rgb.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
+            else if (arg.kind === "handle") h.writeHandle(at + 4, arg.ref);
             else v.setUint32(at + 24, text, true);
           });
           const self = receiver === null ? 0 : h.alloc(8);
@@ -913,7 +916,16 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   });
 
   return {
-    ...(tslOf(abi, context, { scoped, alloc, string, diagnostic, check, handleOf, view }) ?? {}),
+    ...(tslOf(abi, context, {
+      scoped,
+      alloc,
+      string,
+      diagnostic,
+      check,
+      handleOf,
+      writeHandle,
+      view,
+    }) ?? {}),
     typeId: (className) => scoped(() => abi._tn_type_id(string(className).pointer)),
     construct: (className, args) =>
       scoped(() => {

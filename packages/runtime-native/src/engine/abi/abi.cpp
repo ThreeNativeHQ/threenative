@@ -706,6 +706,15 @@ extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, cons
                 case TN_TSL_ARG_STRING: converted.push_back(tn::abi::TslArg::of(std::string(a.text ? a.text : ""))); break;
                 case TN_TSL_ARG_NAMED: converted.push_back(tn::abi::TslArg::named(a.text ? a.text : "")); break;
                 case TN_TSL_ARG_RGB: converted.push_back(tn::abi::TslArg::rgbOf(a.rgb[0], a.rgb[1], a.rgb[2])); break;
+                case TN_TSL_ARG_HANDLE: {
+                    tn_handle_t h{};
+                    std::memcpy(&h, &a.reserved, 4);
+                    std::memcpy(reinterpret_cast<char*>(&h) + 4, &a.node, 8);
+                    const tn::binding::Object* o = context->object(h);
+                    if (!o) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT handle");
+                    converted.push_back(tn::abi::TslArg::objectOf(o->cls, o->ptr));
+                    break;
+                }
                 default: return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT kind");
             }
         }
