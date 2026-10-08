@@ -201,10 +201,12 @@ jobs:
           packages: platform-tools
       - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - run: pnpm install --frozen-lockfile
+      # `libwebkit2gtk-4.1-0` is the desktop prebuilt's overlay webview: without it the host exits
+      # 127 before `--version`, and doctor and the native step both fail on a loader error.
       - name: Install native desktop runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0
       - name: Install the pinned Blender used by the MCP conversion proof
         env:
           BLENDER_VERSION: 5.2.0

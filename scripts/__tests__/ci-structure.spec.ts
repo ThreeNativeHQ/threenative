@@ -1678,6 +1678,8 @@ describe("CI pipeline structure", () => {
     expect(npm).toMatch(/clean_room_only:\n(?: {8}.+\n)*? {8}default: false/u);
     expect(gates).toContain("if: inputs.clean_room_only != true");
     expect(cleanRoom).toContain("inputs.clean_room_only == true");
+    // The desktop prebuilt links the overlay webview; without it doctor and native exit 127.
+    expect(cleanRoom).toContain("libwebkit2gtk-4.1-0");
     expect(cleanRoom).toContain("needs.publish.result == 'success'");
     expect(cleanRoom).toContain("!cancelled()");
   });
