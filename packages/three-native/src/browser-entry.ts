@@ -73,6 +73,42 @@ export function bindUpstreamExports(
   return bound;
 }
 
+/**
+ * three's `shape.holes` is the plain array a game pushes paths into, and the engine's getter answers
+ * a copy: each change to the view writes the whole array through the native setter, as the V8
+ * facade does, so the geometry built from the shape sees it.
+ */
+function liveHoles(Shape: { prototype: object } | undefined): void {
+  if (Shape === undefined) return;
+  const native = Object.getOwnPropertyDescriptor(Shape.prototype, "holes");
+  if (native?.get === undefined || native.set === undefined)
+    throw new TypeError("TN_BROWSER_UNBOUND: Shape.holes needs the engine's getter and setter");
+  const { get, set } = native;
+  const views = new WeakMap<object, unknown[]>();
+  Object.defineProperty(Shape.prototype, "holes", {
+    configurable: true,
+    get(this: object) {
+      let view = views.get(this);
+      if (view === undefined) {
+        const shape = this;
+        view = new Proxy(get.call(this) as unknown[], {
+          set(target, key, value) {
+            Reflect.set(target, key, value);
+            set.call(shape, [...target]);
+            return true;
+          },
+        });
+        views.set(this, view);
+      }
+      return view;
+    },
+    set(this: object, value: readonly unknown[]) {
+      set.call(this, [...value]);
+      views.delete(this);
+    },
+  });
+}
+
 /** Boots the Wasm module and returns every upstream export name bound over it. */
 export async function bindWebEngine(
   createModule: () => Promise<TnAbiModule>,
@@ -84,6 +120,7 @@ export async function bindWebEngine(
     createWasmRuntime(module),
     catalogJson as unknown as ICatalog,
   );
+  liveHoles(classes.Shape);
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   const bound: Record<string, unknown> = { ...classes };
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes

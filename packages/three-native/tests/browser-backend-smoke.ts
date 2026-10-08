@@ -4,6 +4,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import type * as THREE from "three";
 
@@ -242,5 +243,46 @@ engine.collect();
   voice.updateMatrixWorld(true);
   check(heard.includes("listener:0,1,5"), `listener pose ${heard.join(" ")}`);
   check(heard.includes("voice:-4,0,1"), `voice pose ${heard.join(" ")}`);
+}
+// The engine's Shape and ExtrudeGeometry on the web: a hole pushed onto shape.holes is cut, and the
+// options object reaches the generator; positions, normals and uvs equal the pinned three's.
+{
+  type Ctor = new (...args: unknown[]) => Record<string, unknown>;
+  const names = ["Shape", "Path", "Vector2", "ExtrudeGeometry", "ShapeGeometry", "BufferGeometry"];
+  const web = (await bindWebEngine(createTnAbi, names)) as Record<string, Ctor>;
+  // three/webgpu carries every core class; tsx would map a bare `three` to the generated d.ts.
+  const upstream = (await import(
+    pathToFileURL(
+      createRequire(path.join(import.meta.dirname, "../../core/package.json")).resolve(
+        "three/webgpu",
+      ),
+    ).href
+  )) as Record<string, Ctor>;
+  const build = (K: Record<string, Ctor>): string => {
+    const V = K.Vector2 as Ctor;
+    const shape = new (K.Shape as Ctor)([new V(-1, -1), new V(1, -1), new V(1, 1), new V(-1, 1)]);
+    const hole = new (K.Path as Ctor)() as { absellipse(...args: unknown[]): unknown };
+    hole.absellipse(0, 0, 0.5, 0.3, 0, Math.PI * 2, false, 0.4);
+    (shape.holes as unknown[]).push(hole);
+    const geometries = [
+      new (K.ExtrudeGeometry as Ctor)(shape, {
+        depth: 0.2,
+        bevelSegments: 2,
+        curveSegments: 6,
+        steps: 2,
+      }),
+      new (K.ShapeGeometry as Ctor)(shape, 6),
+    ] as unknown as { getAttribute(name: string): { array: ArrayLike<number> } }[];
+    return JSON.stringify(
+      geometries.map((g) =>
+        ["position", "normal", "uv"].map((n) => Array.from(g.getAttribute(n).array)),
+      ),
+    );
+  };
+  check(build(web) === build(upstream), "web shape geometries equal three's");
+  check(
+    new (web.ExtrudeGeometry as Ctor)() instanceof (web.BufferGeometry as Ctor),
+    "extrude is a BufferGeometry",
+  );
 }
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

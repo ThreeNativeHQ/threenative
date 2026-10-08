@@ -252,6 +252,20 @@ export function defineBrowserClasses(
       if (callbackNames.has((value as IWrapped)[REF].key)) held.add(value);
       return (value as IWrapped)[REF];
     }
+    // An options object (`new ExtrudeGeometry(shape, { depth })`) crosses as a record of scalars and
+    // engine objects, as the V8 adapter passes it; an undefined value is left out, as three reads it.
+    if (isPlainObject(value)) {
+      const fields: Record<string, EngineValue> = {};
+      for (const [key, item] of Object.entries(value as object)) {
+        if (item === undefined) continue;
+        if (item !== null && typeof item === "object" && !(REF in item))
+          throw new TypeError(
+            `TN_BROWSER_ARGUMENT_UNSUPPORTED: option ${key} cannot cross to the engine`,
+          );
+        fields[key] = toEngine(item);
+      }
+      return fields;
+    }
     throw new TypeError(
       `TN_BROWSER_ARGUMENT_UNSUPPORTED: ${typeof value} cannot cross to the engine`,
     );
@@ -271,8 +285,12 @@ export function defineBrowserClasses(
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
         // three's parameters object (`new MeshStandardMaterial({ color })`) is construct, then
-        // setValues. The engine takes no records, so the wrapper applies each key itself.
-        const parameters = isPlainObject(args.at(-1)) ? (args.at(-1) as object) : undefined;
+        // setValues, which the wrapper applies key by key. Other classes take an options object as
+        // a record argument (ExtrudeGeometry).
+        const parameters =
+          name.endsWith("Material") && isPlainObject(args.at(-1))
+            ? (args.at(-1) as object)
+            : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
         if (parameters !== undefined) setValues(this, name, parameters);
@@ -544,7 +562,15 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       v.setUint32(pointer, KIND.handle, true);
       return writeHandle(pointer + 16, value);
     }
-    if (!Array.isArray(value)) throw new TypeError("TN_ABI_VALUE: input record unsupported");
+    if (!Array.isArray(value)) {
+      // A record: count key/value pairs, each key a string value, as the engine returns one.
+      const entries = Object.entries(value as Record<string, EngineValue>);
+      const children = values(entries.flat());
+      const w = view();
+      w.setUint32(pointer, KIND.record, true);
+      w.setUint32(pointer + 48, children, true);
+      return w.setBigUint64(pointer + 40, BigInt(entries.length), true);
+    }
     if (value.every((item) => typeof item === "number")) {
       const numbers = alloc(Math.max(8, value.length * 8));
       abi.HEAPF64.set(value as number[], numbers / 8);
