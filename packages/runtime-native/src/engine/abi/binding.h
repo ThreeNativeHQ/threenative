@@ -51,10 +51,14 @@ struct Value {
     static Value list(std::vector<double> values) { return Value{Kind::Numbers, 0, {}, false, std::move(values)}; }
 };
 
+struct ClassBinding;
+
 /** A native object as a caller holds it: its class name and shared ownership of the value. */
 struct Object {
     std::string cls;
     std::shared_ptr<void> ptr;
+    /** The registry entry for `cls`, found once by the ABI on the first call and kept (the registry is immutable). */
+    mutable const ClassBinding* binding = nullptr;
 };
 
 /** Only registered classes backed by engine::Material may unwrap as that base type. */

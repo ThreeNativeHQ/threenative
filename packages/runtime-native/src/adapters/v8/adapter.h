@@ -52,6 +52,9 @@ public:
     tn_context_t* context() const { return context_; }
     v8::Isolate* isolate() const { return isolate_; }
     size_t liveWrappers() const { return wrappers_.size(); }
+    /** Calls whose arguments needed the general converter (strings, arrays, objects): the numeric fast path leaves it at rest. */
+    uint64_t genericArguments() const { return genericArguments_; }
+    void noteGenericArguments() { ++genericArguments_; }
 
 private:
     struct Wrapper;
@@ -69,6 +72,7 @@ private:
     static void setCallback(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void getCallback(const v8::FunctionCallbackInfo<v8::Value>& info);
 
+    uint64_t genericArguments_ = 0;
     std::unique_ptr<Tsl> tsl_;
     v8::Isolate* isolate_;
     tn_context_t* context_;

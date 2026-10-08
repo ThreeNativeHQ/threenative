@@ -73,6 +73,47 @@ Runtime& runtime() {
     return rt;
 }
 
+// Hot calls cross as plain numbers on a stack array (no argument containers) and a chaining call
+// answers its own wrapper. Anything else takes the general converter, which counts itself.
+void fastPaths() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const char* setup = "const m = new Mesh(); const p = m.position; const r = m.rotation;";
+    const uint64_t start = adapter.genericArguments();
+    CHECK(run(rt, adapter, setup) == "undefined");
+    const uint64_t baseline = adapter.genericArguments() - start;
+    const uint64_t before = adapter.genericArguments();
+    const std::string got = run(rt, adapter, (std::string(setup) + R"JS(
+        let ok = 1;
+        for (let i = 0; i < 2000; ++i) {
+            if (p.set(i, i + 1, i + 2) !== p) ok = 0;   // chaining answers the wrapper it was called on
+            p.y = i * 0.5;                              // one-number setter
+            r.x = i * 0.001; r.y = -i * 0.002;
+            r.set(i * 0.01, 0.25, 0);
+        }
+        const checks = [ok === 1, p.x === 1999 && p.y === 999.5 && p.z === 2001,
+                        r.x === 1999 * 0.01 && r.y === 0.25 && r.z === 0,
+                        m.quaternion.w !== 1];
+        checks.map(Number).join("")
+    )JS").c_str());
+    CHECK(got == "1111");
+    if (got != "1111") std::fprintf(stderr, "got %s\n", got.c_str());
+    CHECK(adapter.genericArguments() - before == baseline);  // 2000 x 5 numeric calls added none
+    // Non-numeric arguments still take the general converter: a handle, a string, an array, a boolean.
+    const uint64_t general = adapter.genericArguments();
+    const std::string mixed = run(rt, adapter, (std::string(setup) + R"JS(
+        const q = new Vector3(1, 2, 3);
+        let kinds = [p.copy(q) === p, p.x === 1];
+        let threw = 0;
+        try { p.x = "no"; } catch (e) { threw = 1; }
+        try { p.set(1, 2, "no"); } catch (e) { threw += 1; }
+        kinds.map(Number).join("") + threw
+    )JS").c_str());
+    CHECK(mixed == "112" || mixed == "111" || mixed == "110");
+    CHECK(adapter.genericArguments() > general + baseline);
+}
+
 void handles() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
@@ -757,7 +798,7 @@ void skeletal() {
 
 }  // namespace
 
-TN_TEST_MAIN({"handles", handles}, {"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},

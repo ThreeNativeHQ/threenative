@@ -329,8 +329,15 @@ const tn::binding::Registry& classRegistry() {
     return classes;
 }
 
+// The registry entry of an object's class: looked up by name once, then read from the object.
+const tn::binding::ClassBinding& bindingOf(const tn::binding::Object& object) {
+    if (!object.binding) object.binding = &classRegistry().at(object.cls);
+    return *object.binding;
+}
+
 bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::binding::Args& out, unsigned depth = 0) {
     if (depth > 64 || (count && !in)) return false;
+    out.reserve(out.size() + count);  // one allocation, not a growth step per argument
     using Kind = tn::binding::Value::Kind;
     for (uint32_t i = 0; i < count; ++i) {
         const tn_value_t& v = in[i];
@@ -506,7 +513,7 @@ tn_status_t tn_invoke(tn_handle_t self, const char* method, const tn_value_t* ar
     tn::binding::Object* object = nullptr;
     if (!method || !result || (arg_count && !args)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: method, args or result");
     if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
-    const auto& methods = classRegistry().at(object->cls).methods;
+    const auto& methods = bindingOf(*object).methods;
     const auto m = methods.find(method);
     if (m == methods.end()) {
         return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + method + "()").c_str());
@@ -526,7 +533,7 @@ tn_status_t tn_get(tn_handle_t self, const char* path, tn_value_t* result, tn_di
     tn::binding::Object* object = nullptr;
     if (!path || !result) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or result");
     if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
-    const tn::binding::ClassBinding& binding = classRegistry().at(object->cls);
+    const tn::binding::ClassBinding& binding = bindingOf(*object);
     const auto g = binding.getters.find(path);
     const auto m = binding.members.find(path);
     if (g == binding.getters.end() && m == binding.members.end())
@@ -547,10 +554,15 @@ tn_status_t tn_set(tn_handle_t self, const char* path, const tn_value_t* value, 
     tn::binding::Object* object = nullptr;
     if (!path || !value) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_NULL: path or value");
     if (const tn_status_t s = selfObject(self, context, object, diagnostic); s != TN_OK) return s;
-    const auto& setters = classRegistry().at(object->cls).setters;
+    const auto& setters = bindingOf(*object).setters;
     const auto st = setters.find(path);
     if (st == setters.end()) return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + path + " is not settable").c_str());
     return guarded(diagnostic, [&]() -> tn_status_t {
+        if (value->kind == TN_VALUE_NUMBER) {  // the hot write: one Value on the stack, not an argument vector
+            const auto number = tn::binding::Value::of(value->number);
+            st->second(object->ptr.get(), number, *context);
+            return ok(diagnostic);
+        }
         tn::binding::Args in;
         if (!toBinding(context, value, 1, in)) return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_ABI_VALUE: bad value kind");
         st->second(object->ptr.get(), in[0], *context);

@@ -62,6 +62,21 @@ Adapter* adapterOf(const v8::FunctionCallbackInfo<v8::Value>& info) {
     return static_cast<Adapter*>(info.Data().As<v8::External>()->Value());
 }
 
+// The shape of nearly every hot call (`position.set(x, y, z)`, `rotation.x = v`): up to eight plain
+// numbers. They cross as a stack array, with none of the containers the general converter builds.
+constexpr int kFastArguments = 8;
+bool numericArguments(const v8::FunctionCallbackInfo<v8::Value>& info, tn_value_t (&out)[kFastArguments]) {
+    const int count = info.Length();
+    if (count > kFastArguments) return false;
+    for (int i = 0; i < count; ++i) {
+        if (!info[i]->IsNumber()) return false;
+        out[i] = tn_value_t{};
+        out[i].kind = TN_VALUE_NUMBER;
+        out[i].number = info[i].As<v8::Number>()->Value();
+    }
+    return true;
+}
+
 void throwStatus(v8::Isolate* isolate, tn_diagnostic_t& diagnostic) {
     const std::string message = diagnostic.message ? diagnostic.message : "TN_ABI error";
     tn_diagnostic_release(&diagnostic);
@@ -72,6 +87,7 @@ void throwStatus(v8::Isolate* isolate, tn_diagnostic_t& diagnostic) {
 bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::vector<tn_value_t>& out,
               std::deque<std::string>& texts, std::vector<std::vector<double>>& arrays,
               std::deque<std::vector<tn_value_t>>& values, int limit = -1) {
+    a.noteGenericArguments();
     v8::Isolate* isolate = info.GetIsolate();
     v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
     arrays.reserve(info.Length());
@@ -180,6 +196,7 @@ struct MethodData {
     // A fixed member's wrapper, kept on the owner's JS object under this private key: the member
     // names the same native object for the owner's life, so later reads cross nothing.
     v8::Global<v8::Private> cache;
+    bool intersections = false;  // intersectObject(s): the only methods whose third argument is a target array
 };
 
 }  // namespace
@@ -527,6 +544,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         for (const auto& [method, fn] : binding.methods) {
             (void)fn;
             auto* data = new MethodData{this, method};  // ponytail: lives for the process; one per method per install
+            data->intersections = method == "intersectObject" || method == "intersectObjects";
             proto->Set(str(isolate_, method),
                        v8::FunctionTemplate::New(
                            isolate_,
@@ -538,11 +556,29 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    isolate->ThrowException(v8::Exception::TypeError(str(isolate, "not an engine object")));
                                    return;
                                }
+                               tn_value_t fast[kFastArguments];
+                               if (!d->intersections && numericArguments(info, fast)) {
+                                   tn_value_t result{};
+                                   tn_diagnostic_t diagnostic{nullptr, 0};
+                                   if (tn_invoke(h, d->name.c_str(), fast, static_cast<uint32_t>(info.Length()), &result,
+                                                 &diagnostic) != TN_OK) {
+                                       throwStatus(isolate, diagnostic);
+                                       return;
+                                   }
+                                   // A chaining call answers the object it was called on: that is this wrapper.
+                                   if (result.kind == TN_VALUE_HANDLE && result.handle.index == h.index &&
+                                       result.handle.generation == h.generation && result.handle.type == h.type &&
+                                       result.handle.context == h.context)
+                                       info.GetReturnValue().Set(info.This());
+                                   else
+                                       info.GetReturnValue().Set(fromValue(*d->adapter, result));
+                                   return;
+                               }
                                std::vector<tn_value_t> args;
                                std::deque<std::string> texts;
                                std::deque<std::vector<tn_value_t>> values;
                                std::vector<std::vector<double>> arrays;
-                               const bool intersections = d->name == "intersectObject" || d->name == "intersectObjects";
+                               const bool intersections = d->intersections;
                                if (!toValues(*d->adapter, info, args, texts, arrays, values, intersections ? 2 : -1)) {
                                    isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI_VALUE: unsupported argument")));
                                    return;
@@ -746,11 +782,18 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
                                    tn_handle_t h{};
                                    if (!d->adapter->unwrap(info.This(), h)) return;
+                                   tn_diagnostic_t diagnostic{nullptr, 0};
+                                   if (info.Length() == 1 && info[0]->IsNumber()) {
+                                       tn_value_t number{};
+                                       number.kind = TN_VALUE_NUMBER;
+                                       number.number = info[0].As<v8::Number>()->Value();
+                                       if (tn_set(h, d->name.c_str(), &number, &diagnostic) != TN_OK) throwStatus(info.GetIsolate(), diagnostic);
+                                       return;
+                                   }
                                    std::vector<tn_value_t> args;
                                    std::deque<std::string> texts;
                                std::deque<std::vector<tn_value_t>> values;
                                    std::vector<std::vector<double>> arrays;
-                                   tn_diagnostic_t diagnostic{nullptr, 0};
                                    if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
                                        tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK) {
                                        throwStatus(info.GetIsolate(), diagnostic);
