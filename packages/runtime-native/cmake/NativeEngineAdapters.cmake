@@ -71,6 +71,13 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     endif()
     set_target_properties(tn_player_v8_services PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_player_v8_services)
+    # WebAudio for three's audio classes: the legacy host's SDL output and worker decode.
+    target_sources(tn_player_v8_services PRIVATE src/audio/audio_context.cpp src/audio/audio_bindings.cpp
+        src/audio/async_audio_decode.cpp src/audio/vorbis_impl.c)
+    target_include_directories(tn_player_v8_services PRIVATE ${THIRD_PARTY_DIR}/stb
+        ${CMAKE_CURRENT_BINARY_DIR}/generated)
+    add_dependencies(tn_player_v8_services threenative-runtime-scripts)
+    target_link_libraries(tn_player_v8_services PUBLIC tn_engine_player)
     if(TN_ENABLE_NATIVE_PHYSICS)
         target_sources(tn_player_v8_services PRIVATE src/physics/native_bindings.cpp)
         target_link_libraries(tn_player_v8_services PUBLIC threenative-native-physics)
@@ -161,6 +168,22 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
             PASS_REGULAR_EXPRESSION "ALLOWED_BLOCKED math-core-constructors, math-primitives-frustum\n"
             FAIL_REGULAR_EXPRESSION "(^|\n)FAIL ")
         set_tests_properties(native_engine_v8_scene_fixtures native_engine_v8_math_fixtures PROPERTIES LABELS "native-engine")
+    endif()
+
+    # Midway's texture slice through V8: HalfFloatType DataTextures and `image.data` re-sends.
+    add_executable(tn-native-engine-v8-textures-test EXCLUDE_FROM_ALL tests/native-engine/v8_textures_test.cpp)
+    target_link_libraries(tn-native-engine-v8-textures-test PRIVATE tn_adapter_v8)
+    target_include_directories(tn-native-engine-v8-textures-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
+    set_target_properties(tn-native-engine-v8-textures-test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME native_engine_v8_textures_half_float COMMAND tn-native-engine-v8-textures-test half_float)
+    set_tests_properties(native_engine_v8_textures_half_float PROPERTIES LABELS "native-engine")
+    add_dependencies(tn-native-engine-tests tn-native-engine-v8-textures-test)
+    if(TN_NODE_EXECUTABLE)
+        # The same slice through the bundler, the V8 facade and the player (CPU only).
+        add_test(NAME native_engine_player_textures
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-textures.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_textures PROPERTIES LABELS "native-engine")
     endif()
 
     if(ANDROID)

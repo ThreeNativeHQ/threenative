@@ -38,6 +38,8 @@ android/.gradle/
 android/.cxx/
 android/app/build/
 android/app/.cxx/
+android/engine-player/.cxx/
+android/engine-player/build/
 android/local.properties
 android/app/src/main/assets/scripts/main.js
 android/app/src/main/assets/scripts/main.js.meta.json

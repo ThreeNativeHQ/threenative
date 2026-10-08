@@ -1,5 +1,6 @@
 #pragma once
 
+#include "engine/abi/tsl_call.h"
 #include "engine/shader/graph/graph.h"
 
 #include <v8.h>
@@ -25,6 +26,7 @@ class Tsl {
     struct Call;
     Wrapper* wrapper(v8::Local<v8::Value> value) const;
     engine::shader::graph::Node input(v8::Local<v8::Value> value) const;
+    abi::TslArg argument(const std::string& name, int index, int count, v8::Local<v8::Value> value) const;
     engine::shader::graph::Node capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument = {});
     v8::Local<v8::FunctionTemplate> function(v8::Local<v8::Context> context, const char* name, bool method);
     static void dispatch(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -36,7 +38,6 @@ class Tsl {
     std::vector<std::unique_ptr<Call>> calls_;
     std::vector<engine::shader::graph::Node>* statements_ = nullptr;
     uint64_t scope_ = 0;
-    uint32_t denoiseSeed_ = 0;  // DenoiseNode's noise permutation: seeds 1, 2, ... in construction order
     uint64_t nextScope_ = 0;
 };
 

@@ -19,6 +19,17 @@ tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<
 engine::shader::graph::Node shaderNode(tn_handle_t handle, const std::string& path);
 void setShaderNode(tn_handle_t handle, const std::string& path, engine::shader::graph::Node node);
 
+/**
+ * A numeric property write for a caller that repeats one member on one class (the V8 adapter's
+ * accessor): `slot` remembers the setter found for the last class, so a steady write skips the name
+ * lookup. Same status, diagnostic and crossing count as tn_set with a number value.
+ */
+struct SetterSlot {
+    const void* binding = nullptr;
+    const tn::binding::Setter* setter = nullptr;
+};
+tn_status_t setNumber(tn_handle_t handle, SetterSlot& slot, const std::string& name, double value, tn_diagnostic_t* diagnostic);
+
 /** Calls that crossed the C ABI (construct, invoke, get, set) since the process started. */
 uint64_t crossings();
 

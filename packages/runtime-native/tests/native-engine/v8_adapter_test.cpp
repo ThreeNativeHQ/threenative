@@ -6,6 +6,7 @@
 #include "engine/foundation/ThreeConstants.h"
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/tsl/tsl.h"
+#include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
@@ -143,6 +144,19 @@ void fastPaths() {
     )JS");
     CHECK(members == "111111");
     if (members != "111111") std::fprintf(stderr, "members %s\n", members.c_str());
+    // A numeric setter remembers the class it last wrote. Borrowed onto another class's object it must
+    // look the member up again, and write that object, never the first one.
+    const std::string borrowedWrites = run(rt, adapter, R"JS(
+        const v = new Vector3(), e = new Euler();
+        const d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(v), "x");
+        d.set.call(v, 7); d.set.call(e, 8); d.set.call(v, 9); d.set.call(e, 10);
+        let refused = false;
+        try { d.set.call(new Mesh(), 5); } catch { refused = true; }   // a Mesh has no x: refused, not written through Vector3's setter
+        d.set.call(v, 11);
+        [v.x === 11, e.x === 10, refused].map(Number).join("")
+    )JS");
+    CHECK(borrowedWrites == "111");
+    if (borrowedWrites != "111") std::fprintf(stderr, "borrowed writes %s\n", borrowedWrites.c_str());
     // Non-numeric arguments still take the general converter: a handle, a string, an array, a boolean.
     const uint64_t general = adapter.genericArguments();
     const std::string mixed = run(rt, adapter, (std::string(setup) + R"JS(
@@ -216,6 +230,17 @@ void unsupported() {
     const std::string handedOut = run(rt, adapter, "new AnimationAction()");
     CHECK(handedOut.rfind("THROWN", 0) == 0 && handedOut.find("TN_NATIVE_UNSUPPORTED class AnimationAction") != std::string::npos);
     if (handedOut.find("TN_NATIVE_UNSUPPORTED class AnimationAction") == std::string::npos) std::fprintf(stderr, "%s\n", handedOut.c_str());
+    // A JS subclass constructs its nearest engine ancestor, whatever its own (or a bundler's) name.
+    const std::string subclass = run(rt, adapter, R"JS(
+        class Voice2 extends Object3D { constructor() { super(); this.cue = 7; } }
+        class Loud extends Voice2 {}
+        const parent = new Object3D(), voice = new Loud();
+        parent.add(voice);
+        voice.position.x = 2;
+        [voice instanceof Voice2, voice.parent === parent, voice.cue, voice.position.x].join()
+    )JS");
+    CHECK(subclass == "true,true,7,2");
+    if (subclass != "true,true,7,2") std::fprintf(stderr, "subclass: %s\n", subclass.c_str());
 }
 
 void gcRelease() {
@@ -399,6 +424,14 @@ void catalogCoverage() {
         {"NeutralToneMapping", tn::engine::NeutralToneMapping},
         {"PCFSoftShadowMap", tn::engine::PCFSoftShadowMap},
         {"LoopOnce", 2200}, {"LoopRepeat", 2201}, {"LoopPingPong", 2202},
+        {"FrontSide", static_cast<double>(tn::engine::Side::Front)},
+        {"BackSide", static_cast<double>(tn::engine::Side::Back)},
+        {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},
+        {"StaticDrawUsage", 35044},
+        {"DynamicDrawUsage", 35048},
+        {"NoBlending", static_cast<double>(tn::engine::Blending::None)},
+        {"NormalBlending", static_cast<double>(tn::engine::Blending::Normal)},
+        {"AdditiveBlending", static_cast<double>(tn::engine::Blending::Additive)},
     };
     // A published enum is its member constants, each installed above; the enum itself has no global.
     const std::set<std::string> enums = {"AnimationActionLoopStyles"};
@@ -448,8 +481,11 @@ void catalogCoverage() {
         for (const auto& [path, fn] : binding.setters) {
             (void)fn;
             const std::size_t dot = path.find('.');
-            // A write-only property (`needsUpdate`) is a setter-only accessor.
-            if (dot == std::string::npos) { expected.insert(path); continue; }
+            // A write-only setter (`needsUpdate`) is a property of its own, or the write never lands.
+            if (dot == std::string::npos) {
+                expected.insert(path);
+                continue;
+            }
             const std::string head = path.substr(0, dot);
             if (binding.members.count(head) == 0 && binding.getters.count(head) == 0) expected.insert(head);
         }

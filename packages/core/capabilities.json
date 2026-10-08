@@ -7489,6 +7489,11 @@
         "source": "three"
       },
       {
+        "symbol": "AdditiveBlending",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "AgXToneMapping",
         "kind": "constant",
         "source": "three"
@@ -7519,6 +7524,11 @@
         "source": "three"
       },
       {
+        "symbol": "BackSide",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Bone",
         "kind": "class",
         "source": "three/webgpu"
@@ -7545,6 +7555,11 @@
       },
       {
         "symbol": "Camera",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "CatmullRomCurve3",
         "kind": "class",
         "source": "three"
       },
@@ -7584,7 +7599,22 @@
         "source": "three"
       },
       {
+        "symbol": "DoubleSide",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "DynamicDrawUsage",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Euler",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "ExtrudeGeometry",
         "kind": "class",
         "source": "three"
       },
@@ -7606,6 +7636,11 @@
       {
         "symbol": "FogExp2",
         "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "FrontSide",
+        "kind": "constant",
         "source": "three"
       },
       {
@@ -7644,27 +7679,17 @@
         "source": "three"
       },
       {
+        "symbol": "LatheGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Layers",
         "kind": "class",
         "source": "three"
       },
       {
         "symbol": "LinearSRGBColorSpace",
-        "kind": "constant",
-        "source": "three"
-      },
-      {
-        "symbol": "LoopOnce",
-        "kind": "constant",
-        "source": "three"
-      },
-      {
-        "symbol": "LoopPingPong",
-        "kind": "constant",
-        "source": "three"
-      },
-      {
-        "symbol": "LoopRepeat",
         "kind": "constant",
         "source": "three"
       },
@@ -7729,8 +7754,23 @@
         "source": "three"
       },
       {
+        "symbol": "NoBlending",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "NoColorSpace",
         "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "NormalBlending",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "NumberKeyframeTrack",
+        "kind": "class",
         "source": "three"
       },
       {
@@ -7746,6 +7786,11 @@
       {
         "symbol": "PCFSoftShadowMap",
         "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "Path",
+        "kind": "class",
         "source": "three"
       },
       {
@@ -7779,6 +7824,11 @@
         "source": "three"
       },
       {
+        "symbol": "QuaternionKeyframeTrack",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Ray",
         "kind": "class",
         "source": "three"
@@ -7800,6 +7850,16 @@
       },
       {
         "symbol": "Scene",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Shape",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "ShapeGeometry",
         "kind": "class",
         "source": "three"
       },
@@ -7854,6 +7914,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "StaticDrawUsage",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Texture",
         "kind": "class",
         "source": "three"
@@ -7862,6 +7927,11 @@
         "symbol": "TorusGeometry",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "TubeGeometry",
+        "kind": "class",
+        "source": "three"
       },
       {
         "symbol": "Vector2",
@@ -7875,6 +7945,11 @@
       },
       {
         "symbol": "Vector4",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "VectorKeyframeTrack",
         "kind": "class",
         "source": "three"
       }

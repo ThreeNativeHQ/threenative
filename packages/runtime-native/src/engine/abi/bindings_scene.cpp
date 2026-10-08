@@ -146,6 +146,13 @@ void registerObject3D(ClassBinding& b) {
     b.members["parent"] = [](void* self, const Args&, Store& store) {
         return foundObject(store, as<Object3D>(self)->parent);
     };
+    // three's `children`, as a fresh array of the attached objects in order (PRD-540). It is read
+    // only: add, remove and attach change the graph, as three's own code does.
+    b.members["children"] = [](void* self, const Args&, Store& store) {
+        Args children;
+        for (Object3D* child : as<Object3D>(self)->children) children.push_back(foundObject(store, child));
+        return Value::array(std::move(children));
+    };
     b.callbacks["onBeforeRender"] = [](void* self, RenderCallback callback) {
         as<Object3D>(self)->onBeforeRender = std::move(callback);
     };
@@ -260,12 +267,15 @@ void registerObject3D(ClassBinding& b) {
     fixedMember(b, "matrixWorld", memberAliasMethod(&Object3D::matrixWorldValue, "Matrix4"));
 
     // Transforms.
+    // three's add(...objects) and remove(...objects) take every argument (PRD-540).
     b.methods["add"] = [](void* self, const Args& a, Store& store) {
-        as<Object3D>(self)->add(objectArg(store, a.at(0)));
+        (void)a.at(0);  // no object is an invalid argument, as before
+        for (const Value& object : a) as<Object3D>(self)->add(objectArg(store, object));
         return chain();
     };
     b.methods["remove"] = [](void* self, const Args& a, Store& store) {
-        as<Object3D>(self)->remove(objectArg(store, a.at(0)));
+        (void)a.at(0);
+        for (const Value& object : a) as<Object3D>(self)->remove(objectArg(store, object));
         return chain();
     };
     b.methods["attach"] = [](void* self, const Args& a, Store& store) {
@@ -619,7 +629,8 @@ void registerGroup(ClassBinding& b) {
 std::shared_ptr<BufferGeometry> geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
-        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry"};
+        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry", "LatheGeometry",
+        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -1098,19 +1109,82 @@ void registerAnimationAction(ClassBinding& b) {
     };
 }
 
+/** The registry class of a track of each value type; colour and boolean tracks are not bound. */
+const char* trackClass(tn::engine::animation::TrackType type) {
+    using tn::engine::animation::TrackType;
+    if (type == TrackType::Quaternion) return "QuaternionKeyframeTrack";
+    if (type == TrackType::Vector) return "VectorKeyframeTrack";
+    if (type == TrackType::Number) return "NumberKeyframeTrack";
+    throw Unsupported{"colour and boolean keyframe tracks are not bound"};
+}
+
+std::vector<double> keyNumbers(const Value& v, const char* what) {
+    if (v.kind != Value::Kind::Numbers) throw Unsupported{std::string("a keyframe track's ") + what + " must be numbers"};
+    return v.numbers;
+}
+
+// three's Quaternion-, Vector- and NumberKeyframeTrack(name, times, values, interpolation). Values
+// that are not a whole number of keys of the type's size are refused; three would read past them.
+void registerKeyframeTrack(ClassBinding& b, tn::engine::animation::TrackType type) {
+    using namespace tn::engine::animation;
+    b.ctor = [type](const Args& a, Store&) {
+        if (a.size() < 3 || a.at(0).kind != Value::Kind::String) throw Unsupported{"a keyframe track needs a name, times and values"};
+        const std::vector<double> times = keyNumbers(a.at(1), "times");
+        const std::vector<double> values = keyNumbers(a.at(2), "values");
+        const size_t size = type == TrackType::Quaternion ? 4 : type == TrackType::Number ? 1 : 0;
+        if (times.empty() || values.size() % times.size() != 0 || (size != 0 && values.size() != times.size() * size))
+            throw Unsupported{"a keyframe track's values must be one value per time"};
+        Interpolation mode = Interpolation::Linear;
+        if (a.size() > 3 && a.at(3).kind != Value::Kind::Undefined) {
+            const double m = number(a.at(3));  // InterpolateDiscrete 2300, InterpolateLinear 2301, InterpolateSmooth 2302
+            if (m != 2300 && m != 2301 && m != 2302) throw Unsupported{"interpolation must be InterpolateDiscrete, InterpolateLinear or InterpolateSmooth"};
+            mode = m == 2300 ? Interpolation::Discrete : m == 2302 ? Interpolation::Smooth : Interpolation::Linear;
+        }
+        return std::static_pointer_cast<void>(std::make_shared<KeyframeTrack>(a.at(0).text, type, times, values, mode));
+    };
+    b.getters["name"] = [](void* self) { return Value{Value::Kind::String, 0, as<KeyframeTrack>(self)->name}; };
+    b.getters["ValueTypeName"] = [type](void*) {
+        return Value{Value::Kind::String, 0, type == TrackType::Quaternion ? "quaternion" : type == TrackType::Vector ? "vector" : "number"};
+    };
+    b.getters["times"] = [](void* self) { return Value::list(as<KeyframeTrack>(self)->times); };
+    b.getters["values"] = [](void* self) { return Value::list(as<KeyframeTrack>(self)->values); };
+    b.methods["clone"] = [](void* self, const Args&, Store& store) {
+        const auto* track = as<KeyframeTrack>(self);
+        return store.adopt(trackClass(track->type), std::make_shared<KeyframeTrack>(*track));
+    };
+}
+
+// three's AnimationClip(name, duration = -1, tracks, blendMode). The clip holds copies of the
+// tracks it is handed, and `tracks` answers each held track as itself.
+// ponytail: editing a track after it is in a clip does not reach the clip; three's clip shares it.
 void registerAnimationClip(ClassBinding& b) {
     using namespace tn::engine::animation;
+    b.ctor = [](const Args& a, Store& store) {
+        const std::string name = !a.empty() && a.at(0).kind == Value::Kind::String ? a.at(0).text : "";
+        const double duration = a.size() > 1 && a.at(1).kind != Value::Kind::Undefined ? number(a.at(1)) : -1;
+        std::vector<KeyframeTrack> tracks;
+        if (a.size() > 2 && a.at(2).kind != Value::Kind::Undefined) {
+            for (const Value& ref : refsOf(a.at(2))) {
+                Object* found = store.find(ref);
+                if (found == nullptr || (found->cls != "QuaternionKeyframeTrack" && found->cls != "VectorKeyframeTrack" &&
+                                         found->cls != "NumberKeyframeTrack"))
+                    throw Unsupported{"an AnimationClip's tracks must be keyframe tracks"};
+                tracks.push_back(*static_cast<KeyframeTrack*>(found->ptr.get()));
+            }
+        }
+        BlendMode mode = BlendMode::Normal;
+        if (a.size() > 3 && a.at(3).kind != Value::Kind::Undefined) {
+            const double m = number(a.at(3));  // NormalAnimationBlendMode 2500, AdditiveAnimationBlendMode 2501
+            if (m != 2500 && m != 2501) throw Unsupported{"blendMode must be a three AnimationBlendMode"};
+            mode = m == 2501 ? BlendMode::Additive : BlendMode::Normal;
+        }
+        return std::static_pointer_cast<void>(std::make_shared<AnimationClip>(name, duration, std::move(tracks), mode));
+    };
     b.getters["name"] = [](void* self) { return Value{Value::Kind::String, 0, as<AnimationClip>(self)->name}; };
     b.getters["duration"] = [](void* self) { return Value::of(as<AnimationClip>(self)->duration); };
-    b.getters["tracks"] = [](void* self) {
+    b.members["tracks"] = [](void* self, const Args&, Store& store) {
         std::vector<Value> tracks;
-        for (const auto& track : as<AnimationClip>(self)->tracks) {
-            const char* type = track.type == TrackType::Quaternion ? "quaternion" : track.type == TrackType::Vector ? "vector"
-                : track.type == TrackType::Color ? "color" : track.type == TrackType::Bool ? "bool" : "number";
-            tracks.push_back(Value::record({{"name", Value{Value::Kind::String, 0, track.name}},
-                {"times", Value::list(track.times)}, {"values", Value::list(track.values)},
-                {"ValueTypeName", Value{Value::Kind::String, 0, type}}}));
-        }
+        for (auto& track : as<AnimationClip>(self)->tracks) tracks.push_back(store.adoptAlias(trackClass(track.type), &track, self));
         return Value::array(std::move(tracks));
     };
 }
@@ -1252,6 +1326,9 @@ void registerSceneBindings(Registry& classes) {
     registerAnimationMixer(classes["AnimationMixer"]);
     registerAnimationAction(classes["AnimationAction"]);
     registerAnimationClip(classes["AnimationClip"]);
+    registerKeyframeTrack(classes["QuaternionKeyframeTrack"], tn::engine::animation::TrackType::Quaternion);
+    registerKeyframeTrack(classes["VectorKeyframeTrack"], tn::engine::animation::TrackType::Vector);
+    registerKeyframeTrack(classes["NumberKeyframeTrack"], tn::engine::animation::TrackType::Number);
 }
 
 }  // namespace tn::binding

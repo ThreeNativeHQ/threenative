@@ -70,6 +70,21 @@ void load() {
     std::vector<LoadedEntry> none;
     CHECK(!loadPackage(badPackage, gpu, none, error));
     CHECK(error.code == "TN_PACKAGE_ENTRY");
+
+    // Upload size states a Buffer's use: 0 is CPU data (an HDRLoader's 7-byte .hdr here) that the
+    // GPU loader leaves alone at any length; a GPU buffer still has to be 4-byte aligned.
+    const std::vector<uint8_t> hdr{'#', '?', 'R', 'G', 'B', 'E', '\n'};
+    const auto cpu = tn::test::writePackage({{"sky.hdr", 1, 0, hdr, 0, {}}});
+    assets::Package cpuPackage;
+    CHECK(assets::parsePackage(cpu, cpuPackage, error) && assets::verifyPackage(cpuPackage, 0, error));
+    std::vector<LoadedEntry> cpuLoaded;
+    CHECK(loadPackage(cpuPackage, gpu, cpuLoaded, error));
+    CHECK(cpuLoaded.empty());
+    const auto gpuUnaligned = tn::test::writePackage({{"positions", 1, 0, hdr, 7, {}}});
+    assets::Package gpuPackage;
+    CHECK(assets::parsePackage(gpuUnaligned, gpuPackage, error) && assets::verifyPackage(gpuPackage, 0, error));
+    CHECK(!loadPackage(gpuPackage, gpu, none, error));
+    CHECK(error.code == "TN_PACKAGE_ENTRY");
 }
 
 }  // namespace

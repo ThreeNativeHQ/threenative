@@ -1,9 +1,7 @@
 #include "tsl.h"
-#include "engine/foundation/math/Color.h"
-#include "engine/shader/graph/post_effects.h"
+#include "engine/abi/tsl_call.h"
 
 #include <cmath>
-#include <bit>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -113,6 +111,34 @@ g::Node Tsl::input(v8::Local<v8::Value> value) const {
     return w->node->kind == g::Kind::Var ? g::Var{w->node, w->node->type}.read() : w->node;
 }
 
+abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Local<v8::Value> value) const {
+    const auto ctx = isolate_->GetCurrentContext();
+    Wrapper* w = wrapper(value);
+    // A texture names its map by the object's `name`; textureLoad also takes a texture node.
+    const bool texture = index == 0 && name == "texture";
+    const bool textureLoad = index == 0 && name == "textureLoad";
+    if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
+    if (value->IsNumber()) return abi::TslArg::of(value.As<v8::Number>()->Value());
+    if (value->IsString()) return abi::TslArg::of(text(isolate_, value));
+    if (!value->IsObject()) return abi::TslArg::other();
+    const auto object = value.As<v8::Object>();
+    if (texture || textureLoad) {
+        v8::Local<v8::Value> label;
+        if (!object->Get(ctx, str(isolate_, "name")).ToLocal(&label)) throw JsFailure{};
+        return abi::TslArg::named(text(isolate_, label));
+    }
+    if (name == "color" && count == 1) {
+        double components[3];
+        for (int i = 0; i < 3; ++i) {
+            v8::Local<v8::Value> component;
+            if (!object->Get(ctx, str(isolate_, std::string(1, "rgb"[i]))).ToLocal(&component)) throw JsFailure{};
+            components[i] = number(component);
+        }
+        return abi::TslArg::rgbOf(components[0], components[1], components[2]);
+    }
+    return abi::TslArg::other();
+}
+
 v8::Local<v8::Object> Tsl::wrap(g::Node node) {
     if (node) for (const auto* w : wrappers_) if (w->node == node) return w->object.Get(isolate_);
     const auto object = nodeTemplate_.Get(isolate_)->NewInstance(isolate_->GetCurrentContext()).ToLocalChecked();
@@ -196,123 +222,6 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
             throw std::runtime_error("statement outside Fn");
     };
 
-    if (name == "nodeObject") {
-        arity(1);
-        return result(arg(0));
-    }
-    if (name == "color") {
-        engine::Color value;
-        if (info.Length() == 3) value.setRGB(number(info[0]), number(info[1]), number(info[2]));
-        else if (info.Length() == 1) {
-            if (wrapper(info[0])) {
-                auto node = std::make_shared<g::NodeData>();
-                node->kind = g::Kind::Convert; node->type = Type::vec(3); node->args = {arg(0)};
-                return result(node);
-            }
-            if (info[0]->IsNumber()) value.setHex(number(info[0]));
-            else if (info[0]->IsString()) value.setStyle(text(isolate_, info[0]).c_str());
-            else if (info[0]->IsObject()) {
-                double components[3];
-                for (int i = 0; i < 3; ++i) {
-                    v8::Local<v8::Value> component;
-                    if (!info[0].As<v8::Object>()->Get(ctx, str(isolate_, std::string(1, "rgb"[i]))).ToLocal(&component)) throw JsFailure{};
-                    components[i] = number(component);
-                }
-                value.setRGB(components[0], components[1], components[2]);
-            } else throw std::runtime_error("color needs a Color, CSS string, hex or RGB components");
-        } else if (info.Length() != 0) throw std::runtime_error("invalid color argument count");
-        return result(g::vec3({g::float_(value.r), g::float_(value.g), g::float_(value.b)}));
-    }
-    if (name == "ivec2") {
-        if (info.Length() > 2) throw std::runtime_error("invalid ivec2 argument count");
-        auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::Convert; node->type = Type::vec(2, Type::Scalar::I32);
-        node->args = {info.Length() == 2 ? g::vec2({arg(0), arg(1)})
-            : g::vec2({info.Length() == 1 ? arg(0) : g::float_(0)})};
-        return result(node);
-    }
-    if (name == "reflect") {
-        arity(call.method ? 1 : 2);
-        auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::Math; node->name = "reflect"; node->args = {lhs(), rhs()};
-        node->type = node->args[0]->type;
-        return result(node);
-    }
-    if (name == "textureLoad") {
-        if (info.Length() < 2 || info.Length() > 3) throw std::runtime_error("expected texture, coordinates and optional level");
-        std::string label;
-        if (const auto* source = wrapper(info[0]); source && source->node) {
-            const auto& texture = source->node;
-            if (texture->kind != g::Kind::Texture && texture->kind != g::Kind::RenderTexture)
-                throw std::runtime_error("textureLoad needs a texture node");
-            label = texture->name;
-        } else if (info[0]->IsObject()) {
-            v8::Local<v8::Value> name;
-            if (!info[0].As<v8::Object>()->Get(ctx, str(isolate_, "name")).ToLocal(&name)) throw JsFailure{};
-            label = text(isolate_, name);
-        }
-        if (label.empty()) throw std::runtime_error("textureLoad needs a named texture");
-        auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::TextureLoad; node->name = label; node->type = Type::vec(4);
-        node->args = {arg(1)};
-        if (info.Length() == 3) node->args.push_back(arg(2));
-        return result(node);
-    }
-    // three r185's post addons, built live as the native effects (PRD-531 slice 4). The camera
-    // argument three takes is the render camera here: the pass reads its matrices every frame.
-    if (name == "ao" || name == "denoise") {
-        const bool denoise = name == "denoise";
-        if (info.Length() < (denoise ? 3 : 2)) throw std::runtime_error("expected the effect's texture inputs");
-        const auto optional = [&](int i) { return info[i]->IsNullOrUndefined() ? g::Node{} : arg(i); };
-        const auto effect = denoise ? g::denoiseEffect(arg(0), arg(1), optional(2), ++denoiseSeed_)
-                                    : g::gtaoEffect(arg(0), optional(1));
-        return result(g::effectNode(effect));
-    }
-    if (name == "smaa") {
-        arity(1);
-        return result(g::effectNode(g::smaaEffect(arg(0))));
-    }
-    if (name == "bloom") {
-        if (info.Length() < 1 || info.Length() > 4) throw std::runtime_error("expected input, strength, radius, threshold");
-        const auto scalar = [&](int i, double fallback) {
-            if (info.Length() <= i || info[i]->IsUndefined()) return fallback;
-            if (!info[i]->IsNumber()) throw std::runtime_error("bloom strength, radius and threshold must be numbers");
-            return number(info[i]);
-        };
-        return result(g::bloom(arg(0), scalar(1, 1), scalar(2, 0), scalar(3, 0)));
-    }
-    // `effect.__effect(name[, value])`: one of a live effect's scalar uniforms (or its
-    // resolutionScale), which the facade publishes as three's `effect.radius.value`.
-    if (name == "__effect") {
-        if (info.Length() < 1 || info.Length() > 2) throw std::runtime_error("expected a parameter name and an optional value");
-        const auto node = lhs();
-        if (node->kind != g::Kind::PostEffect || !node->post) throw std::runtime_error("not a live post effect");
-        auto& effect = const_cast<g::PostEffect&>(*node->post);  // ponytail: live effects are built mutable
-        const std::string parameter = text(isolate_, info[0]);
-        if (parameter == "resolutionScale") {
-            if (info.Length() == 2) {
-                const double scale = number(info[1]);
-                if (scale <= 0 || scale > 8) throw std::runtime_error("resolutionScale must be in (0, 8]");
-                effect.resolutionScale = static_cast<float>(scale);
-            }
-            info.GetReturnValue().Set(v8::Number::New(isolate_, effect.resolutionScale));
-            return;
-        }
-        const auto found = effect.parameters.find(parameter);
-        if (found == effect.parameters.end() || found->second.size() != 1 || parameter.front() == '_')
-            throw std::runtime_error(effect.kind + " has no scalar uniform " + parameter);
-        if (info.Length() == 2) found->second[0] = static_cast<float>(number(info[1]));
-        info.GetReturnValue().Set(v8::Number::New(isolate_, found->second[0]));
-        return;
-    }
-    if (name == "oneMinus") {
-        arity(call.method ? 0 : 1);
-        return result(g::sub(g::float_(1), lhs()));
-    }
-    if (name == "dispose") {
-        arity(0);
-        return;  // a graph node is a value; the renderer owns what it builds from one
-    }
     if (name == "setName") {
         arity(1);
         const std::string label = text(isolate_, info[0]);
@@ -431,66 +340,6 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         info.GetReturnValue().Set(object);
         return;
     }
-    if (name == "uniform") {
-        arity(1);
-        const auto value = arg(0);
-        if (value->type == Type{})
-            throw std::runtime_error("uniform value needs a concrete type");
-        std::vector<float> values;
-        const std::function<void(g::Node)> constant = [&](g::Node n) {
-            if (n->kind == g::Kind::Constant && n->type == Type::f32()) {
-                values.push_back(std::bit_cast<float>(static_cast<uint32_t>(n->bits)));
-            } else if (n->kind == g::Kind::Join) {
-                const size_t start = values.size();
-                for (const auto& part : n->args) constant(part);
-                if (values.size() - start == 1) values.resize(start + n->type.rows, values.back());
-            } else throw std::runtime_error("uniform needs a constant float or vector value");
-        };
-        constant(value);
-        return result(g::uniform("nodeUniform" + std::to_string(++nextScope_), value->type, std::move(values)));
-    }
-    if (name == "attribute") {
-        arity(2);
-        return result(g::attribute(text(isolate_, info[0]), type(text(isolate_, info[1]))));
-    }
-    if (name == "texture") {
-        arity(2);
-        if (!info[0]->IsObject())
-            throw std::runtime_error("expected a texture with a name");
-        v8::Local<v8::Value> label;
-        if (!info[0].As<v8::Object>()->Get(ctx, str(isolate_, "name")).ToLocal(&label))
-            throw JsFailure{};
-        const auto map = text(isolate_, label);
-        if (map.empty())
-            throw std::runtime_error("texture needs a name");
-        return result(g::texture(map, arg(1)));
-    }
-    if (name == "uv") {
-        arity(0);
-        return result(g::uv());
-    }
-    if (name == "convertToTexture") {
-        arity(1);
-        const auto source = arg(0);
-        if (source->kind == g::Kind::Texture || source->kind == g::Kind::RenderTexture)
-            return result(source);
-        auto target = std::make_shared<g::NodeData>();
-        target->kind = g::Kind::RenderTexture;
-        target->name = "native_rtt_" + std::to_string(++nextScope_);
-        target->type = Type::vec(4);
-        target->args = {source, g::uv()};
-        return result(target);
-    }
-    if (name == "sample") {
-        arity(1);
-        const auto source = lhs();
-        if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture)
-            throw std::runtime_error("sample requires a texture node");
-        auto sampled = std::make_shared<g::NodeData>(*source);
-        if (source->kind == g::Kind::RenderTexture) sampled->args[1] = arg(0);
-        else sampled->args[0] = arg(0);
-        return result(sampled);
-    }
     if (name == "setResolutionScale") {
         arity(1);
         const auto source = lhs();
@@ -503,88 +352,22 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         info.GetReturnValue().Set(info.This());
         return;
     }
-    if (name == "float" || name == "int" || name == "uint") {
-        arity(1);
-        if (info[0]->IsNumber()) {
-            const double n = number(info[0]);
-            if (name == "float")
-                return result(g::float_(n));
-            const double minimum = name == "uint" ? 0 : std::numeric_limits<int32_t>::min();
-            const double maximum =
-                name == "uint" ? std::numeric_limits<uint32_t>::max() : std::numeric_limits<int32_t>::max();
-            if (n < minimum || n > maximum || n != std::floor(n))
-                throw std::runtime_error("integer out of range");
-            return result(name == "int" ? g::int_(static_cast<int32_t>(n)) : g::uint_(static_cast<uint32_t>(n)));
-        }
-        if (name == "float")
-            return result(g::float_(arg(0)));
-        if (name == "uint")
-            return result(g::uint_(arg(0)));
-        auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::Convert;
-        node->type = Type::i32();
-        node->args = {arg(0)};
-        return result(node);
+    // `effect.__effect(name[, value])`: a live effect's scalar uniform, which the facade publishes as
+    // three's `effect.radius.value` (engine/abi/tsl_call.h tslEffectParameter).
+    if (name == "__effect") {
+        if (info.Length() < 1 || info.Length() > 2) throw std::runtime_error("expected a parameter name and an optional value");
+        const double value = info.Length() == 2 ? number(info[1]) : 0;
+        info.GetReturnValue().Set(v8::Number::New(isolate_,
+            abi::tslEffectParameter(lhs(), text(isolate_, info[0]), info.Length() == 2 ? &value : nullptr)));
+        return;
     }
-    if (name == "vec2" || name == "vec3" || name == "vec4") {
-        const int lanes = name.back() - '0';
-        if (info.Length() < 1 || info.Length() > lanes)
-            throw std::runtime_error("invalid vector argument count");
-        std::vector<g::Node> parts;
-        for (int i = 0; i < info.Length(); ++i)
-            parts.push_back(arg(i));
-        // graph.h's fixed initializer-list API: the vector's lane count is still checked by lower().
-        const auto join = [&](std::initializer_list<g::Node> args) {
-            return lanes == 2 ? g::vec2(args) : lanes == 3 ? g::vec3(args) : g::vec4(args);
-        };
-        if (parts.size() == 1)
-            return result(join({parts[0]}));
-        if (parts.size() == 2)
-            return result(join({parts[0], parts[1]}));
-        if (parts.size() == 3)
-            return result(join({parts[0], parts[1], parts[2]}));
-        return result(join({parts[0], parts[1], parts[2], parts[3]}));
-    }
-    if (name.rfind("swizzle:", 0) == 0) {
-        arity(0);
-        return result(g::swizzle(lhs(), name.substr(8)));
-    }
-    // r185's fluent step places the receiver last (MathNode.stepElement).
-    if (call.method && name == "step") {
-        arity(1);
-        return result(g::step(arg(0), lhs()));
-    }
-#define BINARY(symbol)                                                                                                 \
-    if (name == #symbol) {                                                                                             \
-        arity(call.method ? 1 : 2);                                                                                    \
-        return result(g::symbol(lhs(), rhs()));                                                                        \
-    }
-    BINARY(add)
-    BINARY(sub)
-    BINARY(mul) BINARY(div) BINARY(lessThan) BINARY(greaterThan) BINARY(equal) BINARY(min) BINARY(max) BINARY(pow)
-        BINARY(step) BINARY(dot) BINARY(distance) BINARY(cross)
-#undef BINARY
-#define UNARY(symbol)                                                                                                  \
-    if (name == #symbol) {                                                                                             \
-        arity(call.method ? 0 : 1);                                                                                    \
-        return result(g::symbol(lhs()));                                                                               \
-    }
-            UNARY(negate) UNARY(abs) UNARY(sin) UNARY(cos) UNARY(floor) UNARY(fract) UNARY(sqrt) UNARY(exp) UNARY(exp2)
-                UNARY(log2) UNARY(normalize) UNARY(length)
-#undef UNARY
-    // r185's fluent mix/smoothstep also place the receiver last.
-    if (call.method && (name == "mix" || name == "smoothstep")) {
-        arity(2);
-        return result(name == "mix" ? g::mix(arg(0), arg(1), lhs()) : g::smoothstep(arg(0), arg(1), lhs()));
-    }
-#define TERNARY(symbol)                                                                                                \
-    if (name == #symbol) {                                                                                             \
-        arity(call.method ? 2 : 3);                                                                                    \
-        return result(g::symbol(lhs(), arg(call.method ? 0 : 1), arg(call.method ? 1 : 2)));                           \
-    }
-                    TERNARY(select) TERNARY(mix) TERNARY(clamp) TERNARY(smoothstep)
-#undef TERNARY
-                        throw std::runtime_error("unsupported operation");
+    // Everything else is the shared table (engine/abi/tsl_call.cpp), which the Wasm back end calls too.
+    std::vector<abi::TslArg> args;
+    for (int i = 0; i < info.Length(); ++i) args.push_back(argument(name, i, info.Length(), info[i]));
+    const abi::TslArg receiver = call.method ? abi::TslArg::of(self->node) : abi::TslArg{};
+    g::Node node = abi::tslCall(name, call.method ? &receiver : nullptr, args, nextScope_);
+    if (!node) throw std::runtime_error("unsupported operation");
+    return result(std::move(node));
 }
 
 void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) {

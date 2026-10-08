@@ -1,4 +1,4 @@
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import {
   assertTemplatePlaytestsPassed,
   auditTemplatePlaytests,
   runTemplatePlaytests,
+  templateEngine,
   verifyTemplatePlaytests,
 } from "../verify-template-playtests.js";
 
@@ -78,6 +79,80 @@ describe("template playtest matrix", () => {
         "test:beta",
         "test:beta",
       ]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("accepts only legacy or native for TN_TEMPLATE_ENGINE, unset meaning legacy", () => {
+    expect(templateEngine(undefined)).toBe("legacy");
+    expect(templateEngine("legacy")).toBe("legacy");
+    expect(templateEngine("native")).toBe("native");
+    for (const value of ["", "wasm", "NATIVE"])
+      expect(() => templateEngine(value)).toThrow("TN_TEMPLATE_ENGINE must be legacy or native");
+  });
+
+  it.each(["legacy", "native"] as const)(
+    "scaffolds a %s template that runs on the engine it names",
+    async (engine) => {
+      const root = await makeTempDir("threenative-template-engine-");
+      const opening = "const config: IThreeNativeConfig = {\n";
+      const servers: string[] = [];
+      try {
+        const results = await runTemplatePlaytests(
+          ["alpha"],
+          root,
+          {},
+          {
+            engine,
+            templatePlaytestRoot: path.join(root, "extras"),
+            createProject: async ({ target, template }) => {
+              await mkdir(target, { recursive: true });
+              await writeFile(path.join(target, "threenative.config.ts"), `${opening}};\n`);
+              return { installed: true, target, template: template ?? "alpha" };
+            },
+            run: async (_command, args) => {
+              const server = args.indexOf("--server-command");
+              if (server >= 0) servers.push(args[server + 1] ?? "");
+            },
+          },
+        );
+        expect(results).toEqual([{ pass: true, template: "alpha" }]);
+        const config = await readFile(path.join(root, "alpha/threenative.config.ts"), "utf8");
+        if (engine === "native") {
+          expect(config).toBe(`${opening}  engine: "native",\n};\n`);
+          expect(servers).toEqual([
+            "pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort",
+          ]);
+        } else {
+          expect(config).toBe(`${opening}};\n`);
+          expect(servers).toEqual(["pnpm dev --host 127.0.0.1 --port $PORT --strictPort"]);
+        }
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    },
+  );
+
+  it("fails a native scaffold whose config cannot take the opt-in", async () => {
+    const root = await makeTempDir("threenative-template-engine-");
+    try {
+      const results = await runTemplatePlaytests(
+        ["alpha"],
+        root,
+        {},
+        {
+          engine: "native",
+          createProject: async ({ target, template }) => {
+            await mkdir(target, { recursive: true });
+            await writeFile(path.join(target, "threenative.config.ts"), "export default {};\n");
+            return { installed: true, target, template: template ?? "alpha" };
+          },
+          run: async () => {},
+        },
+      );
+      expect(results[0]?.pass).toBe(false);
+      expect(results[0]?.error).toContain("TN_TEMPLATE_ENGINE_OPT_IN_FAILED");
     } finally {
       await rm(root, { force: true, recursive: true });
     }

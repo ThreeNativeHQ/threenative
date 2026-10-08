@@ -18,7 +18,7 @@ export declare const AddOperation: 2;
 /** Catalog partial (native-not-implemented): three/AdditiveAnimationBlendMode. */
 export declare const AdditiveAnimationBlendMode: 2501;
 
-/** Catalog partial (native-not-implemented): three/AdditiveBlending. */
+/** Catalog supported: three/AdditiveBlending. */
 export declare const AdditiveBlending: 2;
 
 /** Catalog supported: three/AgXToneMapping. */
@@ -72,24 +72,24 @@ timeScale: number;
   stopAllAction(): AnimationMixer;
 
   update(deltaTime: number): AnimationMixer;
+  /** callback listener: EventListener */
+  addEventListener(type: string, listener: EventListener): void;
+
+  dispatchEvent(event: BaseEvent): void;
 
   existingAction(clip: AnimationClip, optionalRoot?: Object3D): AnimationAction | null;
 
   getRoot(): Object3D;
+  /** callback listener: EventListener */
+  hasEventListener(type: string, listener: EventListener): boolean;
+  /** callback listener: EventListener */
+  removeEventListener(type: string, listener: EventListener): void;
 
   uncacheAction(clip: AnimationClip, optionalRoot?: Object3D): void;
 
   uncacheClip(clip: AnimationClip): void;
 
   uncacheRoot(root: Object3D): void;
-  /** callback listener: EventListener */
-  addEventListener(type: string, listener: EventListener): void;
-
-  dispatchEvent(event: BaseEvent): void;
-  /** callback listener: EventListener */
-  hasEventListener(type: string, listener: EventListener): boolean;
-  /** callback listener: EventListener */
-  removeEventListener(type: string, listener: EventListener): void;
 }
 
 /** Catalog partial (native-not-implemented): three/AttachedBindMode. */
@@ -102,7 +102,7 @@ export declare const AttributeGPUType = {
 } as const;
 export type AttributeGPUType = (typeof AttributeGPUType)[keyof typeof AttributeGPUType];
 
-/** Catalog partial (native-not-implemented): three/BackSide. */
+/** Catalog supported: three/BackSide. */
 export declare const BackSide: 1;
 
 /** Catalog partial (native-not-implemented): three/BaseEvent. */
@@ -396,6 +396,37 @@ readonly projectionMatrix: Matrix4;
 readonly projectionMatrixInverse: Matrix4;
 }
 
+/** Catalog supported: three/CatmullRomCurve3. */
+export declare class CatmullRomCurve3 {
+constructor();
+arcLengthDivisions: number;
+closed: boolean;
+curveType: "centripetal" | "chordal" | "catmullrom";
+tension: number;
+readonly type: string | "Curve";
+readonly points: Vector3[];
+
+  getLength(): number;
+
+  getLengths(divisions?: number): number[];
+
+  getPoint(t: number, optionalTarget?: Vector3): Vector3;
+
+  getPointAt(u: number, optionalTarget?: Vector3): Vector3;
+
+  getPoints(divisions?: number): Vector3[];
+
+  getSpacedPoints(divisions?: number): Vector3[];
+
+  getTangent(t: number, optionalTarget?: Vector3): Vector3;
+
+  getTangentAt(u: number, optionalTarget?: Vector3): Vector3;
+
+  getUtoTmapping(u: number, distance: number): number;
+
+  updateArcLengths(): void;
+}
+
 /** Catalog partial (native-not-implemented): three/CineonToneMapping. */
 export declare const CineonToneMapping: 3;
 
@@ -604,7 +635,7 @@ target: Object3D;
 readonly shadow: DirectionalLightShadow;
 }
 
-/** Catalog partial (native-not-implemented): three/DoubleSide. */
+/** Catalog supported: three/DoubleSide. */
 export declare const DoubleSide: 2;
 
 /** Catalog partial (native-not-implemented): three/DstAlphaFactor. */
@@ -616,7 +647,7 @@ export declare const DstColorFactor: 208;
 /** Catalog partial (native-not-implemented): three/DynamicCopyUsage. */
 export declare const DynamicCopyUsage: 35050;
 
-/** Catalog partial (native-not-implemented): three/DynamicDrawUsage. */
+/** Catalog supported: three/DynamicDrawUsage. */
 export declare const DynamicDrawUsage: 35048;
 
 /** Catalog partial (native-not-implemented): three/DynamicReadUsage. */
@@ -692,6 +723,11 @@ constructor();
 /** Catalog partial (native-not-implemented): three/EventListener. */
 export type EventListener = (event: unknown & Event) => void;
 
+/** Catalog supported: three/ExtrudeGeometry. */
+export declare class ExtrudeGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog supported: three/webgpu/Float32BufferAttribute. */
 export declare class Float32BufferAttribute extends BufferAttribute {
 constructor(array: TypedArray, itemSize: number, normalized?: boolean);
@@ -723,7 +759,7 @@ density: number;
   clone(): FogExp2;
 }
 
-/** Catalog partial (native-not-implemented): three/FrontSide. */
+/** Catalog supported: three/FrontSide. */
 export declare const FrontSide: 0;
 
 /** Catalog supported: three/webgpu/Frustum. */
@@ -852,6 +888,11 @@ readonly levels: Array<{ object: Object3D; distance: number; hysteresis: number;
   update(camera: Camera): void;
 }
 
+/** Catalog supported: three/LatheGeometry. */
+export declare class LatheGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog supported: three/Layers. */
 export declare class Layers {
 constructor();
@@ -949,13 +990,13 @@ export declare const LinearToneMapping: 1;
 /** Catalog partial (native-not-implemented): three/LinearTransfer. */
 export declare const LinearTransfer: "linear";
 
-/** Catalog supported: three/LoopOnce. */
+/** Catalog partial (native-not-implemented): three/LoopOnce. */
 export declare const LoopOnce: 2200;
 
-/** Catalog supported: three/LoopPingPong. */
+/** Catalog partial (native-not-implemented): three/LoopPingPong. */
 export declare const LoopPingPong: 2202;
 
-/** Catalog supported: three/LoopRepeat. */
+/** Catalog partial (native-not-implemented): three/LoopRepeat. */
 export declare const LoopRepeat: 2201;
 
 /** Catalog partial (native-not-implemented): three/MagnificationTextureFilter. */
@@ -1303,6 +1344,7 @@ visible: boolean;
 color: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1413,6 +1455,7 @@ emissive: Color;
 envMap: Texture | null;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
 }
@@ -1474,7 +1517,7 @@ export declare const NeverDepth: 0;
 /** Catalog partial (native-not-implemented): three/NeverStencilFunc. */
 export declare const NeverStencilFunc: 512;
 
-/** Catalog partial (native-not-implemented): three/NoBlending. */
+/** Catalog supported: three/NoBlending. */
 export declare const NoBlending: 0;
 
 /** Catalog supported: three/NoColorSpace. */
@@ -1499,7 +1542,7 @@ constructor();
 /** Catalog partial (native-not-implemented): three/NormalAnimationBlendMode. */
 export declare const NormalAnimationBlendMode: 2500;
 
-/** Catalog partial (native-not-implemented): three/NormalBlending. */
+/** Catalog supported: three/NormalBlending. */
 export declare const NormalBlending: 1;
 
 /** Catalog partial (native-not-implemented): three/NormalGAPacking. */
@@ -1523,6 +1566,17 @@ export declare const NotEqualDepth: 7;
 
 /** Catalog partial (native-not-implemented): three/NotEqualStencilFunc. */
 export declare const NotEqualStencilFunc: 517;
+
+/** Catalog supported: three/NumberKeyframeTrack. */
+export declare class NumberKeyframeTrack {
+constructor();
+readonly ValueTypeName: string;
+readonly name: string;
+readonly times: Float32Array;
+readonly values: Float32Array;
+
+  clone(): this;
+}
 
 /** Catalog supported: three/Object3D. */
 export declare class Object3D extends EventDispatcher {
@@ -1689,6 +1743,40 @@ export declare const PCFShadowMap: 1;
 /** Catalog supported: three/PCFSoftShadowMap. */
 export declare const PCFSoftShadowMap: 2;
 
+/** Catalog supported: three/Path. */
+export declare class Path {
+constructor();
+autoClose: boolean;
+readonly type: string | "Curve";
+readonly currentPoint: Vector2;
+
+  absarc(aX: number, aY: number, aRadius: number, aStartAngle: number, aEndAngle: number, aClockwise?: boolean): this;
+
+  absellipse(aX: number, aY: number, xRadius: number, yRadius: number, aStartAngle: number, aEndAngle: number, aClockwise?: boolean, aRotation?: number): this;
+
+  arc(aX: number, aY: number, aRadius: number, aStartAngle: number, aEndAngle: number, aClockwise?: boolean): this;
+
+  bezierCurveTo(aCP1x: number, aCP1y: number, aCP2x: number, aCP2y: number, aX: number, aY: number): this;
+
+  closePath(): this;
+
+  ellipse(aX: number, aY: number, xRadius: number, yRadius: number, aStartAngle: number, aEndAngle: number, aClockwise?: boolean, aRotation?: number): this;
+
+  getLength(): number;
+
+  getPoints(divisions?: number): Vector2[];
+
+  lineTo(x: number, y: number): this;
+
+  moveTo(x: number, y: number): this;
+
+  quadraticCurveTo(aCPx: number, aCPy: number, aX: number, aY: number): this;
+
+  setFromPoints(vectors: Vector2[]): this;
+
+  splineThru(pts: Vector2[]): this;
+}
+
 /** Catalog supported: three/webgpu/PerspectiveCamera. */
 export declare class PerspectiveCamera extends Camera {
 constructor(fov?: number, aspect?: number, near?: number, far?: number);
@@ -1847,6 +1935,17 @@ readonly isQuaternion: true;
   random(): this;
 }
 
+/** Catalog supported: three/QuaternionKeyframeTrack. */
+export declare class QuaternionKeyframeTrack {
+constructor();
+readonly ValueTypeName: string;
+readonly name: string;
+readonly times: Float32Array;
+readonly values: Float32Array;
+
+  clone(): this;
+}
+
 /** Catalog partial (native-not-implemented): three/QuaternionLike. */
 export type QuaternionLike = { x: number; y: number; z: number; w: number; };
 
@@ -1950,10 +2049,10 @@ export declare const RGBFormat: 1022;
 export declare const RGBIntegerFormat: 1032;
 
 /** Catalog partial (native-not-implemented): three/RGB_BPTC_SIGNED_Format. */
-export declare const RGB_BPTC_SIGNED_Format: RGB_BPTC_SIGNED_Format = 36494;
+export declare const RGB_BPTC_SIGNED_Format: 36494;
 
 /** Catalog partial (native-not-implemented): three/RGB_BPTC_UNSIGNED_Format. */
-export declare const RGB_BPTC_UNSIGNED_Format: RGB_BPTC_UNSIGNED_Format = 36495;
+export declare const RGB_BPTC_UNSIGNED_Format: 36495;
 
 /** Catalog partial (native-not-implemented): three/RGB_ETC1_Format. */
 export declare const RGB_ETC1_Format: 36196;
@@ -2057,6 +2156,17 @@ environmentIntensity: number;
 environmentRotation: Euler;
 
   copy(source: Scene, recursive?: boolean): this;
+}
+
+/** Catalog supported: three/Shape. */
+export declare class Shape extends Path {
+constructor();
+holes: Path[];
+}
+
+/** Catalog supported: three/ShapeGeometry. */
+export declare class ShapeGeometry extends BufferGeometry {
+constructor();
 }
 
 /** Catalog partial (native-not-implemented): three/ShortType. */
@@ -2202,6 +2312,7 @@ visible: boolean;
 color: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2230,6 +2341,7 @@ visible: boolean;
 color: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -2244,7 +2356,7 @@ export declare const SrcColorFactor: 202;
 /** Catalog partial (native-not-implemented): three/StaticCopyUsage. */
 export declare const StaticCopyUsage: 35046;
 
-/** Catalog partial (native-not-implemented): three/StaticDrawUsage. */
+/** Catalog supported: three/StaticDrawUsage. */
 export declare const StaticDrawUsage: 35044;
 
 /** Catalog partial (native-not-implemented): three/StaticReadUsage. */
@@ -2367,6 +2479,11 @@ export declare const TriangleStripDrawMode: 1;
 
 /** Catalog partial (native-not-implemented): three/TrianglesDrawMode. */
 export declare const TrianglesDrawMode: 0;
+
+/** Catalog supported: three/TubeGeometry. */
+export declare class TubeGeometry extends BufferGeometry {
+constructor();
+}
 
 /** Catalog partial (native-not-implemented): three/TypedArray. */
 export type TypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array;
@@ -2807,6 +2924,17 @@ export type Vector4Like = { x: number; y: number; z: number; w: number; };
 /** Catalog partial (native-not-implemented): three/Vector4Tuple. */
 export type Vector4Tuple = [ number, number, number, number ];
 
+/** Catalog supported: three/VectorKeyframeTrack. */
+export declare class VectorKeyframeTrack {
+constructor();
+readonly ValueTypeName: string;
+readonly name: string;
+readonly times: Float32Array;
+readonly values: Float32Array;
+
+  clone(): this;
+}
+
 /** Catalog partial (native-not-implemented): three/WebGLCoordinateSystem. */
 export declare const WebGLCoordinateSystem: 2000;
 
@@ -2855,6 +2983,7 @@ color: Color;
 emissive: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
 }
@@ -2880,6 +3009,7 @@ emissive: Color;
 specular: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
 }
@@ -3053,6 +3183,12 @@ readonly camera: PerspectiveCamera;
 readonly mapSize: Vector2;
 }
 
+/** Catalog supported: three/Source. */
+export declare class Source {
+constructor();
+readonly version: number;
+}
+
 /** Catalog supported: three/SpotLightShadow. */
 export declare class SpotLightShadow {
 constructor();
@@ -3063,10 +3199,4 @@ normalBias: number;
 radius: number;
 readonly camera: PerspectiveCamera;
 readonly mapSize: Vector2;
-}
-
-/** Catalog supported: three/Source. */
-export declare class Source {
-constructor();
-readonly version: number;
 }

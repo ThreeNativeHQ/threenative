@@ -150,7 +150,7 @@ std::vector<double> Driver::numbers(const Value& arg) {
     const auto it = objects_.find(arg.text);
     if (it == objects_.end() || it->second.cls != "\x03value") return {};
     const auto& boxed = *static_cast<Value*>(it->second.ptr.get());
-    return boxed.kind == Value::Kind::Numbers ? boxed.numbers : std::vector<double>{};
+    return numbersOf(boxed);
 }
 
 int Driver::run(std::istream& in, std::ostream& out) {
@@ -281,6 +281,17 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 Value value;
                 if (object->second.cls == "\x03value") {
                     value = *static_cast<Value*>(object->second.ptr.get());
+                    if (t[3] != "-") {
+                        // A path into a returned array (`toArray().3`) reads that one element, as JS does.
+                        const std::string digits = decode(t[3]);
+                        if (digits.empty() || digits.size() > 15 ||
+                            !std::all_of(digits.begin(), digits.end(), [](unsigned char c) { return std::isdigit(c) != 0; }))
+                            throw Unsupported{"path " + digits + " into a returned value"};
+                        const uint64_t i = std::stoull(digits);
+                        if (value.kind == Value::Kind::Numbers && i < value.numbers.size()) value = Value::of(value.numbers[i]);
+                        else if (value.kind == Value::Kind::Array && i < value.items.size()) value = value.items[i];
+                        else throw Unsupported{"TN_ARRAY_SHAPE"};
+                    }
                 } else {
                     ClassBinding& binding = classes[object->second.cls];
                     if (t[4] != "-") {

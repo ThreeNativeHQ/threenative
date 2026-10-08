@@ -25,8 +25,10 @@
 // walk to the core import shim. They enumerate native objects; no JS scene graph is maintained.
 #include <libplatform/libplatform.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <cmath>
 #include <map>
@@ -49,11 +51,13 @@
 #include "engine/scene/texture.h"
 #include "engine/assets/package.h"
 #include "engine/assets/gltf/loader.h"
+#include "engine/assets/gltf/image_decode.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/render_database.h"
 #include "mystral/webgpu_compat.h"
 #include "adapters/v8/tsl.h"
 #include "engine/shader/graph/serialized.h"
+#include "mystral/audio/audio_bindings.h"
 #include "mystral/js/engine.h"
 #include "mystral/physics/native_bindings.h"
 
@@ -215,6 +219,7 @@ class V8Game {
     }
   private:
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info);
 };
 
 void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -228,7 +233,7 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
         return refuse("TN_NATIVE_ASSET_INVALID: expected kind and logical path strings");
     v8::String::Utf8Value kindValue(isolate, info[0]), pathValue(isolate, info[1]);
     const std::string kind(*kindValue, kindValue.length()), path(*pathValue, pathValue.length());
-    if (kind != "model" && kind != "texture")
+    if (kind != "model" && kind != "texture" && kind != "audio" && kind != "buffer")
         return refuse("TN_NATIVE_ASSET_KIND_UNSUPPORTED: " + kind);
     if (game.assetBytes_.empty()) {
         std::ifstream file(game.assetPath_, std::ios::binary | std::ios::ate);
@@ -280,6 +285,20 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
 #else
         return refuse("TN_NATIVE_GLTF_UNAVAILABLE: this player was built without cgltf");
 #endif
+    } else if (kind == "audio") {
+        // The cooked package carries audio as its encoded bytes; WebAudio's decodeAudioData decodes them.
+        if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Buffer))
+            return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: audio requires a Buffer entry: " + path);
+        auto bytes = v8::ArrayBuffer::New(isolate, data.size());
+        std::copy(data.begin(), data.end(), static_cast<uint8_t*>(bytes->Data()));
+        value = bytes;
+    } else if (kind == "buffer") {
+        // Raw bytes a JS decoder parses (an HDRLoader's .hdr), copied out of the package.
+        if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Buffer))
+            return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: buffer requires a Buffer entry: " + path);
+        auto buffer = v8::ArrayBuffer::New(isolate, data.size());
+        if (!data.empty()) std::memcpy(buffer->Data(), data.data(), data.size());
+        value = buffer;
     } else {
         if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Texture) || data.size() < 12)
             return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: texture requires an RGBA8 Texture entry: " + path);
@@ -383,6 +402,49 @@ void V8Game::requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info) {
     info.GetReturnValue().Set(resolver->GetPromise());
 }
 
+// createImageBitmap's decode: PNG or JPEG bytes through the engine's image decoder (PRD-515) into
+// an RGBA8 Texture, rows as stored. `{ texture, width, height }`, or a TN_NATIVE_IMAGE_DECODE refusal.
+void V8Game::decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    std::vector<uint8_t> bytes;
+    if (info.Length() == 1 && info[0]->IsArrayBufferView()) {
+        auto view = info[0].As<v8::ArrayBufferView>();
+        bytes.resize(view->ByteLength());
+        view->CopyContents(bytes.data(), bytes.size());
+    } else if (info.Length() == 1 && info[0]->IsArrayBuffer()) {
+        auto buffer = info[0].As<v8::ArrayBuffer>();
+        const auto* data = static_cast<const uint8_t*>(buffer->Data());
+        bytes.assign(data, data + buffer->ByteLength());
+    } else {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate,
+            "TN_NATIVE_IMAGE_DECODE: expected the encoded image as an ArrayBuffer or typed array")));
+        return;
+    }
+#if TN_PLAYER_NATIVE_GLTF
+    auto texture = std::make_shared<Texture>();
+    if (gltf::imageFormat(bytes.data(), bytes.size()) == gltf::ImageFormat::Unknown ||
+        !gltf::decodeImage(bytes.data(), bytes.size(), texture->width, texture->height, texture->data)) {
+        isolate->ThrowException(v8::Exception::Error(v8str(isolate,
+            "TN_NATIVE_IMAGE_DECODE: the bytes are not a PNG or JPEG this decoder reads, or the image is damaged or larger than 8192")));
+        return;
+    }
+    texture->needsUpdate();
+    const uint32_t width = texture->width, height = texture->height;
+    auto record = v8::Object::New(isolate);
+    record->Set(ctx, v8str(isolate, "texture"), game.adapter_->wrap(
+        tn::abi::shareObject(game.context_, "Texture", std::move(texture)))).Check();
+    record->Set(ctx, v8str(isolate, "width"), v8::Number::New(isolate, width)).Check();
+    record->Set(ctx, v8str(isolate, "height"), v8::Number::New(isolate, height)).Check();
+    info.GetReturnValue().Set(record);
+#else
+    (void)game; (void)ctx;
+    isolate->ThrowException(v8::Exception::Error(v8str(isolate,
+        "TN_NATIVE_IMAGE_DECODE: this player was built without the engine image decoder")));
+#endif
+}
+
 void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     try {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
@@ -478,6 +540,8 @@ bool V8Game::start(const std::string& path, std::string& error) {
     js_.Reset(isolate_, ctx);
     v8::Context::Scope contextScope(ctx);
     adapter_->install(ctx, ctx->Global());
+    // WebAudio is the legacy host's (SDL output, worker decode); the three audio classes sit on it.
+    mystral::audio::initializeAudioBindings(services_.get());
 #if TN_PLAYER_NATIVE_PHYSICS
     if (!mystral::physics::initializeNativePhysicsBindings(services_.get()))
         return error = "TN_NATIVE_PHYSICS_MISSING: resident installation failed", false;
@@ -519,6 +583,10 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "log"), v8::Function::New(ctx, &logCallback).ToLocalChecked()).Check();
     auto self = v8::External::New(isolate_, this);
     host->Set(ctx, v8str(isolate_, "loadAsset"), v8::Function::New(ctx, &loadAsset, self).ToLocalChecked()).Check();
+#if TN_PLAYER_NATIVE_GLTF
+    // Only a player with the decoder answers createImageBitmap; without it the facade installs none.
+    host->Set(ctx, v8str(isolate_, "decodeImage"), v8::Function::New(ctx, &decodeImage, self).ToLocalChecked()).Check();
+#endif
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
@@ -577,6 +645,7 @@ V8Game::~V8Game() {
         // its own objects until it is released below.
         update_.Reset();
         js_.Reset();
+        mystral::audio::cleanupAudioBindings();
         adapter_.reset();
     }
     if (context_ != nullptr) {
@@ -602,6 +671,8 @@ void V8Game::tick(double dt) {
                 held_.erase(event.key);
         }
     }
+    // Finished decodes settle and ended sources fire `onended` before the game's update reads them.
+    mystral::audio::processAudioEvents();
     v8::TryCatch tryCatch(isolate_);
     v8::Local<v8::Value> argument = v8::Number::New(isolate_, dt);
     v8::Local<v8::Value> ignored;

@@ -1,6 +1,0 @@
-/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/sdl3-build/CMakeFiles/SDL3-shared.dir/cmake_pch.h
-/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/sdl3-build/CMakeFiles/SDL3-shared.dir/cmake_pch.hxx
-/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/CMakeFiles/tn-native-engine-core-tests
-/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/CMakeFiles/tn-native-engine-core-tests.rule
-/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/CMakeFiles/tn-native-engine-tests
-/home/joao/projects/threenative/threenative-engine/.claude/worktrees/native-engine/packages/runtime-native/android/engine-player/.cxx/Debug/5k3z2i2e/arm64-v8a/CMakeFiles/tn-native-engine-tests.rule

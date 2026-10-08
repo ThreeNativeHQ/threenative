@@ -52,6 +52,8 @@ export interface ITemplatePlaytestStructure {
 export interface ITemplatePlaytestDependencies {
   readonly auditRoot?: string;
   readonly createProject?: typeof createProject;
+  /** The web engine each scaffold runs on; `"native"` opts it in to the Wasm engine (PRD-540). */
+  readonly engine?: TemplateEngine;
   readonly inspectTemplates?: () => readonly ITemplatePlaytestStructure[];
   readonly run?: typeof run;
   readonly templatePlaytestRoot?: string;
@@ -62,6 +64,39 @@ interface IJsonRecord {
 }
 
 const TEMPLATE_PLAYTEST_ROOTS = ["playtests", "native-playtests"] as const;
+
+export type TemplateEngine = "legacy" | "native";
+
+/** `TN_TEMPLATE_ENGINE`: unset is legacy; anything but `legacy` or `native` stops the sweep. */
+export function templateEngine(value: string | undefined): TemplateEngine {
+  if (value === undefined || value === "legacy" || value === "native") return value ?? "legacy";
+  throw new Error(
+    `TN_TEMPLATE_ENGINE must be legacy or native, received ${JSON.stringify(value)}.`,
+  );
+}
+
+const CONFIG_OPENING = "const config: IThreeNativeConfig = {\n";
+
+/** Writes `engine: "native"` into a scaffold's config; a config without the opening fails. */
+async function optInNativeEngine(target: string): Promise<void> {
+  const file = path.join(target, "threenative.config.ts");
+  const source = await readFile(file, "utf8");
+  if (!source.includes(CONFIG_OPENING))
+    throw new Error(
+      `TN_TEMPLATE_ENGINE_OPT_IN_FAILED: ${file} has no \`${CONFIG_OPENING.trim()}\`.`,
+    );
+  await writeFile(file, source.replace(CONFIG_OPENING, `${CONFIG_OPENING}  engine: "native",\n`));
+}
+
+/**
+ * The dev server reads the project's own Vite config, which does not route three to the Wasm
+ * engine; the built web output does, so a native boot is judged on that.
+ */
+function bootServerCommand(native: boolean): string {
+  return native
+    ? "pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort"
+    : "pnpm dev --host 127.0.0.1 --port $PORT --strictPort";
+}
 
 /**
  * Runs each selected template independently and reports every result before failing the sweep.
@@ -76,6 +111,7 @@ export async function runTemplatePlaytests(
   const create = dependencies.createProject ?? createProject;
   const execute = dependencies.run ?? run;
   const extrasRoot = dependencies.templatePlaytestRoot ?? defaultTemplatePlaytestRoot();
+  const native = dependencies.engine === "native";
   const results: ITemplatePlaytestResult[] = [];
   for (const template of templates) {
     const target = path.join(root, template);
@@ -83,6 +119,7 @@ export async function runTemplatePlaytests(
     let smokeError: string | undefined;
     try {
       await create({ install: true, packageSources, target, template });
+      if (native) await optInNativeEngine(target);
       try {
         // The guards a template no longer ships, so the engine keeps proving what it proved
         // while a new game proves itself with three scenarios (PRD-449).
@@ -106,7 +143,7 @@ export async function runTemplatePlaytests(
             "webgpu",
             "--headed",
             "--server-command",
-            "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
+            bootServerCommand(native),
           ],
           target,
         );
@@ -303,8 +340,11 @@ async function main(): Promise<void> {
       if (unknown.length > 0)
         throw new Error(`TN_TEMPLATE_ONLY names no such template: ${unknown.join(", ")}`);
     }
+    const engine = templateEngine(process.env.TN_TEMPLATE_ENGINE);
     const packageSources = await packageLocalFramework(root);
-    await verifyTemplatePlaytests(only ?? TEMPLATE_PLAYTEST_NAMES, root, packageSources);
+    await verifyTemplatePlaytests(only ?? TEMPLATE_PLAYTEST_NAMES, root, packageSources, {
+      engine,
+    });
   } finally {
     if (process.env.TN_TEMPLATE_KEEP === "1") console.info(`TN_TEMPLATE_KEEP root: ${root}`);
     else await rm(root, { force: true, recursive: true });

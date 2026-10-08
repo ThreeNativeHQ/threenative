@@ -7,13 +7,29 @@
     {
       "index": 0,
       "id": "e01",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.3, -0.4, 1.2, XYZ"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
       "index": 1,
+      "id": "e01",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 2,
+      "id": "e01",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 3,
       "id": "e01",
       "kind": "string",
       "path": "order",
@@ -21,7 +37,7 @@
       "decimal": "XYZ"
     },
     {
-      "index": 2,
+      "index": 4,
       "id": "q02",
       "kind": "numbers",
       "method": "toArray",
@@ -29,15 +45,31 @@
       "decimal": "0.009960578243064802, -0.24482483276913564, 0.5226700723191405, 0.8165645006014729"
     },
     {
-      "index": 3,
+      "index": 5,
       "id": "b03",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd9999999999999,n:3ff3333333333334,n:7ff8000000000000",
-      "decimal": "0.3, -0.39999999999999997, 1.2000000000000002, XYZ"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 4,
+      "index": 6,
+      "id": "b03",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd9999999999999",
+      "decimal": "-0.39999999999999997"
+    },
+    {
+      "index": 7,
+      "id": "b03",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333334",
+      "decimal": "1.2000000000000002"
+    },
+    {
+      "index": 8,
       "id": "b03",
       "kind": "string",
       "path": "order",
@@ -45,7 +77,7 @@
       "decimal": "XYZ"
     },
     {
-      "index": 5,
+      "index": 9,
       "id": "m04",
       "kind": "numbers",
       "path": "elements",
@@ -53,23 +85,63 @@
       "decimal": "0.3337535935229384, 0.8487104593599449, 0.41024272691122304, 0, -0.858464846970514, 0.45343356476593644, -0.239658316900431, 0, -0.3894183423086505, -0.2721921352954314, 0.879923176281257, 0, 0, 0, 0, 1"
     },
     {
-      "index": 6,
+      "index": 10,
       "id": "b05",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333332,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.29999999999999993, -0.4, 1.2, XYZ"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333332",
+      "decimal": "0.29999999999999993"
     },
     {
-      "index": 7,
+      "index": 11,
+      "id": "b05",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 12,
+      "id": "b05",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 13,
+      "id": "b05",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 14,
       "id": "e06",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.3, -0.4, 1.2, YXZ"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 8,
+      "index": 15,
+      "id": "e06",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 16,
+      "id": "e06",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 17,
       "id": "e06",
       "kind": "string",
       "path": "order",
@@ -77,7 +149,7 @@
       "decimal": "YXZ"
     },
     {
-      "index": 9,
+      "index": 18,
       "id": "q07",
       "kind": "numbers",
       "method": "toArray",
@@ -85,15 +157,31 @@
       "decimal": "0.009960578243064802, -0.24482483276913564, 0.5716764770361572, 0.783037415290072"
     },
     {
-      "index": 10,
+      "index": 19,
       "id": "b08",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd9999999999998,n:3ff3333333333334,n:7ff8000000000000",
-      "decimal": "0.3, -0.3999999999999999, 1.2000000000000002, YXZ"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 11,
+      "index": 20,
+      "id": "b08",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd9999999999998",
+      "decimal": "-0.3999999999999999"
+    },
+    {
+      "index": 21,
+      "id": "b08",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333334",
+      "decimal": "1.2000000000000002"
+    },
+    {
+      "index": 22,
       "id": "b08",
       "kind": "string",
       "path": "order",
@@ -101,7 +189,7 @@
       "decimal": "YXZ"
     },
     {
-      "index": 12,
+      "index": 23,
       "id": "m09",
       "kind": "numbers",
       "path": "elements",
@@ -109,23 +197,63 @@
       "decimal": "0.22649361372618568, 0.8904109481157688, 0.3948024650592128, 0, -0.9001653357263378, 0.3461735849691837, -0.2643221848923636, 0, -0.3720255519422596, -0.29552020666133955, 0.879923176281257, 0, 0, 0, 0, 1"
     },
     {
-      "index": 13,
+      "index": 24,
       "id": "b10",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.3, -0.4, 1.2, YXZ"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 14,
+      "index": 25,
+      "id": "b10",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 26,
+      "id": "b10",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 27,
+      "id": "b10",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 28,
       "id": "e11",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.3, -0.4, 1.2, ZXY"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 15,
+      "index": 29,
+      "id": "e11",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 30,
+      "id": "e11",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 31,
       "id": "e11",
       "kind": "string",
       "path": "order",
@@ -133,7 +261,7 @@
       "decimal": "ZXY"
     },
     {
-      "index": 16,
+      "index": 32,
       "id": "q12",
       "kind": "numbers",
       "method": "toArray",
@@ -141,15 +269,31 @@
       "decimal": "0.23179560612167038, -0.07943052840097997, 0.5226700723191405, 0.8165645006014729"
     },
     {
-      "index": 17,
+      "index": 33,
       "id": "b13",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333332,n:bfd9999999999999,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.29999999999999993, -0.39999999999999997, 1.2, ZXY"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333332",
+      "decimal": "0.29999999999999993"
     },
     {
-      "index": 18,
+      "index": 34,
+      "id": "b13",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd9999999999999",
+      "decimal": "-0.39999999999999997"
+    },
+    {
+      "index": 35,
+      "id": "b13",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 36,
       "id": "b13",
       "kind": "string",
       "path": "order",
@@ -157,7 +301,7 @@
       "decimal": "ZXY"
     },
     {
-      "index": 19,
+      "index": 37,
       "id": "m14",
       "kind": "numbers",
       "path": "elements",
@@ -165,23 +309,63 @@
       "decimal": "0.44101357331969104, 0.8167643582146901, 0.3720255519422596, 0, -0.8904109481157688, 0.3461735849691837, 0.29552020666133955, 0, 0.11258495291723028, -0.46158404675609055, 0.879923176281257, 0, 0, 0, 0, 1"
     },
     {
-      "index": 20,
+      "index": 38,
       "id": "b15",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.3, -0.4, 1.2, ZXY"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 21,
+      "index": 39,
+      "id": "b15",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 40,
+      "id": "b15",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 41,
+      "id": "b15",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 42,
       "id": "e16",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.3, -0.4, 1.2, ZYX"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 22,
+      "index": 43,
+      "id": "e16",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 44,
+      "id": "e16",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 45,
       "id": "e16",
       "kind": "string",
       "path": "order",
@@ -189,7 +373,7 @@
       "decimal": "ZYX"
     },
     {
-      "index": 23,
+      "index": 46,
       "id": "q17",
       "kind": "numbers",
       "method": "toArray",
@@ -197,15 +381,31 @@
       "decimal": "0.23179560612167038, -0.07943052840097997, 0.5716764770361572, 0.783037415290072"
     },
     {
-      "index": 24,
+      "index": 47,
       "id": "b18",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333332,n:bfd9999999999999,n:3ff3333333333334,n:7ff8000000000000",
-      "decimal": "0.29999999999999993, -0.39999999999999997, 1.2000000000000002, ZYX"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333332",
+      "decimal": "0.29999999999999993"
     },
     {
-      "index": 25,
+      "index": 48,
+      "id": "b18",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd9999999999999",
+      "decimal": "-0.39999999999999997"
+    },
+    {
+      "index": 49,
+      "id": "b18",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333334",
+      "decimal": "1.2000000000000002"
+    },
+    {
+      "index": 50,
       "id": "b18",
       "kind": "string",
       "path": "order",
@@ -213,7 +413,7 @@
       "decimal": "ZYX"
     },
     {
-      "index": 26,
+      "index": 51,
       "id": "m19",
       "kind": "numbers",
       "path": "elements",
@@ -221,23 +421,63 @@
       "decimal": "0.3337535935229384, 0.858464846970514, 0.3894183423086505, 0, -0.9321114368715927, 0.23891360517243102, 0.2721921352954314, 0, 0.14063003969173843, -0.453826393877002, 0.879923176281257, 0, 0, 0, 0, 1"
     },
     {
-      "index": 27,
+      "index": 52,
       "id": "b20",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333332,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.29999999999999993, -0.4, 1.2, ZYX"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333332",
+      "decimal": "0.29999999999999993"
     },
     {
-      "index": 28,
+      "index": 53,
+      "id": "b20",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 54,
+      "id": "b20",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 55,
+      "id": "b20",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 56,
       "id": "e21",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.3, -0.4, 1.2, YZX"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 29,
+      "index": 57,
+      "id": "e21",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 58,
+      "id": "e21",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 59,
       "id": "e21",
       "kind": "string",
       "path": "order",
@@ -245,7 +485,7 @@
       "decimal": "YZX"
     },
     {
-      "index": 30,
+      "index": 60,
       "id": "q22",
       "kind": "numbers",
       "method": "toArray",
@@ -253,15 +493,31 @@
       "decimal": "0.009960578243064802, -0.07943052840097997, 0.5716764770361572, 0.8165645006014729"
     },
     {
-      "index": 31,
+      "index": 61,
       "id": "b23",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333335,n:bfd999999999999b,n:3ff3333333333334,n:7ff8000000000000",
-      "decimal": "0.3000000000000001, -0.4000000000000001, 1.2000000000000002, YZX"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333335",
+      "decimal": "0.3000000000000001"
     },
     {
-      "index": 32,
+      "index": 62,
+      "id": "b23",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999b",
+      "decimal": "-0.4000000000000001"
+    },
+    {
+      "index": 63,
+      "id": "b23",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333334",
+      "decimal": "1.2000000000000002"
+    },
+    {
+      "index": 64,
       "id": "b23",
       "kind": "string",
       "path": "order",
@@ -269,7 +525,7 @@
       "decimal": "YZX"
     },
     {
-      "index": 33,
+      "index": 65,
       "id": "m24",
       "kind": "numbers",
       "path": "elements",
@@ -277,23 +533,63 @@
       "decimal": "0.3337535935229384, 0.9320390859672263, 0.14110875607099124, 0, -0.93520378193933, 0.3461735849691837, -0.0745502200932851, 0, -0.11833184295403815, -0.10708403848828553, 0.9871831560780098, 0, 0, 0, 0, 1"
     },
     {
-      "index": 34,
+      "index": 66,
       "id": "b25",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999b,n:3ff3333333333332,n:7ff8000000000000",
-      "decimal": "0.3, -0.4000000000000001, 1.1999999999999997, YZX"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 35,
+      "index": 67,
+      "id": "b25",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999b",
+      "decimal": "-0.4000000000000001"
+    },
+    {
+      "index": 68,
+      "id": "b25",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333332",
+      "decimal": "1.1999999999999997"
+    },
+    {
+      "index": 69,
+      "id": "b25",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 70,
       "id": "e26",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.3, -0.4, 1.2, XZY"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 36,
+      "index": 71,
+      "id": "e26",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 72,
+      "id": "e26",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 73,
       "id": "e26",
       "kind": "string",
       "path": "order",
@@ -301,7 +597,7 @@
       "decimal": "XZY"
     },
     {
-      "index": 37,
+      "index": 74,
       "id": "q27",
       "kind": "numbers",
       "method": "toArray",
@@ -309,15 +605,31 @@
       "decimal": "0.23179560612167038, -0.24482483276913564, 0.5226700723191405, 0.783037415290072"
     },
     {
-      "index": 38,
+      "index": 75,
       "id": "b28",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333332,n:bfd999999999999b,n:3ff3333333333332,n:7ff8000000000000",
-      "decimal": "0.29999999999999993, -0.4000000000000001, 1.1999999999999997, XZY"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333332",
+      "decimal": "0.29999999999999993"
     },
     {
-      "index": 39,
+      "index": 76,
+      "id": "b28",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999b",
+      "decimal": "-0.4000000000000001"
+    },
+    {
+      "index": 77,
+      "id": "b28",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333332",
+      "decimal": "1.1999999999999997"
+    },
+    {
+      "index": 78,
       "id": "b28",
       "kind": "string",
       "path": "order",
@@ -325,7 +637,7 @@
       "decimal": "XZY"
     },
     {
-      "index": 40,
+      "index": 79,
       "id": "m29",
       "kind": "numbers",
       "path": "elements",
@@ -333,12 +645,36 @@
       "decimal": "0.3337535935229384, 0.7050418039457926, 0.6257192609304811, 0, -0.9320390859672263, 0.3461735849691837, 0.10708403848828553, 0, -0.14110875607099124, -0.6189344906841479, 0.7726631964845043, 0, 0, 0, 0, 1"
     },
     {
-      "index": 41,
+      "index": 80,
       "id": "b30",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999b,n:3ff3333333333332,n:7ff8000000000000",
-      "decimal": "0.3, -0.4000000000000001, 1.1999999999999997, XZY"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
+    },
+    {
+      "index": 81,
+      "id": "b30",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999b",
+      "decimal": "-0.4000000000000001"
+    },
+    {
+      "index": 82,
+      "id": "b30",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333332",
+      "decimal": "1.1999999999999997"
+    },
+    {
+      "index": 83,
+      "id": "b30",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
     }
   ]
 }

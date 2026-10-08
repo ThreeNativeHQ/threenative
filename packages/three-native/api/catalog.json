@@ -61,8 +61,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "2"
@@ -340,6 +339,50 @@
           }
         },
         {
+          "name": "addEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispatchEvent",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "event",
+                  "type": "BaseEvent",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "existingAction",
           "async": false,
           "overloads": [
@@ -370,6 +413,56 @@
             {
               "parameters": [],
               "returns": "Object3D"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "hasEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "removeEventListener",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "type",
+                  "type": "string",
+                  "optional": false
+                },
+                {
+                  "name": "listener",
+                  "type": "EventListener",
+                  "optional": false,
+                  "callback": "EventListener"
+                }
+              ],
+              "returns": "void"
             }
           ],
           "status": {
@@ -437,100 +530,6 @@
           "status": {
             "kind": "supported"
           }
-        },
-        {
-          "name": "addEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "dispatchEvent",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "event",
-                  "type": "BaseEvent",
-                  "optional": false
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "hasEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "boolean"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "removeEventListener",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "type",
-                  "type": "string",
-                  "optional": false
-                },
-                {
-                  "name": "listener",
-                  "type": "EventListener",
-                  "optional": false,
-                  "callback": "EventListener"
-                }
-              ],
-              "returns": "void"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
         }
       ]
     },
@@ -582,8 +581,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1"
@@ -1758,8 +1756,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -3210,13 +3207,271 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_CATMULLROMCURVE3"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "arcLengthDivisions",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "closed",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "curveType",
+          "type": "\"centripetal\" | \"chordal\" | \"catmullrom\"",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "tension",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "string | \"Curve\"",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "points",
+          "type": "Vector3[]",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "getLength",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getLengths",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "number[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPoint",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "t",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPointAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "u",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getSpacedPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getTangent",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "t",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getTangentAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "u",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getUtoTmapping",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "u",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "distance",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "updateArcLengths",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "CineonToneMapping",
@@ -4309,11 +4564,11 @@
         },
         {
           "name": "RGB_BPTC_SIGNED_Format",
-          "value": "RGB_BPTC_SIGNED_Format = 36494"
+          "value": "36494"
         },
         {
           "name": "RGB_BPTC_UNSIGNED_Format",
-          "value": "RGB_BPTC_UNSIGNED_Format = 36495"
+          "value": "36495"
         },
         {
           "name": "RED_RGTC1_Format",
@@ -4978,8 +5233,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "2"
@@ -5022,8 +5276,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "35048"
@@ -5572,10 +5825,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_EXTRUDEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -5833,8 +6085,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "0"
@@ -6782,10 +7033,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_LATHEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -7427,7 +7677,8 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "supported"
+        "kind": "partial",
+        "gaps": ["native-not-implemented"]
       },
       "type": "number",
       "value": "2200"
@@ -7437,7 +7688,8 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "supported"
+        "kind": "partial",
+        "gaps": ["native-not-implemented"]
       },
       "type": "number",
       "value": "2202"
@@ -7447,7 +7699,8 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "supported"
+        "kind": "partial",
+        "gaps": ["native-not-implemented"]
       },
       "type": "number",
       "value": "2201"
@@ -9936,8 +10189,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -10779,6 +11031,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -10850,8 +11111,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11871,6 +12131,15 @@
           }
         },
         {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "normalMap",
           "type": "Texture | null",
           "mutable": true,
@@ -12100,8 +12369,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "0"
@@ -12219,8 +12487,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1"
@@ -12327,13 +12594,63 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_NUMBERKEYFRAMETRACK"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "ValueTypeName",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "times",
+          "type": "Float32Array",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "values",
+          "type": "Float32Array",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "Object3D",
@@ -12411,8 +12728,7 @@
           "lifetime": "reference",
           "default": "[]",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -14029,13 +14345,446 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_PATH"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "autoClose",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "string | \"Curve\"",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "currentPoint",
+          "type": "Vector2",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "absarc",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aStartAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aEndAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aClockwise",
+                  "type": "boolean",
+                  "optional": true
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "absellipse",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "xRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "yRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aStartAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aEndAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aClockwise",
+                  "type": "boolean",
+                  "optional": true
+                },
+                {
+                  "name": "aRotation",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "arc",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aStartAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aEndAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aClockwise",
+                  "type": "boolean",
+                  "optional": true
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "bezierCurveTo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aCP1x",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aCP1y",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aCP2x",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aCP2y",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "closePath",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "ellipse",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "xRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "yRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aStartAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aEndAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aClockwise",
+                  "type": "boolean",
+                  "optional": true
+                },
+                {
+                  "name": "aRotation",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getLength",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector2[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "lineTo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "x",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "y",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "moveTo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "x",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "y",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "quadraticCurveTo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aCPx",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aCPy",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setFromPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "vectors",
+                  "type": "Vector2[]",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "splineThru",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "pts",
+                  "type": "Vector2[]",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "PerspectiveCamera",
@@ -15663,13 +16412,63 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_QUATERNIONKEYFRAMETRACK"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "ValueTypeName",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "times",
+          "type": "Float32Array",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "values",
+          "type": "Float32Array",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "QuaternionLike",
@@ -16062,7 +16861,7 @@
         "gaps": ["native-not-implemented"]
       },
       "type": "number",
-      "value": "RGB_BPTC_SIGNED_Format = 36494"
+      "value": "36494"
     },
     {
       "name": "RGB_BPTC_UNSIGNED_Format",
@@ -16073,7 +16872,7 @@
         "gaps": ["native-not-implemented"]
       },
       "type": "number",
-      "value": "RGB_BPTC_UNSIGNED_Format = 36495"
+      "value": "36495"
     },
     {
       "name": "RGB_ETC1_Format",
@@ -16739,12 +17538,21 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_SHAPE"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Path",
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "holes",
+          "type": "Path[]",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": []
     },
     {
@@ -16752,10 +17560,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_SHAPEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -17852,6 +18659,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -18072,6 +18888,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -18125,8 +18950,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "35044"
@@ -19175,10 +19999,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_TUBEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -23066,13 +23889,63 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_VECTORKEYFRAMETRACK"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "ValueTypeName",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "times",
+          "type": "Float32Array",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "values",
+          "type": "Float32Array",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "WebGLCoordinateSystem",
@@ -24179,6 +25052,15 @@
           }
         },
         {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "normalMap",
           "type": "Texture | null",
           "mutable": true,
@@ -24365,6 +25247,15 @@
         {
           "name": "fog",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -25790,6 +26681,28 @@
       "methods": []
     },
     {
+      "name": "Source",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": null,
+      "constructor": [],
+      "fields": [
+        {
+          "name": "version",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": []
+    },
+    {
       "name": "SpotLightShadow",
       "kind": "class",
       "source": "three",
@@ -25856,28 +26769,6 @@
         {
           "name": "mapSize",
           "type": "Vector2",
-          "mutable": false,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        }
-      ],
-      "methods": []
-    },
-    {
-      "name": "Source",
-      "kind": "class",
-      "source": "three",
-      "status": {
-        "kind": "supported"
-      },
-      "extends": null,
-      "constructor": [],
-      "fields": [
-        {
-          "name": "version",
-          "type": "number",
           "mutable": false,
           "lifetime": "owned",
           "status": {

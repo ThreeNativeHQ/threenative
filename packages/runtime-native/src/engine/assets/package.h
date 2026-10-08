@@ -26,7 +26,9 @@ namespace tn::engine::assets {
  *                   u32 dependency count, then that many u32 entry indices
  *   ...           entry data, anywhere after the table, at the offsets the entries name
  *
- * Entry data by kind: Buffer is raw bytes (size a multiple of 4). Texture is a 12-byte header —
+ * Entry data by kind: Buffer is raw bytes, and its upload size states its use: above 0 a GPU
+ * buffer (size a multiple of 4), 0 CPU data a decoder reads (audio, .hdr) at any length. Texture
+ * is a 12-byte header —
  * u32 width, u32 height, u32 format — then tightly packed rows. V1 wire codes are 18 (RGBA8Unorm)
  * and 19 (RGBA8UnormSrgb); legacy Dawn-cooked entries use 22 and 23 for the same formats. These
  * are package codes, not the active backend's WGPUTextureFormat values.

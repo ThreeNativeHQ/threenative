@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import {
   type IBrowserRuntime,
   type IRegistryDump,
+  LANGUAGE_MEMBERS,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
 import { type ICatalogClassEntry, loadCatalog } from "../src/catalog.js";
@@ -55,16 +56,28 @@ describe("the browser-JS back end", () => {
     for (const [name, binding] of Object.entries(registry.classes)) {
       const prototype = classes[name]?.prototype as object;
       const exposed = Object.getOwnPropertyNames(prototype).filter((key) => key !== "constructor");
+      // PRD-540: scene-graph classes also carry the JavaScript-side members (browser-surface.spec.ts).
+      const language: readonly string[] = binding.members.includes("parent")
+        ? LANGUAGE_MEMBERS
+        : [];
       const expected = new Set([
         ...binding.methods,
         ...binding.getters.filter((key) => !key.includes(".")),
         ...binding.members.filter((key) => !key.includes(".")),
         ...binding.callbacks,
+        ...language,
+        // A write-only setter (`needsUpdate`) is a property of its own, or the write never lands.
+        ...binding.setters.filter((key) => !key.includes(".")),
       ]);
       expect(exposed.sort(), name).toEqual([...expected].sort());
       for (const key of exposed) {
         const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
-        if (descriptor?.get === undefined || binding.callbacks.includes(key)) continue;
+        if (
+          descriptor?.get === undefined ||
+          binding.callbacks.includes(key) ||
+          language.includes(key)
+        )
+          continue;
         expect(descriptor.set !== undefined, `${name}.${key} settable`).toBe(
           binding.setters.includes(key),
         );
@@ -85,6 +98,23 @@ describe("the browser-JS back end", () => {
         ).toBe(true);
       }
     }
+  });
+
+  it("sends a write-only setter to the engine instead of keeping a JS property", () => {
+    const writes: unknown[][] = [];
+    const runtime: IBrowserRuntime = {
+      ...surfaceOnly(),
+      construct: (name) => ({ key: name, type: 1 }),
+      set: (self, property, value) => {
+        writes.push([self.key, property, value]);
+      },
+    };
+    const { classes: recorded } = defineBrowserClasses(registry, runtime);
+    const DataTexture = recorded.DataTexture as new () => { needsUpdate: boolean };
+    const texture = new DataTexture();
+    texture.needsUpdate = true;
+    expect(writes).toEqual([["DataTexture", "needsUpdate", true]]);
+    expect(Object.hasOwn(texture, "needsUpdate")).toBe(false);
   });
 
   it("refuses to construct a class the registry gives no constructor", () => {

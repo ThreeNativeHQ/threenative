@@ -16,6 +16,7 @@
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
 
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -127,6 +128,16 @@ void registerMaterialBase(ClassBinding& b) {
         const double side = number(v);  // FrontSide 0, BackSide 1, DoubleSide 2; anything else is refused
         if (side != 0 && side != 1 && side != 2) throw Unsupported{"side must be FrontSide, BackSide or DoubleSide"};
         as<Material>(self)->side = static_cast<Side>(static_cast<int>(side));
+        as<Material>(self)->needsUpdate();
+    };
+    b.getters["blending"] = [](void* self) { return Value::of(double(as<Material>(self)->blending)); };
+    b.setters["blending"] = [](void* self, const Value& v) {
+        // NoBlending 0, NormalBlending 1, AdditiveBlending 2; Subtractive and Multiply need
+        // premultipliedAlpha, which is not bound, and CustomBlending's factors are not either.
+        const double blending = number(v);
+        if (blending != 0 && blending != 1 && blending != 2)
+            throw Unsupported{"blending must be NoBlending, NormalBlending or AdditiveBlending"};
+        as<Material>(self)->blending = static_cast<Blending>(static_cast<int>(blending));
         as<Material>(self)->needsUpdate();
     };
 }
@@ -449,6 +460,13 @@ void registerTextureFields(ClassBinding& b) {
     };
 }
 
+/** HalfFloatType data is a Uint16Array of binary16 bits: anything else would upload garbage. */
+void checkHalfFloatBits(const std::vector<double>& values) {
+    for (const double v : values)
+        if (!(v >= 0 && v <= 65535) || v != std::floor(v))
+            throw Unsupported{"HalfFloatType DataTexture data must be a Uint16Array of binary16 bits"};
+}
+
 void registerTextureClass(ClassBinding& b, bool data) {
     b.ctor = [data](const Args& a, Store&) -> std::shared_ptr<void> {
         if (!data) return std::static_pointer_cast<void>(std::make_shared<Texture>());
@@ -459,11 +477,27 @@ void registerTextureClass(ClassBinding& b, bool data) {
             const uint16_t format = a.size() > 3 ? static_cast<uint16_t>(number(a[3])) : kTextureRGBAFormat;
             const uint16_t type = a.size() > 4 ? static_cast<uint16_t>(number(a[4])) : kTextureUnsignedByteType;
             if (format != kTextureRGBAFormat) throw Unsupported{"DataTexture format must be RGBAFormat"};
+            if (type != kTextureUnsignedByteType && type != kTextureFloatType && type != kTextureHalfFloatType)
+                throw Unsupported{"DataTexture type must be UnsignedByteType, FloatType or HalfFloatType"};
+            if (type == kTextureHalfFloatType) checkHalfFloatBits(a[0].numbers);
             texture->setImage(a[0].numbers, a[0].text, width, height, format, type);
         }
         return std::static_pointer_cast<void>(texture);
     };
     registerTextureFields(b);
+    if (!data) return;
+    // three's `texture.image.data = array`: new texels of the same size and type, uploaded on the
+    // next needsUpdate. The V8 and browser back ends copy an array when it crosses, so a game that
+    // edits its typed array in place re-sends it this way before it sets needsUpdate.
+    b.setters["image.data"] = [](void* self, const Value& v) {
+        auto* texture = as<DataTexture>(self);
+        const std::size_t texels = std::size_t(texture->width) * texture->height;
+        if (v.kind != Value::Kind::Numbers || texels == 0 || v.numbers.size() != texels * 4)
+            throw Unsupported{"image.data must be a typed array of width * height * 4 values"};
+        if (texture->isHalfFloat()) checkHalfFloatBits(v.numbers);
+        // three moves `version` on needsUpdate only, so the new texels wait for it.
+        texture->setImage(v.numbers, v.text, texture->width, texture->height, texture->format, texture->type, false);
+    };
 }
 
 }  // namespace

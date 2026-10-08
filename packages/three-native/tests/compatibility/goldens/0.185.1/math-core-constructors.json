@@ -63,13 +63,29 @@
     {
       "index": 7,
       "id": "e10",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fb999999999999a,n:3fc999999999999a,n:3fd3333333333333,n:7ff8000000000000",
-      "decimal": "0.1, 0.2, 0.3, YZX"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fb999999999999a",
+      "decimal": "0.1"
     },
     {
       "index": 8,
+      "id": "e10",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fc999999999999a",
+      "decimal": "0.2"
+    },
+    {
+      "index": 9,
+      "id": "e10",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
+    },
+    {
+      "index": 10,
       "id": "e10",
       "kind": "string",
       "path": "order",
@@ -77,15 +93,31 @@
       "decimal": "YZX"
     },
     {
-      "index": 9,
+      "index": 11,
       "id": "r12",
-      "kind": "numbers",
-      "method": "toArray",
-      "value": "n:3fd3333333333333,n:bfd999999999999a,n:3ff3333333333333,n:7ff8000000000000",
-      "decimal": "0.3, -0.4, 1.2, ZYX"
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd3333333333333",
+      "decimal": "0.3"
     },
     {
-      "index": 10,
+      "index": 12,
+      "id": "r12",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfd999999999999a",
+      "decimal": "-0.4"
+    },
+    {
+      "index": 13,
+      "id": "r12",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3ff3333333333333",
+      "decimal": "1.2"
+    },
+    {
+      "index": 14,
       "id": "r12",
       "kind": "string",
       "path": "order",
@@ -93,7 +125,7 @@
       "decimal": "ZYX"
     },
     {
-      "index": 11,
+      "index": 15,
       "id": "r14",
       "kind": "numbers",
       "method": "toArray",
@@ -101,7 +133,7 @@
       "decimal": "0.25, 0.5, 0.75"
     },
     {
-      "index": 12,
+      "index": 16,
       "id": "c15",
       "kind": "numbers",
       "method": "toArray",
@@ -109,7 +141,7 @@
       "decimal": "0.01002282557165656, 0.033104766565152086, 0.07323895587043372"
     },
     {
-      "index": 13,
+      "index": 17,
       "id": "r19",
       "kind": "number",
       "path": "origin.x",
@@ -117,7 +149,7 @@
       "decimal": "1"
     },
     {
-      "index": 14,
+      "index": 18,
       "id": "r19",
       "kind": "number",
       "path": "direction.z",
@@ -125,7 +157,7 @@
       "decimal": "-1"
     },
     {
-      "index": 15,
+      "index": 19,
       "id": "r33",
       "kind": "number",
       "path": "planes.2.constant",

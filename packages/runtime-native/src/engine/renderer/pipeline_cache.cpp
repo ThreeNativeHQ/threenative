@@ -49,7 +49,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     mix(key.vertexSize ^ key.fragmentSize << 32);
     mix(uint64_t(key.target.color) | uint64_t(key.target.depth) << 32);
     mix(uint64_t(key.target.cull) | uint64_t(key.target.frontFace) << 8 | uint64_t(key.target.depthCompare) << 16 |
-        uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 57);
+        uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58);
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
     return h;
 }
@@ -120,10 +120,11 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     WGPUColorTargetState color = {};
     color.format = target.color;
     color.writeMask = WGPUColorWriteMask_All;
-    // WebGPUPipelineUtils._getBlending, NormalBlending without premultiplied alpha.
+    // WebGPUPipelineUtils._getBlending without premultiplied alpha: NormalBlending, or AdditiveBlending.
+    const WGPUBlendFactor dst = target.blend == 2 ? WGPUBlendFactor_One : WGPUBlendFactor_OneMinusSrcAlpha;
     WGPUBlendState blend = {};
-    blend.color = {WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, WGPUBlendFactor_OneMinusSrcAlpha};
-    blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_OneMinusSrcAlpha};
+    blend.color = {WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, dst};
+    blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_One, dst};
     if (target.blend) color.blend = &blend;
     WGPUFragmentState fragmentState = {};
     if (fs && target.color != WGPUTextureFormat_Undefined) {
