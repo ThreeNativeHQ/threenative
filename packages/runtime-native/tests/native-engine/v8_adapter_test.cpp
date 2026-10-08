@@ -2,6 +2,7 @@
 #include "check.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/bindings.h"
+#include "engine/abi/tsl_call.h"
 #include "engine/animation/mixer.h"
 #include "engine/foundation/ThreeConstants.h"
 #include "engine/foundation/math/Color.h"
@@ -645,6 +646,18 @@ void tslApi() {
     std::string refused;
     try { s::buildBasic(clashVariant); } catch (const std::runtime_error& error) { refused = error.what(); }
     CHECK(refused == "TN_TSL_VARYING_CONFLICT: dup");
+
+    // An instanced basic material's normalView goes through the instance matrix, as a lit one's does.
+    s::VertexVariant instanced;
+    instanced.instanced = true;
+    uint64_t serial = 0;
+    instanced.nodes.colorNode = g::vec4({tn::abi::tslCall("normalWorld", nullptr, {}, serial), g::float_(1)});
+    const auto instancedPrograms = s::buildBasic(instanced);
+    const std::string instancedVertex = instancedPrograms.vertex.dump(true);
+    const auto normalOutput = instancedVertex.find("output normalView =");
+    CHECK(normalOutput != std::string::npos &&
+          instancedVertex.find("instanceMatrix0", normalOutput) != std::string::npos);
+    CHECK(instancedPrograms.vertex.ok() && s::WgslEmitter::emit(instancedPrograms.vertex).ok());
 }
 
 // PRD-531 slice 3: the real V8 material setter owns a graph after its JS wrapper is gone.

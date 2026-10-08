@@ -521,17 +521,13 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     };
     for (const auto& node : variant.nodes.graphs()) collect(node);
     for (const auto& [name, type] : out.fragment.varyings()) {
-        // A material without a lit normal (basic) has no normalView output for normalWorld to read.
-        if ((name == "normalView" && local.normal != kInvalid) || name == "positionView" ||
+        if (name == "normalView" || name == "positionView" ||
             (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
             value = graph::lower(found->second->args[0], v, {{"positionLocal", v.swizzle(local.position, "xyz")}});
-        } else if (name == "normalView")
-            // ponytail: the unskinned, unmorphed geometry normal; localVertex skips the normal for basic.
-            value = v.call("normalize", {v.mul(v.uniform("normalMatrix", Type::mat(3, 3)), v.attribute("normal", Type::vec(3)))});
-        else if (name == "positionWorld")
+        } else if (name == "positionWorld")
             value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position), "xyz");
         else if (name == "positionLocal") value = v.swizzle(local.position, "xyz");
         else if (name == "positionGeometry") value = v.attribute("position", type);
@@ -1015,7 +1011,19 @@ StandardPrograms buildPhong(const VertexVariant& variant, const LightLayout& lig
 StandardPrograms buildBasic(const VertexVariant& variant) {
     StandardPrograms out;
     Program& v = out.vertex;
-    const LocalVertex local = localVertex(v, variant, false);
+    // A graph that reads normalView (normalWorld) gets the lit materials' normal: instanced, skinned
+    // and morphed by localVertex, then written as the normalView varying.
+    std::unordered_set<const graph::NodeData*> seen;
+    const std::function<bool(const graph::Node&)> readsNormal = [&](const graph::Node& n) {
+        if (!n || !seen.insert(n.get()).second) return false;
+        if (n->kind == graph::Kind::Varying && n->args.empty() && n->name == "normalView") return true;
+        for (const auto* list : {&n->args, &n->body, &n->otherwise})
+            for (const auto& child : *list) if (readsNormal(child)) return true;
+        return false;
+    };
+    bool needsNormal = false;
+    for (const auto& node : variant.nodes.graphs()) needsNormal = needsNormal || readsNormal(node);
+    const LocalVertex local = localVertex(v, variant, needsNormal);
     const ExprId viewPosition = v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position));
     ExprId clip = v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), viewPosition);
     if (variant.background) {
@@ -1024,6 +1032,9 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
         clip = v.construct(Type::vec(4), {v.swizzle(clip, "xy"), v.swizzle(clip, "w"), v.swizzle(clip, "w")});
     }
     v.output("position", clip);
+    if (needsNormal)
+        v.output("normalView", v.call("normalize", {v.mul(v.uniform("normalMatrix", Type::mat(3, 3)),
+                                                         variant.backSide ? v.neg(local.normal) : local.normal)}));
     if (variant.fog) v.output("positionView", v.swizzle(viewPosition, "xyz"));
     if (variant.background) {
         const ExprId normalView = v.call("normalize", {v.mul(v.uniform("normalMatrix", Type::mat(3, 3)), v.attribute("normal", Type::vec(3)))});
