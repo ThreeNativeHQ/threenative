@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <filesystem>
 #include <cstdlib>
@@ -200,7 +201,7 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
         return refuse("TN_NATIVE_ASSET_INVALID: expected kind and logical path strings");
     v8::String::Utf8Value kindValue(isolate, info[0]), pathValue(isolate, info[1]);
     const std::string kind(*kindValue, kindValue.length()), path(*pathValue, pathValue.length());
-    if (kind != "model" && kind != "texture" && kind != "audio")
+    if (kind != "model" && kind != "texture" && kind != "audio" && kind != "buffer")
         return refuse("TN_NATIVE_ASSET_KIND_UNSUPPORTED: " + kind);
     if (game.assetBytes_.empty()) {
         std::ifstream file(game.assetPath_, std::ios::binary | std::ios::ate);
@@ -259,6 +260,13 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
         auto bytes = v8::ArrayBuffer::New(isolate, data.size());
         std::copy(data.begin(), data.end(), static_cast<uint8_t*>(bytes->Data()));
         value = bytes;
+    } else if (kind == "buffer") {
+        // Raw bytes a JS decoder parses (an HDRLoader's .hdr), copied out of the package.
+        if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Buffer))
+            return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: buffer requires a Buffer entry: " + path);
+        auto buffer = v8::ArrayBuffer::New(isolate, data.size());
+        if (!data.empty()) std::memcpy(buffer->Data(), data.data(), data.size());
+        value = buffer;
     } else {
         if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Texture) || data.size() < 12)
             return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: texture requires an RGBA8 Texture entry: " + path);

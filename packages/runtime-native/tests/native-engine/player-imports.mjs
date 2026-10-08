@@ -291,8 +291,9 @@ class Play extends GameScene {
 export default defineGame({ scenes: { play: Play }, start: "play", frameBudget: false,
   render: { projection: false, matrixWorld: "all" } });
 `);
-// Native assets avoid browser codecs. Picking still needs its own native MeshBVH binding.
-await assert.rejects(bundleNativeEngine({ entry, outfile }), /TN_NATIVE_ENGINE_UNBOUND: three-mesh-bvh:MeshBVH/);
+// Native assets avoid browser codecs. Picking's MeshBVH is bound; core's TSL context nodes are not yet.
+await assert.rejects(bundleNativeEngine({ entry, outfile }), (error) =>
+  /TN_NATIVE_ENGINE_UNBOUND: three\/tsl:/.test(error.message) && !/three-mesh-bvh/.test(error.message));
 const accepted = await readFile(outfile, "utf8");
 await writeFile(entry, 'import { NativeBindingThatDoesNotExist } from "three"; globalThis.tn.scene = new NativeBindingThatDoesNotExist();');
 await assert.rejects(bundleNativeEngine({ entry, outfile, boot: false }), /TN_NATIVE_ENGINE_UNBOUND: three:NativeBindingThatDoesNotExist/);

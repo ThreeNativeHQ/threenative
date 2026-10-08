@@ -170,6 +170,22 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
         set_tests_properties(native_engine_v8_scene_fixtures native_engine_v8_math_fixtures PROPERTIES LABELS "native-engine")
     endif()
 
+    # Midway's texture slice through V8: HalfFloatType DataTextures and `image.data` re-sends.
+    add_executable(tn-native-engine-v8-textures-test EXCLUDE_FROM_ALL tests/native-engine/v8_textures_test.cpp)
+    target_link_libraries(tn-native-engine-v8-textures-test PRIVATE tn_adapter_v8)
+    target_include_directories(tn-native-engine-v8-textures-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
+    set_target_properties(tn-native-engine-v8-textures-test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    add_test(NAME native_engine_v8_textures_half_float COMMAND tn-native-engine-v8-textures-test half_float)
+    set_tests_properties(native_engine_v8_textures_half_float PROPERTIES LABELS "native-engine")
+    add_dependencies(tn-native-engine-tests tn-native-engine-v8-textures-test)
+    if(TN_NODE_EXECUTABLE)
+        # The same slice through the bundler, the V8 facade and the player (CPU only).
+        add_test(NAME native_engine_player_textures
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-textures.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_textures PROPERTIES LABELS "native-engine")
+    endif()
+
     if(ANDROID)
         # Gradle's native build also links these executables (the shared library is the shipped
         # artifact, the executables are for `adb shell`: PRD-534's Pixel lane runs the host). The

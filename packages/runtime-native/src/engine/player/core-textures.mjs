@@ -1,0 +1,115 @@
+// three's texture sources over the V8 adapter: the typed array a DataTexture was built from, a 2D
+// canvas, and an ImageBitmap from the cooked package. The engine keeps a copy of the texels, so the
+// JS-side source is re-sent on `needsUpdate`, as three re-reads `texture.image` before an upload.
+import { DataUtils } from "../../../../three-native/src/addons/data-utils.ts";
+
+export { DataUtils };
+export const HalfFloatType = 1016;
+
+const NativeTexture = globalThis.Texture;
+const NativeDataTexture = globalThis.DataTexture;
+const sources = new WeakMap();
+const bitmaps = new WeakMap();
+const property = (name) => Object.getOwnPropertyDescriptor(NativeDataTexture.prototype, name);
+const nativeImage = property("image").get;
+const nativeNeedsUpdate = property("needsUpdate").set;
+const nativeFlipY = Object.getOwnPropertyDescriptor(NativeTexture.prototype, "flipY").set;
+
+/** The package entry a URL names: `tnpk:<path>` and `<package>#<path>` from `assets.resolve`, or the path. */
+export function logicalPath(url) {
+  if (typeof url !== "string" || !url) throw new Error("TN_NATIVE_ASSET_INVALID: expected a nonempty URL");
+  if (url.startsWith("tnpk:")) return url.slice(5);
+  const hash = url.indexOf("#");
+  return hash < 0 ? url : url.slice(hash + 1);
+}
+
+/** A canvas-like image's RGBA pixels, read through the standard 2D API. */
+function canvasPixels(canvas) {
+  const pixels = canvas?.getContext?.("2d")?.getImageData?.(0, 0, canvas.width, canvas.height)?.data;
+  if (!pixels) throw new Error("TN_NATIVE_CANVAS_TEXTURE_SOURCE: expected a canvas whose 2D context answers getImageData");
+  return pixels;
+}
+
+Object.defineProperties(NativeDataTexture.prototype, {
+  image: {
+    configurable: true,
+    get() { return sources.get(this) ?? nativeImage.call(this); },
+    set(image) { sources.set(this, image); },
+  },
+  needsUpdate: {
+    configurable: true,
+    set(value) {
+      const image = value ? sources.get(this) : undefined;
+      if (image) nativeImage.call(this).data = image.getContext ? canvasPixels(image) : image.data;
+      nativeNeedsUpdate.call(this, value);
+    },
+  },
+});
+
+export function DataTexture(data = null, width = 1, height = 1, ...rest) {
+  const texture = Reflect.construct(NativeDataTexture, [data ?? undefined, width, height, ...rest], new.target ?? DataTexture);
+  if (data) sources.set(texture, { data, width, height });
+  return texture;
+}
+DataTexture.prototype = NativeDataTexture.prototype;
+
+// ponytail: a DataTexture underneath, so it is also `instanceof DataTexture` and keeps one mip level;
+// bind a native CanvasTexture when a game needs mipmapped canvas art.
+export function CanvasTexture(canvas, ...rest) {
+  // The adapter constructs its own classes only, so the prototype is set after construction.
+  const texture = Object.setPrototypeOf(new NativeDataTexture(canvasPixels(canvas), canvas.width, canvas.height),
+    (new.target ?? CanvasTexture).prototype);
+  sources.set(texture, canvas);
+  // Texture's defaults, not DataTexture's: a canvas is an image (flipped, linear-filtered).
+  const [mapping, wrapS, wrapT, magFilter = 1006, minFilter = 1008] = rest;
+  Object.assign(texture, { flipY: true, magFilter, minFilter },
+    mapping === undefined ? {} : { mapping }, wrapS === undefined ? {} : { wrapS },
+    wrapT === undefined ? {} : { wrapT });
+  texture.needsUpdate = true;
+  return texture;
+}
+CanvasTexture.prototype = Object.create(NativeDataTexture.prototype, {
+  constructor: { value: CanvasTexture, writable: true, configurable: true },
+  isCanvasTexture: { value: true },
+});
+
+/** `new Texture(bitmap)` adopts an ImageBitmapLoader result; any other image has no native source. */
+export function Texture(image, ...rest) {
+  if (image === undefined || image === null) return Reflect.construct(NativeTexture, rest, new.target ?? Texture);
+  const bitmap = bitmaps.get(image);
+  if (!bitmap) throw new Error("TN_NATIVE_TEXTURE_IMAGE_UNSUPPORTED: a native Texture takes an ImageBitmapLoader result or no image");
+  if (bitmap.texture === undefined)
+    throw new Error("TN_NATIVE_IMAGE_BITMAP_CLOSED: this ImageBitmap was closed or already adopted by a Texture");
+  const { texture, flipped } = bitmap;
+  bitmap.texture = undefined;
+  // A bitmap decoded with imageOrientation "flipY" is stored upside down; three's WebGPU upload
+  // then applies texture.flipY on top, so the engine flips when exactly one of the two asks.
+  let flipY = texture.flipY;
+  Object.defineProperty(texture, "flipY", {
+    configurable: true,
+    get() { return flipY; },
+    set(value) { flipY = Boolean(value); nativeFlipY.call(texture, flipY !== flipped); },
+  });
+  texture.flipY = flipY;
+  return texture;
+}
+Texture.prototype = NativeTexture.prototype;
+
+/** three's ImageBitmapLoader over the cooked package: the bitmap is the package's decoded texture. */
+export class ImageBitmapLoader {
+  constructor() {
+    this.options = { premultiplyAlpha: "none" };
+    this.path = "";
+  }
+  setOptions(options) { this.options = options; return this; }
+  setPath(path) { this.path = path; return this; }
+  load(url, onLoad, onProgress, onError) {
+    this.loadAsync(url).then(onLoad, (error) => { if (onError) onError(error); else throw error; });
+  }
+  async loadAsync(url) {
+    const texture = globalThis.tn.loadAsset("texture", logicalPath(this.path + url)).value;
+    const bitmap = { close() { bitmaps.get(bitmap).texture = undefined; } };
+    bitmaps.set(bitmap, { texture, flipped: this.options?.imageOrientation === "flipY" });
+    return bitmap;
+  }
+}

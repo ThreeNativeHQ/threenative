@@ -896,6 +896,7 @@
       "setters": [
         "colorSpace",
         "flipY",
+        "image.data",
         "magFilter",
         "mapping",
         "minFilter",

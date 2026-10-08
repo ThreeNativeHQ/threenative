@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <deque>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -89,6 +90,30 @@ void throwStatus(v8::Isolate* isolate, tn_diagnostic_t& diagnostic) {
     isolate->ThrowException(v8::Exception::TypeError(str(isolate, message)));
 }
 
+// A typed array's values read from its bytes by element type: a Get() per element costs ~60 ns,
+// 9 ms for one 192x192 RGBA texture re-sent each frame. False for a type this does not list.
+bool typedNumbers(v8::Local<v8::TypedArray> array, std::vector<double>& out) {
+    std::vector<uint8_t> bytes(array->ByteLength());
+    if (array->CopyContents(bytes.data(), bytes.size()) != bytes.size()) return false;
+    const auto read = [&]<typename T>() {
+        for (std::size_t k = 0; k < out.size(); ++k) {
+            T value;
+            std::memcpy(&value, bytes.data() + k * sizeof(T), sizeof(T));
+            out[k] = static_cast<double>(value);
+        }
+        return true;
+    };
+    if (array->IsFloat32Array()) return read.template operator()<float>();
+    if (array->IsFloat64Array()) return read.template operator()<double>();
+    if (array->IsUint8Array() || array->IsUint8ClampedArray()) return read.template operator()<uint8_t>();
+    if (array->IsInt8Array()) return read.template operator()<int8_t>();
+    if (array->IsUint16Array()) return read.template operator()<uint16_t>();
+    if (array->IsInt16Array()) return read.template operator()<int16_t>();
+    if (array->IsUint32Array()) return read.template operator()<uint32_t>();
+    if (array->IsInt32Array()) return read.template operator()<int32_t>();
+    return false;
+}
+
 // JS -> ABI values. Arrays become number arrays (fromArray), engine wrappers become handles.
 bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::vector<tn_value_t>& out,
               std::deque<std::string>& texts, std::vector<std::vector<double>>& arrays,
@@ -147,10 +172,12 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
             // typed array crosses as its binary64 values, exactly as a plain array of them would.
             v8::Local<v8::TypedArray> array = arg.As<v8::TypedArray>();
             std::vector<double> numbers(array->Length());
-            for (uint32_t k = 0; k < array->Length(); ++k) {
-                v8::Local<v8::Value> e;
-                if (!array->Get(ctx, k).ToLocal(&e) || !e->IsNumber()) return false;
-                numbers[k] = e.As<v8::Number>()->Value();
+            if (!typedNumbers(array, numbers)) {
+                for (uint32_t k = 0; k < array->Length(); ++k) {
+                    v8::Local<v8::Value> e;
+                    if (!array->Get(ctx, k).ToLocal(&e) || !e->IsNumber()) return false;
+                    numbers[k] = e.As<v8::Number>()->Value();
+                }
             }
             arrays.push_back(std::move(numbers));
             v.kind = TN_VALUE_NUMBERS;
@@ -916,6 +943,27 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     }
                     info.GetReturnValue().Set(holder);
                 }, v8::External::New(isolate_, tails)));
+        }
+        // A setter with no getter (three's write-only `texture.needsUpdate`) is still a property:
+        // without an accessor the write lands on a plain JS property and never reaches the engine.
+        for (const auto& [path, setter] : binding.setters) {
+            (void)setter;
+            if (path.find('.') != std::string::npos || binding.getters.count(path) > 0 || binding.members.count(path) > 0)
+                continue;
+            proto->SetAccessorProperty(str(isolate_, path), v8::Local<v8::FunctionTemplate>(), v8::FunctionTemplate::New(isolate_,
+                [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                    tn_handle_t h{};
+                    if (!d->adapter->unwrap(info.This(), h)) return;
+                    std::vector<tn_value_t> args;
+                    std::deque<std::string> texts;
+                    std::deque<std::vector<tn_value_t>> values;
+                    std::vector<std::vector<double>> arrays;
+                    tn_diagnostic_t diagnostic{nullptr, 0};
+                    if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
+                        tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
+                        throwStatus(info.GetIsolate(), diagnostic);
+                }, v8::External::New(isolate_, new MethodData{this, path, {}})));
         }
         for (const auto& [name, set] : binding.callbacks) {
             (void)set;

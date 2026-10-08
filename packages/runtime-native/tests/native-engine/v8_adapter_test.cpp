@@ -477,7 +477,11 @@ void catalogCoverage() {
         for (const auto& [path, fn] : binding.setters) {
             (void)fn;
             const std::size_t dot = path.find('.');
-            if (dot == std::string::npos) continue;
+            // A write-only setter (`needsUpdate`) is a property of its own, or the write never lands.
+            if (dot == std::string::npos) {
+                expected.insert(path);
+                continue;
+            }
             const std::string head = path.substr(0, dot);
             if (binding.members.count(head) == 0 && binding.getters.count(head) == 0) expected.insert(head);
         }
