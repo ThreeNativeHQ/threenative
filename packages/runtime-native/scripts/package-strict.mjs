@@ -25,6 +25,7 @@ const NATIVE = path.join(REPO, "packages", "runtime-native");
 export const ENGINE_LIBS = [
   "tn_engine_abi",
   "tn_engine_bindings",
+  "tn_engine_shader",
   "tn_engine_animation",
   "tn_engine_scene",
   "tn_engine_foundation",
