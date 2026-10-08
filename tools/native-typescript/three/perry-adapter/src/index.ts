@@ -136,6 +136,8 @@ declare function js_tn_tsl_set(material: number, node: number): number;
 declare function js_tn_tsl_compile(material: number): number;
 declare function js_tn_tsl_release(node: number): void;
 declare function js_tn_render(scene: number, camera: number): string;
+declare function js_tn_bench(op: string, a: number, b: number, c: number, d: number): string;
+declare function js_tn_bench_config(name: string): number;
 export function tslBuild(op: string, a: number, b: number, c: number, value: number): number {
   return js_tn_tsl_build(op, a, b, c, value);
 }
@@ -153,4 +155,12 @@ export function tslRelease(node: number): void {
 }
 export function render(scene: number, camera: number): string {
   return js_tn_render(scene, camera);
+}
+/** The benchmark session (PRD-533): open, begin, render, finish. Empty on success. */
+export function bench(op: string, a: number, b: number, c: number, d: number): string {
+  return js_tn_bench(op, a, b, c, d);
+}
+/** A benchmark setting from the environment, or -1 when it is unknown. */
+export function benchConfig(name: string): number {
+  return js_tn_bench_config(name);
 }

@@ -3101,11 +3101,13 @@ describe("plain three.js control arm", () => {
     // A control that measures nothing is not a control: the harness it shares with the TN arm is
     // the only reason the two arms frame the same scene. `ladder.ts` is in that graph because
     // `workload.ts` imports its rung names from it; it is constants and pure functions, which is
-    // why the framework-import check above passes for it too.
+    // why the framework-import check above passes for it too. `l4-pose.ts` is the pure scene math
+    // `workload.ts` re-exports (shared with the native-AOT driver, PRD-533), likewise import-free.
     expect([...seen].sort()).toEqual([
       "examples/engine-load-test/src/driver.ts",
       "examples/engine-load-test/src/game.ts",
       "examples/engine-load-test/src/identity.ts",
+      "examples/engine-load-test/src/l4-pose.ts",
       "examples/engine-load-test/src/ladder.ts",
       "examples/engine-load-test/src/plain.ts",
       "examples/engine-load-test/src/workload.ts",

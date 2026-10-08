@@ -116,17 +116,80 @@ interface IHostReport {
   presented: boolean;
 }
 
+function hostResult(
+  arm: Cp1Arm,
+  driver: ICp1ArmResult["driver"],
+  report: IHostReport,
+): ICp1ArmResult {
+  return {
+    arm,
+    driver,
+    objects: report.presentedObjects,
+    // The native engine batches: far fewer draws than presented meshes, the same triangles.
+    triangles: report.triangles,
+    drawCalls: report.draws,
+    hotPathMs: report.hotPathMs,
+    frameMs: report.frameMs,
+    crossingsPerFrame: report.crossingsPerFrame,
+    gpuMs: report.gpuMs,
+    presented: report.presented,
+  };
+}
+
+/**
+ * `native-aot`: the same scene as Perry-compiled game code (tools/native-typescript/bench-aot.mjs),
+ * through the facade over the C ABI, metered by the same session code as the host. It needs the pinned
+ * Perry toolchain, cargo and the render bridge (the engine's render driver built).
+ */
+async function aotResult(
+  repoRoot: string,
+  options: ICp1Options,
+  scratch: string,
+): Promise<ICp1ArmResult> {
+  const file = path.join(scratch, "native-aot.json");
+  try {
+    await execFileAsync(
+      "node",
+      [
+        path.join(repoRoot, "tools/native-typescript/bench-aot.mjs"),
+        "--out",
+        file,
+        "--objects",
+        String(options.objects),
+        "--frames",
+        String(options.frames),
+        "--warmup",
+        String(options.warmup),
+        "--width",
+        String(options.width),
+        "--height",
+        String(options.height),
+      ],
+      { cwd: repoRoot, maxBuffer: 8 * 1024 * 1024 },
+    );
+  } catch (error) {
+    const stderr = (error as { stderr?: string }).stderr?.trim();
+    throw new BenchError(
+      "TN_BENCH_AOT_FAILED",
+      `the native-AOT driver did not run: ${stderr || String(error)}`,
+    );
+  }
+  const report = JSON.parse(await readFile(file, "utf8")) as IHostReport;
+  if (report.arm !== "native-aot")
+    throw new BenchError(
+      "TN_BENCH_ARM_MISMATCH",
+      `asked the AOT driver for native-aot, it reported ${report.arm}`,
+    );
+  return hostResult("native-aot", "aot", report);
+}
+
 async function nativeResult(
   repoRoot: string,
   arm: "native" | "native-v8" | "native-cpp" | "native-aot",
   options: ICp1Options,
   scratch: string,
 ): Promise<ICp1ArmResult> {
-  if (arm === "native-aot")
-    throw new BenchError(
-      "TN_BENCH_ARM_UNAVAILABLE",
-      "native-aot: no Perry-compiled heterogeneous driver is built yet",
-    );
+  if (arm === "native-aot") return aotResult(repoRoot, options, scratch);
   const host = path.join(repoRoot, "packages/runtime-native/build/tn-linux/tn-native-engine-host");
   if (!existsSync(host))
     throw new BenchError(
@@ -175,19 +238,7 @@ async function nativeResult(
       "TN_BENCH_ARM_MISMATCH",
       `asked the host for ${driver}, it reported ${report.arm}`,
     );
-  return {
-    arm,
-    driver: arm === "native-cpp" ? "cpp" : "v8",
-    objects: report.presentedObjects,
-    // The native engine does not batch yet: one draw per presented mesh.
-    triangles: report.triangles,
-    drawCalls: report.draws,
-    hotPathMs: report.hotPathMs,
-    frameMs: report.frameMs,
-    crossingsPerFrame: report.crossingsPerFrame,
-    gpuMs: report.gpuMs,
-    presented: report.presented,
-  };
+  return hostResult(arm, arm === "native-cpp" ? "cpp" : "v8", report);
 }
 
 export async function runCp1(repoRoot: string, artifactRoot: string, options: ICp1Options) {
