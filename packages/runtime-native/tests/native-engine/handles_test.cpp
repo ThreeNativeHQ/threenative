@@ -21,6 +21,7 @@ void generation() {
     CHECK(second.index == first.index);
     CHECK(second.generation != first.generation);
     CHECK(table.check(second, 7) == HandleError::None);
+    CHECK(table.check(second.type, second.context, second.index, second.generation, 7) == HandleError::None);
     CHECK(table.check(first, 7) == HandleError::Stale);
     CHECK(table.liveCount() == 1);
 
