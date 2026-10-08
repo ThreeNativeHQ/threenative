@@ -84,6 +84,50 @@ function isRef(value: unknown): value is IEngineRef {
   return typeof value === "object" && value !== null && "key" in value && "type" in value;
 }
 
+function isPlainObject(value: unknown): boolean {
+  return (
+    typeof value === "object" && value !== null && Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+function isWrapperOf(
+  value: unknown,
+  className: string,
+): value is Record<string, (...args: unknown[]) => unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    REF in value &&
+    value.constructor.name === className
+  );
+}
+
+/** three's `Color.set`: a hex number, a CSS string, or another Color. */
+function setColor(color: Record<string, (...args: unknown[]) => unknown>, value: unknown): void {
+  if (typeof value === "number") color.setHex?.(value);
+  else if (typeof value === "string") color.setStyle?.(value);
+  else color.copy?.(value);
+}
+
+/**
+ * three's `Material.setValues`: an undefined value is skipped, a Color member is set from a hex,
+ * a CSS string or another Color, a Vector3 member copies a Vector3, everything else is assigned.
+ * three warns and drops a key the object does not have; here that key fails.
+ */
+function setValues(target: object, className: string, values: object): void {
+  const self = target as Record<string, unknown>;
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) continue;
+    const current = self[key];
+    if (current === undefined)
+      throw new TypeError(`TN_BROWSER_PARAMETER_UNSUPPORTED: ${className} has no '${key}'`);
+    if (isWrapperOf(current, "Color")) setColor(current, value);
+    else if (isWrapperOf(current, "Vector3") && isWrapperOf(value, "Vector3"))
+      current.copy?.(value);
+    else self[key] = value;
+  }
+}
+
 /** Defines every registry class over `runtime`. */
 export function defineBrowserClasses(
   registry: IRegistryDump,
@@ -157,7 +201,12 @@ export function defineBrowserClasses(
     const cls = class {
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
-        adopt(this, runtime.construct(name, args.map(toEngine)));
+        // three's parameters object (`new MeshStandardMaterial({ color })`) is construct, then
+        // setValues. The engine takes no records, so the wrapper applies each key itself.
+        const parameters = isPlainObject(args.at(-1)) ? (args.at(-1) as object) : undefined;
+        const engineArgs = parameters === undefined ? args : args.slice(0, -1);
+        adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
+        if (parameters !== undefined) setValues(this, name, parameters);
       }
     };
     Object.defineProperty(cls, "name", { value: name });

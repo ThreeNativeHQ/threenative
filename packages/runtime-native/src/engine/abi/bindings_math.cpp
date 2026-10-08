@@ -835,12 +835,17 @@ void registerMatrix4(ClassBinding& b) {
 // ------------------------------------------------------------------------------------ Color
 
 void registerColor(ClassBinding& b) {
-    b.ctor = ctor<Color>([](Color& c, const Args& a) {
-        // three's no-argument Color stays white, untouched by any conversion.
-        if (a.empty()) return;
-        c.setRGB(optional(a, 0, 0), optional(a, 1, 0), optional(a, 2, 0),
-                 space(a, 3, ColorSpace::LinearSRGB));
-    });
+    b.ctor = [](const Args& a, Store& store) {
+        auto c = std::make_shared<Color>();
+        // three's no-argument Color stays white, untouched by any conversion. One argument is
+        // Color.set(): a hex in sRGB, a CSS string, or another Color to copy (PRD-540).
+        if (a.size() == 1 && a[0].kind == Value::Kind::Number) c->setHex(number(a[0]), ColorSpace::SRGB);
+        else if (a.size() == 1 && a[0].kind == Value::Kind::String) c->setStyle(a[0].text.c_str(), ColorSpace::SRGB);
+        else if (a.size() == 1 && a[0].kind == Value::Kind::Ref) c->copy(store.ref<Color>(a[0], "Color"));
+        else if (!a.empty())
+            c->setRGB(optional(a, 0, 0), optional(a, 1, 0), optional(a, 2, 0), space(a, 3, ColorSpace::LinearSRGB));
+        return std::static_pointer_cast<void>(c);
+    };
     members<Color>(b, {"r", "g", "b"}, {&Color::r, &Color::g, &Color::b});
 
     b.methods["setRGB"] = [](void* self, const Args& a, Store&) {

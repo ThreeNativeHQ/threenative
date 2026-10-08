@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const WEB_ENGINE_ID = "\0threenative:web-engine";
 const UPSTREAM = ["three", "three/webgpu", "three/tsl"] as const;
 /** The product Wasm entry inside the installed `@threenative/runtime-native` (PRD-540 phase 2). */
-export const WASM_ENGINE_ENTRY = "wasm/tn-native-engine-web.mjs";
+export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
 
 export interface IWebEnginePlugin {
   readonly name: string;

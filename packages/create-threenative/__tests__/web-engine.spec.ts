@@ -33,7 +33,7 @@ async function project(withWasm: boolean): Promise<string> {
   const runtime = path.join(root, "node_modules/@threenative/runtime-native");
   await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');
   if (withWasm) {
-    await mkdir(path.join(runtime, "wasm"));
+    await mkdir(path.dirname(path.join(runtime, WASM_ENGINE_ENTRY)), { recursive: true });
     await writeFile(
       path.join(runtime, WASM_ENGINE_ENTRY),
       "export default async function createModule() { return {}; }\n",

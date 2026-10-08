@@ -15,6 +15,7 @@ import {
   createWasmRuntime,
   defineBrowserClasses,
 } from "./browser-backend.js";
+import { defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
@@ -76,9 +77,11 @@ export async function bindWebEngine(
   createModule: () => Promise<TnAbiModule>,
   names: readonly string[],
 ): Promise<Record<string, unknown>> {
-  const engine = defineBrowserClasses(
-    registry as IRegistryDump,
-    createWasmRuntime(await createModule()),
-  );
-  return bindUpstreamExports(names, catalogJson as unknown as ICatalog, engine.classes);
+  const module = await createModule();
+  const { classes } = defineBrowserClasses(registry as IRegistryDump, createWasmRuntime(module));
+  // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
+  const bound: Record<string, unknown> = { ...classes };
+  if (isWebHostModule(module))
+    bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never);
+  return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }

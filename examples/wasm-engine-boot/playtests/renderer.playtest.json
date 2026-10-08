@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-renderer",
+  "target": "web",
+  "subject": "wasm-renderer",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": true },
+  "steps": [{ "kind": "wait", "label": "rendered", "waitTicks": 30 }],
+  "assert": {
+    "components": [
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "The page reports its own failure here."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "software",
+        "equals": false,
+        "allowTrivial": "The engine's own adapter is hardware, never SwiftShader."
+      },
+      { "entity": "wasm-renderer", "component": "probe", "path": "frames", "gte": 30 },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "draws",
+        "gte": 1,
+        "allowTrivial": "ready() resolves after the first engine frame, so the draw count holds from the first sample."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "triangles",
+        "gte": 12,
+        "allowTrivial": "ready() resolves after the first engine frame; 12 box triangles plus the output pass."
+      }
+    ],
+    "visual": [
+      {
+        "region": { "x": 220, "y": 100, "width": 200, "height": 160, "minNonblankPixelRatio": 0.2 }
+      }
+    ]
+  }
+}
