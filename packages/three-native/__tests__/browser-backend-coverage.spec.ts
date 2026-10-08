@@ -66,6 +66,8 @@ describe("the browser-JS back end", () => {
         ...binding.members.filter((key) => !key.includes(".")),
         ...binding.callbacks,
         ...language,
+        // A write-only setter (`needsUpdate`) is a property of its own, or the write never lands.
+        ...binding.setters.filter((key) => !key.includes(".")),
       ]);
       expect(exposed.sort(), name).toEqual([...expected].sort());
       for (const key of exposed) {
@@ -96,6 +98,23 @@ describe("the browser-JS back end", () => {
         ).toBe(true);
       }
     }
+  });
+
+  it("sends a write-only setter to the engine instead of keeping a JS property", () => {
+    const writes: unknown[][] = [];
+    const runtime: IBrowserRuntime = {
+      ...surfaceOnly(),
+      construct: (name) => ({ key: name, type: 1 }),
+      set: (self, property, value) => {
+        writes.push([self.key, property, value]);
+      },
+    };
+    const { classes: recorded } = defineBrowserClasses(registry, runtime);
+    const DataTexture = recorded.DataTexture as new () => { needsUpdate: boolean };
+    const texture = new DataTexture();
+    texture.needsUpdate = true;
+    expect(writes).toEqual([["DataTexture", "needsUpdate", true]]);
+    expect(Object.hasOwn(texture, "needsUpdate")).toBe(false);
   });
 
   it("refuses to construct a class the registry gives no constructor", () => {

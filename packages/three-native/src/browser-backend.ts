@@ -321,6 +321,17 @@ export function defineBrowserClasses(
           : {}),
       });
     }
+    // A write-only setter (three's `texture.needsUpdate`) is a property too: without an accessor
+    // the write lands on a plain JS property and never reaches the engine.
+    for (const property of binding.setters) {
+      if (property.includes(".") || Object.hasOwn(prototype, property)) continue;
+      Object.defineProperty(prototype, property, {
+        configurable: true,
+        set(this: object, value: unknown) {
+          runtime.set(refOf(this), property, toEngine(value));
+        },
+      });
+    }
     for (const callback of binding.callbacks) {
       Object.defineProperty(prototype, callback, {
         configurable: true,

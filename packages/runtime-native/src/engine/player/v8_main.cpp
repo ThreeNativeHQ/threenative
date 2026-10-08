@@ -25,8 +25,10 @@
 // walk to the core import shim. They enumerate native objects; no JS scene graph is maintained.
 #include <libplatform/libplatform.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <filesystem>
 #include <cstdlib>
@@ -49,6 +51,7 @@
 #include "engine/renderer/renderer.h"
 #include "adapters/v8/tsl.h"
 #include "engine/shader/graph/serialized.h"
+#include "mystral/audio/audio_bindings.h"
 #include "mystral/js/engine.h"
 #include "mystral/physics/native_bindings.h"
 
@@ -198,7 +201,7 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
         return refuse("TN_NATIVE_ASSET_INVALID: expected kind and logical path strings");
     v8::String::Utf8Value kindValue(isolate, info[0]), pathValue(isolate, info[1]);
     const std::string kind(*kindValue, kindValue.length()), path(*pathValue, pathValue.length());
-    if (kind != "model" && kind != "texture")
+    if (kind != "model" && kind != "texture" && kind != "audio" && kind != "buffer")
         return refuse("TN_NATIVE_ASSET_KIND_UNSUPPORTED: " + kind);
     if (game.assetBytes_.empty()) {
         std::ifstream file(game.assetPath_, std::ios::binary | std::ios::ate);
@@ -250,6 +253,20 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
 #else
         return refuse("TN_NATIVE_GLTF_UNAVAILABLE: this player was built without cgltf");
 #endif
+    } else if (kind == "audio") {
+        // The cooked package carries audio as its encoded bytes; WebAudio's decodeAudioData decodes them.
+        if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Buffer))
+            return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: audio requires a Buffer entry: " + path);
+        auto bytes = v8::ArrayBuffer::New(isolate, data.size());
+        std::copy(data.begin(), data.end(), static_cast<uint8_t*>(bytes->Data()));
+        value = bytes;
+    } else if (kind == "buffer") {
+        // Raw bytes a JS decoder parses (an HDRLoader's .hdr), copied out of the package.
+        if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Buffer))
+            return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: buffer requires a Buffer entry: " + path);
+        auto buffer = v8::ArrayBuffer::New(isolate, data.size());
+        if (!data.empty()) std::memcpy(buffer->Data(), data.data(), data.size());
+        value = buffer;
     } else {
         if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Texture) || data.size() < 12)
             return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: texture requires an RGBA8 Texture entry: " + path);
@@ -369,6 +386,8 @@ bool V8Game::start(const std::string& path, std::string& error) {
     js_.Reset(isolate_, ctx);
     v8::Context::Scope contextScope(ctx);
     adapter_->install(ctx, ctx->Global());
+    // WebAudio is the legacy host's (SDL output, worker decode); the three audio classes sit on it.
+    mystral::audio::initializeAudioBindings(services_.get());
 #if TN_PLAYER_NATIVE_PHYSICS
     if (!mystral::physics::initializeNativePhysicsBindings(services_.get()))
         return error = "TN_NATIVE_PHYSICS_MISSING: resident installation failed", false;
@@ -465,6 +484,7 @@ V8Game::~V8Game() {
         // its own objects until it is released below.
         update_.Reset();
         js_.Reset();
+        mystral::audio::cleanupAudioBindings();
         adapter_.reset();
     }
     if (context_ != nullptr) {
@@ -490,6 +510,8 @@ void V8Game::tick(double dt) {
                 held_.erase(event.key);
         }
     }
+    // Finished decodes settle and ended sources fire `onended` before the game's update reads them.
+    mystral::audio::processAudioEvents();
     v8::TryCatch tryCatch(isolate_);
     v8::Local<v8::Value> argument = v8::Number::New(isolate_, dt);
     v8::Local<v8::Value> ignored;

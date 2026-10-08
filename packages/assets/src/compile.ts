@@ -2224,6 +2224,8 @@ async function writeOutput(
  * PNG. A KTX2 texture and a model are not v1 entries: mesh, material and scene entries are out of
  * scope until the native loaders land, and v1 textures are RGBA8 only. A buffer the native loader
  * would refuse (empty, or not a multiple of four) is left out and counted, never silently padded.
+ * Audio is exempt from the alignment rule: its encoded bytes go to WebAudio's decoder, never a GPU
+ * buffer, and most encoded files are not a multiple of four.
  */
 async function nativePackageEntries(
   outputRoot: string,
@@ -2259,7 +2261,7 @@ async function nativePackageEntries(
       });
       continue;
     }
-    if (data.length === 0 || data.length % 4 !== 0) {
+    if (data.length === 0 || (entry.kind !== "audio" && data.length % 4 !== 0)) {
       skipped += 1;
       continue;
     }

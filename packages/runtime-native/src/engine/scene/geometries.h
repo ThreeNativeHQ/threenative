@@ -5,9 +5,12 @@
 // rounding, and so does this port. `parameters` carries the constructor arguments as JSON because a
 // fixture reads the geometry's `parameters` object.
 
+#include "engine/scene/curves.h"
 #include "engine/scene/geometry.h"
 
 #include <memory>
+#include <optional>
+#include <vector>
 
 namespace tn::engine {
 
@@ -41,5 +44,27 @@ std::shared_ptr<BufferGeometry> makeRingGeometry(double innerRadius = 0.5, doubl
                                                  double thetaSegments = 32, double phiSegments = 1,
                                                  double thetaStart = 0,
                                                  double thetaLength = 6.283185307179586);
+
+/** `points` is the profile, at least two of them; three's own default profile is the caller's. */
+std::shared_ptr<BufferGeometry> makeLatheGeometry(const std::vector<Vector2>& points, double segments = 12,
+                                                  double phiStart = 0,
+                                                  double phiLength = 6.283185307179586);
+
+std::shared_ptr<BufferGeometry> makeTubeGeometry(const Curve& path, double tubularSegments = 64,
+                                                 double radius = 1, double radialSegments = 8,
+                                                 bool closed = false);
+
+/** One shape, or (`asArray`) an array of them with one group each, as three's ShapeGeometry. */
+std::shared_ptr<BufferGeometry> makeShapeGeometry(const std::vector<std::shared_ptr<Shape>>& shapes, bool asArray,
+                                                  double curveSegments = 12);
+
+/** three's ExtrudeGeometry options; an empty one takes three's default. extrudePath and UVGenerator are not carried. */
+struct ExtrudeOptions {
+    std::optional<double> curveSegments, steps, depth, bevelThickness, bevelSize, bevelOffset, bevelSegments;
+    std::optional<bool> bevelEnabled;
+};
+
+std::shared_ptr<BufferGeometry> makeExtrudeGeometry(const std::vector<std::shared_ptr<Shape>>& shapes,
+                                                    const ExtrudeOptions& options);
 
 }  // namespace tn::engine

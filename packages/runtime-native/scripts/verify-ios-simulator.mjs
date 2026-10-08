@@ -377,9 +377,10 @@ function captureSimulatorLaunch(device, markers) {
     );
     let output = '';
     let settled = false;
-    // Declared before `finish` so it can clear it, and assigned once — the timer is the backstop
-    // for an app that never prints its last marker.
-    const deadline = setTimeout(() => finish(null, undefined), SIMULATOR_LAUNCH_TIMEOUT_MS);
+    // Declared before `finish` so it can clear it — the timer is the backstop for an app that never
+    // prints its last marker. The app's first output restarts it once: on a slow runner SpringBoard
+    // took 171 s to act on the launch, and the frames then had 9 s of a budget meant for them.
+    let deadline = setTimeout(() => finish(null, undefined), SIMULATOR_LAUNCH_TIMEOUT_MS);
     function finish(status, error) {
       if (settled) return;
       settled = true;
@@ -388,6 +389,10 @@ function captureSimulatorLaunch(device, markers) {
       resolve({ error, output, status });
     }
     const read = (chunk) => {
+      if (output === '' && !settled) {
+        clearTimeout(deadline);
+        deadline = setTimeout(() => finish(null, undefined), SIMULATOR_LAUNCH_TIMEOUT_MS);
+      }
       output += String(chunk);
       if (markers.every((marker) => output.includes(marker))) finish(0, undefined);
     };

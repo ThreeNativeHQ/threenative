@@ -25,6 +25,7 @@ enum class TextureFilter : uint16_t { Nearest = 1003, NearestMipmapNearest = 100
     Linear = 1006, LinearMipmapNearest = 1007, LinearMipmapLinear = 1008 };
 inline constexpr uint16_t kTextureUnsignedByteType = 1009;  // three's UnsignedByteType
 inline constexpr uint16_t kTextureFloatType = 1015;         // three's FloatType
+inline constexpr uint16_t kTextureHalfFloatType = 1016;     // three's HalfFloatType: IEEE binary16 bits
 inline constexpr uint16_t kTextureRGBAFormat = 1023;        // three's RGBAFormat
 
 /**
@@ -89,8 +90,8 @@ public:
     double rotation = 0;
     Vector2 center{0, 0};
 
-    // RGBA bytes, width-major: 4 bytes/texel for UnsignedByteType, 16 for FloatType. Empty until a
-    // loader or DataTexture fills it.
+    // RGBA bytes, width-major: 4 bytes/texel for UnsignedByteType, 8 for HalfFloatType (binary16
+    // bits), 16 for FloatType. Empty until a loader or DataTexture fills it.
     std::vector<uint8_t> data;
     uint32_t width = 0, height = 0;
 
@@ -99,6 +100,9 @@ public:
     [[nodiscard]] uint32_t version() const { return version_; }
 
     [[nodiscard]] bool isFloat() const { return type == kTextureFloatType; }
+    [[nodiscard]] bool isHalfFloat() const { return type == kTextureHalfFloatType; }
+    /** Bytes per RGBA texel as stored in `data` and uploaded: RGBA8, RGBA16Float or RGBA32Float. */
+    [[nodiscard]] uint32_t bytesPerTexel() const { return isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
     [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && !data.empty(); }
 
@@ -108,7 +112,8 @@ private:
 
 /**
  * DataTexture(data, width, height, format, type): the bytes a fixture passed as a typed array. The
- * values arrive as JS doubles; UnsignedByteType stores a byte per channel, FloatType a float32.
+ * values arrive as JS doubles; UnsignedByteType stores a byte per channel, FloatType a float32 and
+ * HalfFloatType the Uint16Array's binary16 bit patterns, as three uploads them (RGBA16Float).
  */
 class DataTexture final : public Texture {
 public:
@@ -122,14 +127,20 @@ public:
     }
 
     void setImage(const std::vector<double>& values, const std::string& arrayType, uint32_t w, uint32_t h,
-                  uint16_t fmt, uint16_t dataType) {
+                  uint16_t fmt, uint16_t dataType, bool bump = true) {
         width = w;
         height = h;
         format = fmt;
         type = dataType;
         const bool asFloat = dataType == kTextureFloatType || arrayType == "Float32Array";
         data.clear();
-        if (asFloat) {
+        if (dataType == kTextureHalfFloatType) {
+            data.resize(values.size() * sizeof(uint16_t));
+            for (std::size_t i = 0; i < values.size(); ++i) {
+                const auto bits = static_cast<uint16_t>(values[i]);
+                std::memcpy(data.data() + i * sizeof(uint16_t), &bits, sizeof(uint16_t));
+            }
+        } else if (asFloat) {
             data.resize(values.size() * sizeof(float));
             for (std::size_t i = 0; i < values.size(); ++i) {
                 const float v = static_cast<float>(values[i]);
@@ -140,7 +151,7 @@ public:
             for (std::size_t i = 0; i < values.size(); ++i)
                 data[i] = static_cast<uint8_t>(values[i] < 0 ? 0 : (values[i] > 255 ? 255 : values[i]));
         }
-        needsUpdate();
+        if (bump) needsUpdate();
     }
 };
 

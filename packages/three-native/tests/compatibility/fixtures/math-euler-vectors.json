@@ -758,6 +758,22 @@
     },
     {
       "op": "new",
+      "id": "v63",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "v63",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "r63"
+        }
+      ]
+    },
+    {
+      "op": "new",
       "id": "s64",
       "class": "Vector3",
       "args": [0.3, -0.4, 1.2]
@@ -789,8 +805,18 @@
   "observe": [
     {
       "id": "e02",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e02",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e02",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e02",
@@ -799,8 +825,18 @@
     },
     {
       "id": "o04",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o04",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o04",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "o04",
@@ -813,8 +849,18 @@
     },
     {
       "id": "r06",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r06",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r06",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r06",
@@ -823,8 +869,18 @@
     },
     {
       "id": "r07",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r07",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r07",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r07",
@@ -833,8 +889,18 @@
     },
     {
       "id": "r08",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r08",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r08",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r08",
@@ -843,8 +909,18 @@
     },
     {
       "id": "r09",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r09",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r09",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r09",
@@ -853,8 +929,18 @@
     },
     {
       "id": "r10",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r10",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r10",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r10",
@@ -863,8 +949,18 @@
     },
     {
       "id": "r11",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r11",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r11",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r11",
@@ -873,8 +969,18 @@
     },
     {
       "id": "e12",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e12",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e12",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e12",
@@ -883,8 +989,18 @@
     },
     {
       "id": "o14",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o14",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o14",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "o14",
@@ -897,8 +1013,18 @@
     },
     {
       "id": "r16",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r16",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r16",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r16",
@@ -907,8 +1033,18 @@
     },
     {
       "id": "r17",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r17",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r17",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r17",
@@ -917,8 +1053,18 @@
     },
     {
       "id": "r18",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r18",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r18",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r18",
@@ -927,8 +1073,18 @@
     },
     {
       "id": "r19",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r19",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r19",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r19",
@@ -937,8 +1093,18 @@
     },
     {
       "id": "r20",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r20",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r20",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r20",
@@ -947,8 +1113,18 @@
     },
     {
       "id": "r21",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r21",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r21",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r21",
@@ -957,8 +1133,18 @@
     },
     {
       "id": "e22",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e22",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e22",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e22",
@@ -967,8 +1153,18 @@
     },
     {
       "id": "o24",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o24",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o24",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "o24",
@@ -981,8 +1177,18 @@
     },
     {
       "id": "r26",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r26",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r26",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r26",
@@ -991,8 +1197,18 @@
     },
     {
       "id": "r27",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r27",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r27",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r27",
@@ -1001,8 +1217,18 @@
     },
     {
       "id": "r28",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r28",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r28",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r28",
@@ -1011,8 +1237,18 @@
     },
     {
       "id": "r29",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r29",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r29",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r29",
@@ -1021,8 +1257,18 @@
     },
     {
       "id": "r30",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r30",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r30",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r30",
@@ -1031,8 +1277,18 @@
     },
     {
       "id": "r31",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r31",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r31",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r31",
@@ -1041,8 +1297,18 @@
     },
     {
       "id": "e32",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e32",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e32",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e32",
@@ -1051,8 +1317,18 @@
     },
     {
       "id": "o34",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o34",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o34",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "o34",
@@ -1065,8 +1341,18 @@
     },
     {
       "id": "r36",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r36",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r36",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r36",
@@ -1075,8 +1361,18 @@
     },
     {
       "id": "r37",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r37",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r37",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r37",
@@ -1085,8 +1381,18 @@
     },
     {
       "id": "r38",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r38",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r38",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r38",
@@ -1095,8 +1401,18 @@
     },
     {
       "id": "r39",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r39",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r39",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r39",
@@ -1105,8 +1421,18 @@
     },
     {
       "id": "r40",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r40",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r40",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r40",
@@ -1115,8 +1441,18 @@
     },
     {
       "id": "r41",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r41",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r41",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r41",
@@ -1125,8 +1461,18 @@
     },
     {
       "id": "e42",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e42",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e42",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e42",
@@ -1135,8 +1481,18 @@
     },
     {
       "id": "o44",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o44",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o44",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "o44",
@@ -1149,8 +1505,18 @@
     },
     {
       "id": "r46",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r46",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r46",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r46",
@@ -1159,8 +1525,18 @@
     },
     {
       "id": "r47",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r47",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r47",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r47",
@@ -1169,8 +1545,18 @@
     },
     {
       "id": "r48",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r48",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r48",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r48",
@@ -1179,8 +1565,18 @@
     },
     {
       "id": "r49",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r49",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r49",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r49",
@@ -1189,8 +1585,18 @@
     },
     {
       "id": "r50",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r50",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r50",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r50",
@@ -1199,8 +1605,18 @@
     },
     {
       "id": "r51",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r51",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r51",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r51",
@@ -1209,8 +1625,18 @@
     },
     {
       "id": "e52",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e52",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e52",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e52",
@@ -1219,8 +1645,18 @@
     },
     {
       "id": "o54",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o54",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o54",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "o54",
@@ -1233,8 +1669,18 @@
     },
     {
       "id": "r56",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r56",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r56",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r56",
@@ -1243,8 +1689,18 @@
     },
     {
       "id": "r57",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r57",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r57",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r57",
@@ -1253,8 +1709,18 @@
     },
     {
       "id": "r58",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r58",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r58",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r58",
@@ -1263,8 +1729,18 @@
     },
     {
       "id": "r59",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r59",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r59",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r59",
@@ -1273,8 +1749,18 @@
     },
     {
       "id": "r60",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r60",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r60",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r60",
@@ -1283,8 +1769,18 @@
     },
     {
       "id": "r61",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r61",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r61",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "r61",
@@ -1292,8 +1788,14 @@
       "path": "order"
     },
     {
-      "id": "r63",
-      "kind": "numbers"
+      "id": "v63",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "e62",
+      "kind": "string",
+      "path": "order"
     },
     {
       "id": "arr",
@@ -1301,8 +1803,18 @@
     },
     {
       "id": "e65",
-      "kind": "numbers",
-      "method": "toArray"
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e65",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e65",
+      "kind": "number",
+      "path": "z"
     },
     {
       "id": "e65",

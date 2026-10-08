@@ -384,6 +384,11 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The compatibility goldens the native drivers are judged against, rechecked against three.
+      # No render fixtures: their goldens hold one GPU's frame hash and adapter, so the full check
+      # stays a local gate. This run needs no GPU and reports how many renders it skipped.
+      - name: Check the non-render compatibility goldens against three
+        run: pnpm --workspace-root exec tsx packages/three-native/tests/compatibility/run-reference.ts --check --no-renders
       - uses: ./.github/actions/playwright-chromium
       # The runtime-native contract tests execute real binaries and refuse to skip when one is
       # missing — an unbuilt executable is unexecuted, and a silent skip would read as a pass. CI

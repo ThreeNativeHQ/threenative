@@ -135,6 +135,8 @@ public:
                     setId(t[2]);
                     // A plain call result is observed as itself, as the C++ driver's boxed value is.
                     std::string expr = "(typeof __ids[__id] !== 'object' || Array.isArray(__ids[__id])) ? __ids[__id] : ";
+                    // A path into a returned array (`toArray().3`) reads that one element, as JS does.
+                    if (t[3] != "-" && t[4] == "-") expr = "Array.isArray(__ids[__id]) ? __ids[__id]" + access(decode(t[3])) + " : " + expr;
                     if (t[4] != "-") expr += "__ids[__id]" + access(decode(t[4])) + "()";
                     else if (t[3] == "-") expr += "__ids[__id]";  // the object itself (a boxed result)
                     else expr += "__ids[__id]" + access(decode(t[3]));
