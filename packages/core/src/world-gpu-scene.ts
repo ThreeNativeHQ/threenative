@@ -536,9 +536,15 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
     // same multiplier the kernel's uniform carries, so the reference and the dispatch cross a switch
     // together. A shadow map takes the main pass's own level, from the eye: that is the key a
     // placement is drawn in, and the cluster path casts each key's placements from that key's mesh.
+    // The shadow takes the authored distance: the bias is the main pass's frame budget, and a shadow
+    // set that thinned with it would lose near casters whenever the frame ran long.
     const drawn = drawableLevel(
       slot,
-      levelAtGates(slot, biasedLodDistance(distance), placement.scale ?? 1),
+      levelAtGates(
+        slot,
+        shadow === undefined ? biasedLodDistance(distance) : distance,
+        placement.scale ?? 1,
+      ),
     );
     const level = shadow === undefined ? drawn : shadowLevel(slot, regions, drawn, base);
     if (level < 0) continue;
@@ -2706,8 +2712,8 @@ export class WorldGpuScene {
   /**
    * The shadow kernel's own three, kept apart from the camera's: a level's planes are written here
    * and the main pass's own are never disturbed, so the two dispatches in one frame cannot read each
-   * other's uniforms. Its gate and base are the level's own texel gate and chain level; its eye and
-   * LOD bias are the main pass's, which this frame's main dispatch already set.
+   * other's uniforms. Its gate and base are the level's own texel gate and chain level; its eye is the
+   * main pass's, which this frame's main dispatch already set; it takes no LOD bias.
    */
   #shadowPlaneVectors = Array.from({ length: 6 }, () => new Vector4());
   #shadowGate = uniform(0);
@@ -3089,10 +3095,9 @@ export class WorldGpuScene {
     const gates = nodes(storage(buffers.gates, "vec4", buffers.gates.count));
     const levels = nodes(storage(buffers.levels, "vec4", buffers.levels.count));
     const counts = nodes(this.#counts);
-    // The main pass's own eye and bias, which this frame's main dispatch set: a shadow map draws each
-    // placement at the level the main pass draws it, as the cluster path does.
+    // The main pass's own eye, which this frame's main dispatch set: a shadow map picks each
+    // placement's level from the eye at the authored distance, without the main pass's budget bias.
     const eye = nodes(this.#eye);
-    const bias = nodes(this.#lodBias);
     const gate = nodes(this.#shadowGate);
     const base = nodes(this.#shadowBase);
     const planes = this.#shadowPlaneUniforms.map((plane) => nodes(plane));
@@ -3133,8 +3138,8 @@ export class WorldGpuScene {
       const asset = gates.element(slot);
       const distance = length(vec3(centre.x.sub(eye.x), 0.0, centre.z.sub(eye.z)));
       If(asset.w.greaterThan(0.5).and(distance.greaterThan(asset.z)), () => Return());
-      // The main pass's own biased distance and level; see `shadowLevel`, which the reference runs.
-      const lodDistance = nodes(distance).mul(bias as never);
+      // The authored distance from the main pass's eye, without its frame-budget bias; see `shadowLevel`.
+      const lodDistance = nodes(distance);
       const level = int(0).toVar();
       const scale = abs(placement.get("info").y);
       Loop(
