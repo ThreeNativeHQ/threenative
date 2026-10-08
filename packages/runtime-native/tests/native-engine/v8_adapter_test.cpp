@@ -354,6 +354,15 @@ void catalogCoverage() {
             (void)set;
             expected.insert(callback);
         }
+        // A dotted setter whose head is no member or getter (`layers.mask`, `morphAttributes.position`)
+        // exposes its head as a holder object.
+        for (const auto& [path, fn] : binding.setters) {
+            (void)fn;
+            const std::size_t dot = path.find('.');
+            if (dot == std::string::npos) continue;
+            const std::string head = path.substr(0, dot);
+            if (binding.members.count(head) == 0 && binding.getters.count(head) == 0) expected.insert(head);
+        }
         v8::Local<v8::Value> ctor;
         v8::Local<v8::Value> prototype;
         if (!global->Get(ctx, key(name)).ToLocal(&ctor) || !ctor->IsObject() ||

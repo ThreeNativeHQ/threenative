@@ -602,9 +602,75 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             bool fixed;
         };
         std::vector<Property> properties;
+        // A list getter with indexed setters (`morphTargetInfluences.0`) reads as a live array below.
+        const auto indexed = [&binding](const std::string& head) {
+            return std::any_of(binding.setters.begin(), binding.setters.end(), [&head](const auto& entry) {
+                const std::string& path = entry.first;
+                return path.size() > head.size() + 1 && path.compare(0, head.size() + 1, head + ".") == 0 &&
+                       std::all_of(path.begin() + head.size() + 1, path.end(), [](char c) { return c >= '0' && c <= '9'; });
+            });
+        };
+        std::vector<MethodData*> liveArrays;
         for (const auto& [path, getter] : binding.getters) {
             // A dotted path (`position.x`) is reached through the member object, not as a property.
-            if (path.find('.') == std::string::npos) properties.push_back({path, binding.setters.count(path) > 0, false});
+            if (path.find('.') != std::string::npos) continue;
+            if (indexed(path)) liveArrays.push_back(new MethodData{this, path, {}});
+            else properties.push_back({path, binding.setters.count(path) > 0, false});
+        }
+        // `mesh.morphTargetInfluences[0] = 0.5` must reach the engine, as it reaches three's plain
+        // array: the getter's list comes back as a Proxy whose set trap forwards `<head>.<index>`.
+        for (MethodData* live : liveArrays) {
+            proto->SetAccessorProperty(str(isolate_, live->name), v8::FunctionTemplate::New(isolate_,
+                [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                    v8::Isolate* isolate = info.GetIsolate();
+                    v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+                    tn_handle_t h{};
+                    if (!d->adapter->unwrap(info.This(), h)) return;
+                    tn_value_t result{};
+                    tn_diagnostic_t diagnostic{nullptr, 0};
+                    if (tn_get(h, d->name.c_str(), &result, &diagnostic) != TN_OK) {
+                        throwStatus(isolate, diagnostic);
+                        return;
+                    }
+                    v8::Local<v8::Value> list = fromValue(*d->adapter, result);
+                    if (!list->IsObject()) {
+                        info.GetReturnValue().Set(list);
+                        return;
+                    }
+                    v8::Local<v8::Object> handler = v8::Object::New(isolate);
+                    handler->SetPrivate(ctx, v8::Private::ForApi(isolate, str(isolate, "tn:holder-owner")), info.This()).Check();
+                    v8::Local<v8::Function> set = v8::Function::New(ctx,
+                        [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                            auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                            v8::Isolate* isolate = info.GetIsolate();
+                            v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+                            v8::Local<v8::Object> target = info[0].As<v8::Object>();
+                            if (!target->Set(ctx, info[1], info[2]).FromMaybe(false)) return;
+                            info.GetReturnValue().Set(true);
+                            v8::String::Utf8Value key(isolate, info[1]);
+                            const std::string index = *key ? *key : "";
+                            if (index.empty() || !std::all_of(index.begin(), index.end(), [](char c) { return c >= '0' && c <= '9'; }))
+                                return; // `length` and other keys stay on the JS array, as on three's
+                            if (!info[2]->IsNumber()) {
+                                isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI: " + d->name + " takes numbers")));
+                                return;
+                            }
+                            v8::Local<v8::Value> owner;
+                            tn_handle_t h{};
+                            if (!info.This()->GetPrivate(ctx, v8::Private::ForApi(isolate, str(isolate, "tn:holder-owner"))).ToLocal(&owner) ||
+                                !owner->IsObject() || !d->adapter->unwrap(owner.As<v8::Object>(), h)) return;
+                            tn_value_t value{};
+                            value.kind = TN_VALUE_NUMBER;
+                            value.number = info[2].As<v8::Number>()->Value();
+                            tn_diagnostic_t diagnostic{nullptr, 0};
+                            if (tn_set(h, (d->name + "." + index).c_str(), &value, &diagnostic) != TN_OK)
+                                throwStatus(isolate, diagnostic);
+                        }, v8::External::New(isolate, d)).ToLocalChecked();
+                    handler->Set(ctx, str(isolate, "set"), set).Check();
+                    v8::Local<v8::Proxy> proxy;
+                    if (v8::Proxy::New(ctx, list.As<v8::Object>(), handler).ToLocal(&proxy)) info.GetReturnValue().Set(proxy);
+                }, v8::External::New(isolate_, live)));
         }
         // Member objects read as properties too; tn_get answers them with the one alias Ref.
         for (const auto& [path, member] : binding.members) {
@@ -692,6 +758,52 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                },
                                v8::External::New(isolate_, data))
                          : v8::Local<v8::FunctionTemplate>());
+        }
+        // A dotted setter whose head is no member object, as three's plain `morphAttributes` holder:
+        // `geometry.morphAttributes.position = [...]` writes through a holder object made per read,
+        // which keeps its owner privately and forwards each tail to tn_set with the full path.
+        std::map<std::string, std::vector<MethodData*>> holders;
+        for (const auto& [path, setter] : binding.setters) {
+            (void)setter;
+            const std::size_t dot = path.find('.');
+            if (dot == std::string::npos) continue;
+            const std::string head = path.substr(0, dot);
+            if (binding.members.count(head) > 0 || binding.getters.count(head) > 0) continue;
+            holders[head].push_back(new MethodData{this, path, {}});
+        }
+        for (const auto& [head, paths] : holders) {
+            auto* tails = new std::vector<MethodData*>(paths);
+            proto->SetAccessorProperty(str(isolate_, head), v8::FunctionTemplate::New(isolate_,
+                [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                    v8::Isolate* isolate = info.GetIsolate();
+                    v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+                    const auto* tails = static_cast<std::vector<MethodData*>*>(info.Data().As<v8::External>()->Value());
+                    v8::Local<v8::Object> holder = v8::Object::New(isolate);
+                    holder->SetPrivate(ctx, v8::Private::ForApi(isolate, str(isolate, "tn:holder-owner")), info.This()).Check();
+                    for (MethodData* tail : *tails) {
+                        const std::string name = tail->name.substr(tail->name.find('.') + 1);
+                        v8::Local<v8::Function> set = v8::Function::New(ctx,
+                            [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                                auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                                v8::Isolate* isolate = info.GetIsolate();
+                                v8::Local<v8::Value> owner;
+                                tn_handle_t h{};
+                                if (!info.This()->GetPrivate(isolate->GetCurrentContext(),
+                                        v8::Private::ForApi(isolate, str(isolate, "tn:holder-owner"))).ToLocal(&owner) ||
+                                    !owner->IsObject() || !d->adapter->unwrap(owner.As<v8::Object>(), h)) return;
+                                std::vector<tn_value_t> args;
+                                std::deque<std::string> texts;
+                                std::deque<std::vector<tn_value_t>> values;
+                                std::vector<std::vector<double>> arrays;
+                                tn_diagnostic_t diagnostic{nullptr, 0};
+                                if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
+                                    tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
+                                    throwStatus(isolate, diagnostic);
+                            }, v8::External::New(isolate, tail)).ToLocalChecked();
+                        holder->SetAccessorProperty(str(isolate, name), v8::Local<v8::Function>(), set);
+                    }
+                    info.GetReturnValue().Set(holder);
+                }, v8::External::New(isolate_, tails)));
         }
         for (const auto& [name, set] : binding.callbacks) {
             (void)set;

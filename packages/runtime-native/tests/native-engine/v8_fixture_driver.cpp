@@ -8,6 +8,7 @@
 
 #include <libplatform/libplatform.h>
 
+#include <algorithm>
 #include <bit>
 #include <cctype>
 #include <cinttypes>
@@ -67,6 +68,11 @@ std::string access(const std::string& path) {
     std::string out;
     std::istringstream segments(path);
     for (std::string s; std::getline(segments, s, '.');) {
+        // An array index (`morphTargetInfluences.0`): digits only, read as `[0]`.
+        if (!s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); })) {
+            out += "[" + s + "]";
+            continue;
+        }
         if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s[0])) || s[0] == '_' || s[0] == '$'))
             throw Unsupported{"path " + path};
         for (char c : s)
@@ -196,6 +202,18 @@ private:
             else if (token.rfind("s:", 0) == 0) v = str(decode(token.substr(2)));
             else if (token == "b:1" || token == "b:0") v = v8::Boolean::New(isolate_, token == "b:1");
             else if (token.rfind("r:", 0) == 0) v = ids->Get(ctx, str(token.substr(2))).ToLocalChecked();
+            else if (token.rfind("R:", 0) == 0) {
+                // R:<id>,<id>: an array of objects, as `new Skeleton([bone0, bone1])` takes.
+                v8::Local<v8::Array> refs = v8::Array::New(isolate_);
+                uint32_t n = 0;
+                for (size_t at = 2; at < token.size();) {
+                    size_t end = token.find(',', at);
+                    if (end == std::string::npos) end = token.size();
+                    refs->Set(ctx, n++, ids->Get(ctx, str(token.substr(at, end - at))).ToLocalChecked()).Check();
+                    at = end + 1;
+                }
+                v = refs;
+            }
             else if (token.rfind("a:", 0) == 0) v = typedArray(ctx, token);
             else throw Unsupported{"unknown argument token " + token};
             args->Set(ctx, static_cast<uint32_t>(i - from), v).Check();
