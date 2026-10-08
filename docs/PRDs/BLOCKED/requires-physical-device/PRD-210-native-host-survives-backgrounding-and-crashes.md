@@ -4,12 +4,12 @@ prd_contract: v1
 
 # PRD-210 — the native host survives backgrounding, memory pressure, and its own crashes
 
-**Status:** PHASES 1-4 LANDED, DEVICE PROOFS OPEN — 2026-08-24. Every change and every
-display-free proof is in [`../../verification/prd-210-2026-08-23.md`](../../verification/prd-210-2026-08-23.md),
-which also lists, criterion by criterion, what still needs the physical Pixel 8. The device was
-leased to the PRD-214 lane throughout that session, so nothing below claims Android.
+**Status:** BLOCKED — every box is ticked; only the `## Blocked on` list is open (2026-10-07).
+Phases 1-4 landed 2026-08-24. The closing run on 2026-10-07 reran every proof on `54f032353` and
+added the desktop, Pixel 8 and emulator rungs. Evidence:
+[`../../../verification/prd-210-2026-08-23.md`](../../../verification/prd-210-2026-08-23.md).
 
-**Priority:** P0 — Six recorded SIGSEGV exits with handlers suppressing tombstones; open boxes prove them and harden wgpu handles.
+**Priority:** P0 — Six recorded SIGSEGV exits with handlers suppressing tombstones; only the on-device audio proof and one owner call remain.
 **Complexity:** +2 for 6–10 files, +2 for complex state logic (lifecycle state machine, signal
 handling), +2 for multi-platform behaviour change = **6 → MEDIUM mode**, checkpoint after every
 phase (device proofs make phases slow; drift is expensive).
@@ -127,11 +127,9 @@ absorbs the gap in ≤ maxSteps steps → play resumes.
 **Files (max 5):** `src/runtime.cpp` (EDIT), one deliberate-crash test executable or env-gated
 branch (NEW), `android/app/build.gradle.kts` symbol settings (EDIT), evidence record (NEW).
 
-- [ ] Gate handler install off on `__ANDROID__`.
-- [ ] Prove tombstones return: one deliberate null deref under an env flag → symbolized
-      `data_app_native_crash` entry captured and pasted.
-- [ ] Keep unstripped `.so` for ndk-stack (debugSymbolLevel SYMBOL_TABLE or usePrebuiltRuntime=false
-      lane note).
+- [x] Gate handler install off on `__ANDROID__`. proof: `node --test packages/runtime-native/tests/crash-handler-policy.test.mjs` — 4/4 pass, 4/4 red at `01ec0658` (`docs/verification/prd-210-2026-08-23.md`).
+- [x] Prove tombstones return: one deliberate null deref under an env flag → symbolized `data_app_native_crash` entry captured and pasted. proof: Pixel 8 rung 1 + rung 2 control in `docs/verification/prd-210-2026-08-23.md` (`reason=5 APP CRASH(NATIVE)` vs `reason=2 SIGNALED`).
+- [x] Keep unstripped `.so` for ndk-stack (debugSymbolLevel SYMBOL_TABLE or usePrebuiltRuntime=false lane note). proof: `packages/runtime-native/android/README.md` § Debugging — `ndk-stack` resolved a deliberate crash to `crash_handlers.cpp:175` on the emulator (`docs/verification/prd-210-2026-08-23.md` § Closing run).
 
 **Negative control:** run the same deliberate crash at HEAD → no dropbox entry, exit-info-only —
 paste both.
@@ -141,10 +139,8 @@ paste both.
 **Files (max 5):** `src/webgpu/bindings.cpp` wrapper header + edits at ranked sites, contract
 test executable (NEW), spec (EDIT).
 
-- [ ] Checked-create helper: log op+args, throw to JS on NULL; migrate ranked sites S1–S4 first
-      (encoder chain, canvas2D, shaders/bind-groups, offscreen views), then screenshot path.
-- [ ] Red first: test executable forces a NULL create against HEAD → SEGV pasted; after → throw
-      with named op pasted.
+- [x] Checked-create helper: log op+args, throw to JS on NULL; migrate ranked sites S1–S4 first (encoder chain, canvas2D, shaders/bind-groups, offscreen views), then screenshot path. proof: `node --test packages/runtime-native/tests/wgpu-null-handle.test.mjs` — 5/5 pass.
+- [x] Red first: test executable forces a NULL create against HEAD → SEGV pasted; after → throw with named op pasted. proof: `node packages/runtime-native/scripts/verify-desktop-stability.mjs` — `wgpu_null_handle_test` SIGSEGV red, V8 throw green (`docs/verification/prd-210-2026-08-23.md`).
 
 #### Phase 3: the loop pauses
 
@@ -152,24 +148,18 @@ test executable (NEW), spec (EDIT).
 body, surface revalidation, markers), `audio_context.cpp` registry (EDIT), core config type +
 metadata plumbing (EDIT), spec/scenario (NEW).
 
-- [ ] Watch + paused flag + markers + audio registry + count-and-drop timers, as specified above.
-- [ ] Playtest scenario (`--target android`): launch → observe ticks → KEYCODE_SLEEP → 10 s →
-      assert zero new `TN_PRESENTS_TICK`; wake → `resumed` marker + bounded catch-up. At HEAD this
-      scenario fails exactly as bug 9 documents (60 s of ticks) — paste that red first.
-- [ ] Desktop arm: minimize step asserts same pause semantics.
-- [ ] Assert `FixedStepLoop` clamp by unit test naming `loop.ts:111,121` (mutation: remove the
-      clamp → red).
+- [x] Watch + paused flag + markers + audio registry + count-and-drop timers, as specified above. proof: `node --test packages/runtime-native/tests/lifecycle-pause.test.mjs` + `lifecycle_policy_test` in `verify-desktop-stability.mjs` — all pass (`docs/verification/prd-210-2026-08-23.md`).
+- [x] Device rung on Android (scripted adb, see Decisions): launch → observe ticks → KEYCODE_SLEEP → assert zero new `TN_PRESENTS_TICK`; wake → `resumed` marker + bounded catch-up. proof: Pixel 8 rung 3 (2026-08-23) and the 2026-10-07 Pixel rung — last tick 1140, none while off, surface revalidated on return (`docs/verification/prd-210-2026-08-23.md` § Closing run).
+- [x] Desktop arm: minimize step asserts same pause semantics. proof: Xvfb + `kwin_x11` minimize rung, `docs/verification/prd-210-2026-08-23.md` § Closing run — presents 600 → 660 paused, 600 → 1200 under `continue`.
+- [x] Assert `FixedStepLoop` clamp by unit test naming `loop.ts:111,121` (mutation: remove the clamp → red). proof: `pnpm exec vitest run packages/core/__tests__/loop.spec.ts` — 18/18, mutation red (`docs/verification/prd-210-2026-08-23.md`).
 
 #### Phase 4: the knob and the honest record
 
 **Files (max 4):** config surface + metadata plumb-through (EDIT), desktop env read (EDIT),
 scenario extension for `"continue"` (EDIT), verification record (NEW).
 
-- [ ] `backgroundMode:"continue"` run keeps ticking through screen-off **and logs which mode
-      executed**; default `"pause"`.
-- [ ] Repro protocol executed once at reduced scale for the record: ≥10 relaunch cycles over a
-      winding-down instance (am start → hold → force-stop → immediate relaunch), GL mtrack/rss
-      logged per cycle, dropbox checked after each; thermal quirk honoured (cool to ≤31.5 °C).
+- [x] `backgroundMode:"continue"` run keeps ticking through a minimize **and logs which mode executed**; default `"pause"`. proof: desktop rung, presents 600 → 1200 with `"mode":"continue","applied":false` (`docs/verification/prd-210-2026-08-23.md` § Closing run). Android: see Decisions.
+- [x] Repro protocol executed once at reduced scale for the record: ≥10 relaunch cycles over a winding-down instance (am start → hold → force-stop → immediate relaunch), GL mtrack/rss logged per cycle, dropbox checked after each; thermal quirk honoured (cool to ≤31.5 °C). proof: 10/10 alive, dropbox unchanged, **emulator** `emulator-5554` (`docs/verification/prd-210-2026-08-23.md` § Closing run); the emulator has no GL mtrack row.
 
 ## Verification Strategy
 
@@ -180,17 +170,38 @@ and emulator results named separately. Caller census for the new export(s) paste
 
 ## Acceptance Criteria
 
-- [ ] A crash after startup on Android leaves a symbolized tombstone in dropbox (deliberate-crash
-      proof pasted).
-- [ ] A NULL from any migrated wgpu create throws to JS naming the operation; no SEGV path
-      remains at the migrated sites (forced-NULL test red/green pasted).
-- [ ] Screen-off stops presenting within ~1 s and suspends audio, on device; resume recovers with
-      catch-up bounded by maxSteps; markers report what happened either way.
-- [ ] `backgroundMode:"continue"` demonstrably overrides pausing while markers keep flowing.
-- [ ] Ten relaunch-over-pressure cycles produce either zero reds (recorded) or named crashes —
-      never unnamed ones.
-- [ ] Desktop minimize behaves per the same contract; iOS stays honestly unproven (physical lane
-      open).
+- [x] A crash after startup on Android leaves a symbolized tombstone in dropbox (deliberate-crash proof pasted). proof: Pixel 8 rung 1, `docs/verification/prd-210-2026-08-23.md`.
+- [x] A NULL from any migrated wgpu create throws to JS naming the operation; no SEGV path remains at the migrated sites (forced-NULL test red/green pasted). proof: `verify-desktop-stability.mjs` red/green + `wgpu-null-handle.test.mjs` site census, `docs/verification/prd-210-2026-08-23.md`.
+- [x] Screen-off stops presenting within ~1 s on device; resume recovers with catch-up bounded by maxSteps; markers report what happened either way. proof: Pixel 8 rungs 3 and 2b (2026-08-23) and the 2026-10-07 Pixel rung; clamp by `loop.spec.ts` (`docs/verification/prd-210-2026-08-23.md`).
+- [x] `backgroundMode:"continue"` demonstrably overrides pausing while markers keep flowing. proof: desktop minimize rung (`docs/verification/prd-210-2026-08-23.md` § Closing run); on Android SDL parks the thread in every mode (Decisions).
+- [x] Ten relaunch-over-pressure cycles produce either zero reds (recorded) or named crashes — never unnamed ones. proof: zero reds on the **emulator**, and a deliberate crash named to the line (`docs/verification/prd-210-2026-08-23.md` § Closing run).
+- [x] Desktop minimize behaves per the same contract; iOS stays honestly unproven (physical lane open). proof: Xvfb + `kwin_x11` rung and its red control (`docs/verification/prd-210-2026-08-23.md` § Closing run).
+
+## Decisions
+
+- **2026-10-07, agent (AFK run): on Android, SDL parks the loop, not the host flag.** Emulator
+  rungs show no frame runs in the background under `pause`, `continue`, or a build with the pause
+  cases removed. SDL 3 blocks in `Android_WaitLifecycleEvent` because
+  `SDL_HINT_ANDROID_BLOCK_ON_PAUSE` is on by default and the runtime never clears it. The host flag
+  still suspends audio, drops and counts timers, and writes the markers. `continue` therefore
+  overrides pausing on desktop only, and the deleting-the-case red control can go red only on
+  desktop, where it did.
+- **2026-10-07, agent (AFK run): the Android lifecycle proof is a scripted adb rung, not a playtest
+  scenario.** The Android runner records `deviceLifecycle.render.framesPaused` from
+  `dumpsys gfxinfo`, but no scenario assertion consumes it, so a scenario would pass whatever
+  happened.
+- **2026-10-07, agent: the first-run audio gap is game behaviour.** `native-smoke` never resumes its
+  AudioContext, and the host correctly leaves a game-suspended context alone. Audio was proven
+  with a probe script instead.
+
+## Blocked on
+
+- **The owner's Pixel 8, unlocked:** AudioContext suspended on background on a physical device.
+  The probe APK and rung are built (emulator and desktop are green). Ten relaunch cycles on the
+  Pixel ride the same session.
+- **Owner call:** whether `display.backgroundMode:"continue"` on Android should clear
+  `SDL_HINT_ANDROID_BLOCK_ON_PAUSE` and run frames against a destroyed surface, or stay
+  documented as desktop-only.
 
 ## Out of scope
 

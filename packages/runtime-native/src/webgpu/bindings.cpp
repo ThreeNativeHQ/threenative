@@ -1875,6 +1875,40 @@ static js::JSValueHandle handleGpuQueueSubmit(BindingsState* state, BindingDesti
 }
 
 
+// GPUSupportedLimits answered from the real adapter/device: the device is created with the
+// adapter's limits (context.cpp), so a hand-written subset misreports what the GPU allows and
+// hides limits (maxBufferSize, compute workgroup sizes) that games check before allocating.
+#define TN_WGPU_LIMIT_FIELDS(X) \
+    X(maxTextureDimension1D) X(maxTextureDimension2D) X(maxTextureDimension3D) X(maxTextureArrayLayers) \
+    X(maxBindGroups) X(maxBindingsPerBindGroup) X(maxDynamicUniformBuffersPerPipelineLayout) \
+    X(maxDynamicStorageBuffersPerPipelineLayout) X(maxSampledTexturesPerShaderStage) X(maxSamplersPerShaderStage) \
+    X(maxStorageBuffersPerShaderStage) X(maxStorageTexturesPerShaderStage) X(maxUniformBuffersPerShaderStage) \
+    X(maxUniformBufferBindingSize) X(maxStorageBufferBindingSize) X(minUniformBufferOffsetAlignment) \
+    X(minStorageBufferOffsetAlignment) X(maxVertexBuffers) X(maxBufferSize) X(maxVertexAttributes) \
+    X(maxVertexBufferArrayStride) X(maxColorAttachments) X(maxColorAttachmentBytesPerSample) \
+    X(maxComputeWorkgroupStorageSize) X(maxComputeInvocationsPerWorkgroup) X(maxComputeWorkgroupSizeX) \
+    X(maxComputeWorkgroupSizeY) X(maxComputeWorkgroupSizeZ) X(maxComputeWorkgroupsPerDimension)
+template <typename Handle, typename Query>
+static js::JSValueHandle realLimits(BindingsState* state, Handle handle, Query query) {
+    auto out = state->engine->newObject();
+#if defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
+    WGPULimits limits = {};
+    if (query(handle, &limits) != WGPUStatus_Success) return out;
+#define TN_WGPU_LIMIT(name) state->engine->setProperty(out, #name, state->engine->newNumber(static_cast<double>(limits.name)));
+#elif defined(MYSTRAL_WEBGPU_WGPU)
+    WGPUSupportedLimits supported = {};
+    if (!query(handle, &supported)) return out;
+    const WGPULimits& limits = supported.limits;
+#define TN_WGPU_LIMIT(name) state->engine->setProperty(out, #name, state->engine->newNumber(static_cast<double>(limits.name)));
+#else
+#define TN_WGPU_LIMIT(name)
+    (void)handle; (void)query;
+#endif
+    TN_WGPU_LIMIT_FIELDS(TN_WGPU_LIMIT)
+#undef TN_WGPU_LIMIT
+    return out;
+}
+
 static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                     // Return a device object wrapping our native device
                     auto device = createNativeWrapper(state, "GPUDevice", state->device);
@@ -1914,21 +1948,7 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                         &handleGpuDeviceDestroy
                     , device}}))) return state->engine->newUndefined();
                     // device.limits - expose device limits
-                    auto deviceLimits = state->engine->newObject();
-                    state->engine->setProperty(deviceLimits, "maxTextureDimension2D", state->engine->newNumber(8192));
-                    state->engine->setProperty(deviceLimits, "maxColorAttachmentBytesPerSample", state->engine->newNumber(64));
-                    state->engine->setProperty(deviceLimits, "maxBindGroups", state->engine->newNumber(4));
-                    state->engine->setProperty(deviceLimits, "maxBindingsPerBindGroup", state->engine->newNumber(1000));
-                    state->engine->setProperty(deviceLimits, "maxUniformBufferBindingSize", state->engine->newNumber(65536));
-                    state->engine->setProperty(deviceLimits, "maxStorageBufferBindingSize", state->engine->newNumber(134217728));
-                    state->engine->setProperty(deviceLimits, "maxSampledTexturesPerShaderStage", state->engine->newNumber(16));
-                    state->engine->setProperty(deviceLimits, "maxSamplersPerShaderStage", state->engine->newNumber(16));
-                    state->engine->setProperty(deviceLimits, "maxStorageTexturesPerShaderStage", state->engine->newNumber(8));
-                    state->engine->setProperty(deviceLimits, "maxUniformBuffersPerShaderStage", state->engine->newNumber(12));
-                    state->engine->setProperty(deviceLimits, "maxStorageBuffersPerShaderStage", state->engine->newNumber(8));
-                    state->engine->setProperty(deviceLimits, "maxDynamicUniformBuffersPerPipelineLayout", state->engine->newNumber(8));
-                    state->engine->setProperty(deviceLimits, "minUniformBufferOffsetAlignment", state->engine->newNumber(256));
-                    state->engine->setProperty(deviceLimits, "minStorageBufferOffsetAlignment", state->engine->newNumber(256));
+                    auto deviceLimits = realLimits(state, state->device, wgpuDeviceGetLimits);
                     state->engine->setProperty(device, "limits", deviceLimits);
                     // device.features - Set-like object with enabled features, answered from the
                     // real device so consumers (three's KTX2Loader.detectSupport among them)
@@ -2140,19 +2160,7 @@ static js::JSValueHandle handleGpuRequestAdapter(BindingsState* state, BindingDe
             state->engine->setProperty(features, "size", state->engine->newNumber(1));
             state->engine->setProperty(adapter, "features", features);
             // adapter.limits
-            auto limits = state->engine->newObject();
-            state->engine->setProperty(limits, "maxTextureDimension2D", state->engine->newNumber(8192));
-            state->engine->setProperty(limits, "maxColorAttachmentBytesPerSample", state->engine->newNumber(64));
-            state->engine->setProperty(limits, "maxBindGroups", state->engine->newNumber(4));
-            state->engine->setProperty(limits, "maxBindingsPerBindGroup", state->engine->newNumber(1000));
-            state->engine->setProperty(limits, "maxUniformBufferBindingSize", state->engine->newNumber(65536));
-            state->engine->setProperty(limits, "maxStorageBufferBindingSize", state->engine->newNumber(134217728));
-            state->engine->setProperty(limits, "maxSampledTexturesPerShaderStage", state->engine->newNumber(16));
-            state->engine->setProperty(limits, "maxSamplersPerShaderStage", state->engine->newNumber(16));
-            state->engine->setProperty(limits, "maxStorageTexturesPerShaderStage", state->engine->newNumber(8));
-            state->engine->setProperty(limits, "maxUniformBuffersPerShaderStage", state->engine->newNumber(12));
-            state->engine->setProperty(limits, "maxStorageBuffersPerShaderStage", state->engine->newNumber(8));
-            state->engine->setProperty(limits, "maxDynamicUniformBuffersPerPipelineLayout", state->engine->newNumber(8));
+            auto limits = realLimits(state, state->adapter, wgpuAdapterGetLimits);
             state->engine->setProperty(adapter, "limits", limits);
             // Return the adapter directly
             // await on a non-Promise just returns the value
