@@ -9870,8 +9870,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {

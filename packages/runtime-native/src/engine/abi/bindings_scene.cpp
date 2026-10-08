@@ -756,6 +756,14 @@ void registerMesh(ClassBinding& b) {
         if (a.size() >= 2 && a.at(1).kind == Value::Kind::Ref) material = materialArg(store, a.at(1));
         return std::static_pointer_cast<void>(detail::makeShared<Mesh>(geometry, material));
     };
+    // three's getVertexPosition(index, target): the vertex with morphs (and, on a SkinnedMesh, bones) applied.
+    b.methods["getVertexPosition"] = [](void* self, const Args& a, Store& store) {
+        const double index = number(a.at(0));
+        if (!(index >= 0 && index <= 9007199254740991.0) || index != std::floor(index))
+            throw Unsupported{"getVertexPosition needs a vertex index"};
+        as<Mesh>(self)->getVertexPosition(static_cast<uint64_t>(index), store.ref<Vector3>(a.at(1), "Vector3"));
+        return a.at(1);
+    };
     b.members["geometry"] = [](void* self, const Args&, Store& store) -> Value {
         return store.share("BufferGeometry", as<Mesh>(self)->geometry);
     };
@@ -1223,6 +1231,7 @@ void registerSceneBindings(Registry& classes) {
     registerInstancedMesh(classes["InstancedMesh"]);
     auto& sprite = classes["Sprite"];
     registerMesh(sprite);
+    sprite.methods.erase("getVertexPosition");  // three's Sprite is no Mesh: it has no vertex reader
     sprite.ctor = [](const Args& a, Store& store) {
         return std::static_pointer_cast<void>(std::make_shared<Sprite>(a.empty() ? nullptr : materialArg(store, a.at(0))));
     };

@@ -96,6 +96,8 @@ check(lit.normalMap === grid && lit.normalScale.y === 0.25 && lit.normalScale ==
 const before = grid.version; grid.needsUpdate = true;
 check(grid.version === before + 1 && !Object.hasOwn(grid, "needsUpdate"), "needsUpdate reaches the engine");
 check(lit instanceof Material && lit.onBeforeCompile === Material.prototype.onBeforeCompile && lit.isMaterial, "Material base");
+const vertex = new THREE.Vector3();
+check(new THREE.Mesh(rounded, lit).getVertexPosition(0, vertex) === vertex && vertex.equals(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0)), "getVertexPosition");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
