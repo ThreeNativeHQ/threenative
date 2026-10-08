@@ -4,13 +4,13 @@ prd_contract: v1
 
 # PRD-210 — the native host survives backgrounding, memory pressure, and its own crashes
 
-**Status:** BLOCKED — every box is ticked; only the owner call in `## Blocked on` is open (2026-10-08).
+**Status:** DONE — every box is ticked and the owner call is decided (2026-10-08).
 Phases 1-4 landed 2026-08-24. The closing run on 2026-10-07 reran every proof on `54f032353` and
 added the desktop, Pixel 8 and emulator rungs. On 2026-10-08 the Pixel 8 audio-suspend rung and ten
 relaunch cycles passed. Evidence:
-[`../../../verification/prd-210-2026-08-23.md`](../../../verification/prd-210-2026-08-23.md).
+[`../../../verification/prd-210-2026-08-23.md`](../../verification/prd-210-2026-08-23.md).
 
-**Priority:** P0 — Six recorded SIGSEGV exits with handlers suppressing tombstones; only one owner call remains.
+**Priority:** P0 — Six recorded SIGSEGV exits with handlers suppressing tombstones; nothing remains open.
 **Complexity:** +2 for 6–10 files, +2 for complex state logic (lifecycle state machine, signal
 handling), +2 for multi-platform behaviour change = **6 → MEDIUM mode**, checkpoint after every
 phase (device proofs make phases slow; drift is expensive).
@@ -194,12 +194,11 @@ and emulator results named separately. Caller census for the new export(s) paste
 - **2026-10-07, agent: the first-run audio gap is game behaviour.** `native-smoke` never resumes its
   AudioContext, and the host correctly leaves a game-suspended context alone. Audio was proven
   with a probe script instead.
-
-## Blocked on
-
-- **Owner call:** whether `display.backgroundMode:"continue"` on Android should clear
-  `SDL_HINT_ANDROID_BLOCK_ON_PAUSE` and run frames against a destroyed surface, or stay
-  documented as desktop-only.
+- **2026-10-08, owner delegated, agent decided: Android `continue` stays desktop-only.** The
+  runtime keeps `SDL_HINT_ANDROID_BLOCK_ON_PAUSE` on and does not run frames against a destroyed
+  surface. Frames without a surface bring back the crash class this PRD closes, and Android stops
+  background apps anyway. The `display.backgroundMode` doc comment now says so. Reopen only if a
+  game needs Android background work, and prove it on the Pixel 8 first.
 
 ## Out of scope
 
