@@ -3787,4 +3787,17 @@ its first step in both arms on this host on 2026-10-07: `GameState.worldReady` d
 disproves this change. Engine follow-up: the render chain should fail closed when `traa`
 is requested on a multisampled pass instead of emitting per-frame validation errors.
 
+Three lighting rounds on top of TRAA, each rejected and reverted:
+
+- Non-canopy forest `envMapIntensity` 0.55 with sun 8.7: meadow 82.5 → 58.6, sun share only 28%.
+- Backlit `lightNeedles` transmission (0.7) on forest pack grass and scrub: meadow 82.5 → 81.4, no
+  visible change at this camera (the sun is ~53° off the view axis).
+- Sun elevation ~36° → ~21° (`[-180, 75, 80]`): long tree shadows across the player view, but a fresh
+  judge rejected it (meadow 5 → 4.5, player 5 → 4.5): ~26% darker, a hard-edged sun disc in frame and
+  no warm light.
+
+The same judge scores the kept state 5/10 on the meadow and player views. The gap to the reference is
+light shafts, dappled sun and bright back-lit air, which none of these constant changes produce; the
+next lane needs a volumetric or height-fog light term and a sun disc with bloom, not more rebalancing.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
