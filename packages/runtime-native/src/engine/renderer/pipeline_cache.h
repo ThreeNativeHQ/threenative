@@ -16,7 +16,7 @@ struct PipelineTarget {
     WGPUTextureFormat color = WGPUTextureFormat_RGBA8Unorm;  // Undefined: depth-only (shadow) pass
     WGPUTextureFormat depth = WGPUTextureFormat_Depth32Float;
     WGPUCullMode cull = WGPUCullMode_Back;
-    bool blend = false;      // three's NormalBlending, premultipliedAlpha false (a transparent material)
+    uint8_t blend = 0;       // 0 none, else three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false
     bool depthWrite = true;  // material.depthWrite
     WGPUPipelineLayout layout = nullptr;  // explicit layout (dynamic-offset uniforms); null: auto
     // `skinIndex` as the geometry stores it: three's Uint8/16/32 attribute read as vec4<u32>.

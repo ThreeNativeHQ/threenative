@@ -130,6 +130,16 @@ void registerMaterialBase(ClassBinding& b) {
         as<Material>(self)->side = static_cast<Side>(static_cast<int>(side));
         as<Material>(self)->needsUpdate();
     };
+    b.getters["blending"] = [](void* self) { return Value::of(double(as<Material>(self)->blending)); };
+    b.setters["blending"] = [](void* self, const Value& v) {
+        // NoBlending 0, NormalBlending 1, AdditiveBlending 2; Subtractive and Multiply need
+        // premultipliedAlpha, which is not bound, and CustomBlending's factors are not either.
+        const double blending = number(v);
+        if (blending != 0 && blending != 1 && blending != 2)
+            throw Unsupported{"blending must be NoBlending, NormalBlending or AdditiveBlending"};
+        as<Material>(self)->blending = static_cast<Blending>(static_cast<int>(blending));
+        as<Material>(self)->needsUpdate();
+    };
 }
 
 /** A Color field read by component, as the member alias, and written whole. */

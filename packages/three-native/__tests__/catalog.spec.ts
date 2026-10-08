@@ -95,6 +95,17 @@ describe("the catalog schema", () => {
       "$.entries: duplicate entry Mesh",
     );
   });
+
+  it("rejects a published constant whose value is not its declared type", () => {
+    const catalog = fixture();
+    const constant = named(catalog, "ACESFilmicToneMapping");
+    catalog.entries = catalog.entries.map((entry) =>
+      entry === constant ? { ...constant, value: "ACESFilmicToneMapping = 4" } : entry,
+    );
+    expect(validateCatalog(catalog, readCatalogSchema(REPO)).join("\n")).toContain(
+      '$.entries[ACESFilmicToneMapping]: value "ACESFilmicToneMapping = 4" is not a number',
+    );
+  });
 });
 
 describe("the committed catalog", () => {

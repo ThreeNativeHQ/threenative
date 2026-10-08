@@ -139,11 +139,11 @@
       "callbacks": []
     },
     "AnimationClip": {
-      "constructor": false,
+      "constructor": true,
       "methods": [],
-      "getters": ["duration", "name", "tracks"],
+      "getters": ["duration", "name"],
       "setters": [],
-      "members": [],
+      "members": ["tracks"],
       "callbacks": []
     },
     "AnimationMixer": {
@@ -394,6 +394,7 @@
         "getY",
         "getZ",
         "setComponent",
+        "setUsage",
         "setW",
         "setX",
         "setXY",
@@ -416,7 +417,7 @@
         "usage",
         "version"
       ],
-      "setters": ["name", "needsUpdate"],
+      "setters": ["name", "needsUpdate", "usage"],
       "members": [],
       "callbacks": []
     },
@@ -612,6 +613,25 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"]
+    },
+    "CatmullRomCurve3": {
+      "constructor": true,
+      "methods": [
+        "getLength",
+        "getLengths",
+        "getPoint",
+        "getPointAt",
+        "getPoints",
+        "getSpacedPoints",
+        "getTangent",
+        "getTangentAt",
+        "getUtoTmapping",
+        "updateArcLengths"
+      ],
+      "getters": ["arcLengthDivisions", "closed", "curveType", "tension", "type"],
+      "setters": ["arcLengthDivisions", "closed", "curveType", "tension"],
+      "members": ["points"],
+      "callbacks": []
     },
     "CircleGeometry": {
       "constructor": true,
@@ -1089,6 +1109,7 @@
         "getY",
         "getZ",
         "setComponent",
+        "setUsage",
         "setW",
         "setX",
         "setXY",
@@ -1111,7 +1132,7 @@
         "usage",
         "version"
       ],
-      "setters": ["name", "needsUpdate"],
+      "setters": ["name", "needsUpdate", "usage"],
       "members": [],
       "callbacks": []
     },
@@ -1452,6 +1473,7 @@
         "getY",
         "getZ",
         "setComponent",
+        "setUsage",
         "setW",
         "setX",
         "setXY",
@@ -1475,7 +1497,7 @@
         "usage",
         "version"
       ],
-      "setters": ["name", "needsUpdate"],
+      "setters": ["name", "needsUpdate", "usage"],
       "members": [],
       "callbacks": []
     },
@@ -1871,6 +1893,73 @@
       ],
       "callbacks": ["onBeforeRender"]
     },
+    "LatheGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index"
+      ],
+      "callbacks": []
+    },
     "Layers": {
       "constructor": true,
       "methods": [
@@ -2233,6 +2322,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2250,6 +2340,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2274,6 +2365,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2298,6 +2390,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2329,6 +2422,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2350,6 +2444,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2379,6 +2474,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2404,6 +2500,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2439,6 +2536,7 @@
       "getters": [
         "alphaTest",
         "anisotropy",
+        "blending",
         "clearcoat",
         "color.b",
         "color.g",
@@ -2474,6 +2572,7 @@
       "setters": [
         "alphaTest",
         "anisotropy",
+        "blending",
         "clearcoat",
         "color",
         "color.b",
@@ -2518,6 +2617,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2542,6 +2642,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2575,6 +2676,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -2606,6 +2708,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -2639,6 +2742,14 @@
         "visible"
       ],
       "members": ["color", "emissive", "envMap", "map"],
+      "callbacks": []
+    },
+    "NumberKeyframeTrack": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": ["ValueTypeName", "name", "times", "values"],
+      "setters": [],
+      "members": [],
       "callbacks": []
     },
     "Object3D": {
@@ -3333,6 +3444,14 @@
       ],
       "getters": ["w", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
+      "members": [],
+      "callbacks": []
+    },
+    "QuaternionKeyframeTrack": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": ["ValueTypeName", "name", "times", "values"],
+      "setters": [],
       "members": [],
       "callbacks": []
     },
@@ -4377,6 +4496,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -4396,6 +4516,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -4422,6 +4543,7 @@
       "methods": [],
       "getters": [
         "alphaTest",
+        "blending",
         "color.b",
         "color.g",
         "color.r",
@@ -4448,6 +4570,7 @@
       ],
       "setters": [
         "alphaTest",
+        "blending",
         "color",
         "color.b",
         "color.g",
@@ -4515,6 +4638,73 @@
       "callbacks": []
     },
     "TorusGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index"
+      ],
+      "callbacks": []
+    },
+    "TubeGeometry": {
       "constructor": true,
       "methods": [
         "addGroup",
@@ -4767,6 +4957,14 @@
       ],
       "getters": ["height", "w", "width", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
+      "members": [],
+      "callbacks": []
+    },
+    "VectorKeyframeTrack": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": ["ValueTypeName", "name", "times", "values"],
+      "setters": [],
       "members": [],
       "callbacks": []
     }

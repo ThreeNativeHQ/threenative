@@ -6,6 +6,7 @@
 #include "engine/foundation/ThreeConstants.h"
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/tsl/tsl.h"
+#include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
@@ -229,6 +230,17 @@ void unsupported() {
     const std::string handedOut = run(rt, adapter, "new AnimationAction()");
     CHECK(handedOut.rfind("THROWN", 0) == 0 && handedOut.find("TN_NATIVE_UNSUPPORTED class AnimationAction") != std::string::npos);
     if (handedOut.find("TN_NATIVE_UNSUPPORTED class AnimationAction") == std::string::npos) std::fprintf(stderr, "%s\n", handedOut.c_str());
+    // A JS subclass constructs its nearest engine ancestor, whatever its own (or a bundler's) name.
+    const std::string subclass = run(rt, adapter, R"JS(
+        class Voice2 extends Object3D { constructor() { super(); this.cue = 7; } }
+        class Loud extends Voice2 {}
+        const parent = new Object3D(), voice = new Loud();
+        parent.add(voice);
+        voice.position.x = 2;
+        [voice instanceof Voice2, voice.parent === parent, voice.cue, voice.position.x].join()
+    )JS");
+    CHECK(subclass == "true,true,7,2");
+    if (subclass != "true,true,7,2") std::fprintf(stderr, "subclass: %s\n", subclass.c_str());
 }
 
 void gcRelease() {
@@ -411,6 +423,14 @@ void catalogCoverage() {
         {"AgXToneMapping", tn::engine::AgXToneMapping},
         {"NeutralToneMapping", tn::engine::NeutralToneMapping},
         {"PCFSoftShadowMap", tn::engine::PCFSoftShadowMap},
+        {"FrontSide", static_cast<double>(tn::engine::Side::Front)},
+        {"BackSide", static_cast<double>(tn::engine::Side::Back)},
+        {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},
+        {"StaticDrawUsage", 35044},
+        {"DynamicDrawUsage", 35048},
+        {"NoBlending", static_cast<double>(tn::engine::Blending::None)},
+        {"NormalBlending", static_cast<double>(tn::engine::Blending::Normal)},
+        {"AdditiveBlending", static_cast<double>(tn::engine::Blending::Additive)},
     };
     const std::map<std::string, std::string> strings = {
         {"NoColorSpace", tn::engine::NoColorSpace},

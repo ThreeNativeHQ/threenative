@@ -7489,6 +7489,11 @@
         "source": "three"
       },
       {
+        "symbol": "AdditiveBlending",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "AgXToneMapping",
         "kind": "constant",
         "source": "three"
@@ -7511,6 +7516,11 @@
       {
         "symbol": "AnimationMixer",
         "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "BackSide",
+        "kind": "constant",
         "source": "three"
       },
       {
@@ -7540,6 +7550,11 @@
       },
       {
         "symbol": "Camera",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "CatmullRomCurve3",
         "kind": "class",
         "source": "three"
       },
@@ -7574,6 +7589,16 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "DoubleSide",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "DynamicDrawUsage",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Euler",
         "kind": "class",
         "source": "three"
@@ -7596,6 +7621,11 @@
       {
         "symbol": "FogExp2",
         "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "FrontSide",
+        "kind": "constant",
         "source": "three"
       },
       {
@@ -7630,6 +7660,11 @@
       },
       {
         "symbol": "LOD",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "LatheGeometry",
         "kind": "class",
         "source": "three"
       },
@@ -7704,8 +7739,23 @@
         "source": "three"
       },
       {
+        "symbol": "NoBlending",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "NoColorSpace",
         "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "NormalBlending",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "NumberKeyframeTrack",
+        "kind": "class",
         "source": "three"
       },
       {
@@ -7745,6 +7795,11 @@
       },
       {
         "symbol": "Quaternion",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "QuaternionKeyframeTrack",
         "kind": "class",
         "source": "three"
       },
@@ -7809,6 +7864,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "StaticDrawUsage",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Texture",
         "kind": "class",
         "source": "three"
@@ -7817,6 +7877,11 @@
         "symbol": "TorusGeometry",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "TubeGeometry",
+        "kind": "class",
+        "source": "three"
       },
       {
         "symbol": "Vector2",
@@ -7830,6 +7895,11 @@
       },
       {
         "symbol": "Vector4",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "VectorKeyframeTrack",
         "kind": "class",
         "source": "three"
       }

@@ -4,6 +4,7 @@
  *   pnpm --filter @threenative/three-native test:reference
  *   pnpm --filter @threenative/three-native test:reference -- --repeat 2
  *   pnpm --filter @threenative/three-native test:reference -- --check
+ *   pnpm --filter @threenative/three-native test:reference -- --check --no-renders
  *
  * Goldens land in `goldens/<three version>/<fixture>.json`, keyed by the workspace catalog pin so
  * a reference upgrade lands new files instead of silently overwriting old ones. `--check` proves
@@ -15,6 +16,9 @@
  * the JSON golden. That run needs a display and a real adapter, so on Linux it goes under
  * `sh scripts/xvfb.sh`. A software adapter is refused rather than recorded; `--allow-software`
  * overrides that, and the adapter is named in the golden either way.
+ *
+ * `--no-renders` drops the render fixtures and needs no GPU, so CI can run it; the output counts
+ * what it skipped (`skippedRenders`). The full check with frames stays a local gate.
  */
 
 import { createHash } from "node:crypto";
@@ -325,7 +329,15 @@ async function main(argv: readonly string[]): Promise<number> {
     throw new Error("TN_FIXTURE_ARG_INVALID: --repeat needs a positive integer");
   const check = argv.includes("--check");
   const allowSoftware = argv.includes("--allow-software");
-  const fixtures = selectFixtures(argv);
+  const selected = selectFixtures(argv);
+  const noRenders = argv.includes("--no-renders");
+  const fixtures = noRenders
+    ? selected.filter((fixture) => fixture.render === undefined)
+    : selected;
+  const skippedRenders = selected.length - fixtures.length;
+  // Fail closed: an empty run would report a clean check for a corpus it never touched.
+  if (fixtures.length === 0)
+    throw new Error("TN_FIXTURE_SELECTION_EMPTY: --no-renders left no fixture to run");
   // A diagnostic invocation must never regenerate the pinned goldens.
   if (process.env.TN_TRAA_DUMP) {
     if (fixtures.length !== 1 || fixtures[0]?.name !== "traa-history")
@@ -403,6 +415,7 @@ async function main(argv: readonly string[]): Promise<number> {
         blocked: blocked.map((golden) => ({ name: golden.name, reason: golden.blocked })),
         renders,
         repeats: repeat,
+        ...(noRenders ? { skippedRenders } : {}),
         ...(check ? { checked: true } : { wrote: goldens.length }),
         ...(problems.length === 0 ? {} : { problems }),
       },

@@ -56,7 +56,8 @@
       "id": "e_ZYX",
       "method": "setFromRotationMatrix",
       "args": [{ "ref": "m" }, "ZYX"]
-    }
+    },
+    { "op": "call", "id": "e_YZX", "method": "toArray", "args": [], "result": "a_YZX" }
   ],
   "observe": [
     { "id": "source", "path": "x", "kind": "number" },
@@ -86,6 +87,8 @@
     { "id": "e_ZYX", "path": "x", "kind": "number" },
     { "id": "e_ZYX", "path": "y", "kind": "number" },
     { "id": "e_ZYX", "path": "z", "kind": "number" },
-    { "id": "e_ZYX", "path": "order", "kind": "string" }
+    { "id": "e_ZYX", "path": "order", "kind": "string" },
+    { "id": "a_YZX", "path": "0", "kind": "number" },
+    { "id": "a_YZX", "path": "3", "kind": "string" }
   ]
 }

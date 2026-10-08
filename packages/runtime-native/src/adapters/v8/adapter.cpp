@@ -11,6 +11,7 @@
 #include "engine/abi/bindings.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/foundation/ThreeConstants.h"
+#include "engine/scene/material.h"
 #include "engine/scene/texture.h"
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/animation/property_binding.h"
@@ -151,6 +152,14 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                 if (!array->Get(ctx, k).ToLocal(&e)) return false;
                 if (e->IsNumber()) { elements[k].kind = TN_VALUE_NUMBER; elements[k].number = e.As<v8::Number>()->Value(); }
                 else if (a.unwrap(e, h)) { elements[k].kind = TN_VALUE_HANDLE; elements[k].handle = h; a.holdIfCallback(h); }
+                else if (e->IsString()) {
+                    // Euler.toArray()'s order slot, handed back to a fromArray.
+                    v8::String::Utf8Value utf8(isolate, e);
+                    texts.emplace_back(*utf8 ? *utf8 : "");
+                    elements[k].kind = TN_VALUE_STRING;
+                    elements[k].text = texts.back().c_str();
+                    elements[k].count = texts.back().size();
+                }
                 else return false;
             }
             if (std::all_of(elements.begin(), elements.end(), [](const auto& e) { return e.kind == TN_VALUE_NUMBER; })) {
@@ -242,6 +251,25 @@ void adopt(v8::Isolate* isolate, v8::Local<v8::Context> ctx, v8::Local<v8::Objec
            v8::Local<v8::Value> value) {
     if (!value->IsObject()) return;
     self->DefineOwnProperty(ctx, str(isolate, name), value, v8::ReadOnly).FromMaybe(false);
+}
+
+// `new` on a JS subclass (`class Voice extends Object3D`) constructs its nearest engine ancestor:
+// new.target's constructor chain is walked to the first function this adapter installed, so the
+// subclass's own name (or a bundler's rename of it) never reaches tn_construct.
+v8::Local<v8::Function> engineConstructor(v8::Isolate* isolate, v8::Local<v8::Value> target,
+    const std::unordered_map<uint16_t, v8::Global<v8::FunctionTemplate>>& classes) {
+    const v8::Local<v8::Value> newTarget = target;
+    v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+    while (target->IsFunction()) {
+        v8::String::Utf8Value name(isolate, target.As<v8::Function>()->GetName());
+        const auto cls = classes.find(*name ? tn_type_id(*name) : 0);
+        v8::Local<v8::Function> installed;
+        if (cls != classes.end() && cls->second.Get(isolate)->GetFunction(ctx).ToLocal(&installed) &&
+            installed->StrictEquals(target))
+            return installed;
+        target = target.As<v8::Object>()->GetPrototype();
+    }
+    return newTarget.As<v8::Function>();
 }
 
 }  // namespace
@@ -569,7 +597,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI_VALUE: unsupported argument")));
                     return;
                 }
-                v8::String::Utf8Value cls(isolate, info.NewTarget().As<v8::Function>()->GetName());
+                v8::String::Utf8Value cls(isolate, engineConstructor(isolate, info.NewTarget(), a.classes_)->GetName());
                 tn_handle_t h{};
                 tn_diagnostic_t diagnostic{nullptr, 0};
                 if (tn_construct(a.context(), *cls, args.data(), static_cast<uint32_t>(args.size()), &h, &diagnostic) != TN_OK) {
@@ -974,6 +1002,13 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         {"RGBAFormat", tn::engine::kTextureRGBAFormat},
         {"EquirectangularReflectionMapping", 303},
         {"NoToneMapping", 0}, {"LoopOnce", 2200}, {"LoopRepeat", 2201},
+        {"FrontSide", static_cast<double>(tn::engine::Side::Front)},
+        {"BackSide", static_cast<double>(tn::engine::Side::Back)},
+        {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},
+        {"StaticDrawUsage", 35044}, {"DynamicDrawUsage", 35048},
+        {"NoBlending", static_cast<double>(tn::engine::Blending::None)},
+        {"NormalBlending", static_cast<double>(tn::engine::Blending::Normal)},
+        {"AdditiveBlending", static_cast<double>(tn::engine::Blending::Additive)},
     }) target->Set(context, str(isolate_, name), v8::Number::New(isolate_, value)).Check();
     const auto animation = [&](int operation) {
         auto data = v8::Array::New(isolate_, 2);

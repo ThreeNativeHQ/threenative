@@ -306,6 +306,23 @@ describe("assets.nativePackage", () => {
     ).toBe(true);
   });
 
+  it("ships audio as a Buffer entry of its encoded bytes, at any length", async () => {
+    const root = await makeTempDir("threenative-native-package-audio-");
+    await mkdir(path.join(root, "assets"));
+    // WebAudio decodes the bytes; no GPU upload, so the buffer alignment rule does not apply.
+    await writeFile(path.join(root, "assets", "beep.ogg"), Buffer.from("OggS!"));
+
+    await compileAssets({
+      config: { audio: "none", models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    const output = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+    const [entry] = readNativePackageManifest(output).entries;
+    expect(entry?.name).toBe("beep.ogg");
+    expect(entry?.kind).toBe(NativeEntryKind.Buffer);
+    expect(entry?.size).toBe(5);
+  });
+
   it("removes a stale package when a recook has no v1 entry", async () => {
     const root = await makeTempDir("threenative-native-package-empty-");
     await mkdir(path.join(root, "assets"));
