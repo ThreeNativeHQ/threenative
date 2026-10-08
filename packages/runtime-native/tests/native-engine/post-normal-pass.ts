@@ -156,15 +156,34 @@ function checkNormals(file: string): void {
       throw new Error(`TN_POST_NORMAL_FACE_MISSING: ${name} has ${count} matching pixels`);
 }
 
+/**
+ * A frame with a normal pass must draw its colour programs with an invariant position, so the colour
+ * and normal passes rasterise the same triangle edges. Depth-only programs stay unflagged.
+ */
+function checkInvariantPositions(file: string): void {
+  const colour = readFileSync(file, "utf8")
+    .split(/^### /mu)
+    .filter(Boolean)
+    .map((entry) => ({ key: entry.slice(0, entry.indexOf("\n")), text: entry }))
+    .filter(({ key }) => !key.startsWith("depth|"));
+  if (colour.length === 0) throw new Error("TN_POST_NORMAL_NO_PROGRAMS: no colour program compiled");
+  const plain = colour.filter(({ text }) => !text.includes("@invariant @builtin(position)"));
+  if (plain.length > 0)
+    throw new Error(
+      `TN_POST_NORMAL_NOT_INVARIANT: ${plain.length} of ${colour.length} colour programs lack @invariant: ${plain.map(({ key }) => key).join(", ")}`,
+    );
+}
+
 /** Pixels whose red channel is below `level`, after the frame drew something at all. */
 function darkPixels(name: string, withBox: boolean, level: number): number {
   const png = path.join(directory, `${name}.png`);
   const normals = path.join(directory, `${name}.normal`);
+  const programs = path.join(directory, `${name}.programs`);
   const run = spawnSync(driver as string, [], {
     env: {
       ...process.env,
       TN_FIXTURE_POST_GRAPH: graph,
-      ...(withBox ? { TN_FIXTURE_NORMAL_DUMP: normals } : {}),
+      ...(withBox ? { TN_FIXTURE_NORMAL_DUMP: normals, TN_FIXTURE_PROGRAM_DUMP: programs } : {}),
     },
     input: `${encodeFixture(fixture(withBox), png).join("\n")}\n`,
     encoding: "utf8",
@@ -179,6 +198,7 @@ function darkPixels(name: string, withBox: boolean, level: number): number {
         `TN_POST_NORMAL_SKIP_UNNAMED: the transparent box was not named\n${run.stderr}`,
       );
     checkNormals(normals);
+    checkInvariantPositions(programs);
   }
   const { data } = PNG.sync.read(readFileSync(png));
   let dark = 0;

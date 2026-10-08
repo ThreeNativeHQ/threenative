@@ -175,6 +175,11 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
         const std::string failed = meterFrames(gpu, renderer, scene, *camera, clear, std::stoul(frames), r.width, r.height, report);
         if (!failed.empty()) return failed;
     }
+    // TN_FIXTURE_PROGRAM_DUMP=<file>: every compiled vertex program, "### <key>" then its WGSL.
+    if (const char* programs = std::getenv("TN_FIXTURE_PROGRAM_DUMP"); programs && *programs) {
+        std::ofstream out(programs, std::ios::binary);
+        for (const auto& [key, source] : renderer.programVertexSources()) out << "### " << key << "\n" << source << "\n";
+    }
     // TN_FIXTURE_NORMAL_DUMP=<file>: the post normal target as raw RGBA16Float, packed rows.
     if (const char* normals = std::getenv("TN_FIXTURE_NORMAL_DUMP"); normals && *normals) {
         std::vector<uint8_t> bytes;
