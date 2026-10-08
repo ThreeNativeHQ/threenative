@@ -2,17 +2,20 @@
 export const {
   AmbientLight, AnimationAction, AnimationClip, AnimationMixer, Bone, Box3, BoxGeometry,
   BufferAttribute, BufferGeometry, Camera, CircleGeometry, Color, ConeGeometry, CylinderGeometry,
-  DataTexture, DirectionalLight, Euler, Float32BufferAttribute, Fog, FogExp2, Frustum, Group,
+  DirectionalLight, Euler, Float32BufferAttribute, Fog, FogExp2, Frustum, Group,
   HemisphereLight, InstancedBufferAttribute, InstancedMesh, LOD, Layers, Matrix3, Matrix4, Mesh,
   MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshPhysicalMaterial,
   MeshStandardMaterial, Object3D, OrthographicCamera, PerspectiveCamera, Plane, PlaneGeometry,
   PointLight, Quaternion, Ray, Raycaster, RingGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
-  SphereGeometry, SpotLight, Sprite, SpriteMaterial, Texture, TorusGeometry, Vector2, Vector3,
+  SphereGeometry, SpotLight, Sprite, SpriteMaterial, TorusGeometry, Vector2, Vector3,
   Vector4, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, PCFSoftShadowMap,
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
   EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, AttachedBindMode, PropertyBinding, getConsoleFunction, setConsoleFunction,
 } = globalThis;
+// Texture sources (typed array, canvas, ImageBitmap) the engine copies; see core-textures.mjs.
+import { DataTexture, Texture } from "./core-textures.mjs";
+export { CanvasTexture, DataTexture, DataUtils, HalfFloatType, ImageBitmapLoader, Texture } from "./core-textures.mjs";
 
 export const clone = globalThis.__tnCloneSkeleton;
 
