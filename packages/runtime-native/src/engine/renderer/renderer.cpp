@@ -127,7 +127,8 @@ constexpr const char* kSlotNames[] = {
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
     "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "cameraPosition", "cameraProjectionMatrix",
     "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform", "specularColorMapUvTransform",
-    "specularIntensityMapUvTransform", "aoMapIntensity"};
+    "specularIntensityMapUvTransform", "aoMapIntensity",
+    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -412,6 +413,19 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     setSize(1, 1);
 }
 
+WGPUSampler Renderer::linearClampSampler() {
+    if (!linearClampSampler_) {
+        WGPUSamplerDescriptor linear = {};
+        linear.addressModeU = linear.addressModeV = linear.addressModeW = WGPUAddressMode_ClampToEdge;
+        linear.magFilter = linear.minFilter = WGPUFilterMode_Linear;
+        linear.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+        linear.maxAnisotropy = 1;
+        linear.lodMaxClamp = 32;
+        linearClampSampler_ = wgpuDeviceCreateSampler(device_, &linear);
+    }
+    return linearClampSampler_;
+}
+
 Renderer& Renderer::probeCaptureRenderer() {
     if (!probeCapture_) probeCapture_ = std::make_unique<Renderer>(instance_, device_, queue_, events_);
     return *probeCapture_;
@@ -493,6 +507,7 @@ Renderer::~Renderer() {
     if (outputLayout_) wgpuBindGroupLayoutRelease(outputLayout_);
     wgpuSamplerRelease(lutSampler_);
     wgpuSamplerRelease(compareSampler_);
+    if (linearClampSampler_) wgpuSamplerRelease(linearClampSampler_);
     for (auto& [light, shadow] : virtualShadows_) shadowMaps_.push_back(shadow.map);
     shadowMaps_.insert(shadowMaps_.end(), cubeShadowMaps_.begin(), cubeShadowMaps_.end());
     for (ShadowMap& map : shadowMaps_) {
@@ -638,7 +653,9 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                                   WGPUTextureView view, WGPUSampler sampler, WGPUTextureView mapView,
                                   WGPUSampler mapSampler, WGPUTextureView envView, WGPUSampler envSampler,
                                   WGPUTextureView normalView, WGPUSampler normalSampler,
-                                  const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps) {
+                                  const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps,
+                                  WGPUTextureView pmremView, WGPUSampler pmremSampler,
+                                  WGPUTextureView reflectorView, WGPUSampler reflectorSampler) {
     // A PbrMap's texture or sampler, by its `t_<name>` / `smp_<name>` binding; null for any other.
     const auto pbr = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
         if (!pbrMaps) return nullptr;
@@ -677,11 +694,13 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         } else if (b.kind == shader::BindingKind::Texture) {
             const auto postView = postEffects_ ? postEffects_->view(b.name.substr(2)) : nullptr;
             const MaterialTexture* pbrTexture = pbr(b.name, false);
-            e.textureView = postView ? postView : pbrTexture ? pbrTexture->view : b.name == "t_map" ? mapView : b.name == "t_normalMap" ? normalView : b.name == "t_env" ? envView : view;
+            e.textureView = postView ? postView : pbrTexture ? pbrTexture->view : b.name == "t_map" ? mapView : b.name == "t_normalMap" ? normalView : b.name == "t_env" ? envView
+                            : b.name == "t_pmrem" ? pmremView : b.name == "t_reflector" ? reflectorView : view;
         } else if (b.kind == shader::BindingKind::Sampler) {
             const bool postView = postEffects_ && postEffects_->view(b.name.substr(4));
             const MaterialTexture* pbrTexture = pbr(b.name, true);
-            e.sampler = postView ? postEffects_->sampler(b.name.substr(4)) : pbrTexture ? pbrTexture->sampler : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler : sampler;
+            e.sampler = postView ? postEffects_->sampler(b.name.substr(4)) : pbrTexture ? pbrTexture->sampler : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler
+                        : b.name == "smp_pmrem" ? pmremSampler : b.name == "smp_reflector" ? reflectorSampler : sampler;
         } else {
             throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
         }
@@ -1730,6 +1749,14 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             put(frameUniforms_, f, fs[kEnvMapTexelHeight], std::array<double, 1>{env.texelHeight});
             put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{env.maxMip});
         }
+        put(frameUniforms_, f, fs[kScreenSize], std::array<double, 2>{double(width_), double(height_)});
+        if (item.pmremMap) {
+            const EnvironmentGpu& pmrem = environment(*item.pmremMap);
+            put(frameUniforms_, f, fs[kPmremRotation], item.pmremRotation);
+            put(frameUniforms_, f, fs[kPmremTexelWidth], std::array<double, 1>{pmrem.texelWidth});
+            put(frameUniforms_, f, fs[kPmremTexelHeight], std::array<double, 1>{pmrem.texelHeight});
+            put(frameUniforms_, f, fs[kPmremMaxMip], std::array<double, 1>{pmrem.maxMip});
+        }
         for (std::size_t i = 0; i < lights.direct.size() && i < program.lightSlots.size(); ++i) {
             const DirectLight& l = lights.direct[i];
             const auto& slot = program.lightSlots[i];
@@ -1880,7 +1907,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
         const bool readsPbr = std::any_of(p.item->pbrMaps.begin(), p.item->pbrMaps.end(), [](const Texture* t) { return t; });
-        if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr) continue;
+        if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
+            !p.item->reflectorView) continue;
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
         std::array<const MaterialTexture*, shader::kPbrMapCount> pbrTextures{};
         for (int k = 0; k < shader::kPbrMapCount; ++k)
@@ -1888,6 +1916,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         const MaterialTexture* map = p.item->map && !p.item->background ? materialTexture(*p.item->map) : nullptr;
         const BackgroundCube* cube = p.item->background ? &backgroundCube(*p.item->map) : nullptr;
         const EnvironmentGpu* env = p.item->envMap ? &environment(*p.item->envMap) : nullptr;
+        const EnvironmentGpu* pmrem = p.item->pmremMap ? &environment(*p.item->pmremMap) : nullptr;
         const WGPUTextureView mapView = cube ? cube->view : map ? map->view : nullptr, envView = env ? env->view : nullptr;
         const WGPUSampler mapSampler = cube ? cube->sampler : map ? map->sampler : nullptr, envSampler = env ? env->sampler : nullptr;
         const std::string key = std::to_string(reinterpret_cast<uintptr_t>(p.program)) + "|" +
@@ -1895,7 +1924,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                 std::to_string(reinterpret_cast<uintptr_t>(mapSampler)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(envView)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->view : nullptr)) + "|" +
-                                std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->sampler : nullptr));
+                                std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->sampler : nullptr)) + "|" +
+                                std::to_string(reinterpret_cast<uintptr_t>(pmrem ? pmrem->view : nullptr)) + "|" +
+                                std::to_string(reinterpret_cast<uintptr_t>(p.item->reflectorView));
         std::string pbrKey;
         for (const MaterialTexture* texture : pbrTextures)
             pbrKey += "|" + std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->view : nullptr)) + "," +
@@ -1905,7 +1936,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                          ? found->second
                          : mapGroups_.emplace(key + pbrKey, bindGroup(p.program->layouts[1], p.program->fragment, uniformBuffer_,
                                                              lutView_, lutSampler_, mapView, mapSampler, envView, envSampler,
-                                                         normal ? normal->view : nullptr, normal ? normal->sampler : nullptr, &pbrTextures))
+                                                         normal ? normal->view : nullptr, normal ? normal->sampler : nullptr, &pbrTextures,
+                                                         pmrem ? pmrem->view : nullptr, pmrem ? pmrem->sampler : nullptr,
+                                                         p.item->reflectorView, p.item->reflectorSampler))
                                .first->second;
     }
 

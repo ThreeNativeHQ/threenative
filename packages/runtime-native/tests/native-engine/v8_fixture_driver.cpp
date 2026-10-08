@@ -197,7 +197,12 @@ private:
         v8::Local<v8::Array> args = v8::Array::New(isolate_, static_cast<int>(t.size() - from));
         v8::Local<v8::Object> ids = ctx->Global()->Get(ctx, str("__ids")).ToLocalChecked().As<v8::Object>();
         for (size_t i = from; i < t.size(); ++i) {
-            const std::string& token = t[i];
+            args->Set(ctx, static_cast<uint32_t>(i - from), argument(ctx, ids, t[i])).Check();
+        }
+        setGlobal("__args", args);
+    }
+
+    v8::Local<v8::Value> argument(v8::Local<v8::Context> ctx, v8::Local<v8::Object> ids, const std::string& token) {
             v8::Local<v8::Value> v;
             if (token == "null") v = v8::Null(isolate_);
             else if (token.rfind("n:", 0) == 0) v = v8::Number::New(isolate_, std::bit_cast<double>(std::stoull(token.substr(2), nullptr, 16)));
@@ -217,10 +222,24 @@ private:
                 v = refs;
             }
             else if (token.rfind("a:", 0) == 0) v = typedArray(ctx, token);
+            else if (token.rfind("o:", 0) == 0) {
+                // o:<key>=<scalar>;...: an options object, as `new ExtrudeGeometry(shape, { depth })` takes.
+                v8::Local<v8::Object> fields = v8::Object::New(isolate_);
+                for (size_t at = 2; at < token.size();) {
+                    size_t end = token.find(';', at);
+                    if (end == std::string::npos) end = token.size();
+                    const std::string pair = token.substr(at, end - at);
+                    const size_t equals = pair.find('=');
+                    if (equals == 0 || equals == std::string::npos) throw Unsupported{"unknown argument token " + token};
+                    const std::string key = pair.substr(0, equals);
+                    access(key);  // an identifier, never code
+                    fields->Set(ctx, str(key), argument(ctx, ids, pair.substr(equals + 1))).Check();
+                    at = end + 1;
+                }
+                v = fields;
+            }
             else throw Unsupported{"unknown argument token " + token};
-            args->Set(ctx, static_cast<uint32_t>(i - from), v).Check();
-        }
-        setGlobal("__args", args);
+            return v;
     }
 
     v8::Local<v8::Value> eval(const std::string& source) {
@@ -250,10 +269,13 @@ private:
             v8::String::Utf8Value text(isolate_, value);
             return "s:" + encode(*text ? *text : "");
         }
-        if (kind == "numbers" && value->IsArray()) {
-            v8::Local<v8::Array> array = value.As<v8::Array>();
+        if (kind == "numbers" && (value->IsArray() || value->IsTypedArray())) {
+            // A typed array (`attribute.array`) is read element by element, as a plain array is.
+            v8::Local<v8::Object> array = value.As<v8::Object>();
+            const uint32_t length = value->IsArray() ? value.As<v8::Array>()->Length()
+                                                     : static_cast<uint32_t>(value.As<v8::TypedArray>()->Length());
             std::string out;
-            for (uint32_t i = 0; i < array->Length(); ++i) {
+            for (uint32_t i = 0; i < length; ++i) {
                 v8::Local<v8::Value> e = array->Get(ctx, i).ToLocalChecked();
                 if (!e->IsNumber()) throw Unsupported{"numbers observation holds a non-number"};
                 out += (i ? "," : "") + bits(e.As<v8::Number>()->Value());

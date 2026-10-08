@@ -6,6 +6,7 @@
 // BRDF_BlinnPhong) as materials/nodes/Mesh{Lambert,Phong}NodeMaterial.js wire them.
 
 #include "standard.h"
+#include "cube_uv.h"
 #include <stdexcept>
 #include <algorithm>
 #include "engine/shader/tsl/tsl.h"
@@ -194,7 +195,7 @@ ExprId roughnessToMip(Program& p, ExprId roughness) {
 }
 
 // bilinearCubeUV(envMap, direction, mipInt)
-ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt) {
+ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt, const std::string& prefix) {
     auto f = [&](float v) { return p.constant(v); };
     auto v2 = [&](ExprId x, ExprId y) { return p.construct(Type::vec(2), {x, y}); };
     const VarId face = p.var(Type::f32(), cubeFace(p, direction));
@@ -209,21 +210,21 @@ ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt)
     ExprId x = p.add(p.swizzle(p.load(uv), "x"), p.mul(p.load(face), faceSize));
     x = p.add(x, p.mul(filterInt, f(48)));  // 3 * minTileSize(16)
     ExprId y = p.add(p.swizzle(p.load(uv), "y"),
-                     p.mul(f(4), p.sub(p.call("exp2", {p.uniform("envMapMaxMip", Type::f32())}), faceSize)));
-    x = p.mul(x, p.uniform("envMapTexelWidth", Type::f32()));
-    y = p.mul(y, p.uniform("envMapTexelHeight", Type::f32()));
+                     p.mul(f(4), p.sub(p.call("exp2", {p.uniform(prefix + "MaxMip", Type::f32())}), faceSize)));
+    x = p.mul(x, p.uniform(prefix + "TexelWidth", Type::f32()));
+    y = p.mul(y, p.uniform(prefix + "TexelHeight", Type::f32()));
     return p.swizzle(p.sampleLevel(env, v2(x, y), f(0)), "xyz");
 }
 
 // textureCubeUV(envMap, sampleDir, roughness)
-ExprId textureCubeUV(Program& p, uint32_t env, ExprId direction, ExprId roughness) {
+ExprId textureCubeUV(Program& p, uint32_t env, ExprId direction, ExprId roughness, const std::string& prefix = "envMap") {
     auto f = [&](float v) { return p.constant(v); };
-    const ExprId mip = p.call("clamp", {roughnessToMip(p, roughness), f(-2.0f), p.uniform("envMapMaxMip", Type::f32())});
+    const ExprId mip = p.call("clamp", {roughnessToMip(p, roughness), f(-2.0f), p.uniform(prefix + "MaxMip", Type::f32())});
     const ExprId mipF = p.call("fract", {mip});
     const ExprId mipInt = p.call("floor", {mip});
-    const VarId color = p.var(Type::vec(3), bilinearCubeUV(p, env, direction, mipInt));
+    const VarId color = p.var(Type::vec(3), bilinearCubeUV(p, env, direction, mipInt, prefix));
     p.If(p.equal(mipF, f(0)), [] {}, [&] {
-        const ExprId next = bilinearCubeUV(p, env, direction, p.add(mipInt, f(1)));
+        const ExprId next = bilinearCubeUV(p, env, direction, p.add(mipInt, f(1)), prefix);
         p.assign(color, p.call("mix", {p.load(color), next, mipF}));
     });
     return p.load(color);
@@ -252,6 +253,10 @@ ExprId transformDirection(Program& p, ExprId m, ExprId v) {
 }
 
 }  // namespace
+
+ExprId pmremSample(Program& p, uint32_t texture, ExprId direction, ExprId roughness, std::string_view prefix) {
+    return textureCubeUV(p, texture, direction, roughness, std::string(prefix));
+}
 
 std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
     std::vector<std::string> out;
@@ -406,6 +411,16 @@ static void outputMapUv(Program& v, const LocalVertex& local) {
 // three's sRGBTransferEOTF (ColorManagement): one sRGB channel to linear-sRGB, its exact constants
 // and order: `c <= 0.04045 ? c * 0.0773993808 : pow(c * 0.9478672986 + 0.0521327014, 2.4)`.
 // NodeMaterial.setupFog: after lighting/emissive, before tone mapping; alpha is unchanged.
+ExprId fogColor(Program& f, const VertexVariant& variant, ExprId outgoing);
+
+// NodeMaterial.setup: `vec4(outgoingLight, diffuseColor.a).max(0)`, which forces unsigned output,
+// then setupOutput mixes the fog into the clamped colour.
+ExprId materialOutput(Program& f, const VertexVariant& variant, ExprId outgoing, ExprId alpha) {
+    const ExprId clamped = f.call("max", {f.construct(Type::vec(4), {outgoing, alpha}),
+                                          f.construct(Type::vec(4), {f.constant(0.0f)})});
+    return f.construct(Type::vec(4), {fogColor(f, variant, f.swizzle(clamped, "xyz")), f.swizzle(clamped, "w")});
+}
+
 ExprId fogColor(Program& f, const VertexVariant& variant, ExprId outgoing) {
     if (!variant.fog) return outgoing;
     const ExprId viewZ = f.neg(f.swizzle(f.varying("positionView", Type::vec(3)), "z"));
@@ -926,7 +941,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId outgoing = f.add(f.add(f.add(directDiffuse, totalIndirectDiffuse), totalSpecular), emissive);
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", f.construct(Type::vec(4), {fogColor(f, variant, outgoing), materialAlpha(f, alpha)}));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha)));
     linkNodes(out, variant, local);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -1056,7 +1071,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId outgoing = f.add(lighting, emissive);
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", f.construct(Type::vec(4), {fogColor(f, variant, outgoing), materialAlpha(f, alpha)}));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha)));
     linkNodes(out, variant, local);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -1123,7 +1138,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", f.construct(Type::vec(4), {fogColor(f, variant, outgoing), variant.background ? f.constant(1.0f) : materialAlpha(f, alpha)}));
+    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha)));
     linkNodes(out, variant, local);
     if (variant.fog || variant.background) v.linkVaryings(f);
     return out;

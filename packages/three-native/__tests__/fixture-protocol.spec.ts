@@ -34,6 +34,8 @@ const ARGUMENTS: readonly FixtureArg[] = [
   { array: [0, 1, 65535, 3], type: "Uint16Array" },
   { array: [0.25, -0, 1e-30], type: "Float32Array" },
   { array: [], type: "Uint8Array" },
+  { record: { depth: 0.026, bevelEnabled: true, name: "a=b;c d", extrudePath: null } },
+  { record: {} },
 ];
 
 describe("argument encoding", () => {
@@ -47,6 +49,11 @@ describe("argument encoding", () => {
       observe: [],
     });
     expect(lines).toContain("gltf model s:examples%2Fa%20b%2Fmodel.glb");
+  });
+
+  it("refuses a record field that is not a scalar", () => {
+    expect(() => decodeArg("o:shape=r:s")).toThrow("TN_PROTOCOL_ARG_INVALID");
+    expect(() => decodeArg("o:depth")).toThrow("TN_PROTOCOL_ARG_INVALID");
   });
 
   it("refuses an array token that names no typed array", () => {

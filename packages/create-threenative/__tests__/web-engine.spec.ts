@@ -151,6 +151,15 @@ describe("createWebEnginePlugin", () => {
     );
   });
 
+  it("resolves BufferGeometryUtils to the engine's mergeGeometries, never the upstream addon", () => {
+    const resolved = createWebEnginePlugin("/game").resolveId(
+      "three/addons/utils/BufferGeometryUtils.js",
+    );
+    expect(resolved).toMatch(
+      /(?:three-native\/src\/addons\/buffer-geometry-utils\.ts|web-engine-buffer-geometry-utils\.js)$/u,
+    );
+  });
+
   it("resolves three's HDRLoader addon to the engine's own loader, never upstream", () => {
     const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
       "three/addons/loaders/HDRLoader.js",

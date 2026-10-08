@@ -102,6 +102,16 @@ export declare const AttributeGPUType = {
 } as const;
 export type AttributeGPUType = (typeof AttributeGPUType)[keyof typeof AttributeGPUType];
 
+/** Catalog partial (members-not-catalogued, media-sources-unbound): three/Audio. */
+export declare class Audio extends Object3D {
+constructor(listener: AudioListener);
+}
+
+/** Catalog partial (members-not-catalogued, media-sources-unbound): three/AudioListener. */
+export declare class AudioListener extends Object3D {
+constructor();
+}
+
 /** Catalog supported: three/BackSide. */
 export declare const BackSide: 1;
 
@@ -1888,6 +1898,11 @@ distance: number;
 intensity: number;
 color: Color;
 readonly shadow: PointLightShadow;
+}
+
+/** Catalog partial (members-not-catalogued, media-sources-unbound): three/PositionalAudio. */
+export declare class PositionalAudio extends Audio {
+constructor(listener: AudioListener);
 }
 
 /** Catalog supported: three/Quaternion. */

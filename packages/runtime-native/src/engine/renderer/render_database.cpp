@@ -1,10 +1,14 @@
 #include "engine/scene/raycaster.h"
 #include "render_database.h"
+#include "engine/renderer/reflector.h"
 
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/renderer/projection/plan.h"
 
 #include <algorithm>
+#include <stdexcept>
+#include <unordered_set>
+#include <functional>
 #include <cmath>
 #include <chrono>
 #include <limits>
@@ -15,6 +19,87 @@
 namespace tn::engine {
 
 namespace {
+
+// What a material's node graphs read from outside the material: the texture pmremTexture
+// prefilters and the reflector a reflector() node samples, or null. One of each per material: a
+// second, different source is refused rather than silently sharing the first one's.
+struct GraphFind {
+    const Texture* texture = nullptr;
+    std::shared_ptr<const void> reflector;
+};
+
+GraphFind findGraphSources(const Material& material) {
+    GraphFind found;
+    std::unordered_set<const shader::graph::NodeData*> seen;
+    const std::function<void(const shader::graph::Node&)> visit = [&](const shader::graph::Node& node) {
+        if (!node || !seen.insert(node.get()).second) return;
+        if (node->kind == shader::graph::Kind::Pmrem) {
+            const auto* texture = static_cast<const Texture*>(node->object.get());
+            if (found.texture && found.texture != texture)
+                throw std::runtime_error("TN_NATIVE_PMREM_UNSUPPORTED: one material samples two pmremTexture sources");
+            found.texture = texture;
+        } else if (node->kind == shader::graph::Kind::Reflector) {
+            if (found.reflector && found.reflector != node->object)
+                throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: one material samples two reflectors");
+            found.reflector = node->object;
+        }
+        for (const auto* list : {&node->args, &node->body, &node->otherwise})
+            for (const auto& child : *list) visit(child);
+    };
+    for (const auto& graph : material.nodes.graphs()) visit(graph);
+    return found;
+}
+
+// ReflectorBaseNode.updateBefore's camera: `virtualCamera` mirrored through the target's plane, with
+// the projection's near plane replaced by the mirror (Lengyel's oblique clip). False when the
+// mirror faces away from the camera, where three draws nothing.
+bool poseReflection(const Reflector& reflector, const Camera& camera, PerspectiveCamera& virtualCamera) {
+    const Matrix4& targetWorld = reflector.target->matrixWorld;
+    Vector3 reflectorPosition, cameraPosition, normal(0, 0, 1), view, lookAt(0, 0, -1), target;
+    reflectorPosition.setFromMatrixPosition(targetWorld);
+    cameraPosition.setFromMatrixPosition(camera.matrixWorld);
+    Matrix4 rotation;
+    rotation.extractRotation(targetWorld);
+    normal.applyMatrix4(rotation);
+    view.subVectors(reflectorPosition, cameraPosition);
+    if (view.dot(normal) > 0) return false;
+    view.reflect(normal).negate();
+    view.add(reflectorPosition);
+    rotation.extractRotation(camera.matrixWorld);
+    lookAt.applyMatrix4(rotation);
+    lookAt.add(cameraPosition);
+    target.subVectors(reflectorPosition, lookAt);
+    target.reflect(normal).negate();
+    target.add(reflectorPosition);
+
+    virtualCamera.coordinateSystem = camera.coordinateSystem;
+    virtualCamera.position.copy(view);
+    virtualCamera.up.set(0, 1, 0);
+    virtualCamera.up.applyMatrix4(rotation);
+    virtualCamera.up.reflect(normal);
+    virtualCamera.lookAt(target);
+    if (const auto* perspective = dynamic_cast<const PerspectiveCamera*>(&camera)) {
+        virtualCamera.near = perspective->near;
+        virtualCamera.far = perspective->far;
+    }
+    virtualCamera.updateMatrixWorld();
+    virtualCamera.projectionMatrix.copy(camera.projectionMatrix);
+
+    Plane plane;
+    plane.setFromNormalAndCoplanarPoint(normal, reflectorPosition);
+    plane.applyMatrix4(virtualCamera.matrixWorldInverse);
+    Vector4 clip(plane.normal.x, plane.normal.y, plane.normal.z, plane.constant);
+    auto& e = virtualCamera.projectionMatrix.elements;
+    const Vector4 q((std::copysign(1.0, clip.x) * (clip.x != 0) + e[8]) / e[0],
+                    (std::copysign(1.0, clip.y) * (clip.y != 0) + e[9]) / e[5], -1.0, (1.0 + e[10]) / e[14]);
+    clip.multiplyScalar(1.0 / (clip.x * q.x + clip.y * q.y + clip.z * q.z + clip.w * q.w));
+    e[2] = clip.x;
+    e[6] = clip.y;
+    e[10] = camera.coordinateSystem == CoordinateSystem::WebGPU ? clip.z : clip.z + 1.0;
+    e[14] = clip.w;
+    virtualCamera.projectionMatrixInverse.copy(virtualCamera.projectionMatrix).invert();
+    return true;
+}
 
 Matrix toArray(const Matrix4& m) {
     Matrix out{};
@@ -314,6 +399,20 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     return d;
+}
+
+const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material& material) {
+    static const GraphSources none;
+    std::array<const void*, 7> roots{};
+    const auto graphs = material.nodes.pointers();
+    std::copy(graphs.begin(), graphs.end(), roots.begin());
+    if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; })) return none;
+    GraphSources& cached = graphSources_[&material];
+    if (cached.roots != roots || cached.version != material.version()) {
+        GraphFind found = findGraphSources(material);
+        cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector)};
+    }
+    return cached;
 }
 
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
@@ -930,6 +1029,17 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     for (DrawItem& item : items) {
         const Material& source = *static_cast<const Material*>(item.materialKey);
         item.fog = world && source.fog ? world->fog.get() : nullptr;
+        // three's materialEnvRotation: the scene's environmentRotation when the scene has an
+        // environment and the material no envMap, else the material's envMapRotation (identity here).
+        const GraphSources& sources = graphSources(source);
+        item.pmremMap = sources.texture;
+        item.reflector = sources.reflector.get();
+        if (item.pmremMap) {
+            Matrix4 rotation;
+            if (world && world->environment && source.maps.find("envMap") == source.maps.end())
+                rotation.makeRotationFromEuler(world->environmentRotation).transpose();
+            item.pmremRotation = toArray(rotation);
+        }
         if (item.kind != MaterialKind::Standard && item.kind != MaterialKind::Physical) continue;
         const Material& material = *static_cast<const Material*>(item.materialKey);
         const auto found = material.maps.find("envMap");
@@ -980,7 +1090,8 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     using Clock = std::chrono::steady_clock;
     const auto start = cpuMs ? Clock::now() : Clock::time_point{};
     LightState lights;
-    const auto items = prepare(scene, camera, lights);
+    auto items = prepare(scene, camera, lights);
+    if (!reflecting_) renderReflections(renderer, scene, camera, items, clear);
     CameraState state;
     state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
@@ -992,6 +1103,60 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     if (cpuMs) *cpuMs = {std::chrono::duration<double, std::milli>(prepared - start).count(),
                         std::chrono::duration<double, std::milli>(Clock::now() - prepared).count()};
     return result;
+}
+
+void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Camera& camera, std::vector<DrawItem>& items,
+                                       std::array<double, 4> clear) {
+    for (auto it = reflections_.begin(); it != reflections_.end();)
+        it = it->second.owner.expired() ? reflections_.erase(it) : std::next(it);
+    std::vector<std::shared_ptr<const Reflector>> drawn;
+    std::vector<Material*> hidden;
+    for (const DrawItem& item : items) {
+        if (!item.reflector) continue;
+        auto* material = const_cast<Material*>(static_cast<const Material*>(item.materialKey));
+        if (std::find(hidden.begin(), hidden.end(), material) == hidden.end()) hidden.push_back(material);
+        if (std::none_of(drawn.begin(), drawn.end(), [&](const auto& r) { return r.get() == item.reflector; }))
+            drawn.push_back(std::static_pointer_cast<const Reflector>(graphSources(*material).reflector));
+    }
+    if (drawn.empty()) return;
+    // three hides the reflecting material while its pass draws (material.visible = false).
+    std::vector<bool> wasVisible;
+    for (Material* material : hidden) {
+        wasVisible.push_back(material->visible);
+        material->visible = false;
+    }
+    struct Restore {
+        std::vector<Material*>& materials;
+        std::vector<bool>& visible;
+        ~Restore() {
+            for (std::size_t i = 0; i < materials.size(); ++i) materials[i]->visible = visible[i];
+        }
+    } restore{hidden, wasVisible};
+    for (const auto& reflector : drawn) {
+        ReflectionPass& pass = reflections_[reflector.get()];
+        if (!pass.renderer) {
+            pass.owner = reflector;
+            pass.renderer = renderer.sibling();
+            pass.database = std::make_unique<RenderDatabase>();
+            pass.database->reflecting_ = true;
+        }
+        pass.database->batching = batching;
+        pass.database->shadowMapEnabled = shadowMapEnabled;
+        pass.renderer->setOutput(renderer.output());
+        pass.renderer->setSize(uint32_t(std::lround(renderer.width() * reflector->resolutionScale)),
+                               uint32_t(std::lround(renderer.height() * reflector->resolutionScale)));
+        PerspectiveCamera& virtualCamera = *reflector->camera;
+        if (poseReflection(*reflector, camera, virtualCamera))
+            pass.database->render(*pass.renderer, scene, virtualCamera, clear);
+        else
+            pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
+        for (const auto& message : pass.database->diagnostics()) diagnostics_.push_back(message);
+    }
+    for (DrawItem& item : items) {
+        if (!item.reflector) continue;
+        item.reflectorView = reflections_.at(item.reflector).renderer->sceneColorView();
+        item.reflectorSampler = renderer.linearClampSampler();
+    }
 }
 
 } // namespace tn::engine

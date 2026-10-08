@@ -675,6 +675,31 @@ void tsl_call() {
     CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
     CHECK(tn_tsl_set(ctx, material, "colorNode", color, &d.value) == TN_OK);
     CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+
+    // pmremTexture takes the texture object itself as a handle argument.
+    const auto handleArg = [](tn_handle_t h) {
+        tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_HANDLE;
+        std::memcpy(&a.reserved, &h, 4); std::memcpy(&a.node, reinterpret_cast<const char*>(&h) + 4, 8);
+        return a;
+    };
+    tn_handle_t sky{};
+    CHECK(tn_construct(ctx, "DataTexture", nullptr, 0, &sky, &d.value) == TN_OK);
+    uint64_t direction = 0, pmrem = 0, lit = 0;
+    const tn_tsl_arg_t axes[3] = {number(0), number(1), number(0)};
+    CHECK(tn_tsl_call(ctx, "vec3", nullptr, axes, 3, &direction, &d.value) == TN_OK);
+    const tn_tsl_arg_t sampled[3] = {handleArg(sky), nodeArg(direction), number(0.5)};
+    CHECK(tn_tsl_call(ctx, "pmremTexture", nullptr, sampled, 3, &pmrem, &d.value) == TN_OK && pmrem != 0);
+    const tn_tsl_arg_t opaque[2] = {nodeArg(pmrem), number(1)};
+    CHECK(tn_tsl_call(ctx, "vec4", nullptr, opaque, 2, &lit, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", lit, &d.value) == TN_OK);
+    CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+    // A material is no texture, and a released handle is no object.
+    const tn_tsl_arg_t wrong[3] = {handleArg(material), nodeArg(direction), number(0.5)};
+    CHECK(tn_tsl_call(ctx, "pmremTexture", nullptr, wrong, 3, &unknown, &d.value) != TN_OK && unknown == 0);
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_object_release(sky, &d.value) == TN_OK);
+    CHECK(tn_tsl_call(ctx, "pmremTexture", nullptr, sampled, 3, &unknown, &d.value) != TN_OK && unknown == 0);
+    tn_diagnostic_release(&d.value);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

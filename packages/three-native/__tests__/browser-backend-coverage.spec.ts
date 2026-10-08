@@ -68,6 +68,12 @@ describe("the browser-JS back end", () => {
         ...language,
         // A write-only setter (`needsUpdate`) is a property of its own, or the write never lands.
         ...binding.setters.filter((key) => !key.includes(".")),
+        // A dotted setter whose head is no member or getter (`morphAttributes.position`) exposes its
+        // head as a holder object, as the V8 adapter does.
+        ...binding.setters
+          .filter((key) => key.includes("."))
+          .map((key) => key.slice(0, key.indexOf(".")))
+          .filter((head) => !binding.members.includes(head) && !binding.getters.includes(head)),
       ]);
       expect(exposed.sort(), name).toEqual([...expected].sort());
       for (const key of exposed) {
