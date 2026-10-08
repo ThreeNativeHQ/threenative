@@ -429,6 +429,10 @@ constexpr const char* kScript = R"JS((async () => {
   bundleEncoder.setIndexBuffer(idxBuf, "uint16");
   bundleEncoder.draw(3, 1, 0, 0);
   bundleEncoder.drawIndexed(3, 1, 0, 0, 0);
+  // The GPU-driven world records its indirect batches into render bundles: a host whose bundle
+  // encoder lacks these throws "drawIndexedIndirect is not a function" on the first streamed cell.
+  bundleEncoder.drawIndirect(indirectBuf, 16);
+  bundleEncoder.drawIndexedIndirect(indirectBuf, 16);
   const renderBundle = bundleEncoder.finish();
   globalThis.__renderBundle = renderBundle;
 
