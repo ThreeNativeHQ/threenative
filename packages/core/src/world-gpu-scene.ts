@@ -401,10 +401,12 @@ function drawableLevel(slot: Pick<IAssetSlot, "levels">, level: number): number 
 }
 
 /**
- * The level a shadow map draws a placement at, or -1 for none. A placement whose main level casts
- * nothing casts nothing, as its key has no caster mesh on the cluster path. Otherwise the level is
- * floored at the map's base and clamped to the last level that casts, so a coarse map draws the
- * coarsest shape that has a twin. `base` past the chain is clamped by the chain length first.
+ * The level a shadow map draws a placement at, or -1 when no level of its asset casts. A placement
+ * whose main level casts nothing casts with the coarsest level at or below it that does: past
+ * `castLevels` a tree keeps its shadow, drawn in the last shape that has a twin, rather than
+ * leaving a hole in the map (PRD-539). The level is then floored at the map's base and clamped to
+ * the last level that casts, so a coarse map draws the coarsest shape that has a twin. `base` past
+ * the chain is clamped by the chain length first.
  */
 function shadowLevel(
   slot: Pick<IAssetSlot, "levels">,
@@ -416,10 +418,11 @@ function shadowLevel(
     const gate = slot.levels[at];
     return gate !== undefined && gate.parts > 0 && regions[gate.firstKey]?.uncast !== true;
   };
-  if (casts(drawn) === false) return -1;
-  let level = drawn;
-  for (let at = drawn + 1; at <= Math.min(base, slot.levels.length - 1); at += 1)
-    if (casts(at)) level = at;
+  // At or below `drawn` any casting level qualifies, above it only up to the map's base, so the
+  // last casting level in `[0, max(drawn, base)]` is both rules at once.
+  const last = Math.max(drawn, Math.min(base, slot.levels.length - 1));
+  let level = -1;
+  for (let at = 0; at <= last; at += 1) if (casts(at)) level = at;
   return level;
 }
 
@@ -3176,19 +3179,21 @@ export class WorldGpuScene {
           });
         },
       );
-      // A level casts when its first key has a minted twin (`keys.w`). A placement whose own level
-      // casts nothing casts nothing; otherwise the map's base floors it, clamped to the last level
-      // that casts, so a coarse map never asks for a twin that was not minted.
+      // A level casts when its first key has a minted twin (`keys.w`). The shape is the last
+      // casting level in `[0, max(level, base)]`: a placement whose own level casts nothing casts
+      // with the coarsest one below it that does, and the map's base floors it, clamped to the last
+      // level that casts, so a coarse map never asks for a twin that was not minted. None: no cast.
       const castsAt = (index: unknown): unknown => {
         const entry = levels.element(asset.x.add(index as never));
         return nodes(entry.z.greaterThan(0.5)).and(keys.element(entry.y).w.greaterThan(0.5));
       };
-      If(nodes(castsAt(level)).not(), () => Return());
-      const shape = nodes(level).toVar();
+      const shape = int(-1).toVar();
       Loop(
         {
-          start: nodes(level).add(1),
-          end: int(min(base as never, asset.y.sub(1.0) as never)).add(1),
+          start: int(0),
+          end: nodes(
+            max(level as never, int(min(base as never, asset.y.sub(1.0) as never)) as never),
+          ).add(1),
           type: "int",
           condition: "<",
         },
@@ -3198,6 +3203,7 @@ export class WorldGpuScene {
           });
         },
       );
+      If(shape.lessThan(0), () => Return());
       const at = levels.element(asset.x.add(shape));
       Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
         const keyIndex = at.y.add(i as never);

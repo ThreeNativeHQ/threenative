@@ -4492,7 +4492,7 @@ describe("a shadow level's own selection", () => {
     expect([...(open.get(0) ?? [])]).toEqual([0, 2, 3]);
   });
 
-  it("draws each placement at the main pass's own level, from the eye, and only where that level casts", () => {
+  it("draws each placement at the main pass's own level, from the eye, or at the coarsest level that casts", () => {
     const { input } = shadowFixture();
     // The map's window sits 100 m ahead of the eye, where an aerial view's focus is. The eye is at
     // z = -40: placements 0 and 3 are within its 40 m gate (level 0) and placement 1 is past it
@@ -4502,8 +4502,8 @@ describe("a shadow level's own selection", () => {
     expect([...(byKey.get(0) ?? [])]).toEqual([0, 3]);
     expect([...(byKey.get(1) ?? [])]).toEqual([1]);
     // `castLevels: 1`: only the finest level has a twin, as on Machinefall. A placement the main
-    // pass draws at a level that casts nothing casts nothing here — what the cluster path does,
-    // where that key has no caster mesh — instead of a write into a region no mesh draws.
+    // pass draws at a level that casts nothing casts with the coarsest shape that does, so its
+    // shadow stays inside the map — never a write into a region no mesh draws (PRD-539).
     const uncast: IKernelInput = {
       ...input,
       regions: input.regions.map((region, index) =>
@@ -4511,7 +4511,7 @@ describe("a shadow level's own selection", () => {
       ),
     };
     const fine = drawnPlacements(cullAndSelectShadow(uncast, level), uncast);
-    expect([...(fine.get(0) ?? [])]).toEqual([0, 3]);
+    expect([...(fine.get(0) ?? [])]).toEqual([0, 1, 3]);
     expect([...(fine.get(1) ?? [])]).toEqual([]);
     // A coarse map asks for the coarsest shape; with one casting level that is level 0, never a
     // level whose twin was not minted.
@@ -4519,7 +4519,7 @@ describe("a shadow level's own selection", () => {
       cullAndSelectShadow(uncast, { ...level, base: COARSEST_SHADOW_LEVEL }),
       uncast,
     );
-    expect([...(coarse.get(0) ?? [])]).toEqual([0, 3]);
+    expect([...(coarse.get(0) ?? [])]).toEqual([0, 1, 3]);
     expect([...(coarse.get(2) ?? [])]).toEqual([]);
   });
 
