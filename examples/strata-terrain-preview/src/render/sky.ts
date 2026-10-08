@@ -291,7 +291,8 @@ export function installOutdoorOcclusion(
           traa(
             input as Node<"vec4">,
             depth,
-            context.velocityNode as Node,
+            // The chain hands the scene-side velocity node; three's declaration asks for a texture node.
+            context.velocityNode as never,
             camera,
           ) as unknown as Node,
       },
