@@ -3747,4 +3747,23 @@ Re-evaluation of the open boxes:
 - Device loss "A valid external Instance reference no longer exists" occurred while host load was
   60–135 from CI jobs; GPU-watchdog starvation is a hypothesis, not a proven cause.
 
+Light budget on the fixed baseline (meadow view, luma removed by switching each source off):
+
+| Source | Share of meadow light |
+| --- | --- |
+| Per-material sky `envMap` (`skyEnvironment`, intensity 1.13, unshadowed) | ≈50% |
+| Sun (backlit view / sun moved behind the camera) | 22% / 30% |
+| Hemisphere fill | ≈5% |
+| Residual with every light and env map off (haze in-scatter, unattributed) | ≈29% |
+
+A clear-day sky is roughly a quarter of the sun, so this balance cannot show the judge's first
+defect, sun structure: the sun's shadow can darken the meadow by at most its own ~25% share.
+Cutting the env map to 0.35× with the sun at 1.8× was rejected: the dense `fieldGrass` cards lost
+their main light and the meadow went back to dark speckle. That speckle was the layer's own
+near-black root albedo, (0.025, 0.052, 0.008) linear. Lifting the root to (0.06, 0.10, 0.025) and its
+root AO from 0.35 to 0.55 is kept: near-meadow pixels below luma 30 fell 2.0% → 0.2%, p10 39 → 54,
+and a fresh judge scored the ground 3 → 3.5 ("keep; small improvement";
+[capture](../../benchmark/strata-loading-2026-10-06/field-grass-lifted-root.jpg)). The sun/env rebalance is
+the next lever and needs the grass lit by more than the env map first.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
