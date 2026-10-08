@@ -11,8 +11,15 @@ for (const material of [MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteN
 }
 
 // Core still owns createRenderer/wrapRenderer; the player owns the GPU and draws these handles.
+// The facade's backend answers three's adapter request with the player's GPU adapter, so core reads
+// the same `adapter.info` identity (and software-adapter verdict) it reads in a browser.
+class NativeBackend {
+  gpu = { requestAdapter: () => globalThis.tn.requestAdapter() };
+}
+
 export class WebGPURenderer {
   constructor({ canvas }) { this.domElement = canvas; }
+  backend = new NativeBackend();
   // WebGPURenderer's defaults; the player applies them before each frame it draws.
   shadowMap = { enabled: false, type: 1 };
   toneMapping = 0;
@@ -32,9 +39,17 @@ export class WebGPURenderer {
   dispose() {}
 }
 
+// three's RenderPipeline(renderer, outputNode): the player installs the node graph as its post pass
+// (once per graph) and draws it with the renderer's settings.
 export class RenderPipeline {
-  constructor(renderer) { this.renderer = renderer; }
-  render() { globalThis.tn.setPostGraph(this.outputNode); }
+  constructor(renderer, outputNode = null) {
+    this.renderer = renderer;
+    this.outputNode = outputNode;
+  }
+  render() {
+    globalThis.tn.setRendererState(this.renderer);
+    globalThis.tn.setPostGraph(this.outputNode);
+  }
   dispose() { globalThis.tn.setPostGraph(null); }
 }
 export const StorageBufferAttribute = unsupported;

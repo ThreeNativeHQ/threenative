@@ -36,6 +36,7 @@ class Tsl {
     std::vector<std::unique_ptr<Call>> calls_;
     std::vector<engine::shader::graph::Node>* statements_ = nullptr;
     uint64_t scope_ = 0;
+    uint32_t denoiseSeed_ = 0;  // DenoiseNode's noise permutation: seeds 1, 2, ... in construction order
     uint64_t nextScope_ = 0;
 };
 

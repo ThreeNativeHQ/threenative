@@ -134,7 +134,11 @@ import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { createAssetLoader } from ${JSON.stringify(resolve(native, "src/engine/player/core-assets.mjs"))};
 import { Scene, PerspectiveCamera, Mesh, BoxGeometry, MeshBasicMaterial } from "three";
 import { WebGPURenderer, RenderPipeline } from "three/webgpu";
-import { vec4, convertToTexture, screenUV } from "three/tsl";
+import { vec4, convertToTexture, screenUV, pass, mrt, output, normalView, metalness, roughness } from "three/tsl";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { installThreePlaytestBridge } from "@threenative/playtest/three";
 function check(value, name) { if (!value) throw Error("SERVICE_CHECK: " + name); }
 const host = globalThis.__THREENATIVE_NATIVE__.physics;
@@ -165,6 +169,28 @@ pipeline.render();
 const target = convertToTexture(vec4(0.2, 0.3, 0.4, 1)).setResolutionScale(0.5);
 pipeline.outputNode = target.sample(screenUV); pipeline.render();
 check(convertToTexture(target) !== undefined, "native post RTT graph");
+// The minimal template's live post chain (PRD-531 slice 4): pass, MRT normals and the four addons.
+const scenePass = pass(scene, camera);
+let refusedNormal = false;
+try { scenePass.getTextureNode("normal"); } catch (error) { refusedNormal = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+check(refusedNormal, "normals need the MRT that asks for them");
+scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
+const sceneDepth = scenePass.getTextureNode("depth"), sceneNormal = scenePass.getTextureNode("normal");
+let refusedMetal = false;
+try { scenePass.getTextureNode("metalness"); } catch (error) { refusedMetal = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+check(refusedMetal && scenePass.isPassNode && scenePass.scene === scene, "the native scene pass has colour, depth and normals only");
+const contact = ao(sceneDepth, sceneNormal, camera);
+contact.radius.value = 0.35; contact.resolutionScale = 0.5;
+check(contact.radius.value === Math.fround(0.35) && contact.resolutionScale === 0.5 && contact.getTextureNode() === contact, "GTAO uniforms");
+const occlusion = denoise(contact.getTextureNode(), sceneDepth, sceneNormal, camera);
+let composed = scenePass.getTextureNode().mul(occlusion.r);
+composed = composed.add(bloom(convertToTexture(composed), 0.22, 0.6, 1));
+const fall = screenUV.sub(0.5).length().oneMinus();
+pipeline.outputNode = smaa(composed.mul(fall));
+pipeline.render(); pipeline.render();
+let refusedSlot = false;
+try { mrt({ normal: metalness }); } catch (error) { refusedSlot = /TN_NATIVE_MRT_UNSUPPORTED/.test(error.message); }
+check(refusedSlot, "an MRT slot under another name refuses");
 globalThis.tn.setPostGraph(JSON.stringify({ version: 1, root: 0, nodes: [
   { kind: "ConstNode", type: "vec4", value: [1, 0.5, 0.25, 1], args: [], dependencies: [] }] }));
 let refused = false;

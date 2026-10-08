@@ -1,5 +1,6 @@
 #include "tsl.h"
 #include "engine/foundation/math/Color.h"
+#include "engine/shader/graph/post_effects.h"
 
 #include <cmath>
 #include <bit>
@@ -256,6 +257,61 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         node->args = {arg(1)};
         if (info.Length() == 3) node->args.push_back(arg(2));
         return result(node);
+    }
+    // three r185's post addons, built live as the native effects (PRD-531 slice 4). The camera
+    // argument three takes is the render camera here: the pass reads its matrices every frame.
+    if (name == "ao" || name == "denoise") {
+        const bool denoise = name == "denoise";
+        if (info.Length() < (denoise ? 3 : 2)) throw std::runtime_error("expected the effect's texture inputs");
+        const auto optional = [&](int i) { return info[i]->IsNullOrUndefined() ? g::Node{} : arg(i); };
+        const auto effect = denoise ? g::denoiseEffect(arg(0), arg(1), optional(2), ++denoiseSeed_)
+                                    : g::gtaoEffect(arg(0), optional(1));
+        return result(g::effectNode(effect));
+    }
+    if (name == "smaa") {
+        arity(1);
+        return result(g::effectNode(g::smaaEffect(arg(0))));
+    }
+    if (name == "bloom") {
+        if (info.Length() < 1 || info.Length() > 4) throw std::runtime_error("expected input, strength, radius, threshold");
+        const auto scalar = [&](int i, double fallback) {
+            if (info.Length() <= i || info[i]->IsUndefined()) return fallback;
+            if (!info[i]->IsNumber()) throw std::runtime_error("bloom strength, radius and threshold must be numbers");
+            return number(info[i]);
+        };
+        return result(g::bloom(arg(0), scalar(1, 1), scalar(2, 0), scalar(3, 0)));
+    }
+    // `effect.__effect(name[, value])`: one of a live effect's scalar uniforms (or its
+    // resolutionScale), which the facade publishes as three's `effect.radius.value`.
+    if (name == "__effect") {
+        if (info.Length() < 1 || info.Length() > 2) throw std::runtime_error("expected a parameter name and an optional value");
+        const auto node = lhs();
+        if (node->kind != g::Kind::PostEffect || !node->post) throw std::runtime_error("not a live post effect");
+        auto& effect = const_cast<g::PostEffect&>(*node->post);  // ponytail: live effects are built mutable
+        const std::string parameter = text(isolate_, info[0]);
+        if (parameter == "resolutionScale") {
+            if (info.Length() == 2) {
+                const double scale = number(info[1]);
+                if (scale <= 0 || scale > 8) throw std::runtime_error("resolutionScale must be in (0, 8]");
+                effect.resolutionScale = static_cast<float>(scale);
+            }
+            info.GetReturnValue().Set(v8::Number::New(isolate_, effect.resolutionScale));
+            return;
+        }
+        const auto found = effect.parameters.find(parameter);
+        if (found == effect.parameters.end() || found->second.size() != 1 || parameter.front() == '_')
+            throw std::runtime_error(effect.kind + " has no scalar uniform " + parameter);
+        if (info.Length() == 2) found->second[0] = static_cast<float>(number(info[1]));
+        info.GetReturnValue().Set(v8::Number::New(isolate_, found->second[0]));
+        return;
+    }
+    if (name == "oneMinus") {
+        arity(call.method ? 0 : 1);
+        return result(g::sub(g::float_(1), lhs()));
+    }
+    if (name == "dispose") {
+        arity(0);
+        return;  // a graph node is a value; the renderer owns what it builds from one
     }
     if (name == "setName") {
         arity(1);
@@ -538,7 +594,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "toVar", "assign", "element", "Else", "abs", "sin", "cos", "floor", "fract",
                              "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
-                             "sample", "setResolutionScale"})
+                             "sample", "setResolutionScale", "__effect", "oneMinus", "dispose"})
         node->Set(str(isolate_, name), function(context, name, true));
     for (const char* lanes : {"x", "y", "z", "w", "xy", "xyz", "zyx", "yx"}) {
         auto data = std::make_unique<Call>(Call{this, std::string("swizzle:") + lanes, true});
@@ -562,7 +618,8 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "equal",      "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
-                             "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture"})
+                             "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
+                             "ao", "denoise", "smaa", "bloom", "oneMinus"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     module->Set(context, str(isolate_, "positionLocal"), wrap(g::positionLocal())).Check();

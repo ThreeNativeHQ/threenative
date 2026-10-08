@@ -51,6 +51,7 @@
 #include "engine/assets/gltf/loader.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/render_database.h"
+#include "mystral/webgpu_compat.h"
 #include "adapters/v8/tsl.h"
 #include "engine/shader/graph/serialized.h"
 #include "mystral/js/engine.h"
@@ -189,11 +190,16 @@ class V8Game {
     Renderer* renderer_ = nullptr;
     // three's renderer settings the game last set (WebGPURenderer's defaults until it does).
     OutputState output_{std::nullopt, 1, true};
+    // The GPU adapter's `info` fields, read before the bundle boots; empty without a GPU (a check).
+    std::vector<std::pair<std::string, std::string>> adapterInfo_;
     bool shadowMap_ = false;
     bool outputChanged_ = true;
     static void loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info);
+    v8::Local<v8::Value> adapterValue();
   public:
+    void setAdapter(std::vector<std::pair<std::string, std::string>> info) { adapterInfo_ = std::move(info); }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
@@ -337,11 +343,33 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
     game.shadowMap_ = enabled->IsTrue();
 }
 
+// three's `adapter` as the facade backend hands it out: `{ info: { architecture, ... }, limits: {} }`,
+// or null when this run has no GPU.
+v8::Local<v8::Value> V8Game::adapterValue() {
+    if (adapterInfo_.empty()) return v8::Null(isolate_);
+    auto ctx = isolate_->GetCurrentContext();
+    auto info = v8::Object::New(isolate_);
+    for (const auto& [name, value] : adapterInfo_) info->Set(ctx, v8str(isolate_, name), v8str(isolate_, value)).Check();
+    auto adapter = v8::Object::New(isolate_);
+    adapter->Set(ctx, v8str(isolate_, "info"), info).Check();
+    adapter->Set(ctx, v8str(isolate_, "limits"), v8::Object::New(isolate_)).Check();
+    return adapter;
+}
+
+void V8Game::requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto ctx = info.GetIsolate()->GetCurrentContext();
+    auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
+    resolver->Resolve(ctx, game.adapterValue()).Check();
+    info.GetReturnValue().Set(resolver->GetPromise());
+}
+
 void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     try {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
     shader::graph::Node graph;
     const auto apply = [&](shader::graph::Node value) {
+        if (value == game.post_) return;  // RenderPipeline.render() hands the same graph every frame
         if (game.renderer_) game.renderer_->setPostGraph(value);
         game.post_ = std::move(value);
     };
@@ -474,6 +502,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "loadAsset"), v8::Function::New(ctx, &loadAsset, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
     v8::Local<v8::Script> script;
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
@@ -584,6 +613,50 @@ json::Value V8Game::resource(const std::string& id, uint64_t tick) const {
 
 }  // namespace
 
+/** The high-performance adapter's `info` fields, empty ones left out; empty when there is none. */
+std::vector<std::pair<std::string, std::string>> adapterIdentity() {
+    struct Request {
+        WGPUAdapter adapter = nullptr;
+        bool done = false;
+    } request;
+    WGPUInstance instance = wgpuCreateInstance(nullptr);
+    if (!instance) return {};
+    WGPURequestAdapterOptions options = {};
+    options.powerPreference = WGPUPowerPreference_HighPerformance;
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+    WGPURequestAdapterCallbackInfo callback = {};
+    callback.mode = WGPUCallbackMode_AllowProcessEvents;
+    callback.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView, void* data, void*) {
+        auto& r = *static_cast<Request*>(data);
+        if (status == WGPURequestAdapterStatus_Success) r.adapter = adapter;
+        r.done = true;
+    };
+    callback.userdata1 = &request;
+    wgpuInstanceRequestAdapter(instance, &options, callback);
+#else
+    wgpuInstanceRequestAdapter(instance, &options, [](WGPURequestAdapterStatus status, WGPUAdapter adapter, char const*, void* data) {
+        auto& r = *static_cast<Request*>(data);
+        if (status == WGPURequestAdapterStatus_Success) r.adapter = adapter;
+        r.done = true;
+    }, &request);
+#endif
+    for (int i = 0; i < 1000000 && !request.done; ++i) wgpuInstanceProcessEvents(instance);
+    std::vector<std::pair<std::string, std::string>> fields;
+    if (request.adapter) {
+        WGPUAdapterInfo info = {};
+        wgpuAdapterGetInfo(request.adapter, &info);
+        for (const auto& [name, value] : {std::pair{"architecture", WGPU_PRINT_STRING_VIEW(info.architecture)},
+                                          std::pair{"description", WGPU_PRINT_STRING_VIEW(info.description)},
+                                          std::pair{"device", WGPU_PRINT_STRING_VIEW(info.device)},
+                                          std::pair{"vendor", WGPU_PRINT_STRING_VIEW(info.vendor)}})
+            if (!value.empty() && value != "unknown") fields.emplace_back(name, value);  // the macro's empty
+        wgpuAdapterInfoFreeMembers(info);
+        wgpuAdapterRelease(request.adapter);
+    }
+    wgpuInstanceRelease(instance);
+    return fields;
+}
+
 int main(int argc, char** argv) {
     std::string gamePath;
     std::string checkRequest;
@@ -607,6 +680,9 @@ int main(int argc, char** argv) {
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --check-request requires --check-game\n"), 2;
 
     V8Game game;
+    // The adapter's identity, read the way core reads it (a request of its own beside the renderer's):
+    // what the game's `adapter.info` and the playtest's adapter class come from. A check has no GPU.
+    if (!checkGame) game.setAdapter(adapterIdentity());
     std::string error;
     if (!game.start(gamePath, error))
         return std::fprintf(stderr, "TN_PLAYER_V8_GAME: %s\n", error.c_str()), 1;

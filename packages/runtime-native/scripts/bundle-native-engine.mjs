@@ -126,6 +126,10 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
     "three/tsl": resolve(player, "core-tsl.mjs"),
     "three/addons/utils/SkeletonUtils.js": resolve(player, "core-three.mjs"),
     "three/addons/geometries/RoundedBoxGeometry.js": resolve(player, "core-three.mjs"),
+    "three/addons/tsl/display/GTAONode.js": resolve(player, "core-addons.mjs"),
+    "three/addons/tsl/display/DenoiseNode.js": resolve(player, "core-addons.mjs"),
+    "three/addons/tsl/display/SMAANode.js": resolve(player, "core-addons.mjs"),
+    "three/addons/tsl/display/BloomNode.js": resolve(player, "core-addons.mjs"),
   };
   const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
     const result = await build({ entryPoints: [facade], bundle: true, write: false, format: "esm",
