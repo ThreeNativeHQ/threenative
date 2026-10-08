@@ -91,7 +91,7 @@ inline Node join(uint8_t n, std::initializer_list<Node> parts, Where where) {
     std::vector<ExprId> ids;
     for (const Node& part : parts) ids.push_back(part.id);
     // `vec3(1)` splats a number the way the upstream constant does: one part per lane.
-    if (ids.size() == 1 && program().expr(ids[0]).op == Op::Constant) ids.assign(n, ids[0]);
+    if (ids.size() == 1 && program().expr(ids[0]).op == Op::Constant) ids.assign(n, ExprId{ids[0]});  // a copy: no aliasing
     return program().construct(Type::vec(n), ids, where);
 }
 }  // namespace detail

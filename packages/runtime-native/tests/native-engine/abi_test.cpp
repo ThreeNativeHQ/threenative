@@ -2,6 +2,7 @@
 #include "threenative/abi/tn_abi.h"
 #include "threenative/abi/tn_tsl.h"
 #include "engine/abi/abi_internal.h"
+#include "engine/shader/graph/graph.h"
 #include "engine/abi/pooled_shared.h"
 #include "engine/scene/object3d.h"
 #include "engine/scene/nodes.h"
@@ -677,8 +678,42 @@ void tsl_call() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-540: a uniform's value is live. Midway writes `clock.value` every frame; the write reaches the
+// material's graph data without changing the program key, so nothing recompiles.
+void tsl_uniform_value() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_tsl_arg_t zero{};
+    zero.kind = TN_TSL_ARG_NUMBER;
+    uint64_t clock = 0, color = 0;
+    CHECK(tn_tsl_call(ctx, "uniform", nullptr, &zero, 1, &clock, &d.value) == TN_OK);
+    tn_tsl_arg_t parts[4]{};
+    for (auto& part : parts) part.kind = TN_TSL_ARG_NODE, part.node = clock;
+    CHECK(tn_tsl_call(ctx, "vec4", nullptr, parts, 4, &color, &d.value) == TN_OK);
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", color, &d.value) == TN_OK);
+    namespace g = tn::engine::shader::graph;
+    const auto graph = tn::abi::shaderNode(material, "colorNode");
+    const std::string key = g::key(graph);
+    CHECK(g::uniforms(graph).begin()->second == std::vector<float>{0});
+
+    const double quarter = 0.25;
+    CHECK(tn_tsl_set_uniform(ctx, &clock, &quarter, 1, &d.value) == TN_OK);
+    CHECK(g::uniforms(graph).begin()->second == std::vector<float>{0.25f});
+    CHECK(g::key(graph) == key);  // same program: the value is data
+    const double pair[2] = {1, 2};
+    CHECK(tn_tsl_set_uniform(ctx, &clock, pair, 2, &d.value) != TN_OK);  // a float takes one value
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_tsl_set_uniform(ctx, &color, &quarter, 1, &d.value) != TN_OK);  // not a uniform
+    tn_diagnostic_release(&d.value);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value})

@@ -515,6 +515,57 @@ void catalogCoverage() {
 }
 
 // TSL authoring validates its JS boundary and restores the statement stack after callbacks throw.
+// PRD-540: three's `uniform.value = x` through the shared table's tslSetUniform. The value reaches the
+// material graph's data and leaves its program key alone; a three VectorN makes a vector uniform.
+void uniformValue() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    namespace g = tn::engine::shader::graph;
+    v8::HandleScope scope(rt.isolate);
+    const auto ctx = v8::Context::New(rt.isolate);
+    v8::Context::Scope contextScope(ctx);
+    adapter.install(ctx, ctx->Global());
+    const auto evaluate = [&](const char* source) {
+        v8::TryCatch caught(rt.isolate);
+        v8::Local<v8::Script> script;
+        v8::Local<v8::Value> result;
+        const bool ran = v8::Script::Compile(ctx, v8::String::NewFromUtf8(rt.isolate, source).ToLocalChecked()).ToLocal(&script) &&
+                         script->Run(ctx).ToLocal(&result);
+        if (!ran) {
+            v8::String::Utf8Value message(rt.isolate, caught.Exception());
+            std::fprintf(stderr, "uniform_value: %s\n", *message ? *message : "?");
+        }
+        CHECK(ran);
+        return result;
+    };
+    const auto material = evaluate(R"JS(
+        globalThis.clock = tsl.uniform(0);
+        globalThis.origin = tsl.uniform({ x: 1, y: 2 });
+        const m = new MeshBasicNodeMaterial();
+        m.colorNode = tsl.vec4(origin, clock, 1);
+        m
+    )JS");
+    tn_handle_t handle{};
+    CHECK(adapter.unwrap(material, handle));
+    const auto graph = tn::abi::shaderNode(handle, "colorNode");
+    const std::string key = g::key(graph);
+    auto values = g::uniforms(graph);
+    CHECK(values.size() == 2);
+    std::vector<std::vector<float>> before;
+    for (const auto& [name, lanes] : values) before.push_back(lanes);
+    CHECK((before == std::vector<std::vector<float>>{{0}, {1, 2}}) || (before == std::vector<std::vector<float>>{{1, 2}, {0}}));
+    evaluate("tsl.setUniform(clock, 0.5); tsl.setUniform(origin, 3, 4); 0");
+    std::vector<std::vector<float>> after;
+    for (const auto& [name, lanes] : g::uniforms(graph)) after.push_back(lanes);
+    CHECK((after == std::vector<std::vector<float>>{{0.5f}, {3, 4}}) || (after == std::vector<std::vector<float>>{{3, 4}, {0.5f}}));
+    CHECK(g::key(graph) == key);
+    const auto refused = evaluate(R"JS(
+        (() => { try { tsl.setUniform(clock, 1, 2); return false; } catch (e) { return e.message.includes('TN_TSL_UNIFORM_VALUE'); } })()
+    )JS");
+    CHECK(refused->IsTrue());
+}
+
 void tslApi() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
@@ -1062,4 +1113,4 @@ TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", un
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},
              {"catalog_coverage", catalogCoverage},
-             {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"node_materials", nodeMaterials}, {"skeletal", skeletal})
+             {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal})

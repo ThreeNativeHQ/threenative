@@ -13,13 +13,26 @@ interface IRaycasterLike {
   intersectObject(object: object, recursive: boolean): readonly object[];
 }
 
+/** three-mesh-bvh's split strategies, with its values (src/core/Constants.js). */
+export const CENTER = 0;
+export const AVERAGE = 1;
+export const SAH = 2;
+
 export class MeshBVH {
   readonly geometry: object;
 
   constructor(geometry: object, options?: Readonly<Record<string, unknown>>) {
-    if (options !== undefined && Object.keys(options).length > 0)
+    const { strategy, ...rest } = options ?? {};
+    // A split strategy changes how three-mesh-bvh builds its tree, never which triangles a ray
+    // hits; the engine raycast answers the same either way, so any of the three is accepted.
+    if (strategy !== undefined && strategy !== CENTER && strategy !== AVERAGE && strategy !== SAH)
       throw new Error(
-        "TN_NATIVE_MESH_BVH_OPTIONS_UNSUPPORTED: the engine MeshBVH builds no tree, so it takes no build options",
+        `TN_NATIVE_MESH_BVH_STRATEGY: ${String(strategy)} is not CENTER, AVERAGE or SAH`,
+      );
+    const unsupported = Object.keys(rest);
+    if (unsupported.length > 0)
+      throw new Error(
+        `TN_NATIVE_MESH_BVH_OPTIONS_UNSUPPORTED: ${unsupported.join(", ")}: the engine MeshBVH builds no tree, so it takes no other build option`,
       );
     this.geometry = geometry;
   }

@@ -497,10 +497,11 @@ const KIND = {
   undefined: 8,
 } as const;
 
-// wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, node 8 (u64), number 16, text 24, rgb 32; 56 bytes.
-const TSL_ARG = 56;
-const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4 } as const;
-type TslCall = "_tn_tsl_call" | "_tn_tsl_release" | "_tn_tsl_set";
+// wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, lanes 4, node 8 (u64), number 16, text 24,
+// numbers 32 (four f64); 64 bytes.
+const TSL_ARG = 64;
+const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4, vector: 5 } as const;
+type TslCall = "_tn_tsl_call" | "_tn_tsl_release" | "_tn_tsl_set" | "_tn_tsl_set_uniform";
 
 interface IAbiHelpers {
   scoped<T>(work: () => T): T;
@@ -522,8 +523,14 @@ function tslOf(
   const calls = abi as unknown as Partial<
     Record<TslCall, (...args: (number | bigint)[]) => number>
   >;
-  const { _tn_tsl_call: call, _tn_tsl_release: release, _tn_tsl_set: set } = calls;
-  if (call === undefined || release === undefined || set === undefined) return undefined;
+  const {
+    _tn_tsl_call: call,
+    _tn_tsl_release: release,
+    _tn_tsl_set: set,
+    _tn_tsl_set_uniform: setUniform,
+  } = calls;
+  if (call === undefined || release === undefined || set === undefined || setUniform === undefined)
+    return undefined;
   return {
     tsl: {
       call: (name, receiver, args) =>
@@ -538,9 +545,10 @@ function tslOf(
             v.setUint32(at, TSL_KIND[arg.kind], true);
             if (arg.kind === "node") v.setBigUint64(at + 8, BigInt(arg.node), true);
             else if (arg.kind === "number") v.setFloat64(at + 16, arg.number, true);
-            else if (arg.kind === "rgb")
-              arg.rgb.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
-            else v.setUint32(at + 24, text, true);
+            else if (arg.kind === "rgb" || arg.kind === "vector") {
+              v.setUint32(at + 4, arg.numbers.length, true);
+              arg.numbers.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
+            } else v.setUint32(at + 24, text, true);
           });
           const self = receiver === null ? 0 : h.alloc(8);
           if (receiver !== null) h.view().setBigUint64(self, BigInt(receiver), true);
@@ -567,6 +575,16 @@ function tslOf(
             diag,
             `set ${path}`,
           );
+        }),
+      setUniform: (node, lanes) =>
+        h.scoped(() => {
+          const pointer = h.alloc(8);
+          const values = h.alloc(Math.max(8, lanes.length * 8));
+          const v = h.view();
+          v.setBigUint64(pointer, BigInt(node), true);
+          lanes.forEach((lane, i) => v.setFloat64(values + i * 8, lane, true));
+          const diag = h.diagnostic();
+          h.check(setUniform(context, pointer, values, lanes.length, diag), diag, "uniform.value");
         }),
     },
   };

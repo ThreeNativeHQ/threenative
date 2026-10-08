@@ -15,8 +15,6 @@ struct Tsl::Wrapper {
     g::Node node;
     g::Storage storage;
     v8::Global<v8::Object> object;
-    uint64_t scope = 0;
-    size_t statement = 0;
 };
 struct Tsl::Call {
     Tsl* owner;
@@ -136,13 +134,29 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
         }
         return abi::TslArg::rgbOf(components[0], components[1], components[2]);
     }
+    // A three VectorN or Color as an operand is its constant, as TSL's nodeObject makes of it.
+    const auto lane = [&](const char* key, double& out) {
+        v8::Local<v8::Value> component;
+        if (!object->Get(ctx, str(isolate_, key)).ToLocal(&component)) throw JsFailure{};
+        if (!component->IsNumber()) return false;
+        out = component.As<v8::Number>()->Value();
+        return true;
+    };
+    double lanes[4];
+    if (lane("x", lanes[0]) && lane("y", lanes[1])) {
+        uint8_t count = 2;
+        if (lane("z", lanes[2])) count = lane("w", lanes[3]) ? 4 : 3;
+        return abi::TslArg::vectorOf(count, lanes);
+    }
+    if (lane("r", lanes[0]) && lane("g", lanes[1]) && lane("b", lanes[2]))
+        return abi::TslArg::rgbOf(lanes[0], lanes[1], lanes[2]);
     return abi::TslArg::other();
 }
 
 v8::Local<v8::Object> Tsl::wrap(g::Node node) {
     if (node) for (const auto* w : wrappers_) if (w->node == node) return w->object.Get(isolate_);
     const auto object = nodeTemplate_.Get(isolate_)->NewInstance(isolate_->GetCurrentContext()).ToLocalChecked();
-    auto* w = new Wrapper{this, std::move(node), {}, {}, 0, 0};
+    auto* w = new Wrapper{this, std::move(node), {}, {}};
     object->SetInternalField(0, v8::External::New(isolate_, this));
     object->SetInternalField(1, v8::External::New(isolate_, w));
     w->object.Reset(isolate_, object);
@@ -160,26 +174,19 @@ v8::Local<v8::Object> Tsl::wrap(g::Node node) {
 }
 
 g::Node Tsl::capture(v8::Local<v8::Function> callback, v8::Local<v8::Value> argument) {
-    std::vector<g::Node> body;
-    auto* parent = statements_;
-    const uint64_t parentScope = scope_;
-    statements_ = &body;
-    scope_ = ++nextScope_;
+    g::Node node;
+    scopes_.call("scope:open", nullptr, {}, node);
     v8::Local<v8::Value> result;
     const auto ctx = isolate_->GetCurrentContext();
     const bool ok =
         callback
             ->Call(ctx, v8::Undefined(isolate_), argument.IsEmpty() ? 0 : 1, argument.IsEmpty() ? nullptr : &argument)
             .ToLocal(&result);
-    statements_ = parent;
-    scope_ = parentScope;
+    std::vector<abi::TslArg> returned;
+    if (ok && !result->IsUndefined()) returned.push_back(this->argument("scope:close", 0, 1, result));
+    scopes_.call("scope:close", nullptr, returned, node);
     if (!ok)
         throw JsFailure{};
-    if (body.empty() && !result->IsUndefined())
-        return input(result);
-    auto node = std::make_shared<g::NodeData>();
-    node->kind = g::Kind::Body;
-    node->body = std::move(body);
     return node;
 }
 
@@ -217,10 +224,6 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
     const auto lhs = [&] { return call.method ? input(info.This()) : arg(0); };
     const auto rhs = [&] { return arg(call.method ? 0 : 1); };
     const auto result = [&](g::Node node) { info.GetReturnValue().Set(wrap(std::move(node))); };
-    const auto statement = [&] {
-        if (!statements_)
-            throw std::runtime_error("statement outside Fn");
-    };
 
     if (name == "setName") {
         arity(1);
@@ -244,39 +247,31 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
             throw std::runtime_error("storage buffer needs setName");
         return result(self->storage.element(arg(0)));
     }
+    // The statement forms run against the shared open bodies (abi::TslScopes).
+    const auto scoped = [&](const char* form, const abi::TslArg* receiver, std::vector<abi::TslArg> args) {
+        g::Node node;
+        scopes_.call(form, receiver, args, node);
+        return node;
+    };
+    const auto statement = [&] {
+        if (scopes_.depth() == 0)
+            throw std::runtime_error("statement outside Fn");
+    };
+    const abi::TslArg receiver = call.method ? abi::TslArg::of(self->node) : abi::TslArg{};
     if (name == "toVar") {
         arity(0);
-        statement();
-        g::Block block;
-        const auto variable = block.var(lhs());
-        statements_->push_back(variable.declaration);
-        return result(variable.declaration);
+        return result(scoped("toVar", &receiver, {}));
     }
     if (name == "assign") {
         arity(1);
-        statement();
-        if (!self->node || (self->node->kind != g::Kind::Var && self->node->kind != g::Kind::StorageElement))
-            throw std::runtime_error("assign requires a variable or storage element");
-        g::Block block;
-        block.assign(self->node, arg(0));
-        statements_->push_back(block.node()->body[0]);
+        scoped("assign", &receiver, {abi::TslArg::of(arg(0))});
         info.GetReturnValue().Set(info.This());
         return;
     }
     if (name == "Else") {
         arity(1);
         statement();
-        if (!self->node || self->node->kind != g::Kind::If || self->scope != scope_ ||
-            self->statement >= statements_->size() || (*statements_)[self->statement] != self->node ||
-            !self->node->otherwise.empty())
-            throw std::runtime_error("Else requires an If in this stack");
-        const auto branch = capture(callback(info[0]));
-        if (branch->kind != g::Kind::Body)
-            throw std::runtime_error("Else callback must contain statements");
-        auto node = std::make_shared<g::NodeData>(*self->node);
-        node->otherwise = branch->body;
-        self->node = node;
-        (*statements_)[self->statement] = node;
+        self->node = scoped("Else", &receiver, {abi::TslArg::of(capture(callback(info[0])))});
         info.GetReturnValue().Set(info.This());
         return;
     }
@@ -296,40 +291,17 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(2);
         statement();
         const auto condition = arg(0);
-        const auto branch = capture(callback(info[1]));
-        if (branch->kind != g::Kind::Body)
-            throw std::runtime_error("If callback must contain statements");
-        auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::If;
-        node->args = {condition};
-        node->body = branch->body;
-        const auto object = wrap(node);
-        Wrapper* w = wrapper(object);
-        w->scope = scope_;
-        w->statement = statements_->size();
-        statements_->push_back(node);
-        info.GetReturnValue().Set(object);
-        return;
+        return result(scoped("If", nullptr, {abi::TslArg::of(condition), abi::TslArg::of(capture(callback(info[1])))}));
     }
     if (name == "Loop") {
         arity(2);
         statement();
-        const int32_t n = count(info[0]);
+        const abi::TslArg n = abi::TslArg::of(static_cast<double>(count(info[0])));
         const auto body = callback(info[1]);
-        // Reuse the graph's loop/index creation; the adapter only captures its JS statements.
-        g::Block block;
-        g::Node captured;
-        block.Loop(n, [&](g::Node index) {
-            const auto inputs = v8::Object::New(isolate_);
-            inputs->Set(ctx, str(isolate_, "i"), wrap(index)).Check();
-            captured = capture(body, inputs);
-            if (captured->kind != g::Kind::Body)
-                throw std::runtime_error("Loop callback must contain statements");
-        });
-        auto node = std::make_shared<g::NodeData>(*block.node()->body[0]);
-        node->body = captured->body;
-        statements_->push_back(node);
-        return result(node);
+        const auto index = scoped("Loop:index", nullptr, {});
+        const auto inputs = v8::Object::New(isolate_);
+        inputs->Set(ctx, str(isolate_, "i"), wrap(index)).Check();
+        return result(scoped("Loop", nullptr, {n, abi::TslArg::of(index), abi::TslArg::of(capture(body, inputs))}));
     }
     if (name == "instancedArray") {
         arity(2);
@@ -361,11 +333,19 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
             abi::tslEffectParameter(lhs(), text(isolate_, info[0]), info.Length() == 2 ? &value : nullptr)));
         return;
     }
+    if (name == "setUniform") {
+        // three's `uniform.value = x` (tsl-uniforms.ts): the node, then one value per lane.
+        Wrapper* target = info.Length() > 0 ? wrapper(info[0]) : nullptr;
+        if (!target || !target->node) throw std::runtime_error("setUniform needs a uniform node");
+        std::vector<double> values;
+        for (int i = 1; i < info.Length(); ++i) values.push_back(number(info[i]));
+        abi::tslSetUniform(target->node, values.data(), values.size());
+        return;
+    }
     // Everything else is the shared table (engine/abi/tsl_call.cpp), which the Wasm back end calls too.
     std::vector<abi::TslArg> args;
     for (int i = 0; i < info.Length(); ++i) args.push_back(argument(name, i, info.Length(), info[i]));
-    const abi::TslArg receiver = call.method ? abi::TslArg::of(self->node) : abi::TslArg{};
-    g::Node node = abi::tslCall(name, call.method ? &receiver : nullptr, args, nextScope_);
+    g::Node node = abi::tslCall(name, call.method ? &receiver : nullptr, args, serial_);
     if (!node) throw std::runtime_error("unsupported operation");
     return result(std::move(node));
 }
@@ -402,30 +382,18 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
-                             "ao", "denoise", "smaa", "bloom", "oneMinus", "varying"})
+                             "ao", "denoise", "smaa", "bloom", "oneMinus", "varying", "setUniform"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
-    module->Set(context, str(isolate_, "positionLocal"), wrap(g::positionLocal())).Check();
-    module->Set(context, str(isolate_, "positionWorld"), wrap(g::varying("positionWorld", Type::vec(3)))).Check();
-    module->Set(context, str(isolate_, "normalViewGeometry"), wrap(g::varying("normalViewGeometry", Type::vec(3)))).Check();
-    module->Set(context, str(isolate_, "cameraViewMatrix"), wrap(g::uniform("viewMatrix", Type::mat(4, 4)))).Check();
-    module->Set(context, str(isolate_, "instanceIndex"), wrap(g::instanceIndex())).Check();
-    // TSL's node constants, built by the shared table as the Wasm back end builds them.
-    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "positionGeometry", "normalWorld"})
-        module->Set(context, str(isolate_, name), wrap(abi::tslCall(name, nullptr, {}, nextScope_))).Check();
-    module->Set(context, str(isolate_, "screenUV"), wrap(g::uv())).Check();
+    for (auto& [name, node] : abi::tslConstants())
+        module->Set(context, str(isolate_, name), wrap(std::move(node))).Check();
     // three's ScreenNode coordinate (the fragment's pixel position) and its geometry attributes.
     module->Set(context, str(isolate_, "screenCoordinate"), wrap(g::swizzle(g::builtin("position"), "xy"))).Check();
-    module->Set(context, str(isolate_, "positionGeometry"), wrap(g::attribute("position", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "normalGeometry"), wrap(g::attribute("normal", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "tangentGeometry"), wrap(g::attribute("tangent", Type::vec(4)))).Check();
     // positionViewDirection: normalize(-positionView), the standard programs' view-space varying.
     module->Set(context, str(isolate_, "positionViewDirection"),
                 wrap(g::normalize(g::negate(g::varying("positionView", Type::vec(3)))))).Check();
-    module->Set(context, str(isolate_, "materialColor"), wrap(g::uniform("diffuse", Type::vec(4)))).Check();
-    module->Set(context, str(isolate_, "materialEmissive"), wrap(g::uniform("emissive", Type::vec(3)))).Check();
-    module->Set(context, str(isolate_, "materialMetalness"), wrap(g::uniform("metalness", Type::f32()))).Check();
-    module->Set(context, str(isolate_, "materialRoughness"), wrap(g::uniform("roughness", Type::f32()))).Check();
     // The existing V8 hosts execute bundled scripts with globals; they have no ES module resolver.
     target->Set(context, str(isolate_, "tsl"), module).Check();
 }

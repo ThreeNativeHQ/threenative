@@ -1,5 +1,6 @@
 export * from "./core-three.mjs";
 import { unsupported } from "./core-three.mjs";
+import { syncUniforms } from "./core-tsl.mjs";
 
 export const { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
@@ -44,6 +45,7 @@ export class WebGPURenderer {
   }
   getDrawingBufferSize(target) { return target.set(this.domElement.width, this.domElement.height); }
   render(scene, camera) {
+    syncUniforms();
     globalThis.tn.scene = scene;
     globalThis.tn.camera = camera;
     globalThis.tn.setRendererState(this);

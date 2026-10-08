@@ -31,7 +31,7 @@ interface ICall {
   readonly args: readonly TslArgValue[];
 }
 
-function tslRuntime(calls: ICall[], sets: string[]): ITslRuntime {
+function tslRuntime(calls: ICall[], sets: string[], uniforms: string[] = []): ITslRuntime {
   let next = 0;
   return {
     call(name, receiver, args) {
@@ -41,6 +41,9 @@ function tslRuntime(calls: ICall[], sets: string[]): ITslRuntime {
     release() {},
     set(material, path, node) {
       sets.push(`${material.key.split(":")[0]}.${path}=${node}`);
+    },
+    setUniform(node, lanes) {
+      uniforms.push(`${node}=${lanes.join(",")}`);
     },
   };
 }
@@ -69,7 +72,7 @@ type Fn = (...args: unknown[]) => Record<string, unknown>;
 describe("TSL on the browser back end", () => {
   it("builds uniform(0) and its node methods and swizzles through the shared table", () => {
     const calls: ICall[] = [];
-    const tsl = defineTsl(tslRuntime(calls, []));
+    const tsl = defineTsl(tslRuntime(calls, [])).exports;
     const clock = (tsl.uniform as Fn)(0);
     const scaled = (clock.mul as Fn)(2);
     void scaled.x;
@@ -89,27 +92,45 @@ describe("TSL on the browser back end", () => {
       engineRuntime(runtime, { x: 1, y: 2, z: 3, name: "sea" }),
       catalog,
     );
-    const tsl = defineTsl(runtime);
+    const tsl = defineTsl(runtime).exports;
     const sun = new (classes.Vector3 as Constructor)();
     (tsl.vec3 as Fn)(sun);
     const sea = new (classes.Texture as Constructor)();
     const sample = (tsl.texture as Fn)(sea, (tsl.uv as Fn)());
-    expect(calls.map(({ name }) => name)).toEqual(["vec3", "vec3", "uv", "texture"]);
-    expect(calls[0]?.args).toEqual([1, 2, 3].map((number) => ({ kind: "number", number })));
-    expect(calls[1]?.args).toEqual([{ kind: "node", node: 1 }]);
-    expect(calls[3]?.args).toEqual([
+    expect(calls.map(({ name }) => name)).toEqual(["vec3", "uv", "texture"]);
+    expect(calls[0]?.args).toEqual([{ kind: "vector", numbers: [1, 2, 3] }]);
+    expect(calls[2]?.args).toEqual([
       { kind: "named", text: "sea" },
-      { kind: "node", node: 3 },
+      { kind: "node", node: 2 },
     ]);
 
     const material = new (classes.MeshBasicNodeMaterial as Constructor)();
     material.colorNode = sample;
-    expect(sets).toEqual(["MeshBasicNodeMaterial.colorNode=4"]);
+    expect(sets).toEqual(["MeshBasicNodeMaterial.colorNode=3"]);
     expect(material.colorNode).toBe(sample);
   });
 
+  it("writes uniform.value through to the engine: numbers at once, edited vectors each frame", () => {
+    const uniforms: string[] = [];
+    const runtime = tslRuntime([], [], uniforms);
+    const values: Record<string, EngineValue> = { x: 0, y: 0 };
+    const { classes } = defineBrowserClasses(registry, engineRuntime(runtime, values), catalog);
+    const tsl = defineTsl(runtime);
+    const clock = (tsl.exports.uniform as Fn)(0);
+    expect(clock.value).toBe(0);
+    clock.value = 2.5; // Midway: this.clock.value = this.time
+    expect(clock.value).toBe(2.5);
+    const origin = new (classes.Vector2 as Constructor)();
+    const center = (tsl.exports.uniform as Fn)(origin);
+    expect(center.value).toBe(origin); // three keeps the vector the uniform was made from
+    values.x = 4;
+    values.y = 5; // Midway: origin.value.set(camera.x, camera.z)
+    tsl.sync();
+    expect(uniforms).toEqual(["1=2.5", "2=4,5"]);
+  });
+
   it("refuses an argument TSL has no meaning for, by name", () => {
-    const tsl = defineTsl(tslRuntime([], []));
+    const tsl = defineTsl(tslRuntime([], [])).exports;
     expect(() => (tsl.sin as Fn)({ plain: true })).toThrow("TN_TSL sin: argument 0");
   });
 });

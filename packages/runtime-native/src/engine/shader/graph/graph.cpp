@@ -214,7 +214,7 @@ ExprId Lowerer::emit(Node node) {
             for (const Node& part : d.args) ids.push_back(expression(part));
             // `vec3(0.5)` splats a constant, as the builder's join does.
             if (ids.size() == 1 && ids[0] != kInvalid && program_.expr(ids[0]).op == Op::Constant)
-                ids.assign(d.type.rows, ids[0]);
+                ids.assign(d.type.rows, ExprId{ids[0]});  // a copy: assign's value must not alias the vector
             return program_.construct(d.type, ids);
         }
         case Kind::Convert: return convert(expression(d.args[0]), d.type);
@@ -410,6 +410,15 @@ Node uniform(std::string_view name, Type type, std::vector<float> values) {
     data->name = std::string(name);
     data->values = std::move(values);
     return data;
+}
+void setUniformValues(const Node& uniform, std::vector<float> values) {
+    if (!uniform || uniform->kind != Kind::Uniform) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: not a uniform node");
+    // A uniform built without a value (cameraViewMatrix, materialColor) is the engine's to fill.
+    if (uniform->values.empty()) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " is engine-provided");
+    if (uniform->type.isMatrix() || uniform->type.scalar != Type::Scalar::F32 || values.size() != uniform->type.rows)
+        throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " takes " +
+                                 std::to_string(uniform->type.rows) + " float value(s)");
+    uniform->values = std::move(values);
 }
 Node attribute(std::string_view name, Type type) {
     auto data = makeNode(Kind::Attribute, type);

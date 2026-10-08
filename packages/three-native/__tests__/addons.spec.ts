@@ -11,11 +11,21 @@ import { describe, expect, it } from "vitest";
 
 import { DataUtils, fromHalfFloat, toHalfFloat } from "../src/addons/data-utils.js";
 import { FLOAT_TYPE, HALF_FLOAT_TYPE, parseHDR } from "../src/addons/hdr.js";
-import { MeshBVH } from "../src/addons/mesh-bvh.js";
+import { AVERAGE, CENTER, MeshBVH, SAH } from "../src/addons/mesh-bvh.js";
 
 const threeRoot = path.join(
   path.dirname(
     createRequire(path.join(process.cwd(), "packages", "core", "package.json")).resolve("three"),
+  ),
+  "..",
+);
+
+// three-mesh-bvh resolves from core, which depends on it.
+const bvhRoot = path.join(
+  path.dirname(
+    createRequire(path.join(process.cwd(), "packages", "core", "package.json")).resolve(
+      "three-mesh-bvh",
+    ),
   ),
   "..",
 );
@@ -178,9 +188,23 @@ describe("MeshBVH", () => {
     expect(tree.raycastObject3D(mesh, raycaster(true))).toEqual([hits[0]]);
   });
 
+  it("exports three-mesh-bvh's split strategies with its values, and takes one as strategy", async () => {
+    const constants = (await import(
+      pathToFileURL(path.join(bvhRoot, "src/core/Constants.js")).href
+    )) as { CENTER: number; AVERAGE: number; SAH: number };
+    expect({ CENTER, AVERAGE, SAH }).toEqual({
+      CENTER: constants.CENTER,
+      AVERAGE: constants.AVERAGE,
+      SAH: constants.SAH,
+    });
+    for (const strategy of [CENTER, AVERAGE, SAH])
+      expect(new MeshBVH({}, { strategy })).toBeDefined();
+    expect(() => new MeshBVH({}, { strategy: 7 })).toThrow(/TN_NATIVE_MESH_BVH_STRATEGY/);
+  });
+
   it("refuses build options it cannot honour", () => {
-    expect(() => new MeshBVH({}, { strategy: 2 })).toThrow(
-      /TN_NATIVE_MESH_BVH_OPTIONS_UNSUPPORTED/,
+    expect(() => new MeshBVH({}, { strategy: SAH, indirect: true })).toThrow(
+      /TN_NATIVE_MESH_BVH_OPTIONS_UNSUPPORTED: indirect/,
     );
   });
 });
