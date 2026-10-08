@@ -889,6 +889,27 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     info.GetReturnValue().Set(holder);
                 }, v8::External::New(isolate_, tails)));
         }
+        // A setter with no getter (three's write-only `texture.needsUpdate`) is still a property:
+        // without an accessor the write lands on a plain JS property and never reaches the engine.
+        for (const auto& [path, setter] : binding.setters) {
+            (void)setter;
+            if (path.find('.') != std::string::npos || binding.getters.count(path) > 0 || binding.members.count(path) > 0)
+                continue;
+            proto->SetAccessorProperty(str(isolate_, path), v8::Local<v8::FunctionTemplate>(), v8::FunctionTemplate::New(isolate_,
+                [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                    tn_handle_t h{};
+                    if (!d->adapter->unwrap(info.This(), h)) return;
+                    std::vector<tn_value_t> args;
+                    std::deque<std::string> texts;
+                    std::deque<std::vector<tn_value_t>> values;
+                    std::vector<std::vector<double>> arrays;
+                    tn_diagnostic_t diagnostic{nullptr, 0};
+                    if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
+                        tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
+                        throwStatus(info.GetIsolate(), diagnostic);
+                }, v8::External::New(isolate_, new MethodData{this, path, {}})));
+        }
         for (const auto& [name, set] : binding.callbacks) {
             (void)set;
             if (callbackKeys_.find(name) == callbackKeys_.end())
