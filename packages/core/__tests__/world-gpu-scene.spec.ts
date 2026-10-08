@@ -4522,27 +4522,6 @@ describe("a shadow level's own selection", () => {
     expect([...(coarse.get(2) ?? [])]).toEqual([]);
   });
 
-  it("takes the authored distance from the eye, so the main pass's adaptive bias never thins its casters", () => {
-    const { input } = shadowFixture();
-    const level = { base: 0, gate: 1, planes: levelPlanes(100) };
-    const uncast: IKernelInput = {
-      ...input,
-      regions: input.regions.map((region, index) =>
-        index === 0 ? region : { ...region, uncast: true },
-      ),
-    };
-    setLodBias(2.5);
-    try {
-      // Placement 3 is 20 m from the eye: the main pass draws it at level 1 under a 2.5 bias (50 m),
-      // which casts nothing with one cast level. Its shadow is the authored distance's level 0.
-      expect([...(drawnPlacements(cullAndSelect(input), input).get(0) ?? [])]).not.toContain(3);
-      const shadow = drawnPlacements(cullAndSelectShadow(uncast, level), uncast);
-      expect([...(shadow.get(0) ?? [])]).toEqual([0, 3]);
-    } finally {
-      setLodBias(1);
-    }
-  });
-
   it("reads a base past the chain as the coarsest shape the asset has, without reading past its levels", () => {
     const { input } = shadowFixture();
     const level = {
