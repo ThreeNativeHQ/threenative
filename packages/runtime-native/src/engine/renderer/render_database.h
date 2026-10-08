@@ -61,6 +61,8 @@ class RenderDatabase {
     [[nodiscard]] const std::array<double, 4>& lastPrepareMs() const { return prepareMs_; }
     /** three's `renderer.shadowMap.enabled`: off, no light draws or reads a shadow map. */
     bool shadowMapEnabled = false;
+    /** three's `renderer.shadowMap.type`: PCFShadowMap (1) or PCFSoftShadowMap (2). */
+    int shadowMapType = 1;
     static constexpr std::size_t kMinBatchMembers = 4;
     /** Draws the last render merged by batching: groups made and meshes they absorbed. */
     [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }

@@ -830,6 +830,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     const auto matrices = profiling ? Clock::now() : Clock::time_point{};
     lights = LightState{};
     lights.hemisphereSky = lights.hemisphereGround = {0, 0, 0};
+    lights.softShadows = shadowMapType == 2;
     callbacks_.clear();
     direct_.clear();
     skeletonsUpdated_.clear();

@@ -1707,7 +1707,7 @@ zoom: number;
   updateProjectionMatrix(): void;
 }
 
-/** Catalog partial (native-not-implemented): three/PCFShadowMap. */
+/** Catalog supported: three/PCFShadowMap. */
 export declare const PCFShadowMap: 1;
 
 /** Catalog supported: three/PCFSoftShadowMap. */

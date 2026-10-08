@@ -55,6 +55,14 @@ struct Expr {
     uint64_t immediate = 0;  // constant bits, swizzle lanes, or an interned name
 };
 
+/** A gather-compare Sample's immediate: the texture index, then the signed whole-texel x and y offsets. */
+constexpr uint64_t gatherImmediate(uint32_t texture, int8_t x, int8_t y) {
+    return texture | uint64_t(uint8_t(x)) << 32 | uint64_t(uint8_t(y)) << 40;
+}
+constexpr uint32_t gatherTexture(uint64_t immediate) { return uint32_t(immediate); }
+constexpr int gatherOffsetX(uint64_t immediate) { return int8_t(uint8_t(immediate >> 32)); }
+constexpr int gatherOffsetY(uint64_t immediate) { return int8_t(uint8_t(immediate >> 40)); }
+
 struct Diagnostic {
     std::string code;     // TN_TSL_TYPE | TN_TSL_UNSUPPORTED
     std::string node;     // the operation that failed
@@ -128,6 +136,10 @@ public:
     uint32_t textureDepth(std::string_view name, bool cube = false);
     /** f32 in [0, 1]: `reference` compared against the depth texture at `uv` (vec3 for a cube), filtered. */
     ExprId sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where = Where::current());
+    /** vec4: the four texels around `uv` (2D depth texture, offset by whole texels) each compared with
+     *  `reference`, as textureGatherCompare answers them (three's `.offset(o).gather().compare(z)`). */
+    ExprId gatherCompare(uint32_t texture, ExprId uv, ExprId reference, int8_t offsetX, int8_t offsetY,
+                         Where where = Where::current());
     void breakLoop(Where where = Where::current());
     void continueLoop(Where where = Where::current());
     void discard(Where where = Where::current());

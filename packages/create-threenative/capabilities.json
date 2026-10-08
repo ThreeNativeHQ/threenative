@@ -7774,6 +7774,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "PCFShadowMap",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "PCFSoftShadowMap",
         "kind": "constant",
         "source": "three"

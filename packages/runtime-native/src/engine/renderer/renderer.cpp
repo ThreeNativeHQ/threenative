@@ -1233,10 +1233,11 @@ void Renderer::buildLayouts(Program& program) {
     }
 }
 
-Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights) {
-    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights;
+Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
+                                     bool softShadows) {
+    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights + (softShadows ? "|soft" : "");
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
-    const shader::LightLayout layout{lights};
+    const shader::LightLayout layout{lights, softShadows};
     shader::StandardPrograms source;
     switch (kind) {
     case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, vv, layout); break;
@@ -1636,7 +1637,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         Program& program = this->program(item.kind, variantOf(item),
                                          item.kind == MaterialKind::Basic ? ""
                                          : item.receiveShadow            ? lightKinds
-                                                                         : unshadowedKinds);
+                                                                         : unshadowedKinds,
+                                         item.receiveShadow && lights.softShadows);
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;

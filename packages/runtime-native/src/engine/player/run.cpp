@@ -285,6 +285,7 @@ int run(const Game& game) {
             presenter->resize(window.width, window.height);
             renderer.setSize(presenter->width(), presenter->height());
         }
+        if (game.shadowMap) game.shadowMap(database.shadowMapEnabled, database.shadowMapType);
         database.render(renderer, *game.scene, *game.camera, {0.05, 0.06, 0.09, 1});
         for (const std::string& diagnostic : database.diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());

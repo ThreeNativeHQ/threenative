@@ -187,14 +187,16 @@ function renderLine(fixture: IFixture, renderPng: string): string {
     render.outputColorSpace,
     `s:${encodeURIComponent(renderPng)}`,
     // Only when on, so every frame captured before shadows keeps its exact driver line.
-    ...(render.shadowMap === true ? ["shadowMap"] : []),
+    ...(render.shadowMap === true
+      ? [render.shadowMapType === "PCFSoftShadowMap" ? "shadowMapSoft" : "shadowMap"]
+      : []),
   ].join(" ");
 }
 
 /**
  * The fixture as driver lines. `renderPng`, when given, asks a render-capable driver to draw the
  * fixture's frame: `render <scene> <camera> <width> <height> <toneMapping> <exposure> <srgb|linear>
- * <png path> [shadowMap]`, placed before the `pixels` observation, which the driver answers with that PNG's path.
+ * <png path> [shadowMap|shadowMapSoft]`, placed before the `pixels` observation, which the driver answers with that PNG's path.
  */
 export function encodeFixture(fixture: IFixture, renderPng?: string): readonly string[] {
   const lines = [`fixture ${fixture.name}`];

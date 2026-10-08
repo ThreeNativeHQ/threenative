@@ -36,6 +36,7 @@ struct RenderRequest {
     bool srgb = true;
     std::string png;          // where to write the frame
     bool shadowMap = false;   // a trailing `shadowMap` token: three's renderer.shadowMap.enabled
+    int shadowMapType = 1;    // `shadowMapSoft` instead: PCFSoftShadowMap (2), else PCFShadowMap (1)
     /** `tsl` ops since the last render: each named TSL program and the bound object it applies to. */
     std::vector<std::pair<std::string, Object>> tsl;
 };

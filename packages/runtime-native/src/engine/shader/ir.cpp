@@ -451,6 +451,19 @@ ExprId Program::sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Whe
     return pure(Expr{Op::Sample, Type::f32(), {uv, reference}, 2, texture});
 }
 
+ExprId Program::gatherCompare(uint32_t texture, ExprId uv, ExprId reference, int8_t offsetX, int8_t offsetY,
+                              Where where) {
+    if (uv == kInvalid || reference == kInvalid) return kInvalid;
+    if (texture >= textures_.size() || textureKinds_[texture] != TextureKind::Depth2d)
+        return fail("gatherCompare", "no such 2D depth texture", where);
+    if (exprs_[uv].type != Type::vec(2))
+        return fail("gatherCompare " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
+    if (exprs_[reference].type != Type::f32())
+        return fail("gatherCompare " + textures_[texture], "reference is " + exprs_[reference].type.name(), where);
+    // A compare read answering vec4 is a gather; the whole-texel offset rides in the immediate.
+    return pure(Expr{Op::Sample, Type::vec(4), {uv, reference}, 2, gatherImmediate(texture, offsetX, offsetY)});
+}
+
 ExprId Program::sample(uint32_t texture, ExprId uv, Where where) {
     if (uv == kInvalid) return kInvalid;
     if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Float2d && textureKinds_[texture] != TextureKind::Float3d && textureKinds_[texture] != TextureKind::FloatCube))
@@ -601,6 +614,10 @@ std::string Program::describeUntyped(ExprId id, std::vector<int>& numbering) con
         case Op::Builtin: return "builtin:" + names_[e.immediate];
         case Op::Varying: return "varying:" + names_[e.immediate];
         case Op::Sample:
+            if (e.argc == 2 && e.type == Type::vec(4))
+                return "gatherCompare:" + textures_[gatherTexture(e.immediate)] + "(" + describe(e.args[0], numbering) +
+                       ", " + describe(e.args[1], numbering) + ", " + std::to_string(gatherOffsetX(e.immediate)) + ", " +
+                       std::to_string(gatherOffsetY(e.immediate)) + ")";
             if (e.argc == 2)
                 return "sampleCompare:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ", " +
                        describe(e.args[1], numbering) + ")";

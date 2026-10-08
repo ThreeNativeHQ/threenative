@@ -122,6 +122,7 @@ export async function renderFixture(request) {
   renderer.toneMappingExposure = request.toneMappingExposure;
   renderer.outputColorSpace = three[request.outputColorSpaceConstant];
   renderer.shadowMap.enabled = request.shadowMap === true;
+  renderer.shadowMap.type = three[request.shadowMapType ?? "PCFShadowMap"];
 
   const bound = await build(request.fixture, renderer, request);
   const render = bound.get("\u0001render");

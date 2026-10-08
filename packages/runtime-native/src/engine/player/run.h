@@ -47,6 +47,9 @@ struct Game {
     std::function<bool(const std::string&, const json::Value*, json::Value&, std::string&)> observe;
     /** A hook after each frame's render (the V8 adapter's callback safe point). */
     std::function<void()> afterRender;
+    /** three's `renderer.shadowMap` as the game last set it, read before every frame; unset, the fixed
+     *  `shadowMapEnabled` and PCFShadowMap hold. */
+    std::function<void(bool& enabled, int& type)> shadowMap;
     /** Binds the endpoint, so a game reads the input queued for each tick itself. */
     std::function<void(inspect::Endpoint& endpoint)> attach;
 };

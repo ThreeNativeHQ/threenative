@@ -21,7 +21,7 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
   "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage",
-  "NoBlending", "NormalBlending", "AdditiveBlending"];
+  "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
@@ -43,7 +43,7 @@ await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
 const THREE = { ${names.join(", ")} };
-import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3 } from "three/webgpu";
+import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, WebGPURenderer } from "three/webgpu";
 import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix } from "three/tsl";
@@ -111,6 +111,12 @@ const refuses = (make, pattern) => { try { make(); return false; } catch (error)
 check(refuses(() => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)]),
   { extrudePath: curve }), /extrudePath is not supported/), "extrudePath refused");
 check(refuses(() => new THREE.MeshBasicMaterial({ color: 0xff0000 }), /parameters object is not supported/), "material parameters still refused");
+const shadowRenderer = new WebGPURenderer({ canvas: { width: 1, height: 1 } });
+check(shadowRenderer.shadowMap.enabled === false && shadowRenderer.shadowMap.type === THREE.PCFShadowMap, "three's shadowMap defaults");
+check(refuses(() => { shadowRenderer.shadowMap.type = 3; }, /TN_NATIVE_SHADOWMAP_TYPE_UNSUPPORTED/), "VSMShadowMap refused");
+shadowRenderer.shadowMap.enabled = true;
+shadowRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+check(shadowRenderer.shadowMap.enabled && shadowRenderer.shadowMap.type === THREE.PCFSoftShadowMap, "shadowMap settings");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");
@@ -187,7 +193,7 @@ await bundleNativeEngine({ entry, outfile, boot: false });
 const run = spawnSync(resolve(executable), ["--check-game", outfile], {
   encoding: "utf8", env: { ...process.env, SDL_AUDIO_DRIVER: "dummy" } });
 assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-assert.match(run.stdout, /engine=native gameRuntime=v8 startup=passed/);
+assert.match(run.stdout, /engine=native gameRuntime=v8 startup=passed shadowMap=on:2/);
 const { build } = createRequire(resolve(native, "package.json"))("esbuild");
 const writer = resolve(work, "package-writer.mjs");
 await build({ entryPoints: [resolve(native, "../assets/src/native-package.ts")], outfile: writer,

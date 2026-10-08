@@ -167,6 +167,8 @@ class V8Game {
 
     Object3D* scene() const { return scene_; }
     Camera* camera() const { return camera_; }
+    bool shadowMapEnabled() const { return shadowMapEnabled_; }
+    int shadowMapType() const { return shadowMapType_; }
 
   private:
     std::unique_ptr<mystral::js::Engine> services_;
@@ -189,6 +191,9 @@ class V8Game {
     Renderer* renderer_ = nullptr;
     static void loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void setShadowMap(const v8::FunctionCallbackInfo<v8::Value>& info);
+    bool shadowMapEnabled_ = false;  // three's WebGPURenderer defaults: shadowMap off, PCFShadowMap
+    int shadowMapType_ = 1;
     static void decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info);
 };
 
@@ -365,6 +370,21 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     }
 }
 
+// three's renderer.shadowMap, set by the facade's WebGPURenderer: (enabled, type). PCFShadowMap (1) and
+// PCFSoftShadowMap (2) are the filters the engine draws; BasicShadowMap and VSMShadowMap are refused.
+void V8Game::setShadowMap(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    v8::Isolate* isolate = info.GetIsolate();
+    const double type = info.Length() == 2 && info[1]->IsNumber() ? info[1].As<v8::Number>()->Value() : 0;
+    if (info.Length() != 2 || !info[0]->IsBoolean() || (type != 1 && type != 2)) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate,
+            "TN_NATIVE_SHADOWMAP_TYPE_UNSUPPORTED: renderer.shadowMap.type must be PCFShadowMap or PCFSoftShadowMap")));
+        return;
+    }
+    game.shadowMapEnabled_ = info[0]->IsTrue();
+    game.shadowMapType_ = static_cast<int>(type);
+}
+
 void V8Game::initialize(Renderer& renderer) {
     renderer_ = &renderer;
     if (post_) renderer.setPostGraph(post_);
@@ -479,6 +499,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "decodeImage"), v8::Function::New(ctx, &decodeImage, self).ToLocalChecked()).Check();
 #endif
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "setShadowMap"), v8::Function::New(ctx, &setShadowMap, self).ToLocalChecked()).Check();
     v8::Local<v8::Script> script;
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
@@ -635,7 +656,8 @@ int main(int argc, char** argv) {
             json::Value parsed; json::Error error;
             if (!json::parse(response, parsed, error) || parsed.find("error")) return 1;
         }
-        return std::printf("TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed\n"), 0;
+        return std::printf("TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed shadowMap=%s:%d\n",
+                           game.shadowMapEnabled() ? "on" : "off", game.shadowMapType()), 0;
     }
 
     player::Game configured;
@@ -651,6 +673,10 @@ int main(int argc, char** argv) {
     };
     configured.resource = [&game](const std::string& id, uint64_t tick) { return game.resource(id, tick); };
     configured.afterRender = [&game] { game.safePoint(); };
+    configured.shadowMap = [&game](bool& enabled, int& type) {
+        enabled = game.shadowMapEnabled();
+        type = game.shadowMapType();
+    };
     configured.attach = [&game](inspect::Endpoint& endpoint) { game.attach(endpoint); };
     return player::run(configured);
 }

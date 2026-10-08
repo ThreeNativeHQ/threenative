@@ -149,6 +149,9 @@ struct LightState {
     std::array<double, 3> hemisphereGround{0, 0, 0};
     std::array<double, 3> hemisphereUp{0, 1, 0};
     std::array<double, 3> ambient{0, 0, 0};
+    /** three's `renderer.shadowMap.type` is PCFSoftShadowMap: directional and spot maps read with
+     *  PCFSoftShadowFilter; otherwise PCFShadowMap's filter. Point lights read PointShadowFilter either way. */
+    bool softShadows = false;
 };
 
 /** three's renderer output settings: `toneMapping`, `toneMappingExposure`, `outputColorSpace`. */
@@ -324,7 +327,8 @@ private:
     };
     void buildLayouts(Program& program);
     /** The program for a material kind, vertex variant and light layout, built on first use. */
-    Program& program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights);
+    Program& program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights,
+                     bool softShadows = false);
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
     Program& depthProgram(const shader::VertexVariant& variant);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
