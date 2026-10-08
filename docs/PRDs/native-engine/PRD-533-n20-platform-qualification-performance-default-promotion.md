@@ -136,6 +136,32 @@ in-flight, missing `tests/native-engine/world/world_cells_test.cpp`; that lane w
 - [ ] A paired blind before/after bundle (legacy engine before, Wasm engine after, same templates) finds no template scoring worse beyond the bundle's measured resolution; the before/after captures go on the PR. proof: `pnpm visuals:ab`
 - [ ] Switching a project back to legacy restores the previous behaviour with no other edit. proof: `pnpm exec vitest run packages/create-threenative/__tests__/native-profile.spec.ts`
 
+2026-10-08 Wasm template evidence (lane `ne-wasm-templates`, no default changed): boxes 2-4 cannot run yet, because no template can boot on the Wasm engine. No opt-in exists, and none was added: a switch would route every template to a guaranteed boot failure. Three facts block it:
+
+1. `resolveNativeProfile` (`packages/create-threenative/src/native-profile.ts`) has no caller. It selects desktop artifacts only, and no web build, playtest or visual gate reads an engine setting.
+2. Nothing resolves a web game's `three*` imports to the browser-JS back end (PRD-532 Solution 4). Only test pages and the `engine-load-test` web bench use `defineBrowserClasses`.
+3. The catalog marks the renderer and the post chain unsupported. Every template boots through `packages/core/src/renderer.ts`, which constructs `WebGPURenderer`. Proof: `node -e 'const c=require("./packages/three-native/api/catalog.json");for(const n of ["WebGPURenderer","RenderPipeline","pass","Fn","uniform"])console.log(n,c.entries.find(e=>e.name===n).status.kind)'` prints `unsupported` five times. The registry binds 62 classes and no renderer.
+
+Value imports of `three*` per template source, against the catalog (core adds 208 more, 61 of them unsupported and 95 uncatalogued). Every template imports `three/tsl` `pass`:
+
+| Template | Symbols | Supported | Partial | Unsupported | Uncatalogued |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| action-rpg | 108 | 26 | 12 | 58 | 12 |
+| minimal | 86 | 21 | 11 | 44 | 10 |
+| platformer | 97 | 23 | 12 | 49 | 13 |
+| puzzle | 93 | 24 | 11 | 46 | 12 |
+| racing | 98 | 27 | 12 | 48 | 11 |
+| rain | 116 | 19 | 12 | 79 | 6 |
+| rts | 100 | 24 | 13 | 51 | 12 |
+| runner | 95 | 23 | 12 | 50 | 10 |
+| sailing | 107 | 28 | 15 | 53 | 11 |
+| shooter | 114 | 28 | 15 | 56 | 15 |
+| snow | 118 | 26 | 11 | 65 | 16 |
+| starter | 106 | 27 | 14 | 54 | 11 |
+| tower-defense | 97 | 25 | 12 | 44 | 16 |
+
+The counts come from a regex scan of named and namespace imports in non-test `.ts`/`.tsx` files, so they are approximate. The blocker does not depend on them. No journey, visual gate or A/B ran, on either engine. The gap is the web port of the renderer, TSL and post chain plus the import resolution, not a lane-sized engine fix.
+
 ## Decisions
 
 2026-10-07 (coordinator brief, one box one claim): phase 1's first box named four workloads under one proof and could never be ticked while Machinefall's source is missing. It is split into one box per workload (heterogeneous, skinned crowd, visual holdout); Machinefall moves to `## Blocked on`. `native` in `--arms current,native` is each workload's shipping-shape native game driver (V8 for the heterogeneous scene, the C++ crowd for the crowd, which has no V8 script), reported per arm as its `driver`.
