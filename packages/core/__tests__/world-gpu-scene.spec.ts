@@ -1240,6 +1240,53 @@ describe("WorldCells with the GPU-driven main pass", () => {
     cpu.dispose();
   });
 
+  it("holds the prewarm gate until the scene's re-seed of a CPU-built ring has landed", async () => {
+    // Machinefall loads its ring with no renderer, so the ring is built on the CPU path; the first
+    // rendered update brings the scene up, re-queues a rebuild of every resident run and dresses
+    // every key, and a dressed key draws nothing until its run's rebuild lands. The gate settled
+    // over 1,378 owed builds and a third of the forest arrived in the first 4 s of play (PRD-478).
+    stubManifestFetch();
+    let clock = 0;
+    const world = await WorldCells.load({
+      // One build unit per update, so the re-seed spans many updates.
+      admissionBudgetMs: 1,
+      admissionNow: () => {
+        clock += 10_000;
+        return clock;
+      },
+      budgets,
+      follow: { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } },
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    await flushed(world);
+    expect(world.stats().admission.backlog, "the CPU ring did not finish building").toBe(0);
+    let settled = false;
+    void world.prewarmed.then(() => {
+      settled = true;
+    });
+    new Group().add(world);
+    const renderer = gpuRendererStub([]);
+    const camera = playerCamera();
+    let owedAtSettle: number | undefined;
+    let sawOwed = false;
+    for (let frame = 0; frame < 400 && !settled; frame += 1) {
+      world.update(renderer, camera);
+      await flush(2);
+      const owed = world.stats().admission.backlog;
+      if (owed > 0) sawOwed = true;
+      if (settled) owedAtSettle = owed;
+    }
+    expect(sawOwed, "the scene coming up re-seeded nothing").toBe(true);
+    expect(settled, "the gate never settled").toBe(true);
+    expect(owedAtSettle, "the gate settled with re-seed builds still owed").toBe(0);
+    world.dispose();
+  });
+
   it("dresses a ring the prewarm built before the scene came up", async () => {
     stubManifestFetch();
     const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };

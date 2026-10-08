@@ -4815,6 +4815,11 @@ export class WorldCells extends Group implements IComputeDriven {
     // A caster still owed a draw is a build the walk would otherwise pay inside a shadow pass, so the
     // gate holds for it until its borrow is handed back, which is the bound.
     if (waitingOnCasters) return;
+    // A build still owed draws nothing until it lands. When the scene comes up over a ring built
+    // without it, that is the whole ring re-seeded: the gate settled over 1,378 owed builds and a
+    // third of Machinefall's forest arrived in the first 4 s of play (PRD-478). The loading screen
+    // covers them instead.
+    if (this.#backlog() > 0) return;
     this.#prewarmPending = 0;
     // The gate is settled, so nothing is owed a draw. A companion no shadow level covers leaves its
     // pair non-zero, and `pendingPrewarm` is documented `0` from here on.
