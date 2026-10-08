@@ -874,7 +874,9 @@ async function runChunk(scene: (typeof chunkScenes)[number]): Promise<unknown> {
   });
   try {
     let chunk: Object3D | undefined;
-    for (let at = 0; at < 100; at += 1) {
+    // The attach yields to the host on real time, so the bound is a deadline, not a turn count:
+    // 100 updates ran out under parallel ctest load (two "chunk never attached" reds in six runs).
+    for (const deadline = performance.now() + 30_000; performance.now() < deadline; ) {
       world.update();
       for (let flush = 0; flush < 4; flush += 1) await setImmediate();
       chunk = world.getObjectByName("world-chunk");
