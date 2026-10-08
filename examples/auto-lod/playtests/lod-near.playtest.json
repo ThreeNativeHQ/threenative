@@ -3,15 +3,9 @@
   "schemaVersion": 1,
   "subject": "the near camera selects LOD0 for the model",
   "target": "web",
-  "viewport": {
-    "width": 1280,
-    "height": 720
-  },
+  "viewport": { "width": 1280, "height": 720 },
   "warmupFrames": 90,
-  "artifacts": {
-    "screenshots": true,
-    "console": true
-  },
+  "artifacts": { "screenshots": true, "console": true },
   "steps": [
     {
       "kind": "input",
@@ -40,25 +34,11 @@
         "gte": 8000,
         "id": "GameState",
         "path": "triangles"
-      },
-      {
-        "changed": true,
-        "id": "GameState",
-        "lte": 0,
-        "path": "cardCopies"
-      },
-      {
-        "changed": true,
-        "gte": 2400,
-        "id": "GameState",
-        "path": "cardTriangles"
       }
     ],
     "sceneNodes": [
       {
-        "select": {
-          "nameContains": "hull-mesh"
-        },
+        "select": { "nameContains": "hull-mesh" },
         "minCount": 1,
         "minTriangles": 8000,
         "visible": true

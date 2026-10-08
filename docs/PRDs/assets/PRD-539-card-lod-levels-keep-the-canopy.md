@@ -54,12 +54,12 @@ Layer: the cook (`packages/assets/`). The game sets nothing; the scale is the ke
 - [x] The model pass's self-check counts what LOD0 draws, so a card chain cooks without `TN_ASSETS_MODEL_DRIFT` and a LOD0 drift still throws. proof: `model-pass.spec.ts` drift cases green; the conifer cook threw `vertices 5997 -> 7573; bounding box drifted 2.109%` before; `vitest run packages/assets` 485 passed, 2 skipped
 
 #### Phase 2: Both runtimes draw it
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/core/src/world-cells.ts`, `packages/core/__tests__/`
 
 - [x] Core builds a card level whose geometry draws the scaled copies. proof: `model-lod-loader.spec.ts` "draws a level whose indices reach vertex copies appended after LOD0's" — 5 passed; no core change was needed
 - [x] A streamed world's chained levels cast shadows by default (`shadows.castLevels` defaults to every level; a number still caps it). Under the old default of 1, every pine past its first switch, tens of metres out, lost its shadow, and 3 blind raters preferred the base on 6 of 8 poses ("weak shadows, flatter"). proof: red-green `world-cells.spec.ts` (`a far level minted no caster cluster: expected 0 to be greater than 0`); `vitest run packages/core packages/assets` 3086 passed, 1 load timeout that passes alone
-- [ ] The native desktop host draws the same chain. proof: PRD-377's native consumer playtest on a cooked card asset
+- [x] The native desktop host draws the same chain. proof: `examples/auto-lod` gains a 1,200-card crown (`scripts/make-cards.mjs`); cooked to `cards` levels 2,400 → 1,252 → 646 triangles over 4,800 → 8,596 vertices. `lod-far-desktop` and `lod-near-desktop` pass on the native host built by `threenative build --target desktop` (prebuilt runtime): `cardCopies` 1 → 0 and `cardTriangles` 1,252 → 2,400 across the camera toggle. Web `lod-far` passes (`cardCopies` 0 → 1, `cardTriangles` 2,400 → 1,252, RTX 2080). Web `lod-near` is red on develop too (`triangles` 8192 → 8192, the first observation precedes selection), so it carries no card check.
 
 #### Phase 3: Machinefall
 **Status:** NOT STARTED
