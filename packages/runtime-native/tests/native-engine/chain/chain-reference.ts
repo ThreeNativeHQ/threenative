@@ -16,6 +16,7 @@ import {
   type IRenderChainStage,
   RenderChain,
 } from "../../../../core/src/render/chain.js";
+import { mrtVelocity } from "../../../../core/src/render/velocity.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(HERE, "chain_reference.inc");
@@ -108,7 +109,9 @@ interface IRecorded {
 function record(config: IConfig): IRecorded {
   const velocity: Record<string, unknown> = {};
   if (config.velocity?.source !== undefined) velocity.source = config.velocity.source;
-  if (config.velocity?.pass === true) velocity.pass = fakePass;
+  // A game that hands the chain its scene pass also hands it core's velocity provision.
+  if (config.velocity?.pass === true)
+    Object.assign(velocity, { pass: fakePass, provision: mrtVelocity() });
   if (config.velocity?.mrt === true) velocity.mrt = true;
   if (config.velocity?.objectFlags === true) velocity.objectFlags = true;
   if (config.velocity?.perObject === true) velocity.perObject = true;
