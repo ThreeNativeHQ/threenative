@@ -44,7 +44,7 @@ Value numbers(const std::vector<double>& values) { return Value::list(values); }
 BufferGeometry& geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
-        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry"};
+        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -478,6 +478,10 @@ void registerGeometryGenerators(Registry& classes) {
         return makeBoxGeometry(optional(a, 0, 1), optional(a, 1, 1), optional(a, 2, 1), optional(a, 3, 1),
                                optional(a, 4, 1), optional(a, 5, 1));
     });
+    registerGenerator(classes, "RoundedBoxGeometry", [](const Args& a) {
+        return makeRoundedBoxGeometry(optional(a, 0, 1), optional(a, 1, 1), optional(a, 2, 1), optional(a, 3, 2),
+                                      optional(a, 4, 0.1));
+    });
     registerGenerator(classes, "SphereGeometry", [](const Args& a) {
         return makeSphereGeometry(optional(a, 0, 1), optional(a, 1, 32), optional(a, 2, 16),
                                   optional(a, 3, 0), optional(a, 4, 6.283185307179586),
@@ -511,6 +515,27 @@ void registerGeometryGenerators(Registry& classes) {
 }  // namespace
 
 void registerGeometryBindings(Registry& classes) {
+    // three's Vector{2,3,4}.fromBufferAttribute(attribute, index): the item's components by getX/Y/Z/W,
+    // NaN past the array as three's undefined typed-array reads give.
+    const auto read = [](Store& store, const Args& a, int c) {
+        const Value v = component(attributeArg(store, a.at(0)), jsIndex(a.at(1)), c);
+        return v.kind == Value::Kind::Number ? v.number : std::nan("");
+    };
+    classes["Vector2"].methods["fromBufferAttribute"] = [read](void* self, const Args& a, Store& store) {
+        auto& v = *static_cast<Vector2*>(self);
+        v.x = read(store, a, 0), v.y = read(store, a, 1);
+        return chain();
+    };
+    classes["Vector3"].methods["fromBufferAttribute"] = [read](void* self, const Args& a, Store& store) {
+        auto& v = *static_cast<Vector3*>(self);
+        v.x = read(store, a, 0), v.y = read(store, a, 1), v.z = read(store, a, 2);
+        return chain();
+    };
+    classes["Vector4"].methods["fromBufferAttribute"] = [read](void* self, const Args& a, Store& store) {
+        auto& v = *static_cast<Vector4*>(self);
+        v.x = read(store, a, 0), v.y = read(store, a, 1), v.z = read(store, a, 2), v.w = read(store, a, 3);
+        return chain();
+    };
     classes["Box3"].methods["setFromBufferAttribute"] = [](void* self, const Args& a, Store& store) {
         as<Box3>(self)->setFromBufferAttribute(*sharedAttributeArg(store, a.at(0)));
         return chain();

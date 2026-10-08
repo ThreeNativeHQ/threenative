@@ -110,8 +110,8 @@ inline bool sameUniforms(const Material& a, const Material& b) {
             (a.ior == b.ior) & (a.specularIntensity == b.specularIntensity) & eq(a.specularColor, b.specularColor) &
             (a.clearcoat == b.clearcoat) & (a.sheen == b.sheen) & (a.transmission == b.transmission) &
             (a.iridescence == b.iridescence) & (a.anisotropy == b.anisotropy) & (a.dispersion == b.dispersion) &
-            (a.envMapIntensity == b.envMapIntensity) & (a.normalScaleX == b.normalScaleX) &
-            (a.normalScaleY == b.normalScaleY) & (a.aoMapIntensity == b.aoMapIntensity)) &&
+            (a.envMapIntensity == b.envMapIntensity) & (a.normalScale.x == b.normalScale.x) &
+            (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity)) &&
            a.positionNode == b.positionNode && a.nodes == b.nodes &&
            a.vertexColors == b.vertexColors && a.flatShading == b.flatShading &&
            a.maps == b.maps;
@@ -155,8 +155,8 @@ inline std::size_t uniformHash(const Material& m) {
                      double(m.fog),
                      double(m.vertexColors),
                      double(m.flatShading),
-                     m.normalScaleX,
-                     m.normalScaleY,
+                     m.normalScale.x,
+                     m.normalScale.y,
                      m.aoMapIntensity}) {
         const auto bits = std::bit_cast<uint64_t>(v == 0 ? 0.0 : v); // +0 and -0 compare equal
         mix(bits ^ (bits >> 32));                                    // both halves matter on wasm32

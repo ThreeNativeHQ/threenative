@@ -41,5 +41,8 @@ std::shared_ptr<BufferGeometry> makeRingGeometry(double innerRadius = 0.5, doubl
                                                  double thetaSegments = 32, double phiSegments = 1,
                                                  double thetaStart = 0,
                                                  double thetaLength = 6.283185307179586);
+/** three/addons RoundedBoxGeometry(width, height, depth, segments, radius). */
+std::shared_ptr<BufferGeometry> makeRoundedBoxGeometry(double width = 1, double height = 1, double depth = 1,
+                                                       double segments = 2, double radius = 0.1);
 
 }  // namespace tn::engine

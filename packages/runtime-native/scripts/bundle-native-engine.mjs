@@ -75,8 +75,6 @@ function unboundDiagnostic(specifier, name) {
   let reason = "the native engine profile has no binding for this import";
   if (specifier.startsWith("three/addons/tsl/display/"))
     reason = "live addon-node construction and update scheduling are unbound; the native renderer currently consumes cooked post graphs";
-  else if (specifier.includes("RoundedBoxGeometry"))
-    reason = "the native geometry module has no RoundedBoxGeometry implementation";
   else if (specifier.includes("GLTFLoader"))
     reason = "the native cgltf loader has no V8 loader binding and does not decode glTF images or external buffers";
   else if (/KTX2Loader|DRACOLoader|MeshoptDecoder|meshopt_decoder/.test(specifier))
@@ -129,6 +127,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
     "three/webgpu": resolve(player, "core-webgpu.mjs"),
     "three/tsl": resolve(player, "core-tsl.mjs"),
     "three/addons/utils/SkeletonUtils.js": resolve(player, "core-three.mjs"),
+    "three/addons/geometries/RoundedBoxGeometry.js": resolve(player, "core-three.mjs"),
   };
   const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
     const result = await build({ entryPoints: [facade], bundle: true, write: false, format: "esm",

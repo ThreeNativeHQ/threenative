@@ -67,7 +67,7 @@ public:
     double clearcoat = 0, sheen = 0, transmission = 0, iridescence = 0, anisotropy = 0, dispersion = 0;
     bool vertexColors = false;
     bool flatShading = false;
-    double normalScaleX = 1, normalScaleY = 1; // normalScale
+    Vector2 normalScale{1, 1};
     double aoMapIntensity = 1;
     // Texture slots by three's property name (`map`, `normalMap`, ...); empty slots are absent.
     std::map<std::string, std::shared_ptr<const Texture>> maps;

@@ -22,13 +22,14 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "DirectionalLight", "OrthographicCamera", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", ...constants];
+  "DataTexture", "Texture", "Color", "DirectionalLight", "OrthographicCamera", "Vector2", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", ...constants];
 await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
 const THREE = { ${names.join(", ")} };
 import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3 } from "three/webgpu";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
@@ -82,6 +83,15 @@ const sun = new THREE.DirectionalLight();
 sun.shadow.mapSize.set(1024, 2048); sun.shadow.camera.near = 2; sun.shadow.bias = -0.5; sun.shadow.radius = 3;
 check(sun.shadow === sun.shadow && sun.shadow.mapSize.y === 2048 && sun.shadow.camera.near === 2 &&
   sun.shadow.camera instanceof THREE.OrthographicCamera && sun.shadow.bias === -0.5 && sun.shadow.radius === 3, "light shadow");
+const rounded = new RoundedBoxGeometry(2, 1, 1, 2, 0.1);
+check(rounded instanceof THREE.BufferGeometry && rounded.index === null && rounded.type === "RoundedBoxGeometry", "RoundedBoxGeometry");
+check(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0).length() > 0.5, "fromBufferAttribute");
+const grid = new THREE.DataTexture(new Uint8Array([1, 2, 3, 4]), 1, 1);
+const version = grid.source.version;
+grid.generateMipmaps = true; grid.anisotropy = 16; grid.needsUpdate = true;
+check(grid.generateMipmaps && grid.anisotropy === 16 && grid.source === grid.source && grid.source.version === version + 1, "texture sampling fields and source");
+const lit = new THREE.MeshStandardMaterial({ normalMap: grid, normalScale: new THREE.Vector2(0.5, 0.25) });
+check(lit.normalMap === grid && lit.normalScale.y === 0.25 && lit.normalScale === lit.normalScale, "normalMap and normalScale");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))

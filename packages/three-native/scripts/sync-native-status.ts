@@ -242,6 +242,8 @@ function indexThreeTypes(): void {
     }
   };
   walk(source);
+  // Addon classes (`RoundedBoxGeometry`) are typed beside their module; core declarations win.
+  walk(path.join(TYPES_ROOT, "examples", "jsm"));
 }
 
 /** The body between a declaration's opening brace and its matching close. */

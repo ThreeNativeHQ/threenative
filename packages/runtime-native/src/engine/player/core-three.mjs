@@ -6,12 +6,12 @@ export const {
   HemisphereLight, InstancedBufferAttribute, InstancedMesh, LOD, Layers, Matrix3, Matrix4, Mesh,
   MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshPhysicalMaterial,
   MeshStandardMaterial, Object3D, OrthographicCamera, PerspectiveCamera, Plane, PlaneGeometry,
-  PointLight, Quaternion, Ray, Raycaster, RingGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
+  PointLight, Quaternion, Ray, Raycaster, RingGeometry, RoundedBoxGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
   SphereGeometry, SpotLight, Sprite, SpriteMaterial, Texture, TorusGeometry, Vector2, Vector3,
   Vector4, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, PCFSoftShadowMap,
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
-  EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, AttachedBindMode, PropertyBinding, getConsoleFunction, setConsoleFunction,
+  EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, LoopPingPong, AttachedBindMode, PropertyBinding, getConsoleFunction, setConsoleFunction,
 } = globalThis;
 
 export const clone = globalThis.__tnCloneSkeleton;
@@ -59,7 +59,7 @@ for (const [base, names] of [
   [Camera, [PerspectiveCamera, OrthographicCamera]],
   [Mesh, [SkinnedMesh, InstancedMesh]],
   [BufferGeometry, [BoxGeometry, CircleGeometry, ConeGeometry, CylinderGeometry, PlaneGeometry,
-    RingGeometry, SphereGeometry, TorusGeometry]],
+    RingGeometry, RoundedBoxGeometry, SphereGeometry, TorusGeometry]],
   [BufferAttribute, [Float32BufferAttribute, InstancedBufferAttribute]],
   [Texture, [DataTexture]],
 ]) {

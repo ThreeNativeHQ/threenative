@@ -962,7 +962,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         {"FloatType", tn::engine::kTextureFloatType},
         {"RGBAFormat", tn::engine::kTextureRGBAFormat},
         {"EquirectangularReflectionMapping", 303},
-        {"NoToneMapping", 0}, {"LoopOnce", 2200}, {"LoopRepeat", 2201},
+        {"NoToneMapping", 0}, {"LoopOnce", 2200}, {"LoopRepeat", 2201}, {"LoopPingPong", 2202},
     }) target->Set(context, str(isolate_, name), v8::Number::New(isolate_, value)).Check();
     const auto animation = [&](int operation) {
         auto data = v8::Array::New(isolate_, 2);

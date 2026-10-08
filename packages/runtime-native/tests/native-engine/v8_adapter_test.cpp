@@ -398,7 +398,11 @@ void catalogCoverage() {
         {"AgXToneMapping", tn::engine::AgXToneMapping},
         {"NeutralToneMapping", tn::engine::NeutralToneMapping},
         {"PCFSoftShadowMap", tn::engine::PCFSoftShadowMap},
+        {"LoopOnce", 2200}, {"LoopRepeat", 2201}, {"LoopPingPong", 2202},
     };
+    // A published enum is its member constants, each installed above; the enum itself has no global.
+    const std::set<std::string> enums = {"AnimationActionLoopStyles"};
+    for (const auto& name : enums) CHECK(!global->HasOwnProperty(ctx, key(name)).FromMaybe(true));
     const std::map<std::string, std::string> strings = {
         {"NoColorSpace", tn::engine::NoColorSpace},
         {"LinearSRGBColorSpace", tn::engine::LinearSRGBColorSpace},
@@ -418,7 +422,7 @@ void catalogCoverage() {
         CHECK(tn_type_id(name.c_str()) == 0);
         CHECK(!global->HasOwnProperty(ctx, key(name)).FromMaybe(true));
     }
-    CHECK(installed.size() + numbers.size() + strings.size() + recordTypes.size() ==
+    CHECK(installed.size() + numbers.size() + strings.size() + recordTypes.size() + enums.size() ==
           tn_engine_version().capability_count);
 
     // Every class's prototype exposes exactly its registry members: methods, top-level getters and

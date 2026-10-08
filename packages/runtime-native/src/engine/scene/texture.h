@@ -83,6 +83,7 @@ public:
     uint16_t type = kTextureUnsignedByteType;
     bool flipY = true; // TextureLoader images; DataTexture and GLTFLoader override false.
     bool generateMipmaps = true; // three's Texture default; DataTexture overrides false.
+    uint16_t anisotropy = 1;     // the sampler's maxAnisotropy when every filter is linear
     TextureColorSpace colorSpace = TextureColorSpace::None;
     Vector2 repeat{1, 1};
     Vector2 offset{0, 0};

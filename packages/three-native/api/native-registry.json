@@ -132,9 +132,55 @@
     },
     "AnimationAction": {
       "constructor": false,
-      "methods": ["play", "reset", "setEffectiveWeight", "stop"],
-      "getters": [],
-      "setters": [],
+      "methods": [
+        "crossFadeFrom",
+        "crossFadeTo",
+        "fadeIn",
+        "fadeOut",
+        "getClip",
+        "getEffectiveTimeScale",
+        "getEffectiveWeight",
+        "getRoot",
+        "halt",
+        "isRunning",
+        "isScheduled",
+        "play",
+        "reset",
+        "setDuration",
+        "setEffectiveTimeScale",
+        "setEffectiveWeight",
+        "setLoop",
+        "startAt",
+        "stop",
+        "stopFading",
+        "stopWarping",
+        "syncWith",
+        "warp"
+      ],
+      "getters": [
+        "clampWhenFinished",
+        "enabled",
+        "loop",
+        "paused",
+        "repetitions",
+        "time",
+        "timeScale",
+        "weight",
+        "zeroSlopeAtEnd",
+        "zeroSlopeAtStart"
+      ],
+      "setters": [
+        "clampWhenFinished",
+        "enabled",
+        "loop",
+        "paused",
+        "repetitions",
+        "time",
+        "timeScale",
+        "weight",
+        "zeroSlopeAtEnd",
+        "zeroSlopeAtStart"
+      ],
       "members": [],
       "callbacks": []
     },
@@ -148,7 +194,17 @@
     },
     "AnimationMixer": {
       "constructor": true,
-      "methods": ["clipAction", "setTime", "stopAllAction", "update"],
+      "methods": [
+        "clipAction",
+        "existingAction",
+        "getRoot",
+        "setTime",
+        "stopAllAction",
+        "uncacheAction",
+        "uncacheClip",
+        "uncacheRoot",
+        "update"
+      ],
       "getters": ["time", "timeScale"],
       "setters": ["timeScale"],
       "members": [],
@@ -859,8 +915,10 @@
       "constructor": true,
       "methods": [],
       "getters": [
+        "anisotropy",
         "colorSpace",
         "flipY",
+        "generateMipmaps",
         "magFilter",
         "mapping",
         "minFilter",
@@ -875,8 +933,10 @@
         "wrapT"
       ],
       "setters": [
+        "anisotropy",
         "colorSpace",
         "flipY",
+        "generateMipmaps",
         "magFilter",
         "mapping",
         "minFilter",
@@ -890,7 +950,7 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat"],
+      "members": ["offset", "repeat", "source"],
       "callbacks": []
     },
     "DirectionalLight": {
@@ -2374,13 +2434,15 @@
         "map",
         "name",
         "needsUpdate",
+        "normalMap",
+        "normalScale",
         "opacity",
         "side",
         "toneMapped",
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "map"],
+      "members": ["color", "emissive", "map", "normalMap", "normalScale"],
       "callbacks": []
     },
     "MeshPhongMaterial": {
@@ -2428,6 +2490,8 @@
         "map",
         "name",
         "needsUpdate",
+        "normalMap",
+        "normalScale",
         "opacity",
         "shininess",
         "side",
@@ -2439,7 +2503,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "map", "specular"],
+      "members": ["color", "emissive", "map", "normalMap", "normalScale", "specular"],
       "callbacks": []
     },
     "MeshPhysicalMaterial": {
@@ -2505,6 +2569,8 @@
         "metalness",
         "name",
         "needsUpdate",
+        "normalMap",
+        "normalScale",
         "opacity",
         "roughness",
         "sheen",
@@ -2519,7 +2585,15 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "envMap", "map", "specularColor"],
+      "members": [
+        "color",
+        "emissive",
+        "envMap",
+        "map",
+        "normalMap",
+        "normalScale",
+        "specularColor"
+      ],
       "callbacks": []
     },
     "MeshStandardMaterial": {
@@ -2569,6 +2643,8 @@
         "metalness",
         "name",
         "needsUpdate",
+        "normalMap",
+        "normalScale",
         "opacity",
         "roughness",
         "side",
@@ -2576,7 +2652,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "envMap", "map"],
+      "members": ["color", "emissive", "envMap", "map", "normalMap", "normalScale"],
       "callbacks": []
     },
     "MeshStandardNodeMaterial": {
@@ -2636,7 +2712,9 @@
         "metalnessNode",
         "name",
         "needsUpdate",
+        "normalMap",
         "normalNode",
+        "normalScale",
         "opacity",
         "opacityNode",
         "positionNode",
@@ -2647,7 +2725,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "envMap", "map"],
+      "members": ["color", "emissive", "envMap", "map", "normalMap", "normalScale"],
       "callbacks": []
     },
     "Object3D": {
@@ -3458,6 +3536,73 @@
       ],
       "callbacks": []
     },
+    "RoundedBoxGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index"
+      ],
+      "callbacks": []
+    },
     "Scene": {
       "constructor": true,
       "methods": [
@@ -3876,6 +4021,14 @@
         "up"
       ],
       "callbacks": ["onBeforeRender"]
+    },
+    "Source": {
+      "constructor": false,
+      "methods": [],
+      "getters": ["version"],
+      "setters": ["needsUpdate"],
+      "members": [],
+      "callbacks": []
     },
     "Sphere": {
       "constructor": true,
@@ -4507,8 +4660,10 @@
       "constructor": true,
       "methods": [],
       "getters": [
+        "anisotropy",
         "colorSpace",
         "flipY",
+        "generateMipmaps",
         "magFilter",
         "mapping",
         "minFilter",
@@ -4523,8 +4678,10 @@
         "wrapT"
       ],
       "setters": [
+        "anisotropy",
         "colorSpace",
         "flipY",
+        "generateMipmaps",
         "magFilter",
         "mapping",
         "minFilter",
@@ -4538,7 +4695,7 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat"],
+      "members": ["offset", "repeat", "source"],
       "callbacks": []
     },
     "TorusGeometry": {
@@ -4633,6 +4790,7 @@
         "equals",
         "floor",
         "fromArray",
+        "fromBufferAttribute",
         "getComponent",
         "length",
         "lengthSq",
@@ -4695,6 +4853,7 @@
         "equals",
         "floor",
         "fromArray",
+        "fromBufferAttribute",
         "getComponent",
         "length",
         "lengthSq",
@@ -4762,6 +4921,7 @@
         "equals",
         "floor",
         "fromArray",
+        "fromBufferAttribute",
         "getComponent",
         "length",
         "lengthSq",

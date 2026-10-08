@@ -131,6 +131,8 @@ class AnimationAction {
     AnimationAction& warp(double startTimeScale, double endTimeScale, double duration);
     AnimationAction& stopWarping();
     [[nodiscard]] const AnimationClip& getClip() const { return *clip_; }
+    /** The clip as the action shares it, for a binding that answers the caller's own clip object. */
+    [[nodiscard]] const std::shared_ptr<const AnimationClip>& clip() const { return clip_; }
     [[nodiscard]] Object3D& getRoot() const;
 
     BlendMode blendMode;

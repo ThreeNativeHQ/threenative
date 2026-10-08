@@ -619,7 +619,7 @@ void registerGroup(ClassBinding& b) {
 std::shared_ptr<BufferGeometry> geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
-        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry"};
+        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -907,6 +907,27 @@ void registerAnimationMixer(ClassBinding& b) {
         as<AnimationMixer>(self)->stopAllAction();
         return chain();
     };
+    b.methods["getRoot"] = [](void* self, const Args&, Store& store) {
+        return foundObject(store, &as<AnimationMixer>(self)->getRoot());
+    };
+    b.methods["uncacheClip"] = [](void* self, const Args& a, Store& store) {
+        as<AnimationMixer>(self)->uncacheClip(store.ref<AnimationClip>(a.at(0), "AnimationClip"));
+        return Value::undefined();
+    };
+    b.methods["uncacheRoot"] = [](void* self, const Args& a, Store& store) {
+        as<AnimationMixer>(self)->uncacheRoot(objectArg(store, a.at(0)));
+        return Value::undefined();
+    };
+    b.methods["uncacheAction"] = [](void* self, const Args& a, Store& store) {
+        const Object3D* root = a.size() > 1 && a.at(1).kind == Value::Kind::Ref ? &objectArg(store, a.at(1)) : nullptr;
+        as<AnimationMixer>(self)->uncacheAction(store.ref<AnimationClip>(a.at(0), "AnimationClip"), root);
+        return Value::undefined();
+    };
+    b.methods["existingAction"] = [](void* self, const Args& a, Store& store) -> Value {
+        const Object3D* root = a.size() > 1 && a.at(1).kind == Value::Kind::Ref ? &objectArg(store, a.at(1)) : nullptr;
+        AnimationAction* action = as<AnimationMixer>(self)->existingAction(store.ref<AnimationClip>(a.at(0), "AnimationClip"), root);
+        return action ? store.adoptAlias("AnimationAction", action, self) : Value{};
+    };
     b.getters["time"] = [](void* self) { return Value::of(as<AnimationMixer>(self)->time); };
     b.getters["timeScale"] = [](void* self) { return Value::of(as<AnimationMixer>(self)->timeScale); };
     b.setters["timeScale"] = [](void* self, const Value& v) { as<AnimationMixer>(self)->timeScale = number(v); };
@@ -927,6 +948,84 @@ void registerAnimationAction(ClassBinding& b) {
     b.methods["setEffectiveWeight"] = [](void* self, const Args& a, Store&) {
         as<AnimationAction>(self)->setEffectiveWeight(number(a.at(0)));
         return chain();
+    };
+    // Every other AnimationAction member three publishes, over the native action's own fields.
+    using Chain1 = AnimationAction& (AnimationAction::*)(double);
+    for (const auto& [name, method] : std::initializer_list<std::pair<const char*, Chain1>>{
+             {"startAt", &AnimationAction::startAt}, {"fadeIn", &AnimationAction::fadeIn},
+             {"fadeOut", &AnimationAction::fadeOut}, {"setEffectiveTimeScale", &AnimationAction::setEffectiveTimeScale},
+             {"setDuration", &AnimationAction::setDuration}, {"halt", &AnimationAction::halt}}) {
+        b.methods[name] = [method](void* self, const Args& a, Store&) {
+            (as<AnimationAction>(self)->*method)(number(a.at(0)));
+            return chain();
+        };
+    }
+    b.methods["stopFading"] = [](void* self, const Args&, Store&) { as<AnimationAction>(self)->stopFading(); return chain(); };
+    b.methods["stopWarping"] = [](void* self, const Args&, Store&) { as<AnimationAction>(self)->stopWarping(); return chain(); };
+    b.methods["warp"] = [](void* self, const Args& a, Store&) {
+        as<AnimationAction>(self)->warp(number(a.at(0)), number(a.at(1)), number(a.at(2)));
+        return chain();
+    };
+    b.methods["isRunning"] = [](void* self, const Args&, Store&) { return Value::of(as<AnimationAction>(self)->isRunning()); };
+    b.methods["isScheduled"] = [](void* self, const Args&, Store&) { return Value::of(as<AnimationAction>(self)->isScheduled()); };
+    b.methods["getEffectiveWeight"] = [](void* self, const Args&, Store&) {
+        return Value::of(as<AnimationAction>(self)->getEffectiveWeight());
+    };
+    b.methods["getEffectiveTimeScale"] = [](void* self, const Args&, Store&) {
+        return Value::of(as<AnimationAction>(self)->getEffectiveTimeScale());
+    };
+    // three's loop constants: LoopOnce 2200, LoopRepeat 2201, LoopPingPong 2202.
+    const auto loopOf = [](const Value& v) {
+        const double mode = number(v);
+        if (mode == 2200) return Loop::Once;
+        if (mode == 2201) return Loop::Repeat;
+        if (mode == 2202) return Loop::PingPong;
+        throw Unsupported{"loop must be LoopOnce, LoopRepeat or LoopPingPong"};
+    };
+    b.methods["setLoop"] = [loopOf](void* self, const Args& a, Store&) {
+        as<AnimationAction>(self)->setLoop(loopOf(a.at(0)), number(a.at(1)));
+        return chain();
+    };
+    b.getters["loop"] = [](void* self) {
+        const Loop loop = as<AnimationAction>(self)->loop;
+        return Value::of(loop == Loop::Once ? 2200.0 : loop == Loop::Repeat ? 2201.0 : 2202.0);
+    };
+    b.setters["loop"] = [loopOf](void* self, const Value& v) { as<AnimationAction>(self)->loop = loopOf(v); };
+    for (const auto& [name, field] : std::initializer_list<std::pair<const char*, double AnimationAction::*>>{
+             {"time", &AnimationAction::time}, {"timeScale", &AnimationAction::timeScale},
+             {"weight", &AnimationAction::weight}, {"repetitions", &AnimationAction::repetitions}}) {
+        b.getters[name] = [field](void* self) { return Value::of(as<AnimationAction>(self)->*field); };
+        b.setters[name] = [field](void* self, const Value& v) { as<AnimationAction>(self)->*field = number(v); };
+    }
+    for (const auto& [name, field] : std::initializer_list<std::pair<const char*, bool AnimationAction::*>>{
+             {"paused", &AnimationAction::paused}, {"enabled", &AnimationAction::enabled},
+             {"clampWhenFinished", &AnimationAction::clampWhenFinished},
+             {"zeroSlopeAtStart", &AnimationAction::zeroSlopeAtStart}, {"zeroSlopeAtEnd", &AnimationAction::zeroSlopeAtEnd}}) {
+        b.getters[name] = [field](void* self) { return Value::of(as<AnimationAction>(self)->*field); };
+        b.setters[name] = [field](void* self, const Value& v) {
+            if (v.kind != Value::Kind::Bool) throw Unsupported{"expected a boolean"};
+            as<AnimationAction>(self)->*field = v.flag;
+        };
+    }
+    for (const char* name : {"crossFadeFrom", "crossFadeTo"}) {
+        const bool from = name[9] == 'F';
+        b.methods[name] = [from](void* self, const Args& a, Store& store) {
+            AnimationAction& other = store.ref<AnimationAction>(a.at(0), "AnimationAction");
+            const bool warp = a.size() > 2 && a.at(2).kind == Value::Kind::Bool && a.at(2).flag;
+            if (from) as<AnimationAction>(self)->crossFadeFrom(other, number(a.at(1)), warp);
+            else as<AnimationAction>(self)->crossFadeTo(other, number(a.at(1)), warp);
+            return chain();
+        };
+    }
+    b.methods["syncWith"] = [](void* self, const Args& a, Store& store) {
+        as<AnimationAction>(self)->syncWith(store.ref<AnimationAction>(a.at(0), "AnimationAction"));
+        return chain();
+    };
+    b.methods["getClip"] = [](void* self, const Args&, Store& store) {
+        return store.share("AnimationClip", std::const_pointer_cast<AnimationClip>(as<AnimationAction>(self)->clip()));
+    };
+    b.methods["getRoot"] = [](void* self, const Args&, Store& store) {
+        return foundObject(store, &as<AnimationAction>(self)->getRoot());
     };
 }
 

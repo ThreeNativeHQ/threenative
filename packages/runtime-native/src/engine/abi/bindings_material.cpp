@@ -165,6 +165,12 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialColor(b, "color", &Material::color);
     materialMapSlot(b);
     if (type == MaterialType::Basic) return;
+    materialMapSlot(b, "normalMap");
+    fixedMember(b, "normalScale", memberAliasMethod(&Material::normalScale, "Vector2"));
+    b.setters["normalScale"] = [](void* self, const Value& v, Store& store) {
+        as<Material>(self)->normalScale = store.ref<Vector2>(v, "Vector2");
+        as<Material>(self)->needsUpdate();
+    };
     materialColor(b, "emissive", &Material::emissive);
     materialNumber(b, "emissiveIntensity", &Material::emissiveIntensity);
     if (type == MaterialType::Lambert) return;
@@ -426,6 +432,13 @@ void registerTextureFields(ClassBinding& b) {
     textureNumber<Texture>(b, "magFilter", &Texture::magFilter);
     textureNumber<Texture>(b, "minFilter", &Texture::minFilter);
     textureNumber<Texture>(b, "rotation", &Texture::rotation);
+    textureNumber<Texture>(b, "anisotropy", &Texture::anisotropy);
+    b.getters["generateMipmaps"] = [](void* self) { return Value::of(as<Texture>(self)->generateMipmaps); };
+    b.setters["generateMipmaps"] = [](void* self, const Value& v) { as<Texture>(self)->generateMipmaps = flag(v); };
+    // three's `texture.source`: the texture's own image record, whose version moves with needsUpdate.
+    fixedMember(b, "source", [](void* self, const Args&, Store& store) {
+        return store.adoptAlias("Source", self, self);
+    });
     textureVector2<Texture>(b, "repeat", &Texture::repeat);
     textureVector2<Texture>(b, "offset", &Texture::offset);
     b.getters["colorSpace"] = [](void* self) { return string(as<Texture>(self)->isSRGB() ? "srgb" : ""); };
@@ -491,6 +504,11 @@ void registerMaterialBindings(Registry& classes) {
 }
 
 void registerTextureBindings(Registry& classes) {
+    ClassBinding& source = classes["Source"];
+    source.getters["version"] = [](void* self) { return Value::of(double(as<Texture>(self)->version())); };
+    source.setters["needsUpdate"] = [](void* self, const Value& v) {
+        if (flag(v)) as<Texture>(self)->needsUpdate();
+    };
     registerTextureClass(classes["Texture"], false);
     registerTextureClass(classes["DataTexture"], true);
 }
