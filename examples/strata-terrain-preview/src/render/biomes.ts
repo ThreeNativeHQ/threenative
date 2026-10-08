@@ -87,7 +87,7 @@ const temperate: IBiome = {
   fill: { sky: 0xa8c8e8, ground: 0x464937, intensity: 0.72 },
   haze: {
     color: 0x8ca8ba,
-    density: 0.00055,
+    density: 0.0011,
     valleyDensity: 0.000006,
     height: 120,
     sunScatter: 0.32,

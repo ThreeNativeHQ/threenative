@@ -3825,4 +3825,10 @@ the crown-normal mode, so the `terrain.playtest.json` first step (60 s) stays re
 environmental reason; thresholds are unchanged. A quiet-host rerun or the streaming lane's loading
 work is what can turn it green.
 
+Kept: forest haze density 0.00055 → 0.0011 per metre (only `temperate`, which every other world
+overrides). The far band of the elevated view moves 119 → 137 luma into the sky's blue-grey; a fresh
+judge scored that view 5 → 6 ("real aerial perspective at range with no cost up close"), the meadow
+unchanged at 6 ([capture](../../benchmark/strata-loading-2026-10-06/forest-haze-player.jpg)).
+Remaining named causes: repeated noise texture on the far hills and uniform tree shapes.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
