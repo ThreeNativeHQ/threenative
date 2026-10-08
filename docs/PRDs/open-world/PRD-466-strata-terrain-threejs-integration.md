@@ -3836,4 +3836,10 @@ Quieter host (load 9–17): the unchanged `terrain.playtest.json` still fails it
 68.8 s and 45.4 s, so the forest TRAA change adds no load time. The 60 s step leaves no headroom over
 45–69 s readiness plus runner overhead; this belongs to the loading lane, and the threshold stays.
 
+Native desktop (fresh `pnpm native:build`, 1:46, same tree): `test:terrain:desktop` passes the forest
+and coastal phases with this session's commits, then fails at `alpine-ground-ready`
+(`groundBiome` stays `"baked"` for 15 s). The same scenario on the pre-session versions of every
+file this session changed (`de1b57ab9`) fails at the same step and timeout, so the alpine native
+ground load predates this work; the shared `VirtualShadowNode` fix does not regress native.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
