@@ -238,6 +238,11 @@ export function defineWebRenderer(
       if (this.#last !== undefined) this.render(...this.#last);
     }
 
+    /** WebGPUCapabilities.getMaxAnisotropy, as on the V8 player: WebGPU samplers clamp to 16. */
+    getMaxAnisotropy(): number {
+      return 16;
+    }
+
     compileAsync(): Promise<void> {
       return Promise.resolve();
     }

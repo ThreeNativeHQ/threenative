@@ -178,5 +178,37 @@ export function defineTextureSources(
     }
   }
 
-  return { CanvasTexture, DataTexture, ImageBitmapLoader, Texture };
+  /**
+   * three's TextureLoader: the browser decodes the file, and the texture is a Texture over its
+   * pixels with three's image defaults (flipY true), as an `<img>` upload would be.
+   * ponytail: `load()` hands the texture to `onLoad` and returns nothing, since the engine texture
+   * exists only once the pixels do; add a resizable placeholder if a game uses the return value.
+   */
+  class TextureLoader {
+    path = "";
+    setPath(path: string): this {
+      this.path = path;
+      return this;
+    }
+    setCrossOrigin(): this {
+      return this;
+    }
+    load(
+      url: string,
+      onLoad?: (texture: object) => void,
+      _onProgress?: unknown,
+      onError?: (error: unknown) => void,
+    ): void {
+      this.loadAsync(url).then(onLoad, (error) => {
+        if (onError === undefined) throw error;
+        onError(error);
+      });
+    }
+    async loadAsync(url: string): Promise<object> {
+      const bitmap = await new ImageBitmapLoader().setPath(this.path).loadAsync(url);
+      return Reflect.construct(Texture, [bitmap]) as object;
+    }
+  }
+
+  return { CanvasTexture, DataTexture, ImageBitmapLoader, Texture, TextureLoader };
 }

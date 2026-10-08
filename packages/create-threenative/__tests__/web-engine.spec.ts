@@ -168,6 +168,14 @@ describe("createWebEnginePlugin", () => {
       );
   });
 
+  it("resolves three's GLTFLoader to the engine glTF loader, never upstream", () => {
+    expect(
+      createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+        "three/addons/loaders/GLTFLoader.js",
+      ),
+    ).toMatch(/(?:three-native\/src\/addons\/gltf-loader-web\.ts|web-engine-gltf-loader\.js)$/u);
+  });
+
   it("fails the build when the Wasm engine is not installed", async () => {
     const root = await project(false);
     await expect(

@@ -137,7 +137,8 @@ endfunction()
 # PRD-515 phase 1: glTF/GLB to a native scene in GLTFLoader's shape. cgltf (provisioned by
 # download-deps) only parses; the corpus test reads the repository's glTF files from disk.
 set(TN_CGLTF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cgltf)
-if(EXISTS ${TN_CGLTF_DIR}/cgltf.h AND NOT EMSCRIPTEN)
+# PRD-540: the web host loads models through this same loader, so it builds for Wasm too.
+if(EXISTS ${TN_CGLTF_DIR}/cgltf.h)
     add_library(tn_engine_gltf STATIC src/engine/assets/gltf/loader.cpp src/engine/assets/gltf/cgltf_impl.cpp
         src/engine/assets/gltf/image_decode.cpp)
     tn_native_engine_target(tn_engine_gltf)
@@ -462,13 +463,17 @@ if(EMSCRIPTEN)
     # module beside its .wasm in the package's build/web/ directory, where createWebEnginePlugin finds it.
     add_executable(tn-native-engine-web src/engine/wasm/web_host.cpp)
     target_link_libraries(tn-native-engine-web PRIVATE tn_engine_abi tn_engine_renderer)
+    if(TARGET tn_engine_gltf)
+        target_link_libraries(tn-native-engine-web PRIVATE tn_engine_gltf)
+        target_compile_definitions(tn-native-engine-web PRIVATE TN_WEB_GLTF=1)
+    endif()
     target_include_directories(tn-native-engine-web PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     tn_native_engine_target(tn-native-engine-web)
     set_target_properties(tn-native-engine-web PROPERTIES SUFFIX ".mjs"
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/web)
     target_link_options(tn-native-engine-web PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_web_init,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_web_init,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_tnw_web_load_gltf,_tnw_web_load_error,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
     find_program(TN_WASM_NODE node REQUIRED)
     configure_file(tests/native-engine/wasm/assets.html ${CMAKE_CURRENT_BINARY_DIR}/native-core-assets.html COPYONLY)

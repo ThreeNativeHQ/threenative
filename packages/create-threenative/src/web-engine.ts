@@ -104,6 +104,9 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       if (source === "three/addons/loaders/HDRLoader.js")
         return browserModule("web-engine-hdr-loader.js", "addons/hdr-loader.ts");
       // GTAO, Denoise, SMAA and Bloom are the engine's live post effects (lane-531), shared with V8.
+      // Models load through the engine's own glTF loader; upstream GLTFLoader never settles over it.
+      if (source === "three/addons/loaders/GLTFLoader.js")
+        return browserModule("web-engine-gltf-loader.js", "addons/gltf-loader-web.ts");
       if (POST_EFFECT_ADDONS.includes(source))
         return browserModule("web-engine-post-effects.js", "addons/post-effects-web.ts");
       if (/^three\/(?:src|build)\//u.test(source))
@@ -116,7 +119,7 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       if (!native || id !== WEB_ENGINE_ID) return null;
       // `__tnTsl` rides along for the post effects module: the engine TSL functions three does not
       // export by name (ao, bloom, ...).
-      const names = [...(await upstreamNames(projectRoot())), "__tnTsl"];
+      const names = [...(await upstreamNames(projectRoot())), "__tnTsl", "__tnLoadGltf"];
       return [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
         `import createModule from ${JSON.stringify(wasmModule(projectRoot()))};`,

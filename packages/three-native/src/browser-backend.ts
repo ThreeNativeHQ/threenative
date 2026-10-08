@@ -60,6 +60,8 @@ export interface IBrowserRuntime {
   ): void;
   /** TSL by name (PRD-540), when the module carries `tn_tsl_call`. */
   readonly tsl?: ITslRuntime;
+  /** A GLB through the engine's own glTF loader (PRD-540), when the module carries the web host. */
+  loadGltf?(bytes: Uint8Array): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
 }
 
 /** The engine node id a TSL wrapper (`browser-tsl.ts`) carries. */
@@ -74,6 +76,8 @@ export interface IBrowserEngine {
    * captured are a cycle the collector reclaims.
    */
   collect(): void;
+  /** The wrapper for an engine object the engine handed over (a loaded model's scene). */
+  wrap(ref: IEngineRef): object;
 }
 
 const REF = Symbol("tn.engineRef");
@@ -440,6 +444,7 @@ export function defineBrowserClasses(
   }
   return {
     classes,
+    wrap,
     collect() {
       for (const [key, names] of callbackNames) {
         const wrapper = wrappers.get(key)?.deref();
@@ -517,6 +522,40 @@ interface IAbiHelpers {
   check(status: number, diag: number, what: string): void;
   handleOf(ref: IEngineRef): number;
   view(): DataView;
+}
+
+/** The engine glTF loader over the product web host's `tnw_web_load_gltf`, when the module has it. */
+function gltfOf(
+  abi: TnAbiModule,
+  context: number,
+  h: Pick<IAbiHelpers, "scoped" | "alloc"> & { keyOf(pointer: number): IEngineRef },
+): Pick<IBrowserRuntime, "loadGltf"> {
+  const host = abi as unknown as Partial<
+    Record<"_tnw_web_load_gltf" | "_tnw_web_load_error", (...args: number[]) => number>
+  >;
+  const { _tnw_web_load_gltf: load, _tnw_web_load_error: error } = host;
+  if (load === undefined || error === undefined) return {};
+  return {
+    loadGltf: (bytes) =>
+      h.scoped(() => {
+        const data = h.alloc(Math.max(1, bytes.byteLength));
+        abi.HEAPU8.set(bytes, data);
+        const count = h.alloc(4);
+        // Retried once with the exact size when the model has more clips than the first guess.
+        for (let capacity = 64; ; ) {
+          const out = h.alloc(HANDLE * capacity);
+          const status = load(context, data, bytes.byteLength, out, capacity, count);
+          const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
+          if (status === 0) {
+            const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
+            return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
+          }
+          const reason = abi.UTF8ToString(error());
+          if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
+          capacity = needed;
+        }
+      }),
+  };
 }
 
 /** TSL by name over `tn_tsl_call`, when the module exports it (the product web host does). */
@@ -822,6 +861,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
 
   return {
     ...(tslOf(abi, context, { scoped, alloc, string, diagnostic, check, handleOf, view }) ?? {}),
+    ...gltfOf(abi, context, { scoped, alloc, keyOf }),
     typeId: (className) => scoped(() => abi._tn_type_id(string(className).pointer)),
     construct: (className, args) =>
       scoped(() => {

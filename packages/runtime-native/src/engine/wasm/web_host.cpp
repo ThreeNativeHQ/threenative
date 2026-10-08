@@ -5,6 +5,9 @@
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
 #include "engine/renderer/render_database.h"
+#if TN_WEB_GLTF
+#include "engine/assets/gltf/loader.h"
+#endif
 
 #include <emscripten/emscripten.h>
 
@@ -197,6 +200,49 @@ extern "C" int tnw_web_set_post(tn_context_t* context, const uint64_t* node) {
     if (state == Ready && renderer) renderer->setPostGraph(graph);
     else pendingPost = graph;
     return 0;
+}
+
+namespace {
+std::string loadFailure;  // why the last tnw_web_load_gltf refused; never fails the host itself
+}
+
+/** Why the last tnw_web_load_gltf call refused, or empty. */
+extern "C" const char* tnw_web_load_error() { return loadFailure.c_str(); }
+
+/**
+ * A GLB through the engine's own glTF loader (PRD-540), the same C++ the V8 player's loadAsset runs:
+ * the default scene, then each animation clip, as handles in `context`. `out` holds `capacity`
+ * handles; `count` answers how many there are (scene + clips), so a short buffer can be retried.
+ * Returns 0, or 1 with tnw_web_load_error set. A model whose images did not decode is refused by
+ * name, as on V8, rather than drawn without its textures.
+ */
+extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, uint32_t size, tn_handle_t* out,
+                                 uint32_t capacity, uint32_t* count) {
+    loadFailure.clear();
+#if TN_WEB_GLTF
+    if (!context || !bytes || !size || !count) return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
+    auto loaded = gltf::load(std::span<const uint8_t>(bytes, size));
+    if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
+    if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
+    bool undecoded = false;
+    loaded.scene->traverse([](Object3D& object, void* result) {
+        auto* mesh = dynamic_cast<Mesh*>(&object);
+        if (!mesh || !mesh->material) return;
+        for (const auto& [slot, map] : mesh->material->maps)
+            if (map && !map->hasImage()) *static_cast<bool*>(result) = true;
+    }, &undecoded);
+    if (undecoded) return loadFailure = "TN_NATIVE_GLTF_IMAGE_UNSUPPORTED: the model has undecoded images", 1;
+    *count = 1 + static_cast<uint32_t>(loaded.animations.size());
+    if (!out || capacity < *count) return loadFailure = "TN_WASM_GLTF_CAPACITY", 1;
+    out[0] = tn::abi::shareObject(context, "Group", loaded.scene);
+    for (uint32_t i = 0; i < loaded.animations.size(); ++i)
+        out[1 + i] = tn::abi::shareObject(context, "AnimationClip", loaded.animations[i]);
+    return 0;
+#else
+    (void)context; (void)bytes; (void)size; (void)out; (void)capacity; (void)count;
+    loadFailure = "TN_WASM_GLTF_UNAVAILABLE: this web engine was built without cgltf";
+    return 1;
+#endif
 }
 
 /** The last frame's draws (0) and triangles (1), as three's `renderer.info.render` reports them. */
