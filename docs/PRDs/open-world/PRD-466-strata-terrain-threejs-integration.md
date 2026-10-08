@@ -3891,7 +3891,12 @@ An independent diagnostic pass (in-page A/B on the forest meadow, RTX 2080) rank
 1. **The vegetation envMap carries an unshadowed second sun.** `kloofendal_48d_2k.hdr` (`pack.ts`,
    `propMaterials.ts` `skyEnvironment`, 1.13) holds a 72,559-luminance sun disc 81° from the scene
    sun; clamped out in-page, meadow linear light falls 0.1258 → 0.0700. Linear meadow budget: real sun
-   14%, HDR sun 44%, HDR sky 36%, hemisphere 6%. The ground receives no env light at all. **Open.**
+   14%, HDR sun 44%, HDR sky 36%, hemisphere 6%. The ground receives no env light at all. **Fixed** in
+   `d5bef2ff9`: `loadSkyLight` caps texel luminance at 30 and forest exposure rises to `2 ** 0.87`; a
+   fresh judge scored the meadow 5.0 → 6.0 and the elevated view 4.5 → 5.5 (strong tree shadows, lit
+   crown side, 0.02% clipped) ([meadow](../../benchmark/strata-loading-2026-10-06/sky-sun-clamped-meadow.jpg),
+   [elevated](../../benchmark/strata-loading-2026-10-06/sky-sun-clamped-player.jpg)). Ground env
+   light is still absent.
 2. **TRAA let the auto scaler fall to 0.23** (442×248 on 1920×1080): core lifted the desktop floor for
    any velocity consumer. **Fixed** in `4ad7d9750`: same host, buffer now 1171×659 (the 0.61 floor).
 3. **Canvas alpha leak**: cutout coverage alpha reached the alpha canvas; 13.4% of meadow pixels took a
