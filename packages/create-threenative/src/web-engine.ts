@@ -93,6 +93,10 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       // three's math classes and cannot load over the engine.
       if (source === "three-mesh-bvh")
         return browserModule("web-engine-mesh-bvh.js", "addons/mesh-bvh.ts");
+      // Upstream's HDRLoader extends DataTextureLoader, which the engine does not bind; this one
+      // decodes with the same RGBE parser into an engine DataTexture.
+      if (source === "three/addons/loaders/HDRLoader.js")
+        return browserModule("web-engine-hdr-loader.js", "addons/hdr-loader.ts");
       if (/^three\/(?:src|build)\//u.test(source))
         throw new Error(
           `TN_NATIVE_UPSTREAM_IMPORT: ${source} would bundle upstream three under engine "native"; import from three, three/webgpu or three/tsl.`,

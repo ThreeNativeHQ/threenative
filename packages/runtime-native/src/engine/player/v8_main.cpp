@@ -48,6 +48,7 @@
 #include "engine/scene/texture.h"
 #include "engine/assets/package.h"
 #include "engine/assets/gltf/loader.h"
+#include "engine/assets/gltf/image_decode.h"
 #include "engine/renderer/renderer.h"
 #include "adapters/v8/tsl.h"
 #include "engine/shader/graph/serialized.h"
@@ -188,6 +189,7 @@ class V8Game {
     Renderer* renderer_ = nullptr;
     static void loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info);
 };
 
 void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -224,6 +226,10 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
     const assets::PackageEntry* entry = nullptr;
     for (const auto& candidate : game.assets_.entries)
         if (candidate.name == path) { entry = &candidate; break; }
+    // As on the web, a relative path the cook does not name is a web-root URL: the package names
+    // hand-placed web-root files `/` plus their path there (packages/assets nativePackageEntries).
+    for (const auto& candidate : game.assets_.entries)
+        if (!entry && !path.empty() && path[0] != '/' && candidate.name == "/" + path) entry = &candidate;
     if (!entry) return refuse("TN_NATIVE_ASSET_MISSING: " + path + " in " + game.assetPath_);
     auto data = game.assets_.data(*entry);
     v8::Local<v8::Value> value;
@@ -290,6 +296,49 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
     record->Set(ctx, v8str(isolate, "bytes"), v8::Number::New(isolate, static_cast<double>(entry->size))).Check();
     record->Set(ctx, v8str(isolate, "url"), v8str(isolate, game.assetPath_ + "#" + path)).Check();
     info.GetReturnValue().Set(record);
+}
+
+// createImageBitmap's decode: PNG or JPEG bytes through the engine's image decoder (PRD-515) into
+// an RGBA8 Texture, rows as stored. `{ texture, width, height }`, or a TN_NATIVE_IMAGE_DECODE refusal.
+void V8Game::decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    std::vector<uint8_t> bytes;
+    if (info.Length() == 1 && info[0]->IsArrayBufferView()) {
+        auto view = info[0].As<v8::ArrayBufferView>();
+        bytes.resize(view->ByteLength());
+        view->CopyContents(bytes.data(), bytes.size());
+    } else if (info.Length() == 1 && info[0]->IsArrayBuffer()) {
+        auto buffer = info[0].As<v8::ArrayBuffer>();
+        const auto* data = static_cast<const uint8_t*>(buffer->Data());
+        bytes.assign(data, data + buffer->ByteLength());
+    } else {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate,
+            "TN_NATIVE_IMAGE_DECODE: expected the encoded image as an ArrayBuffer or typed array")));
+        return;
+    }
+#if TN_PLAYER_NATIVE_GLTF
+    auto texture = std::make_shared<Texture>();
+    if (gltf::imageFormat(bytes.data(), bytes.size()) == gltf::ImageFormat::Unknown ||
+        !gltf::decodeImage(bytes.data(), bytes.size(), texture->width, texture->height, texture->data)) {
+        isolate->ThrowException(v8::Exception::Error(v8str(isolate,
+            "TN_NATIVE_IMAGE_DECODE: the bytes are not a PNG or JPEG this decoder reads, or the image is damaged or larger than 8192")));
+        return;
+    }
+    texture->needsUpdate();
+    const uint32_t width = texture->width, height = texture->height;
+    auto record = v8::Object::New(isolate);
+    record->Set(ctx, v8str(isolate, "texture"), game.adapter_->wrap(
+        tn::abi::shareObject(game.context_, "Texture", std::move(texture)))).Check();
+    record->Set(ctx, v8str(isolate, "width"), v8::Number::New(isolate, width)).Check();
+    record->Set(ctx, v8str(isolate, "height"), v8::Number::New(isolate, height)).Check();
+    info.GetReturnValue().Set(record);
+#else
+    (void)game; (void)ctx;
+    isolate->ThrowException(v8::Exception::Error(v8str(isolate,
+        "TN_NATIVE_IMAGE_DECODE: this player was built without the engine image decoder")));
+#endif
 }
 
 void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -429,6 +478,10 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "log"), v8::Function::New(ctx, &logCallback).ToLocalChecked()).Check();
     auto self = v8::External::New(isolate_, this);
     host->Set(ctx, v8str(isolate_, "loadAsset"), v8::Function::New(ctx, &loadAsset, self).ToLocalChecked()).Check();
+#if TN_PLAYER_NATIVE_GLTF
+    // Only a player with the decoder answers createImageBitmap; without it the facade installs none.
+    host->Set(ctx, v8str(isolate_, "decodeImage"), v8::Function::New(ctx, &decodeImage, self).ToLocalChecked()).Check();
+#endif
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
     v8::Local<v8::Script> script;
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {

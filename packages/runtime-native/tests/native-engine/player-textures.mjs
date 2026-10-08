@@ -35,6 +35,14 @@ for (let y = 0; y < height; ++y) {
 }
 const hdr = Buffer.concat([Buffer.from(header, "latin1"), Buffer.from(body)]);
 
+// Encoded images for createImageBitmap: a 3x2 JPEG and a 2x2 PNG, decoded by the engine at run time.
+const codecs = createRequire(resolve(native, "../assets/package.json"));
+const jpeg = Buffer.from(codecs("jpeg-js").encode({ data: Buffer.alloc(3 * 2 * 4, 90), width: 3, height: 2 }, 90).data);
+const { PNG } = codecs("pngjs");
+const pngImage = new PNG({ width: 2, height: 2 });
+pngImage.data.fill(200);
+const png = PNG.sync.write(pngImage);
+
 const writer = resolve(work, "package-writer.mjs");
 await build({ entryPoints: [resolve(native, "../assets/src/native-package.ts")], outfile: writer,
   bundle: true, platform: "node", format: "esm", logLevel: "silent" });
@@ -45,7 +53,7 @@ texel.set([255, 32, 16, 255], 12);
 const packagePath = resolve(work, "assets.tnpk");
 await writeFile(packagePath, writeNativePackage([
   { name: "/assets/cockpit/dial.png", kind: 2, data: texel, uploadSize: 4 },
-  { name: "/assets/sky.hdr", kind: 1, data: hdr, uploadSize: hdr.length },
+  { name: "/assets/sky.hdr", kind: 1, data: hdr, uploadSize: 0 },
 ]));
 
 const entry = resolve(work, "game.ts");
@@ -109,7 +117,22 @@ globalThis.tn.__startupError = "TEXTURES_CHECK: the async checks did not finish"
   dial.flipY = false;
   check(dial instanceof THREE.Texture && dial.flipY === false, "bitmap texture");
   refuses(() => new THREE.Texture(bitmap), /TN_NATIVE_IMAGE_BITMAP_CLOSED/, "adopted twice");
+  // A relative URL reaches a web-root file, as the web serves assets/x from /assets/x.
+  check(new THREE.Texture(await loader.loadAsync("assets/cockpit/dial.png")) instanceof THREE.Texture, "relative web-root URL");
   await rejects(() => loader.loadAsync("/assets/cockpit/absent.png"), /TN_NATIVE_ASSET_MISSING/, "missing bitmap");
+
+  // createImageBitmap decodes encoded bytes through the engine decoder, as three's loader calls it.
+  check(typeof createImageBitmap === "function", "createImageBitmap installed");
+  const fromJpeg = await createImageBitmap(Uint8Array.from(${JSON.stringify([...jpeg])}), { imageOrientation: "flipY" });
+  check(fromJpeg.width === 3 && fromJpeg.height === 2, "jpeg bitmap size");
+  const pngBytes = Uint8Array.from(${JSON.stringify([...png])});
+  const fromBlob = await createImageBitmap({ arrayBuffer: async () => pngBytes.buffer });
+  check(fromBlob.width === 2 && fromBlob.height === 2, "blob bitmap size");
+  check(new THREE.Texture(fromJpeg) instanceof THREE.Texture && new THREE.Texture(fromBlob).flipY === true, "decoded bitmap texture");
+  await rejects(() => createImageBitmap(new Uint8Array([1, 2, 3, 4])), /TN_NATIVE_IMAGE_DECODE/, "not an image");
+  await rejects(() => createImageBitmap(pngBytes, 0, 0, 1, 1), /TN_NATIVE_IMAGE_BITMAP_CROP/, "crop");
+  await rejects(() => createImageBitmap(pngBytes, { premultiplyAlpha: "premultiply" }), /TN_NATIVE_IMAGE_BITMAP_OPTION/, "premultiply");
+  await rejects(() => createImageBitmap({ width: 1, height: 1 }), /TN_NATIVE_IMAGE_BITMAP_SOURCE/, "foreign source");
 
   const sky = await new HDRLoader().loadAsync("tnpk:/assets/sky.hdr");
   check(sky instanceof THREE.DataTexture && sky.flipY === true && sky.magFilter === LinearFilter, "hdr texture");

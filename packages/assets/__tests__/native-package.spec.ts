@@ -192,6 +192,16 @@ describe("writeNativePackage validation", () => {
     expect(message).toMatch(/itself/u);
   });
 
+  it("refuses a GPU buffer (uploadSize above 0) whose length is not a multiple of four", () => {
+    const message = invalid([entry({ data: Uint8Array.from([1, 2, 3]), uploadSize: 3 })]);
+    expect(message).toContain("TN_NATIVE_PACKAGE_INVALID");
+    expect(message).toMatch(/GPU buffer/u);
+    // A CPU buffer (uploadSize 0) is read by a decoder, never uploaded, so it keeps any length.
+    expect(() =>
+      writeNativePackage([entry({ data: Uint8Array.from([1, 2, 3]), uploadSize: 0 })]),
+    ).not.toThrow();
+  });
+
   it("refuses a negative or non-integer uploadSize", () => {
     expect(invalid([entry({ uploadSize: -1 })])).toContain("TN_NATIVE_PACKAGE_INVALID");
     expect(invalid([entry({ uploadSize: 1.5 })])).toContain("TN_NATIVE_PACKAGE_INVALID");
@@ -323,12 +333,110 @@ describe("assets.nativePackage", () => {
     expect(entry?.size).toBe(5);
   });
 
+  it("keeps a CPU-decoded buffer at its exact length and declares no GPU upload", async () => {
+    const root = await makeTempDir("threenative-native-package-cpu-buffer-");
+    await mkdir(path.join(root, "assets"));
+    // An HDRLoader parses the .hdr in JS: 7 bytes is a legal entry, and nothing uploads it.
+    await writeFile(path.join(root, "assets", "sky.hdr"), Buffer.from("#?RGBE\n"));
+
+    await compileAssets({
+      config: { models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    const output = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+    const [entry] = readNativePackageManifest(output).entries;
+    expect(entry?.name).toBe("sky.hdr");
+    expect(entry?.kind).toBe(NativeEntryKind.Buffer);
+    expect(entry?.size).toBe(7);
+    expect(entry?.uploadSize).toBe(0);
+  });
+
+  it("cooks a JPEG into an RGBA8 Texture entry, as it does a PNG", async () => {
+    const root = await makeTempDir("threenative-native-package-jpeg-");
+    await mkdir(path.join(root, "assets"));
+    const { encode } = await import("jpeg-js");
+    const pixels = Buffer.alloc(8 * 4 * 4, 200);
+    await writeFile(
+      path.join(root, "assets", "panel.jpg"),
+      encode({ data: pixels, height: 4, width: 8 }, 90).data,
+    );
+
+    await compileAssets({
+      config: { models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    const output = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+    const [entry] = readNativePackageManifest(output).entries;
+    expect(entry?.name).toBe("panel.jpg");
+    expect(entry?.kind).toBe(NativeEntryKind.Texture);
+    expect(entry?.size).toBe(12 + 8 * 4 * 4);
+    expect(entry?.uploadSize).toBe(8 * 4 * 4);
+  });
+
+  it("packages a web root laid out like Midway's under the URLs the game requests", async () => {
+    // No source directory, every file hand-placed in public/assets and requested as `/assets/…`:
+    // the web serves those URLs from the web root, so the package names them the same way.
+    const root = await makeTempDir("threenative-native-package-web-root-");
+    const web = path.join(root, "public", "assets");
+    await mkdir(path.join(web, "cockpit"), { recursive: true });
+    await writeFile(path.join(web, "dawn-sky.hdr"), Buffer.from("#?RGBE\n"));
+    const { encode } = await import("jpeg-js");
+    await writeFile(
+      path.join(web, "cockpit", "panel.jpg"),
+      encode({ data: Buffer.alloc(4 * 2 * 4, 120), height: 2, width: 4 }, 90).data,
+    );
+    const glb = Buffer.alloc(12);
+    glb.write("glTF", 0, "latin1");
+    glb.writeUInt32LE(2, 4);
+    glb.writeUInt32LE(12, 8);
+    await writeFile(path.join(web, "ship.glb"), glb);
+    await writeFile(path.join(web, ".DS_Store"), Buffer.from("finder"));
+
+    for (let run = 0; run < 2; run++) {
+      await compileAssets({
+        config: { models: "none", nativePackage: true, textures: "none" },
+        cwd: root,
+      });
+      const output = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+      const entries = readNativePackageManifest(output).entries.map((entry) => [
+        entry.name,
+        entry.kind,
+        entry.size,
+        entry.uploadSize,
+      ]);
+      // The second run must not package the first run's package or its receipt.
+      expect(entries, `run ${String(run)}`).toEqual([
+        ["/assets/cockpit/panel.jpg", NativeEntryKind.Texture, 12 + 4 * 2 * 4, 4 * 2 * 4],
+        ["/assets/dawn-sky.hdr", NativeEntryKind.Buffer, 7, 0],
+        ["/assets/ship.glb", NativeEntryKind.Scene, 12, 0],
+      ]);
+    }
+  });
+
+  it("packages cooked entries by logical path and hand-placed files by URL, never a cook output twice", async () => {
+    const root = await makeTempDir("threenative-native-package-mixed-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "data.bin"), Buffer.from([1, 2, 3]));
+    await mkdir(path.join(root, "public"), { recursive: true });
+    await writeFile(path.join(root, "public", "icon.png"), rgbaPng({ height: 2, width: 2 }));
+
+    await compileAssets({
+      config: { models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    const output = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+    expect(readNativePackageManifest(output).entries.map((entry) => entry.name)).toEqual([
+      "/icon.png",
+      "data.bin",
+    ]);
+  });
+
   it("removes a stale package when a recook has no v1 entry", async () => {
     const root = await makeTempDir("threenative-native-package-empty-");
     await mkdir(path.join(root, "assets"));
-    await writeFile(path.join(root, "assets", "data.bin"), Buffer.from([1, 2, 3]));
+    await writeFile(path.join(root, "assets", "data.bin"), Buffer.alloc(0));
     // The fixed path the bake owns whenever nativePackage is on, left by an earlier run whose
-    // receipt is gone. A 3-byte buffer is not a legal v1 entry, so this run emits none.
+    // receipt is gone. An empty buffer is not a legal v1 entry, so this run emits none.
     const target = path.join(root, "public", "native", "assets.tnpk");
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, Buffer.from("stale package left by an earlier run"));
