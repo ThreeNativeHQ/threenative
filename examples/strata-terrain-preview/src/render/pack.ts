@@ -482,7 +482,8 @@ function surface(
     if (world === "forest") {
       // Blades and fronds a cell thick pass the sun through; without it a meadow seen against the
       // sun is lit almost only by the sky. Same shadowed term as the needles, without their fill.
-      lightNeedles(material, float(1), 0.6);
+      // Roots and the gaps between blades stay dark; the upper blade carries the glow.
+      lightNeedles(material, smoothstep(0.02, 0.4, positionGeometry.y), 0.6);
       material.emissiveNode = null;
     }
   } else if (source.map) tintedFoliage(material, context, snowMap);

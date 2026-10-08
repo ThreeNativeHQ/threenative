@@ -3916,7 +3916,10 @@ An independent diagnostic pass (in-page A/B on the forest meadow, RTX 2080) rank
    non-backlit elevated view unchanged; fresh judge 4 → 5/10 (mid meadow believable; near field
    lifts the gaps too). The earlier "grass transmission had no effect" round edited `cutoutSurface`,
    which alpha-tested grass never reaches, so it was a no-op, not a measurement.
-   ([capture](../../benchmark/strata-loading-2026-10-06/foliage-transmission-meadow.jpg)) 8. (Suspected) mid/far terrain detail is replaced by flat colour beyond 32–115 m.
+   ([capture](../../benchmark/strata-loading-2026-10-06/foliage-transmission-meadow.jpg)). Gated by
+   blade height (`smoothstep(0.02, 0.4, positionGeometry.y)`) so roots and gaps stay dark: near-meadow
+   p5/p95 48/151 → 31/164, contrast ~34 → 45, 0% blown; fresh judge 5/10 against 4 (uniform) and 3.5
+   (none) ([capture](../../benchmark/strata-loading-2026-10-06/foliage-transmission-gated-meadow.jpg)). 8. (Suspected) mid/far terrain detail is replaced by flat colour beyond 32–115 m.
 
 Corrections to earlier sections: the kept field-grass root lift (`fe6964fc8`) edits a branch the
 alpha-tested grass never reaches, so its reported gain was run-to-run variance; single captures taken
