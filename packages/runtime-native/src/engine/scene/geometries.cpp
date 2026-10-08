@@ -4,6 +4,8 @@
 
 #include "engine/scene/geometries.h"
 
+#include "engine/foundation/math/ieee754.h"
+
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -560,6 +562,128 @@ std::shared_ptr<BufferGeometry> makeRingGeometry(double innerRadius, double oute
             builder.indices.push_back(b);
             builder.indices.push_back(c);
             builder.indices.push_back(d);
+        }
+    }
+    finish(*geometry, builder);
+    return geometry;
+}
+
+// ---------------------------------------------------------------------------- LatheGeometry
+
+std::shared_ptr<BufferGeometry> makeLatheGeometry(const std::vector<Vector2>& points, double segments,
+                                                  double phiStart, double phiLength) {
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->type = "LatheGeometry";
+    std::string profile = "[";
+    for (size_t j = 0; j < points.size(); ++j)
+        profile += (j == 0 ? "{\"x\":" : ",{\"x\":") + num(points[j].x) + ",\"y\":" + num(points[j].y) + "}";
+    geometry->parameters["points"] = profile + "]";
+    geometry->parameters["segments"] = num(segments);
+    geometry->parameters["phiStart"] = num(phiStart);
+    geometry->parameters["phiLength"] = num(phiLength);
+
+    segments = std::floor(segments);
+    phiLength = std::clamp(phiLength, 0.0, kTwoPi);
+    const double inverseSegments = 1.0 / segments;
+    const size_t last = points.size() - 1;
+    // Pre-compute the normals of the initial meridian.
+    std::vector<double> initNormals;
+    Vector3 normal;
+    Vector3 curNormal;
+    Vector3 prevNormal;
+    for (size_t j = 0; j <= last; ++j) {
+        if (j == last) {
+            initNormals.insert(initNormals.end(), {prevNormal.x, prevNormal.y, prevNormal.z});
+            continue;
+        }
+        const double dx = points[j + 1].x - points[j].x;
+        const double dy = points[j + 1].y - points[j].y;
+        normal.x = dy * 1.0;
+        normal.y = -dx;
+        normal.z = dy * 0.0;
+        if (j == 0) {
+            prevNormal = normal;
+        } else {
+            curNormal = normal;
+            normal.x += prevNormal.x;
+            normal.y += prevNormal.y;
+            normal.z += prevNormal.z;
+            prevNormal = curNormal;
+        }
+        normal.normalize();
+        initNormals.insert(initNormals.end(), {normal.x, normal.y, normal.z});
+    }
+    Builder builder;
+    for (double i = 0; i <= segments; i += 1) {
+        const double phi = phiStart + i * inverseSegments * phiLength;
+        const double sin = ieee754::sin(phi);
+        const double cos = ieee754::cos(phi);
+        for (size_t j = 0; j <= last; ++j) {
+            builder.positions.insert(builder.positions.end(), {points[j].x * sin, points[j].y, points[j].x * cos});
+            builder.uvs.insert(builder.uvs.end(), {i / segments, static_cast<double>(j) / static_cast<double>(last)});
+            builder.normals.insert(builder.normals.end(),
+                                   {initNormals[3 * j] * sin, initNormals[3 * j + 1], initNormals[3 * j] * cos});
+        }
+    }
+    const auto count = static_cast<uint32_t>(points.size());
+    for (uint32_t i = 0; i < segments; ++i) {
+        for (uint32_t j = 0; j < last; ++j) {
+            const uint32_t base = j + i * count;
+            const uint32_t a = base;
+            const uint32_t b = base + count;
+            const uint32_t c = base + count + 1;
+            const uint32_t d = base + 1;
+            builder.indices.insert(builder.indices.end(), {a, b, d, c, d, b});
+        }
+    }
+    finish(*geometry, builder);
+    return geometry;
+}
+
+// ---------------------------------------------------------------------------- TubeGeometry
+
+std::shared_ptr<BufferGeometry> makeTubeGeometry(const Curve& path, double tubularSegments, double radius,
+                                                 double radialSegments, bool closed) {
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->type = "TubeGeometry";
+    // three's parameters hold the path object itself; with no JSON for it, `parameters` is refused
+    // rather than answered without the path.
+    const FrenetFrames frames = path.computeFrenetFrames(tubularSegments, closed);
+    Builder builder;
+    Vector3 normal;
+    const auto segment = [&](double i) {
+        const Vector3 P = path.getPointAt(i / tubularSegments);
+        const Vector3& N = frames.normals[static_cast<size_t>(i)];
+        const Vector3& B = frames.binormals[static_cast<size_t>(i)];
+        for (double j = 0; j <= radialSegments; j += 1) {
+            const double v = j / radialSegments * kPi * 2;
+            const double sin = ieee754::sin(v);
+            const double cos = -ieee754::cos(v);
+            normal.x = cos * N.x + sin * B.x;
+            normal.y = cos * N.y + sin * B.y;
+            normal.z = cos * N.z + sin * B.z;
+            normal.normalize();
+            builder.normals.insert(builder.normals.end(), {normal.x, normal.y, normal.z});
+            builder.positions.insert(builder.positions.end(),
+                                     {P.x + radius * normal.x, P.y + radius * normal.y, P.z + radius * normal.z});
+        }
+    };
+    for (double i = 0; i < tubularSegments; i += 1) segment(i);
+    segment(closed ? 0 : tubularSegments);
+    for (double i = 0; i <= tubularSegments; i += 1) {
+        for (double j = 0; j <= radialSegments; j += 1) {
+            builder.uvs.push_back(i / tubularSegments);
+            builder.uvs.push_back(j / radialSegments);
+        }
+    }
+    const auto ring = static_cast<uint32_t>(radialSegments) + 1;
+    for (uint32_t j = 1; j <= tubularSegments; ++j) {
+        for (uint32_t i = 1; i <= radialSegments; ++i) {
+            const uint32_t a = ring * (j - 1) + (i - 1);
+            const uint32_t b = ring * j + (i - 1);
+            const uint32_t c = ring * j + i;
+            const uint32_t d = ring * (j - 1) + i;
+            builder.indices.insert(builder.indices.end(), {a, b, d, b, c, d});
         }
     }
     finish(*geometry, builder);

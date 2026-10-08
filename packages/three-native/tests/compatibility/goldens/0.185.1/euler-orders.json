@@ -227,6 +227,22 @@
       "path": "order",
       "value": "s:ZYX",
       "decimal": "ZYX"
+    },
+    {
+      "index": 28,
+      "id": "a_YZX",
+      "kind": "number",
+      "path": "0",
+      "value": "n:3fe14cdeaaf3851b",
+      "decimal": "0.5406335200206372"
+    },
+    {
+      "index": 29,
+      "id": "a_YZX",
+      "kind": "string",
+      "path": "3",
+      "value": "s:YZX",
+      "decimal": "YZX"
     }
   ]
 }

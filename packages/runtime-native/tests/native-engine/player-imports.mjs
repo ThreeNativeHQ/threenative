@@ -19,10 +19,11 @@ const three = createRequire(resolve(native, "package.json"))("three");
 const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMapping", "PCFSoftShadowMap",
   "NoColorSpace", "LinearSRGBColorSpace", "SRGBColorSpace", "RepeatWrapping", "ClampToEdgeWrapping",
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
-  "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode"];
+  "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
+  "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial",
+  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry",
   "AudioListener", "PositionalAudio", "Audio", ...constants];
 await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
@@ -40,6 +41,27 @@ const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshStandar
 check(mesh instanceof THREE.Object3D && mesh.isMesh && mesh.isObject3D, "mesh identity");
 check(new THREE.SkinnedMesh() instanceof THREE.Mesh, "skinned inheritance");
 check(new THREE.CylinderGeometry() instanceof THREE.BufferGeometry, "geometry inheritance");
+const profile = [[0.055, 0], [0.098, 0], [0.103, 0.025], [0.091, 0.18]];
+const lathe = new THREE.LatheGeometry(profile.map(([x, y]) => new THREE.Vector2(x, y)), 6);
+check(lathe instanceof THREE.BufferGeometry && JSON.stringify(Array.from(lathe.getAttribute("position").array)) ===
+  ${JSON.stringify(JSON.stringify(Array.from(new three.LatheGeometry([[0.055, 0], [0.098, 0], [0.103, 0.025], [0.091, 0.18]].map(([x, y]) => new three.Vector2(x, y)), 6).attributes.position.array)))}, "lathe geometry");
+const grip = [[0, -0.11, 1.21], [0.02, -0.24, 1.26], [0.06, -0.35, 1.32], [0.085, -0.42, 1.37]];
+const gripPoints = grip.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+const curve = new THREE.CatmullRomCurve3(gripPoints, false, "centripetal");
+check(curve.isCatmullRomCurve3 && curve.points[0] === gripPoints[0], "curve keeps the caller's points");
+const curveAnswers = [...curve.getPoints(4), curve.getTangent(0.25), curve.getPointAt(0.6), curve.getTangentAt(0.9)]
+  .map((v) => v.toArray()).concat([curve.getLength()]);
+check(JSON.stringify(curveAnswers) === ${JSON.stringify(JSON.stringify((() => {
+  const c = new three.CatmullRomCurve3([[0, -0.11, 1.21], [0.02, -0.24, 1.26], [0.06, -0.35, 1.32], [0.085, -0.42, 1.37]].map(([x, y, z]) => new three.Vector3(x, y, z)), false, "centripetal");
+  return [...c.getPoints(4), c.getTangent(0.25), c.getPointAt(0.6), c.getTangentAt(0.9)].map((v) => v.toArray()).concat([c.getLength()]);
+})()))}, "CatmullRomCurve3 answers");
+const tube = new THREE.TubeGeometry(curve, 12, 0.05, 10, false);
+check(tube instanceof THREE.BufferGeometry && JSON.stringify(Array.from(tube.getAttribute("position").array)) ===
+  ${JSON.stringify(JSON.stringify(Array.from(new three.TubeGeometry(new three.CatmullRomCurve3([[0, -0.11, 1.21], [0.02, -0.24, 1.26], [0.06, -0.35, 1.32], [0.085, -0.42, 1.37]].map(([x, y, z]) => new three.Vector3(x, y, z)), false, "centripetal"), 12, 0.05, 10, false).attributes.position.array)))}, "tube geometry");
+const streamed = new THREE.Float32BufferAttribute([0, 1, 2], 3).setUsage(THREE.DynamicDrawUsage);
+check(streamed.usage === THREE.DynamicDrawUsage, "attribute usage");
+const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
+check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");
 check(new THREE.DataTexture(new Uint8Array([255, 0, 0, 255]), 1, 1) instanceof THREE.Texture, "texture inheritance");
 check(Vector3 === THREE.Vector3, "cross-entry identity");

@@ -1,0 +1,102 @@
+/**
+ * PRD-540 phase 2: three alone on the Wasm engine. Under `engine: "native"` these imports are the
+ * engine's classes and `WebGPURenderer` is its facade; the scenario reads what the engine drew.
+ */
+import {
+  AmbientLight,
+  BoxGeometry,
+  DirectionalLight,
+  Mesh,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Scene,
+} from "three";
+import { WebGPURenderer } from "three/webgpu";
+
+const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
+const probe = {
+  adapter: "",
+  software: true,
+  frames: 0,
+  draws: 0,
+  triangles: 0,
+  error: "",
+  ticks: 0,
+};
+const started = performance.now();
+
+Object.assign(globalThis, {
+  __THREENATIVE_PLAYTEST_BRIDGE__: {
+    describe: () => ({
+      name: "wasm-engine-renderer",
+      protocolVersion: 1,
+      capabilities: ["runtime.components", "runtime.fixedStep"],
+      limits: {
+        maxEntitiesPerSample: 100,
+        maxEventsPerDrain: 1000,
+        maxPayloadBytes: 1000000,
+        operationTimeoutMs: 5000,
+      },
+    }),
+    ready: async () => {
+      while (probe.frames < 1 && probe.error === "")
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      return { ready: true };
+    },
+    advance: async (count: number) => {
+      const target = probe.ticks + count;
+      while (probe.ticks < target && probe.error === "")
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      return { clock: { mode: "fixed-step", tick: probe.ticks }, ticks: count };
+    },
+    sample: () => ({
+      clock: { mode: "fixed-step", tick: probe.ticks, timeMs: performance.now() - started },
+      components: { "wasm-renderer": { probe: { ...probe } } },
+    }),
+  },
+});
+
+try {
+  const canvas = document.querySelector<HTMLCanvasElement>("#c");
+  if (canvas === null) throw new Error("Missing #c canvas.");
+  const renderer = new WebGPURenderer({ canvas });
+  renderer.setSize(640, 360, false);
+  await renderer.init();
+  const info = (
+    renderer as unknown as { backend: { gpu: { requestAdapter(): Promise<{ info: object }> } } }
+  ).backend.gpu;
+  const facts = Object.values((await info.requestAdapter()).info).join(" ");
+  probe.adapter = facts;
+  probe.software = SOFTWARE.test(facts) || facts.trim() === "";
+
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(50, 640 / 360, 0.1, 100);
+  camera.position.set(0, 1.5, 4);
+  camera.lookAt(0, 0, 0);
+  const box = new Mesh(
+    new BoxGeometry(1.6, 1.6, 1.6),
+    new MeshStandardMaterial({ color: 0xff8030 }),
+  );
+  scene.add(box);
+  const sun = new DirectionalLight(0xffffff, 3);
+  sun.position.set(3, 5, 4);
+  scene.add(sun, new AmbientLight(0xffffff, 0.4));
+  renderer.setClearColor(0x102030, 1);
+
+  const frame = () => {
+    probe.ticks += 1;
+    box.rotation.y += 0.02;
+    try {
+      renderer.render(scene, camera);
+      probe.frames += 1;
+      probe.draws = renderer.info.render.drawCalls;
+      probe.triangles = renderer.info.render.triangles;
+      requestAnimationFrame(frame);
+    } catch (error) {
+      probe.error = error instanceof Error ? error.message : String(error);
+    }
+  };
+  requestAnimationFrame(frame);
+} catch (error) {
+  probe.error = error instanceof Error ? error.message : String(error);
+}

@@ -8,6 +8,7 @@ import { inspectCommand, inspectHelp } from "./inspect.js";
 import { MCP_SERVERS, serverEntryPath } from "./mcp-servers.js";
 
 export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
+export { createWebEnginePlugin } from "./web-engine.js";
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
 
 export type ScaffoldTemplate = string;

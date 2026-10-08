@@ -390,8 +390,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1"
@@ -1566,8 +1565,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -3018,13 +3016,271 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_CATMULLROMCURVE3"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "arcLengthDivisions",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "closed",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "curveType",
+          "type": "\"centripetal\" | \"chordal\" | \"catmullrom\"",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "tension",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "string | \"Curve\"",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "points",
+          "type": "Vector3[]",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "getLength",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getLengths",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "number[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPoint",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "t",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPointAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "u",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getSpacedPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getTangent",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "t",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getTangentAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "u",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getUtoTmapping",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "u",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "distance",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "updateArcLengths",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "CineonToneMapping",
@@ -4118,11 +4374,11 @@
         },
         {
           "name": "RGB_BPTC_SIGNED_Format",
-          "value": "RGB_BPTC_SIGNED_Format = 36494"
+          "value": "36494"
         },
         {
           "name": "RGB_BPTC_UNSIGNED_Format",
-          "value": "RGB_BPTC_UNSIGNED_Format = 36495"
+          "value": "36495"
         },
         {
           "name": "RED_RGTC1_Format",
@@ -4778,8 +5034,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "2"
@@ -4822,8 +5077,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "35048"
@@ -5633,8 +5887,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "0"
@@ -6582,10 +6835,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_LATHEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -15841,7 +16093,7 @@
         "gaps": ["native-not-implemented"]
       },
       "type": "number",
-      "value": "RGB_BPTC_SIGNED_Format = 36494"
+      "value": "36494"
     },
     {
       "name": "RGB_BPTC_UNSIGNED_Format",
@@ -15852,7 +16104,7 @@
         "gaps": ["native-not-implemented"]
       },
       "type": "number",
-      "value": "RGB_BPTC_UNSIGNED_Format = 36495"
+      "value": "36495"
     },
     {
       "name": "RGB_ETC1_Format",
@@ -17905,8 +18157,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "35044"
@@ -18928,10 +19179,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_TUBEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []

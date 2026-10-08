@@ -59,6 +59,8 @@ export interface IResolvedThreeNativeConfig {
     readonly resizable: boolean;
   };
   readonly bootSplash?: IThreeNativeBootSplash;
+  /** Which engine a web build runs on; `"legacy"` unless the project opts in (PRD-540). */
+  readonly engine: "legacy" | "native";
   readonly nativeEntry: string;
   /** Which cook profile produced this configuration, and whether the flag or the default chose it. */
   readonly buildProfile?: {
@@ -843,6 +845,14 @@ async function validateIconVariants(
     ...(iosResult === undefined ? {} : { ios: iosResult }),
     ...(webResult === undefined ? {} : { web: webResult }),
   };
+}
+
+function validateEngine(raw: unknown): IResolvedThreeNativeConfig["engine"] {
+  if (raw === undefined || raw === "legacy" || raw === "native") return raw ?? "legacy";
+  fail(
+    "TN_CONFIG_ENGINE_INVALID",
+    `engine must be "legacy" or "native", received ${JSON.stringify(raw)}.`,
+  );
 }
 
 function validateDisplay(raw: unknown): IResolvedThreeNativeConfig["display"] {
@@ -1956,6 +1966,7 @@ async function loadConfigInternal(
           "display",
           "bootSplash",
           "window",
+          "engine",
           "nativeEntry",
           "renderer",
           "ui",
@@ -1985,6 +1996,7 @@ async function loadConfigInternal(
         app,
         display: validateDisplay(raw?.display),
         window: validateWindow(raw?.window, app.name),
+        engine: validateEngine(raw?.engine),
         nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),
         renderer: validateRenderer(raw?.renderer),
         ui: validateUi(raw?.ui),

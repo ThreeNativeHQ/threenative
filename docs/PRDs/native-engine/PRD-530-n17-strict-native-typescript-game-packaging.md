@@ -51,8 +51,16 @@ engine or LLVM. Packaging today is `packages/runtime-native/scripts/package-desk
 - [x] Prebuilt SDK and compiler artifacts are refused on checksum mismatch. proof: `pnpm exec vitest run packages/runtime-native/__tests__/strict-prebuilt-checksum.spec.ts` — 2026-10-05: green (6 tests). For the native SDK prebuilt (`install-prebuilt.mjs`, served over loopback) and the native-TypeScript compiler (`provision.mjs`, a real tar archive): a payload matching its pin installs; one byte changed is refused and leaves nothing at the destination (no runtime or helper and an `ok: false` install status; no archive, `.part` or toolchain, `TN_NATIVE_TS_CHECKSUM`); a pin that is not 64 lowercase hex is refused before any download. That last case found a gap: `provision` downloaded before refusing a malformed pin, so it now checks the pin first. Red controls: removing either guard fails its case
 
 #### Phase 3: Gate T
-**Status:** NOT STARTED
-**Files:** proposed representative game under `examples/`
+**Status:** IN PROGRESS — the owner chose Midway Open Pacific (2026-10-08). It is a sandbox game in its
+own repository, so its source is never copied here.
+**Files:** `packages/runtime-native/scripts/package-strict.mjs`, `packages/runtime-native/src/engine/`
+- 2026-10-08 measurement, unchanged game: the V8 bundler refuses 50 symbols, 46 after LatheGeometry,
+  CatmullRomCurve3, TubeGeometry and the side constants (`849a99960`, `9c1dc81c9`, `40ed2679a`).
+  `package-strict.mjs` cannot build any game that imports `@threenative/core`. It stages only the
+  entry and its flattened sibling modules, so the link fails with `defineGame` undefined. Core itself
+  imports `three/webgpu`, `three/tsl`, the loaders, `three-mesh-bvh` and `zustand`, and it reads
+  `document` and `window`; Perry refuses or warns on each one. A runtime property gap that the bundler
+  cannot see: the V8 adapter has no `geometry.attributes` object (Midway reads it 25 times).
 - [ ] The representative TS game's strict Linux artifact passes JS-free inspection: no VM, no WebView, no embedded script. proof: `node packages/runtime-native/scripts/inspect-js-free.mjs --binary <strict linux artifact>`
 - [ ] That inspected artifact runs its playtest journey end to end on desktop. proof: `node packages/playtest/dist/runner/cli.js <game>.playtest.json --target desktop`
 - [ ] The same game's strict Android artifact passes its journey on the emulator. proof: `node packages/playtest/dist/runner/cli.js <game>.playtest.json --target android`
