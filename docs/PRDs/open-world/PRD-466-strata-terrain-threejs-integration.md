@@ -3809,4 +3809,14 @@ Rejected: GTAO radius 0.85 → 2 m in the forest brightened the meadow (81.0 →
 visible trunk-contact darkening. Trunk grounding needs a dedicated contact term (for example a
 per-trunk ground decal or screen-space contact shadow), not a wider GTAO.
 
+Rejected, with the working recipe kept here: a forest `godRays` stage marching the coarse
+`VirtualShadowNode` level. It needs two engine lines, both verified (132/132 shadow specs, chain
+applied, 0 console errors): `levelLights` must call `#init()` (the chain builds before any material
+has built the levels, so the stage was dropped as "levels are not built yet"), and `LevelLight` must
+declare `isDirectionalLight = true` (otherwise `GodraysNode` throws "Unsupported light type").
+Density 0.4 fogged the player view (meadow 61 → 116, sky 186 → 216); density 0.12 with a 0.12 floor
+and the sky masked left the meadow unchanged (81.0 → 83.1) and washed the distant hills beige. Neither
+camera looks into the sun through gaps, so the stage adds haze, not shafts. A `bloom` stage (0.12,
+radius 0.4, threshold 0.9) changed nothing visible without the sun in frame.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
