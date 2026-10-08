@@ -385,9 +385,8 @@ function constantValueError(entry: ICatalogConstantEntry): string | undefined {
   } catch {
     value = undefined;
   }
-  return typeof value === entry.type
-    ? undefined
-    : `value ${JSON.stringify(entry.value)} is not a ${entry.type}`;
+  const matches = entry.type === "number" ? typeof value === "number" : typeof value === "string";
+  return matches ? undefined : `value ${JSON.stringify(entry.value)} is not a ${entry.type}`;
 }
 
 /**

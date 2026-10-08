@@ -60,11 +60,18 @@ reach geometry arrays directly.
 ## Execution Phases
 
 #### Phase 1: The opt-in routes a web build to the Wasm back end
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/core/src/config.ts`, `packages/create-threenative/src/build.ts`, the back-end entry, `scripts/verify-template-playtests.ts`
-- [ ] `engine: "native"` aliases `three`, `three/webgpu` and `three/tsl` in the generated web build driver; an absent or `"legacy"` setting leaves the driver byte-identical. proof: `pnpm exec vitest run packages/create-threenative/__tests__/web-engine.spec.ts`
+- [x] `engine: "native"` aliases `three`, `three/webgpu` and `three/tsl` in the generated web build driver; an absent or `"legacy"` setting leaves the driver byte-identical. proof: `pnpm exec vitest run packages/create-threenative/__tests__/web-engine.spec.ts` — 2026-10-08: 5/5 passed. `engine` is validated in `loadConfig` (`TN_CONFIG_ENGINE_INVALID`, default `"legacy"`, `config.spec.ts`). The legacy driver equals the pinned pre-change text; under `"native"` the driver always runs and adds `createWebEnginePlugin` (`packages/create-threenative/src/web-engine.ts`), and a named `--config` fails with `TN_WEB_ENGINE_CONFIG_NAMED`. A real Vite build of a game importing all three entry points bundles the binding and no upstream `Vector3`, while the same game built as legacy bundles upstream `Vector3` (the negative control). `three/src/*` and `three/build/*` fail with `TN_NATIVE_UPSTREAM_IMPORT`; a missing Wasm entry fails with `TN_WASM_ENGINE_MISSING`. `create-threenative` now ships `dist/web-engine-runtime.js` (678 KB, the catalog included).
 - [x] Every upstream export the back end does not bind throws its catalog diagnostic on first use, and no export resolves to upstream three. proof: `pnpm exec vitest run packages/three-native/__tests__/browser-entry.spec.ts` — 2026-10-08: 3/3 passed (three-native suite 77/77). `bindUpstreamExports` (`packages/three-native/src/browser-entry.ts`) binds all 1,265 upstream names: the 62 registry classes, catalog constants by value, and a refusal for every other name that throws its catalog diagnostic (`TN_NATIVE_UNSUPPORTED_WEBGPURENDERER`, `TN_NATIVE_UNCATALOGUED_<NAME>`) on any call, construction or property access. No name is identical to an upstream object. The binding found two malformed catalog constants (`RGB_BPTC_*_Format` = `"X = N"`); `semanticErrors` now rejects a published constant whose value is not its type (red on the committed catalog, then fixed).
-- [ ] `TN_TEMPLATE_ENGINE=native` scaffolds templates with `engine: "native"`, and no other value is accepted. proof: `pnpm exec vitest run scripts/__tests__/verify-template-playtests.spec.ts`
+- [x] `TN_TEMPLATE_ENGINE=native` scaffolds templates with `engine: "native"`, and no other value is accepted. proof: `pnpm exec vitest run scripts/__tests__/verify-template-playtests.spec.ts` — 2026-10-08: 11/11 passed. `templateEngine` refuses any value except `legacy`/`native`. Under `native` the gate writes `engine: "native"` into the scaffold config (a config without its opening fails with `TN_TEMPLATE_ENGINE_OPT_IN_FAILED`) and boots the built output with `vite preview`, not `pnpm dev`; legacy scaffolds are unchanged.
+
+Known gap, not claimed: `pnpm dev` reads the project's own Vite config, which does not add the
+plugin, so the dev server still bundles upstream three under `engine: "native"`. The template gate
+judges native boots on the built output for that reason. Gates on 2026-10-08: `pnpm typecheck`
+passed; `pnpm lint` has no error; the `create-threenative` and `three-native` suites pass, with two
+asset-compile cases that timed out at load 30 and passed when rerun alone. `pnpm budgets` fails on
+a stale native coverage digest. This lane changed no `packages/runtime-native` file.
 
 #### Phase 2: A core game presents a frame on the Wasm renderer
 **Status:** NOT STARTED
