@@ -152,7 +152,7 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves BufferGeometryUtils to the engine's mergeGeometries, never the upstream addon", () => {
-    const resolved = createWebEnginePlugin("/game").resolveId(
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
       "three/addons/utils/BufferGeometryUtils.js",
     );
     expect(resolved).toMatch(
