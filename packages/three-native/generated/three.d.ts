@@ -787,7 +787,7 @@ readonly isGroup: true;
 /** Catalog partial (native-not-implemented): three/HSL. */
 export type HSL = { h: number; s: number; l: number; };
 
-/** Catalog supported: three/HalfFloatType. */
+/** Catalog partial (native-not-implemented): three/HalfFloatType. */
 export declare const HalfFloatType: 1016;
 
 /** Catalog supported: three/webgpu/HemisphereLight. */
@@ -2385,8 +2385,6 @@ readonly offset: Vector2;
 readonly repeat: Vector2;
 mapping: number;
 flipY: boolean;
-readonly format: number;
-readonly type: number;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */
@@ -3068,12 +3066,3 @@ export type Face = { a: number; b: number; c: number; normal: Vector3; materialI
 
 /** Catalog supported: three/Intersection. */
 export type Intersection = { distance: number; point: Vector3; object: Object3D; face: Face; faceIndex: number; uv?: Vector2; uv1?: Vector2; normal?: Vector3; barycoord: Vector3; instanceId?: number };
-
-/** Catalog supported: three/DataUtils. */
-export declare class DataUtils {
-constructor();
-
-  fromHalfFloat(val: number): number;
-
-  toHalfFloat(val: number): number;
-}

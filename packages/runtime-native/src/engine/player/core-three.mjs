@@ -13,14 +13,13 @@ export const {
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
   EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, AttachedBindMode, FrontSide, BackSide, DoubleSide, StaticDrawUsage, DynamicDrawUsage,
-  NoBlending, NormalBlending, AdditiveBlending, HalfFloatType, PropertyBinding, getConsoleFunction, setConsoleFunction,
+  NoBlending, NormalBlending, AdditiveBlending, PropertyBinding, getConsoleFunction, setConsoleFunction,
 } = globalThis;
 
 export const clone = globalThis.__tnCloneSkeleton;
 
 // The binding registry represents the stateless namespace as a native object.
 export const MathUtils = new globalThis.MathUtils();
-export const DataUtils = new globalThis.DataUtils();
 
 export function unsupported() {
   throw new Error("TN_CORE_NATIVE_UNSUPPORTED: this native profile does not provide this import");

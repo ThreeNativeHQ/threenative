@@ -25,7 +25,6 @@ enum class TextureFilter : uint16_t { Nearest = 1003, NearestMipmapNearest = 100
     Linear = 1006, LinearMipmapNearest = 1007, LinearMipmapLinear = 1008 };
 inline constexpr uint16_t kTextureUnsignedByteType = 1009;  // three's UnsignedByteType
 inline constexpr uint16_t kTextureFloatType = 1015;         // three's FloatType
-inline constexpr uint16_t kTextureHalfFloatType = 1016;     // three's HalfFloatType: Uint16Array half-float bits
 inline constexpr uint16_t kTextureRGBAFormat = 1023;        // three's RGBAFormat
 
 /**
@@ -90,7 +89,7 @@ public:
     double rotation = 0;
     Vector2 center{0, 0};
 
-    // RGBA bytes, width-major: 4 bytes/texel for UnsignedByteType, 8 for HalfFloatType, 16 for FloatType. Empty until a
+    // RGBA bytes, width-major: 4 bytes/texel for UnsignedByteType, 16 for FloatType. Empty until a
     // loader or DataTexture fills it.
     std::vector<uint8_t> data;
     uint32_t width = 0, height = 0;
@@ -100,8 +99,6 @@ public:
     [[nodiscard]] uint32_t version() const { return version_; }
 
     [[nodiscard]] bool isFloat() const { return type == kTextureFloatType; }
-    [[nodiscard]] bool isHalfFloat() const { return type == kTextureHalfFloatType; }
-    [[nodiscard]] uint32_t bytesPerTexel() const { return isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
     [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && !data.empty(); }
 
@@ -111,8 +108,7 @@ private:
 
 /**
  * DataTexture(data, width, height, format, type): the bytes a fixture passed as a typed array. The
- * values arrive as JS doubles; UnsignedByteType stores a byte per channel, FloatType a float32 and
- * HalfFloatType the 16-bit half-float bits a Uint16Array holds (three's DataUtils.toHalfFloat output).
+ * values arrive as JS doubles; UnsignedByteType stores a byte per channel, FloatType a float32.
  */
 class DataTexture final : public Texture {
 public:
@@ -133,13 +129,7 @@ public:
         type = dataType;
         const bool asFloat = dataType == kTextureFloatType || arrayType == "Float32Array";
         data.clear();
-        if (dataType == kTextureHalfFloatType) {
-            data.resize(values.size() * sizeof(uint16_t));
-            for (std::size_t i = 0; i < values.size(); ++i) {
-                const auto bits = static_cast<uint16_t>(values[i]);
-                std::memcpy(data.data() + i * sizeof(uint16_t), &bits, sizeof(uint16_t));
-            }
-        } else if (asFloat) {
+        if (asFloat) {
             data.resize(values.size() * sizeof(float));
             for (std::size_t i = 0; i < values.size(); ++i) {
                 const float v = static_cast<float>(values[i]);

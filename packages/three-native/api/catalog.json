@@ -6237,7 +6237,8 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "supported"
+        "kind": "partial",
+        "gaps": ["native-not-implemented"]
       },
       "type": "number",
       "value": "1016"
@@ -19051,24 +19052,6 @@
           "status": {
             "kind": "supported"
           }
-        },
-        {
-          "name": "format",
-          "type": "number",
-          "mutable": false,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "type",
-          "type": "number",
-          "mutable": false,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
         }
       ],
       "methods": []
@@ -25832,57 +25815,6 @@
         "kind": "supported"
       },
       "type": "{ distance: number; point: Vector3; object: Object3D; face: Face; faceIndex: number; uv?: Vector2; uv1?: Vector2; normal?: Vector3; barycoord: Vector3; instanceId?: number }"
-    },
-    {
-      "name": "DataUtils",
-      "kind": "class",
-      "source": "three",
-      "status": {
-        "kind": "supported"
-      },
-      "extends": null,
-      "constructor": [],
-      "fields": [],
-      "methods": [
-        {
-          "name": "fromHalfFloat",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "val",
-                  "type": "number",
-                  "optional": false
-                }
-              ],
-              "returns": "number"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "toHalfFloat",
-          "async": false,
-          "overloads": [
-            {
-              "parameters": [
-                {
-                  "name": "val",
-                  "type": "number",
-                  "optional": false
-                }
-              ],
-              "returns": "number"
-            }
-          ],
-          "status": {
-            "kind": "supported"
-          }
-        }
-      ]
     }
   ]
 }

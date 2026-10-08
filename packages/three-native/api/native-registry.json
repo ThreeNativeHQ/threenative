@@ -880,7 +880,6 @@
       "getters": [
         "colorSpace",
         "flipY",
-        "format",
         "magFilter",
         "mapping",
         "minFilter",
@@ -890,7 +889,6 @@
         "repeat.x",
         "repeat.y",
         "rotation",
-        "type",
         "version",
         "wrapS",
         "wrapT"
@@ -912,14 +910,6 @@
         "wrapT"
       ],
       "members": ["offset", "repeat"],
-      "callbacks": []
-    },
-    "DataUtils": {
-      "constructor": true,
-      "methods": ["fromHalfFloat", "toHalfFloat"],
-      "getters": [],
-      "setters": [],
-      "members": [],
       "callbacks": []
     },
     "DirectionalLight": {
@@ -4792,7 +4782,6 @@
       "getters": [
         "colorSpace",
         "flipY",
-        "format",
         "magFilter",
         "mapping",
         "minFilter",
@@ -4802,7 +4791,6 @@
         "repeat.x",
         "repeat.y",
         "rotation",
-        "type",
         "version",
         "wrapS",
         "wrapT"

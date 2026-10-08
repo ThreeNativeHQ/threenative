@@ -7584,11 +7584,6 @@
         "source": "three"
       },
       {
-        "symbol": "DataUtils",
-        "kind": "class",
-        "source": "three"
-      },
-      {
         "symbol": "DirectionalLight",
         "kind": "class",
         "source": "three/webgpu"
@@ -7646,11 +7641,6 @@
       {
         "symbol": "Group",
         "kind": "class",
-        "source": "three"
-      },
-      {
-        "symbol": "HalfFloatType",
-        "kind": "constant",
         "source": "three"
       },
       {
