@@ -177,23 +177,25 @@ const BUG_REPORT_SKILL_PATHS = [
 // PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
+// PRD-540: each template's vite.config.ts lists createWebEnginePlugin({ engine: config.engine });
+// with only that file restored, all 13 trees match their previous fingerprints.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PR388 re-measured on top of develop: only package.json patch declarations and the copied
   // Vite/Tailwind patch bytes differ. Base: PR440 merged with develop 45565868:
   // TS7/API6 compiler pins plus shared render graph and actual-render-camera light layers.
-  "action-rpg": "62b63ac291984438e0dc555c06b234b55acdfe329729f8686a93cafa8a67e1fe",
-  minimal: "730163cac8e2207818cdb2032d15fcecd571a4b394e19eec331eee22439eab17",
-  platformer: "9ee3d5cc9129c328a0c8b03be4392486440669ced7b17176da15cbfccade4cac",
-  puzzle: "df5af80355cac776259a2e98be6ab7430ce53cea0ef74f597c0e7ab80ca658ba",
-  racing: "45864c6c8bf9ed408a1cbb825fed7940dd192d5bde0fb14e2b66936d918e497b",
-  rain: "07e065b9ee6558956a23c5cbe2918efd8b8fc9e8be3764040896acb9686c0899",
-  rts: "12e30a83a8c9b2ab3057839ffdb5b4b5c38533b69b642ab080467cd6ecf49f31",
-  runner: "cc2c2de62825a49a54c40d9fe40f497b3a4587b2762cc99e4f83da524dfa3a8f",
-  sailing: "7721c450b8b126e6d485abf6ec55950173882ded6ceeabc94de70168e74a1fe7",
-  shooter: "1855b4fbad7cc3f7b0dff9703b5160d118be0f786245b1f0b9594a283f00d236",
-  snow: "685118f41ecbcf92a95b8139896be34ceec07c724db701858994f599d3456e2d",
-  starter: "b3c1ffdc04514b3a5a86b069710c6b0b3dd4ecc276f2c6bf4b3c96597a63d1a6",
-  "tower-defense": "6cf2cb55734d2d3789d31f6adb92cdb875668be021544232c42381db027d6200",
+  "action-rpg": "5cc7e1e738dddc020a37bb466f5b414d332a6980ff5836997896bc78735873fb",
+  minimal: "fb0e544ad89ae9511f7a69088609e5a3e2487a34be904f454c1422f1b3799918",
+  platformer: "68e44fe830b4bfabb32cd13205b15ad5df6c6ca512c6800e85d6f1957c10e92f",
+  puzzle: "40825df7de79432ab9070d2eb468739a3f6c05ea4063d942745fee1e5d444974",
+  racing: "5240910cf71c107b1861d14e21a79aeba4d8145d576ee8d30b57c4a032b43cd3",
+  rain: "2c48f96a34b201aa9910b7efe2edc0b1453ef9ee1fabfe239c464eb95a747dc9",
+  rts: "6554bbed61eb945dd105e2d8f7b697b185c419c9fa6c34e05aab776dff588b74",
+  runner: "8fb8d5fb2616191df92558328ca83f893915aa72a555d49d9312c59bf659de62",
+  sailing: "54b7aa775fb81c689ca207332159d902814e0d453bdb219cfe8f1b8a1cf4f96e",
+  shooter: "21cc9c614932ce26bc58ebf121da0f330ddfbe604d61ea841879c2a58f524ffb",
+  snow: "a400998c0e3786dd18b6cb1894a01202c7bbbcb4eeb5dece88a27fe42a9f41cb",
+  starter: "c753c18c715d0d2804bcf809e845ea4b4fd49dc972d06a022e72adff789e6613",
+  "tower-defense": "6dba26b22ba3e33b85298e0d4ded12c8b3f941f07e373ac9797d5c6cafd3f38d",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
