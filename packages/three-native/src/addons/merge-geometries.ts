@@ -1,3 +1,4 @@
+// Ported from three.js r185 (three@0.185.1). The MIT License, Copyright © 2010-2026 three.js authors.
 /**
  * three's `BufferGeometryUtils.mergeGeometries` and `mergeAttributes` (three@0.185.1
  * examples/jsm/utils/BufferGeometryUtils.js) over an engine's own BufferGeometry and

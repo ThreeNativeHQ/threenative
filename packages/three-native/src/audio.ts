@@ -1,3 +1,4 @@
+// Ported from three.js r185 (three@0.185.1). The MIT License, Copyright © 2010-2026 three.js authors.
 /**
  * three's audio classes (`AudioListener`, `Audio`, `PositionalAudio`, `AudioLoader`) over an
  * engine's own `Object3D`, for both back ends: the browser-JS one and the V8 facade.
