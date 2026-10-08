@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { findTarget, pickNdkVersion } from "../android.mjs";
 
 describe("pickNdkVersion", () => {
@@ -30,7 +31,7 @@ describe("findTarget", () => {
   });
 
   it("returns nothing rather than throwing when there is no targets directory", () => {
-    const missing = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tn-targets-")), "gone");
+    const missing = path.join(makeTempDirSync("tn-targets-"), "gone");
     expect(findTarget("aarch64-linux-android", missing)).toBeUndefined();
   });
 });

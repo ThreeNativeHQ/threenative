@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 describe("native-AOT driver", () => {
   it("parses sizes as positive integers and requires an output file", async () => {
@@ -14,10 +15,9 @@ describe("native-AOT driver", () => {
 
   it("keys the cached binary by the bytes it is built from", async () => {
     const { sourceKey } = await import("../bench-aot.mjs");
-    const { mkdtempSync, writeFileSync } = await import("node:fs");
-    const { tmpdir } = await import("node:os");
+    const { writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
-    const dir = mkdtempSync(join(tmpdir(), "bench-aot-key-"));
+    const dir = makeTempDirSync("bench-aot-key-");
     const a = join(dir, "a.ts");
     writeFileSync(a, "one");
     const first = sourceKey([a]);

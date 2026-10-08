@@ -11,6 +11,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/post-normal-pass.ts",
+    "The CTest probe writes its fixture and readback under its caller's build directory, not the OS temp directory.",
+  ],
+  [
     "packages/runtime-native/tests/native-engine/template-post-packages.ts",
     "The compiler CLI retains authored graphs, emitted modules and Tint outputs under its caller's build directory for diagnosis.",
   ],
@@ -147,6 +151,8 @@ async function unregisteredTempCreators(): Promise<string[]> {
   const files = [
     ...(await sourceFiles(path.join(repositoryRoot, "packages"))),
     ...(await sourceFiles(path.join(repositoryRoot, "scripts"))),
+    // Tooling specs leak into the same suite namespace (CI run 37727407515: 24 dirs from tools/).
+    ...(await sourceFiles(path.join(repositoryRoot, "tools"))),
     path.join(repositoryRoot, "playwright.config.ts"),
   ];
   const offenders: string[] = [];

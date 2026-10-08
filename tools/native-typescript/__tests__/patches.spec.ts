@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import {
   LEDGER_CODE,
   UPSTREAM_KEY,
@@ -12,7 +13,7 @@ import {
 } from "../patches.mjs";
 
 function tempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "tn-patches-"));
+  return makeTempDirSync("tn-patches-");
 }
 
 /** Writes a ledger the loader reads, so each malformed shape is a file, not a mock. */

@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { renderReference } from "../render-reference.mjs";
 import * as corpus from "../run-corpus.mjs";
 import {
@@ -226,7 +227,7 @@ describe("reference page (CPU module loading and failure forwarding)", () => {
 });
 
 function tempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "tn-run-corpus-"));
+  return makeTempDirSync("tn-run-corpus-");
 }
 
 describe("parseExpected", () => {

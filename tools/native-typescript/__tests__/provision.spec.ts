@@ -4,10 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { CHECKSUM_CODE, provision } from "../provision.mjs";
 
 function tempCache() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "tn-provision-"));
+  return makeTempDirSync("tn-provision-");
 }
 
 function lockFor(url: string, sha256: string, size: number) {
@@ -28,7 +29,7 @@ function sha256(bytes: Buffer): string {
 
 /** A real gzipped tar holding one `tslang`, so extraction can actually run. */
 function makeArchive(cacheDir: string, contents = "#!/bin/sh\n"): { path: string; sha: string } {
-  const source = fs.mkdtempSync(path.join(os.tmpdir(), "tn-provision-src-"));
+  const source = makeTempDirSync("tn-provision-src-");
   fs.writeFileSync(path.join(source, "tslang"), contents);
   const archivePath = path.join(cacheDir, ARCHIVE_NAME);
   const tar = spawnSync("tar", ["-czf", archivePath, "-C", source, "tslang"]);
