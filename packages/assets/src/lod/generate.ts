@@ -7,12 +7,14 @@
 
 import { createHash } from "node:crypto";
 import type {
+  Accessor,
   Document,
   Node as GltfNode,
   Material,
   Mesh,
   Primitive,
   Scene,
+  TypedArray,
 } from "@gltf-transform/core";
 import {
   compactPrimitive,
@@ -24,7 +26,7 @@ import { MeshoptSimplifier } from "meshoptimizer";
 import { Matrix4 } from "three";
 import { type IFoliageCutoutSummary, convertFoliageCutout } from "../foliage.js";
 import { TN_VIRTUAL_GEOMETRY } from "../virtual/extension.js";
-import { type ICardLevelSummary, generateCardChain } from "./cards.js";
+import { type ICardCopies, type ICardLevelSummary, generateCardChain } from "./cards.js";
 import {
   type DiscreteLodSkipReason,
   type LodMinTrianglesScope,
@@ -629,6 +631,8 @@ interface IGeneratedChain {
   readonly errors: number[];
   readonly indices: Uint32Array[];
   readonly lod0Triangles: number;
+  /** Scaled card copies the levels' indices point at, appended in level order; card chains only. */
+  readonly vertexCopies?: readonly ICardCopies[];
 }
 
 /**
@@ -926,7 +930,43 @@ function generateCardsChain(
     errors: [...chain.errors],
     indices: [...chain.indices],
     lod0Triangles: chain.lod0Triangles,
+    vertexCopies: chain.copies,
   };
+}
+
+/**
+ * Appends a card chain's scaled copies to every attribute of `primitive`, in level order, so the
+ * levels' indices resolve. Each attribute gets a new accessor: another primitive sharing the old one
+ * keeps its own vertex count. LOD0's indices are untouched and never reach a copy.
+ */
+function appendCardCopies(primitive: Primitive, copies: readonly ICardCopies[]): void {
+  const base = primitive.getAttribute("POSITION")?.getCount() ?? 0;
+  let added = 0;
+  for (const level of copies) added += level.source.length;
+  if (added === 0) return;
+  for (const semantic of primitive.listSemantics()) {
+    const accessor = primitive.getAttribute(semantic) as Accessor;
+    const size = accessor.getElementSize();
+    const array = accessor.getArray() as TypedArray;
+    const grown = new (array.constructor as new (length: number) => TypedArray)(
+      (base + added) * size,
+    );
+    grown.set(array.subarray(0, base * size));
+    let at = base;
+    for (const level of copies)
+      for (const vertex of level.source) {
+        grown.set(array.subarray(vertex * size, vertex * size + size), at * size);
+        at += 1;
+      }
+    const extended = accessor.clone().setArray(grown);
+    if (semantic === "POSITION") {
+      at = base;
+      for (const level of copies)
+        for (let copy = 0; copy < level.source.length; copy += 1, at += 1)
+          extended.setElement(at, Array.from(level.positions.subarray(copy * 3, copy * 3 + 3)));
+    }
+    primitive.setAttribute(semantic, extended);
+  }
 }
 
 function reachableNodes(document: Document): GltfNode[] {
@@ -1424,6 +1464,7 @@ export async function generateDiscreteLod(
         trianglesAfter += before;
         continue;
       }
+      if (chain.vertexCopies !== undefined) appendCardCopies(primitive, chain.vertexCopies);
       extension ??= document.createExtension(TNDiscreteLod).setRequired(false);
       const property = attachDiscreteLod(document, extension, primitive, {
         ...chain,

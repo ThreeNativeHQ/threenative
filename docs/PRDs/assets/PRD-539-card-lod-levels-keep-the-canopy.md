@@ -28,21 +28,25 @@ Keeping the needles at full cards is not an option: with every card part at LOD0
 
 Layer: the cook (`packages/assets/`). The game sets nothing; the scale is the keep ratio, which the reducer already owns.
 
+## Decisions
+
+- 2026-10-08, agent: a kept card scales by at most 2. The ratio levels (keep ≥ 0.25) reach full coverage under it. The terminal level keeps far fewer cards, and scaling them further would grow cards past the crown's silhouette, so it covers `4 × keep` of LOD0.
+
 ## Acceptance Criteria
 
-- [ ] AC-1: every card level ships ≥ 0.95 of LOD0's card area, read back from the cooked bytes. proof: `foliage-lod.spec.ts`
+- [x] AC-1: every ratio card level ships ≥ 0.95 of LOD0's card area, read back from the cooked bytes; the terminal level ships min(1, 4 × keep). proof: `foliage-lod.spec.ts` — 8 passed; red before the change: `expected 0.5162100266415837 to be greater than or equal to 0.95`
 - [ ] AC-2: Machinefall `map-walk` route GPU p95 passes the pooled walking bound (≤ 5 % of walking frames over 8.3 ms) on 3 quiet runs. proof: `TN_FRAME_BUDGET` windows, quiet desktop RTX 2080
 - [ ] AC-3: no visual loss against PRD-478's tip. proof: 3 fresh blind raters at or above on the 4 `map-walk` and 4 `map-views` poses, and a pop series with no candidate-only late object
 
 ## Execution Phases
 
 #### Phase 1: The cook
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/assets/src/lod/{cards,generate,eligibility}.ts`, `packages/assets/src/passes/model.ts`, `packages/assets/__tests__/`
 
-- [ ] A lone level-named mesh gets a generated chain; two or more level-named nodes stay `authored-lod`. proof: red-green `lod-generation.spec.ts`
-- [ ] Card levels index scaled copies of their kept cards, LOD0 indices unchanged. proof: red-green `foliage-lod.spec.ts` (AC-1)
-- [ ] The model pass's self-check counts what LOD0 draws, so a card chain cooks without `TN_ASSETS_MODEL_DRIFT` and a LOD0 drift still throws. proof: `model-pass` specs
+- [x] A lone level-named mesh gets a generated chain; two or more level-named nodes stay `authored-lod`. proof: red-green `lod-generation.spec.ts` — red `expected [ 'authored-lod' ] to not include 'authored-lod'`, then 44 passed (`e82e842e0`)
+- [x] Card levels index scaled copies of their kept cards, LOD0 indices unchanged. proof: red-green `foliage-lod.spec.ts` (AC-1)
+- [x] The model pass's self-check counts what LOD0 draws, so a card chain cooks without `TN_ASSETS_MODEL_DRIFT` and a LOD0 drift still throws. proof: `model-pass.spec.ts` drift cases green; the conifer cook threw `vertices 5997 -> 7573; bounding box drifted 2.109%` before; `vitest run packages/assets` 485 passed, 2 skipped
 
 #### Phase 2: Both runtimes draw it
 **Status:** NOT STARTED
