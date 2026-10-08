@@ -234,6 +234,26 @@ function growBuffer<A extends BufferAttribute>(
   return grown;
 }
 
+/** Adds an update range, extending the last one when the new range touches or overlaps it. */
+export function addRange(
+  attribute: {
+    updateRanges: { start: number; count: number }[];
+    addUpdateRange(start: number, count: number): void;
+  },
+  start: number,
+  count: number,
+): void {
+  const last = attribute.updateRanges[attribute.updateRanges.length - 1];
+  if (last === undefined || start > last.start + last.count || start + count < last.start) {
+    attribute.addUpdateRange(start, count);
+    return;
+  }
+  const newStart = Math.min(last.start, start);
+  // Set the count first. It is measured from the old start.
+  last.count = Math.max(last.start + last.count, start + count) - newStart;
+  last.start = newStart;
+}
+
 /** One level's parts and the single capacity all of them are sized from. */
 interface ILevelGroup {
   capacity: number;
@@ -2791,7 +2811,7 @@ export class WorldGpuScene {
     // `info.y` is the placement's uniform scale, read by the kernel's impostor gate. The remaining
     // `info` words stay whatever they were, which is zero.
     array[at + 21] = placement.scale ?? 1;
-    buffers.source.addUpdateRange(at, PLACEMENT_WORDS);
+    addRange(buffers.source, at, PLACEMENT_WORDS);
     buffers.source.needsUpdate = true;
   }
 
@@ -2806,10 +2826,10 @@ export class WorldGpuScene {
     keys[at] = region.start;
     keys[at + 1] = region.capacity;
     keys[at + 2] = region.argsIndex;
-    buffers.keys.addUpdateRange(at, VEC4_WORDS);
+    addRange(buffers.keys, at, VEC4_WORDS);
     buffers.keys.needsUpdate = true;
     (buffers.locals.array as Float32Array).set(region.local, index * LOCAL_WORDS);
-    buffers.locals.addUpdateRange(index * LOCAL_WORDS, LOCAL_WORDS);
+    addRange(buffers.locals, index * LOCAL_WORDS, LOCAL_WORDS);
     buffers.locals.needsUpdate = true;
     const args = buffers.args.array as Uint32Array;
     const record = region.argsIndex * DRAW_ARGS_WORDS;
@@ -3064,7 +3084,7 @@ export class WorldGpuScene {
     const buffers = this.#buffers;
     if (buffers === undefined) return;
     (buffers.keys.array as Float32Array)[index * VEC4_WORDS + 3] = 1;
-    buffers.keys.addUpdateRange(index * VEC4_WORDS, VEC4_WORDS);
+    addRange(buffers.keys, index * VEC4_WORDS, VEC4_WORDS);
     buffers.keys.needsUpdate = true;
   }
 

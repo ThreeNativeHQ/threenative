@@ -42,6 +42,7 @@ import {
   type IMeshDraw,
   type IRegion,
   WorldGpuScene,
+  addRange,
   compareMeshDraws,
   cullAndSelect,
   cullAndSelectShadow,
@@ -4715,5 +4716,45 @@ describe("the shadow twins of a registered provider", () => {
     expect(second, "a grown placement buffer is a new pipeline").not.toBe(first);
     expect(second?.count, "one thread per resident placement").toBeGreaterThanOrEqual(602);
     scene.dispose();
+  });
+});
+
+describe("addRange", () => {
+  /** An attribute with the two members `addRange` uses. It records each range, in order. */
+  function uploads(): {
+    updateRanges: { start: number; count: number }[];
+    addUpdateRange(start: number, count: number): void;
+  } {
+    return {
+      updateRanges: [],
+      addUpdateRange(start, count) {
+        this.updateRanges.push({ start, count });
+      },
+    };
+  }
+
+  it("merges consecutive ranges into one upload", () => {
+    const attribute = uploads();
+    addRange(attribute, 0, 24);
+    addRange(attribute, 24, 24);
+    addRange(attribute, 48, 24);
+    expect(attribute.updateRanges).toEqual([{ start: 0, count: 72 }]);
+  });
+
+  it("does not merge across a gap", () => {
+    const attribute = uploads();
+    addRange(attribute, 0, 24);
+    addRange(attribute, 100, 24);
+    expect(attribute.updateRanges).toEqual([
+      { start: 0, count: 24 },
+      { start: 100, count: 24 },
+    ]);
+  });
+
+  it("merges an earlier range that overlaps the last one", () => {
+    const attribute = uploads();
+    addRange(attribute, 48, 24);
+    addRange(attribute, 40, 16);
+    expect(attribute.updateRanges).toEqual([{ start: 40, count: 32 }]);
   });
 });
