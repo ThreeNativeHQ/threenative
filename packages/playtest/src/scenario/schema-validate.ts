@@ -122,8 +122,8 @@ export function validateArtifacts(value: Record<string, unknown>, scenarioPath: 
     throw invalidScenario(scenarioPath, `'artifacts.effectLog' must be true, false or 'focused', received ${describeValue(effectLog)}.`);
   }
   const screenshots = value.screenshots;
-  if (screenshots !== undefined && screenshots !== "before-after" && screenshots !== "after" && screenshots !== false) {
-    throw invalidScenario(scenarioPath, `'artifacts.screenshots' must be 'before-after', 'after', or false, received ${describeValue(screenshots)}.`);
+  if (screenshots !== undefined && screenshots !== "before-after" && screenshots !== "after" && typeof screenshots !== "boolean") {
+    throw invalidScenario(scenarioPath, `'artifacts.screenshots' must be 'before-after', 'after', true or false, received ${describeValue(screenshots)}.`);
   }
   return value as IPlaytestArtifactRequest;
 }
