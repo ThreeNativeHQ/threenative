@@ -134,12 +134,15 @@ endfunction()
 # download-deps) only parses; the corpus test reads the repository's glTF files from disk.
 set(TN_CGLTF_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cgltf)
 if(EXISTS ${TN_CGLTF_DIR}/cgltf.h AND NOT EMSCRIPTEN)
-    add_library(tn_engine_gltf STATIC src/engine/assets/gltf/loader.cpp src/engine/assets/gltf/cgltf_impl.cpp)
+    add_library(tn_engine_gltf STATIC src/engine/assets/gltf/loader.cpp src/engine/assets/gltf/cgltf_impl.cpp
+        src/engine/assets/gltf/image_decode.cpp)
     tn_native_engine_target(tn_engine_gltf)
     target_link_libraries(tn_engine_gltf PUBLIC tn_engine_scene tn_engine_animation tn_engine_foundation)
-    target_include_directories(tn_engine_gltf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src PRIVATE ${TN_CGLTF_DIR})
+    target_include_directories(tn_engine_gltf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src
+        PRIVATE ${TN_CGLTF_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
     # cgltf is third-party C in a C++ unit: its own warnings are not this engine's.
-    set_source_files_properties(src/engine/assets/gltf/cgltf_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
+    set_source_files_properties(src/engine/assets/gltf/cgltf_impl.cpp src/engine/assets/gltf/image_decode.cpp
+        PROPERTIES COMPILE_OPTIONS "-w")
     tn_native_engine_test(tn-native-engine-gltf-hierarchy-test tests/native-engine/assets/gltf_hierarchy_test.cpp
         native_engine_gltf_hierarchy=hierarchy)
     target_link_libraries(tn-native-engine-gltf-hierarchy-test PRIVATE tn_engine_gltf)

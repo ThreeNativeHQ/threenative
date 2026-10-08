@@ -7,7 +7,8 @@
 // KHR_mesh_quantization, KHR_lights_punctual and KHR_materials_unlit. An extension GLTFLoader implements and this loader does not is refused
 // by name (TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED) instead of being dropped, as is a required
 // extension nobody knows; an unknown optional extension is ignored, as GLTFLoader ignores it.
-// Not yet: image decoding (a texture records its name and image),
+// Images: PNG and JPEG decode to RGBA8 (a texture also takes its sampler); WebP, AVIF, KTX2 and
+// external image files stay undecoded. Not yet:
 // a node shared between scenes, external buffer files.
 //
 // Engine code never throws: a refusal is the result's `error`, a TN_NATIVE_GLTF_* code and detail.

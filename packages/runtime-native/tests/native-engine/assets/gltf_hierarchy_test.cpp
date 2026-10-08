@@ -246,6 +246,27 @@ int main() {
         unlitMesh->material->emissive.g != 0 || unlitMesh->material->maps.count("metalnessMap")) {
         std::printf("unlit: wrong material/alpha or lit-only inputs were not ignored: %s\n", unlit.error.c_str()); ++differ;
     }
+    // PRD-526: a texture's image decodes at load (PNG and JPEG), with the sampler GLTFLoader applies.
+    const std::string imageBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/runtime-native/tests/native-engine/assets/image-textures.gltf");
+    auto images = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(imageBytes.data()), imageBytes.size()));
+    auto* imageMesh = images.scene ? dynamic_cast<Mesh*>(images.scene->children.empty() ? nullptr : images.scene->children[0]) : nullptr;
+    const Texture* base = imageMesh && imageMesh->material && imageMesh->material->maps.count("map") ? imageMesh->material->maps.at("map").get() : nullptr;
+    const Texture* emissive = imageMesh && imageMesh->material && imageMesh->material->maps.count("emissiveMap") ? imageMesh->material->maps.at("emissiveMap").get() : nullptr;
+    const std::vector<uint8_t> pngPixels = {255,0,0,255, 0,255,0,128, 0,0,255,255, 10,20,30,40};
+    if (!images.error.empty() || !base || !emissive || !base->hasImage() || base->width != 2 || base->height != 2 ||
+        base->data != pngPixels || base->wrapS != 1001 || base->wrapT != 1002 || base->magFilter != 1003 ||
+        base->minFilter != 1008 || !emissive->hasImage() || emissive->width != 3 || emissive->height != 1 ||
+        emissive->data.size() != 12 || emissive->wrapS != 1000 || emissive->wrapT != 1000 ||
+        emissive->magFilter != 1006 || emissive->minFilter != 1008) {
+        std::printf("image textures: PNG/JPEG not decoded or sampler not applied: %s\n", images.error.c_str()); ++differ;
+    }
+    // A damaged PNG is refused, not left as an image-less texture.
+    std::string damaged = imageBytes;
+    damaged.replace(damaged.find("R4nGP4z8Dw"), 10, "R4nGP4zzzz"); // the PNG signature stays, its pixel stream breaks
+    auto refused = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(damaged.data()), damaged.size()));
+    if (refused.error.rfind("TN_NATIVE_GLTF_IMAGE_INVALID", 0) != 0) {
+        std::printf("image textures: a corrupt image was not refused (%s)\n", refused.error.c_str()); ++differ;
+    }
     for (const Value& expected : reference.find("files")->items()) {
         const std::string file = expected.find("file")->string();
         const std::string bytes = readFile(std::string(TN_REPO_ROOT) + "/" + file);

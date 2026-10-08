@@ -14,6 +14,7 @@
 
 #include "cgltf.h"
 #include "engine/animation/skinning/skeleton.h"
+#include "engine/assets/gltf/image_decode.h"
 #include "engine/foundation/json.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/material.h"
@@ -598,10 +599,72 @@ class Builder {
             made->name = text(member(def, "name"));
             made->source = static_cast<int>(number(member(def, "source"), -1));
             made->flipY = false;
+            applySampler(*made, index);
+            decodeImage(*made);
             if (std::string_view(slot) == "map" || std::string_view(slot) == "emissiveMap") made->colorSpace = TextureColorSpace::SRGB;
             texture = made;
         }
         material.maps[slot] = texture;
+    }
+
+    // GLTFLoader.assignTexture: the sampler's wraps and filters, else Repeat, Linear and
+    // LinearMipmapLinear (three's WEBGL_WRAPPINGS and WEBGL_FILTERS tables).
+    void applySampler(Texture& texture, std::size_t index) {
+        texture.wrapS = texture.wrapT = static_cast<uint16_t>(TextureWrap::Repeat);
+        texture.magFilter = static_cast<uint16_t>(TextureFilter::Linear);
+        texture.minFilter = static_cast<uint16_t>(TextureFilter::LinearMipmapLinear);
+        const cgltf_sampler* sampler = index < data_.textures_count ? data_.textures[index].sampler : nullptr;
+        if (!sampler) return;
+        auto wrap = [](int mode, uint16_t fallback) -> uint16_t {
+            return mode == 33071 ? 1001 : mode == 33648 ? 1002 : mode == 10497 ? 1000 : fallback;
+        };
+        auto filter = [](int mode, uint16_t fallback) -> uint16_t {
+            switch (mode) {
+                case 9728: return 1003; case 9729: return 1006; case 9984: return 1004;
+                case 9985: return 1007; case 9986: return 1005; case 9987: return 1008;
+                default: return fallback;
+            }
+        };
+        texture.wrapS = wrap(sampler->wrap_s, texture.wrapS);
+        texture.wrapT = wrap(sampler->wrap_t, texture.wrapT);
+        texture.magFilter = filter(sampler->mag_filter, texture.magFilter);
+        texture.minFilter = filter(sampler->min_filter, texture.minFilter);
+    }
+
+    // The texture's image bytes (a GLB view or a base64 data URI) become RGBA8. A format this loader
+    // does not decode, or an image in an external file, stays undecoded and the player refuses the
+    // model by name; a PNG or JPEG that will not decode is a damaged file and fails the load.
+    void decodeImage(Texture& texture) {
+        if (texture.source < 0 || static_cast<std::size_t>(texture.source) >= data_.images_count) return;
+        const cgltf_image& image = data_.images[texture.source];
+        std::vector<uint8_t> owned;
+        const uint8_t* bytes = nullptr;
+        std::size_t size = 0;
+        if (image.buffer_view) {
+            bytes = static_cast<const uint8_t*>(cgltf_buffer_view_data(image.buffer_view));
+            size = image.buffer_view->size;
+        } else if (image.uri && std::strncmp(image.uri, "data:", 5) == 0) {
+            const char* comma = std::strchr(image.uri, ',');
+            if (!comma || comma - image.uri < 7 || std::strncmp(comma - 7, ";base64", 7) != 0) return;
+            const std::size_t length = std::strlen(comma + 1);
+            const std::size_t padding = length >= 2 ? (comma[length] == '=') + (comma[length - 1] == '=') : 0;
+            cgltf_options options{};
+            void* decoded = nullptr;
+            const std::size_t decodedSize = length / 4 * 3 - padding;
+            if (cgltf_load_buffer_base64(&options, decodedSize, comma + 1, &decoded) != cgltf_result_success) {
+                refuse("TN_NATIVE_GLTF_IMAGE_INVALID image " + std::to_string(texture.source) + " base64");
+                return;
+            }
+            owned.assign(static_cast<uint8_t*>(decoded), static_cast<uint8_t*>(decoded) + decodedSize);
+            std::free(decoded);
+            bytes = owned.data();
+            size = owned.size();
+        }
+        if (!bytes || imageFormat(bytes, size) == ImageFormat::Unknown) return;
+        if (!gltf::decodeImage(bytes, size, texture.width, texture.height, texture.data)) {
+            texture.width = texture.height = 0;
+            refuse("TN_NATIVE_GLTF_IMAGE_INVALID image " + std::to_string(texture.source));
+        }
     }
 
     // SkinnedMesh.normalizeSkinWeights: each vertex's weights over their sum; all zero becomes (1,0,0,0).

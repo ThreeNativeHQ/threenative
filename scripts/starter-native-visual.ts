@@ -348,7 +348,8 @@ export async function runStarterNativeVisual(args: readonly string[]) {
     const packages = await packageLocalFramework(temporary);
     const bundle = path.join(temporary, "starter-visual.js");
     try {
-      await promisify(execFile)(path.join(ROOT, "node_modules/.bin/esbuild"), [
+      // esbuild is a runtime-native dependency; the workspace root does not install it.
+      await promisify(execFile)(path.join(ROOT, "packages/runtime-native/node_modules/.bin/esbuild"), [
         path.join(ROOT, "packages/runtime-native/scripts/starter-visual-page.ts"),
         "--bundle",
         "--platform=browser",
