@@ -238,6 +238,9 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
         const auto& stages = pass.source.package.variants.at(0).stages;
         const auto& fragment = stages[1];
         auto values = pass.source.uniforms;
+        if (pass.source.effect)
+            for (const auto& [name, value] : pass.source.effect->parameters)
+                if (name != "sampleVectors") values[name] = value;
         values["resolution"] = {float(target.width), float(target.height)};
         values["postTargetSize"] = {float(target.width), float(target.height)};
         values["_cameraProjectionMatrix"] = {camera.projectionMatrix.begin(), camera.projectionMatrix.end()};
