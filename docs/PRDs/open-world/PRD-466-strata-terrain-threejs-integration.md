@@ -3772,4 +3772,19 @@ speckle returned; sun share rose only 22% → 35%. The dense grass cards stay sk
 upward normal, so the next lane should inspect which pack layer draws the meadow (its normal and
 alpha-to-coverage at distance) before another light rebalance.
 
+Kept round (`56cadfecf`): at 2× the meadow "texture" was sub-pixel blade slivers dithered by 4×
+MSAA alpha-to-coverage, and needle edges sparkled the same way. The forest chain now adds a `traa`
+stage with MRT velocity and renders its world pass single-sampled, because TRAA copies that depth
+and a 4× target produced 747 WebGPU validation errors per run. Opaque foliage no longer averages with
+soil and sky, so forest exposure rises 0.45 EV. Fresh judge, same camera: ground 4 → 6, trees
+4.5 → 5.5, overall vs reference 3.5 → 4.5, 0 console errors
+([meadow](../../benchmark/strata-loading-2026-10-06/forest-traa-meadow.jpg),
+[player](../../benchmark/strata-loading-2026-10-06/forest-traa-player.jpg)). New artifact: 1–2 px
+stair-steps on silhouettes against the sky. Not verified: ghosting in motion, the other four worlds
+(they keep MSAA), native desktop. `terrain.playtest.json` (web, `--browser-recipe webgpu`) is RED at
+its first step in both arms on this host on 2026-10-07: `GameState.worldReady` did not arrive within
+60 s with TRAA and with `?off=traa` (host load 10–35), so the scenario neither proves nor
+disproves this change. Engine follow-up: the render chain should fail closed when `traa`
+is requested on a multisampled pass instead of emitting per-frame validation errors.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
