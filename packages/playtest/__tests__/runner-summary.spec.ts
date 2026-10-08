@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatScenarioSummary } from "../src/runner/runner.js";
+import { formatScenarioSummary } from "../src/runner/scenario-summary.js";
 import type { IStandalonePlaytestReport } from "../src/runner/shared.js";
 
 describe("scenarioSummary reasons", () => {
