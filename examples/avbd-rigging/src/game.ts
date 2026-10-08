@@ -781,6 +781,8 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
       steps,
       benchmarkFrames: benchmark?.frames ?? 0,
       benchmarkCompleted: benchmarkResults.length,
+      // Monotone pacing counter for staged scenario waits; a sealed window counts once, via completion.
+      benchmarkProgress: benchmarkResults.length * 2100 + ((benchmark?.frames ?? 0) % 2100),
       benchmarkFailures,
       benchmarkRun: this.#benchmarkRun?.id ?? "off",
       benchmarkResults,

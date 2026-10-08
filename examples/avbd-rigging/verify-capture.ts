@@ -30,7 +30,7 @@ export function riggingScenario(bytes: Buffer): "correctness" | "lifecycle" | "b
     return "correctness";
   if (hash === "1b6e32e4c39dc7621a348b24265e0ca56bab4e89446124de9ef7848ce9a9f5ac")
     return "lifecycle";
-  if (hash === "56b1eeba65d641c55249cb073dbda07dd57d7b2caeb6e7b9fa801fd7718d1449")
+  if (hash === "ff42fd1f41688f4927b43e88c1c22f3debf0761dc12ab38787c1678b8a6113d0")
     return "benchmark";
   throw new Error("TN_AVBD_QUALIFICATION: scenario content differs from the frozen workload.");
 }
