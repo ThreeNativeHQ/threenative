@@ -3,6 +3,7 @@ import { Atmosphere, Daylight, type ICtx, VirtualShadowNode } from "@threenative
 import { Color, DirectionalLight, Mesh, type Object3D, SphereGeometry, Vector3 } from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
   abs,
   cameraPosition,
@@ -213,7 +214,11 @@ export function installOutdoorOcclusion(
   scene.fogNode = null;
   scene.fog = null;
   // AO darkens RGB only; multiplying alpha leaked the backdrop through dark alpine crags.
-  const world = pass(scene, camera);
+  // TRAA is the forest's anti-aliasing: sub-pixel blades and needles dither under coverage alone.
+  // It copies this pass's depth, which a multisampled target refuses. Other worlds keep MSAA until
+  // their own captures are judged.
+  const temporal = look.world === "forest" && !omitted.has("traa");
+  const world = pass(scene, camera, temporal ? { samples: 0 } : undefined);
   world.setMRT(mrt({ output, normal: normalView }));
   const daylight = scene.children.find((child) => child instanceof Daylight);
   const depth = world.getTextureNode("depth");
@@ -249,8 +254,12 @@ export function installOutdoorOcclusion(
     input: airOutput,
     worldPass: world,
     request: {
-      stages: ["ambientOcclusion", "grade"].filter((name) => !omitted.has(name)),
+      stages: ["ambientOcclusion", ...(temporal ? ["traa"] : []), "grade"].filter(
+        (name) => !omitted.has(name),
+      ),
       tier: "high",
+      // Blades and needles are thinner than a pixel; coverage alone dithers them into speckle.
+      ...(temporal ? { velocity: { pass: world } } : {}),
     },
     targetFps: 60,
     stages: [
@@ -270,6 +279,17 @@ export function installOutdoorOcclusion(
               1,
             ),
           ),
+      },
+      {
+        name: "traa",
+        minimumTier: "high",
+        build: (input, context) =>
+          traa(
+            input as Node<"vec4">,
+            depth,
+            context.velocityNode as Node,
+            camera,
+          ) as unknown as Node,
       },
       {
         name: "grade",

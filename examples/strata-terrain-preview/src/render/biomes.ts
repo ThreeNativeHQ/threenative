@@ -102,7 +102,8 @@ const temperate: IBiome = {
   skyRadiance: 0.27,
   saturation: 1,
   skySaturation: 1,
-  exposure: 2 ** -0.26,
+  // +0.45 EV with TRAA: opaque foliage no longer averages with the bright soil and sky behind it.
+  exposure: 2 ** 0.19,
   toneMapping: ACESFilmicToneMapping,
   clouds: 0.76,
 };
