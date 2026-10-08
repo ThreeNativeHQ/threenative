@@ -2033,7 +2033,7 @@ describe("WorldCells", () => {
     }
   });
 
-  it("casts shadows from the near levels and receives them everywhere only when asked", async () => {
+  it("casts shadows from every level and receives them everywhere only when asked", async () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);
     const plain = await loadWorld({
@@ -2062,9 +2062,10 @@ describe("WorldCells", () => {
     });
     shaded.update();
     await flushed(shaded);
-    // Only the finest level casts by default: a far LOD's shadow is sub-texel and every caster is
-    // redrawn per shadow level. The main mesh casts nothing — its records reach the shadow maps
-    // through the caster cluster, which is what a level culls (PRD-458).
+    // Every level casts by default: a shadow level draws only the clusters its own window covers, so
+    // a far level's caster costs nothing outside it, and inside it its shadow is visible (PRD-539).
+    // The main mesh casts nothing — its records reach the shadow maps through the caster cluster,
+    // which is what a level culls (PRD-458).
     expect((levelMesh(shaded, "pine", 0, 0) as InstancedMesh).castShadow).toBe(false);
     expect((levelMesh(shaded, "pine", 1, 0) as InstancedMesh).receiveShadow).toBe(true);
     const casters = clustersOf(shaded, "pine", 0, 0);
@@ -2073,7 +2074,10 @@ describe("WorldCells", () => {
       expect(caster.castShadow, "the finest level's caster cluster does not cast").toBe(true);
       expect(caster.layers.mask, "a caster is not alone on the caster layer").toBe(1 << 28);
     }
-    expect(clustersOf(shaded, "pine", 1, 0), "a far level minted a caster cluster").toEqual([]);
+    expect(
+      clustersOf(shaded, "pine", 1, 0).length,
+      "a far level minted no caster cluster",
+    ).toBeGreaterThan(0);
     const terrain: Mesh[] = [];
     shaded.traverse((object) => {
       // A mesh alone on a caster layer is a shadow-only proxy: it casts, and by construction it
@@ -2086,6 +2090,24 @@ describe("WorldCells", () => {
     // Terrain tiles, seam bridges and hand-placed chunks all receive.
     for (const mesh of terrain) expect(mesh.receiveShadow).toBe(true);
     shaded.dispose();
+
+    // A cap still holds: `castLevels: 1` keeps the far level out of every shadow map.
+    const capped = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: treeLoader().load,
+      ring: 0,
+      shadows: { cast: true, castLevels: 1 },
+      surface,
+      url: "/world/world.json",
+    });
+    capped.update();
+    await flushed(capped);
+    expect(clustersOf(capped, "pine", 0, 0).length).toBeGreaterThan(0);
+    expect(clustersOf(capped, "pine", 1, 0), "a capped far level minted a caster cluster").toEqual(
+      [],
+    );
+    capped.dispose();
 
     await expect(
       loadWorld({

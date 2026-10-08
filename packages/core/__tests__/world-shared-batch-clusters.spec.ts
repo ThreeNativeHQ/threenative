@@ -329,10 +329,9 @@ describe("WorldCells clustered shadow casters", () => {
       const { key } = squareOf(name);
       expect(mesh.layers.mask, `${name} is not alone on the caster layer`).toBe(1 << 28);
       expect(mesh.frustumCulled, `${name} is not cullable`).toBe(true);
+      // Every level casts by default; the window bounds which clusters a shadow level draws (PRD-539).
       const level = Number(key.split(":")[1]);
-      expect(mesh.castShadow, `${name} (level ${String(level)}) cast the wrong way`).toBe(
-        level === 0,
-      );
+      expect(mesh.castShadow, `${name} (level ${String(level)}) does not cast`).toBe(true);
       expect(mesh.receiveShadow, `${name} receives, and no camera it draws with will`).toBe(false);
     }
     // Every castable key is split into more than one cluster, or nothing was clustered.

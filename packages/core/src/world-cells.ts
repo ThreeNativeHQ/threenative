@@ -399,9 +399,11 @@ export interface IWorldCellsLoadOptions {
   readonly transparentScatter?: "cutout" | "blend";
   /**
    * Shadows for the streamed world, all off by default. `cast` makes scattered batches cast into
-   * the scene's shadow map, but only their `castLevels` finest distance levels (default 1: the
-   * near shape), since a far LOD's shadow is sub-texel in any open-world shadow window and every
-   * caster is redrawn per shadow level. `receive` lets scatter and terrain receive shadows.
+   * the scene's shadow map, every distance level by default: a shadow level draws only the caster
+   * clusters its own window covers, so a far level costs nothing past the window, and inside it its
+   * shadow is visible — a chain whose first switch is tens of metres out lost its trees' shadows
+   * there under the old default of 1 (PRD-539). `castLevels` caps it to the finest N levels.
+   * `receive` lets scatter and terrain receive shadows.
    */
   readonly shadows?: {
     readonly cast?: boolean;
@@ -4108,7 +4110,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#gpuTally = init.gpuSceneTally === true;
     this.#castShadowLevels =
       init.shadows?.cast === true
-        ? positiveInteger(init.shadows.castLevels ?? 1, "shadows.castLevels")
+        ? init.shadows.castLevels === undefined
+          ? Number.POSITIVE_INFINITY
+          : positiveInteger(init.shadows.castLevels, "shadows.castLevels")
         : 0;
     this.#receiveShadow = init.shadows?.receive === true;
     this.#smallCasterMetres = positiveMetres(
