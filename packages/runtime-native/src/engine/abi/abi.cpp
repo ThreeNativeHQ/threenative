@@ -456,6 +456,24 @@ tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<
     return handle;
 }
 
+tn_status_t setNumber(tn_handle_t handle, SetterSlot& slot, const std::string& name, double value, tn_diagnostic_t* diagnostic) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    tn_context* context = nullptr;
+    tn::binding::Object* object = nullptr;
+    if (const tn_status_t s = selfObject(handle, context, object, diagnostic); s != TN_OK) return s;
+    const auto& binding = bindingOf(*object);
+    if (slot.binding != &binding) {
+        const auto found = binding.setters.find(name);
+        if (found == binding.setters.end())
+            return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + name + " is not settable").c_str());
+        slot = {&binding, &found->second};
+    }
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        (*slot.setter)(object->ptr.get(), tn::binding::Value::of(value), *context);
+        return ok(diagnostic);
+    });
+}
+
 engine::shader::graph::Node shaderNode(tn_handle_t handle, const std::string& path) {
     auto* object = objectOf(handle);
     if (!object) throw std::runtime_error("TN_HANDLE_INVALID: shader node owner");

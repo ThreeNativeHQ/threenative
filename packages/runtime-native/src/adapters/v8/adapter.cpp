@@ -203,6 +203,7 @@ struct MethodData {
     v8::Global<v8::Private> cache;
     bool intersections = false;  // intersectObject(s): the only methods whose third argument is a target array
     int slot = 0;                // a fixed member's internal-field cache slot; 0: none left, use the private key
+    tn::abi::SetterSlot setter;  // the numeric write's setter for the class last written
     bool own = false;            // a read-only fixed member: once read, it becomes an own data property of the wrapper, as three defines it
     uint16_t type = 0;           // the catalog type whose wrappers own that slot: a getter borrowed by another class must not read it
 };
@@ -827,7 +828,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                        tn_value_t number{};
                                        number.kind = TN_VALUE_NUMBER;
                                        number.number = info[0].As<v8::Number>()->Value();
-                                       if (tn_set(h, d->name.c_str(), &number, &diagnostic) != TN_OK) throwStatus(info.GetIsolate(), diagnostic);
+                                       if (tn::abi::setNumber(h, d->setter, d->name, number.number, &diagnostic) != TN_OK) throwStatus(info.GetIsolate(), diagnostic);
                                        return;
                                    }
                                    std::vector<tn_value_t> args;

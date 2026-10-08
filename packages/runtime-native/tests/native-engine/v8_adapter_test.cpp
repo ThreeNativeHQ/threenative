@@ -143,6 +143,19 @@ void fastPaths() {
     )JS");
     CHECK(members == "111111");
     if (members != "111111") std::fprintf(stderr, "members %s\n", members.c_str());
+    // A numeric setter remembers the class it last wrote. Borrowed onto another class's object it must
+    // look the member up again, and write that object, never the first one.
+    const std::string borrowedWrites = run(rt, adapter, R"JS(
+        const v = new Vector3(), e = new Euler();
+        const d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(v), "x");
+        d.set.call(v, 7); d.set.call(e, 8); d.set.call(v, 9); d.set.call(e, 10);
+        let refused = false;
+        try { d.set.call(new Mesh(), 5); } catch { refused = true; }   // a Mesh has no x: refused, not written through Vector3's setter
+        d.set.call(v, 11);
+        [v.x === 11, e.x === 10, refused].map(Number).join("")
+    )JS");
+    CHECK(borrowedWrites == "111");
+    if (borrowedWrites != "111") std::fprintf(stderr, "borrowed writes %s\n", borrowedWrites.c_str());
     // Non-numeric arguments still take the general converter: a handle, a string, an array, a boolean.
     const uint64_t general = adapter.genericArguments();
     const std::string mixed = run(rt, adapter, (std::string(setup) + R"JS(
