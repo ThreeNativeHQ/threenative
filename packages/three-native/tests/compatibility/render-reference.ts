@@ -92,6 +92,7 @@ function requestOf(fixture: IFixture): Record<string, unknown> {
     toneMappingConstant: TONE_MAPPING_CONSTANTS[render.toneMapping],
     toneMappingExposure: render.toneMappingExposure ?? 1,
     shadowMap: render.shadowMap === true,
+    shadowMapType: render.shadowMapType ?? "PCFShadowMap",
     outputColorSpaceConstant:
       OUTPUT_COLOR_SPACE_CONSTANTS[render.outputColorSpace ?? "srgb"] ??
       OUTPUT_COLOR_SPACE_CONSTANTS.srgb,

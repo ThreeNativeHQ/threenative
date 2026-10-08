@@ -1329,7 +1329,7 @@ void unsupportedMapSlot() {
     auto rough = std::make_shared<Material>(MaterialType::Standard);
     auto map = std::make_shared<DataTexture>();
     map->setImage({255, 255, 255, 255}, "Uint8Array", 1, 1, kTextureRGBAFormat, kTextureUnsignedByteType);
-    rough->maps["aoMap"] = map;  // roughnessMap is read now (Standard/Physical); aoMap is still refused
+    rough->maps["lightMap"] = map;  // roughnessMap is read now (PRD-530); lightMap still is not
     Mesh refused{s.geometry, rough};
     refused.position.x = 1;
     s.scene.add(refused);
@@ -1337,7 +1337,7 @@ void unsupportedMapSlot() {
     database.render(renderer, s.scene, s.camera);
     bool named = false;
     for (const std::string& d : database.diagnostics())
-        named = named || (d.rfind("TN_NATIVE_MATERIAL_UNSUPPORTED", 0) == 0 && d.find("aoMap") != std::string::npos);
+        named = named || (d.rfind("TN_NATIVE_MATERIAL_UNSUPPORTED", 0) == 0 && d.find("lightMap") != std::string::npos);
     CHECK(named);
     CHECK(database.diagnostics().size() == 1);  // the plain mesh beside it is not refused
 }

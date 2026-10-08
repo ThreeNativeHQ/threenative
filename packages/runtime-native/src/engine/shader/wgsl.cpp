@@ -85,6 +85,12 @@ std::string WgslEmitter::expr(ExprId id) const {
             return "textureSampleLevel(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
         }
         case Op::Sample: {
+            if (e.argc == 2 && e.type == Type::vec(4)) {  // three's gather().compare(), a whole-texel offset
+                const std::string& gathered = p_.textures_[gatherTexture(e.immediate)];
+                return "textureGatherCompare(t_" + gathered + ", smp_" + gathered + ", " + expr(e.args[0]) + ", " +
+                       expr(e.args[1]) + ", vec2<i32>(" + std::to_string(gatherOffsetX(e.immediate)) + ", " +
+                       std::to_string(gatherOffsetY(e.immediate)) + "))";
+            }
             const std::string& name = p_.textures_[e.immediate];
             if (e.argc == 2)  // three's generateTextureCompare
                 return (p_.stage_ == Stage::Fragment ? "textureSampleCompare(t_" : "textureSampleCompareLevel(t_") + name +

@@ -21,12 +21,12 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
   "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage",
-  "NoBlending", "NormalBlending", "AdditiveBlending"];
+  "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
-  "ExtrudeGeometry", ...constants];
+  "ExtrudeGeometry", "SpriteMaterial", ...constants];
 const panel = (T) => {
   const shape = new T.Shape();
   shape.moveTo(-0.3, -0.2); shape.lineTo(0.25, -0.2); shape.quadraticCurveTo(0.3, -0.2, 0.3, -0.15);
@@ -43,7 +43,7 @@ await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
 const THREE = { ${names.join(", ")} };
-import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, NodeUpdateType } from "three/webgpu";
+import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, NodeUpdateType, WebGPURenderer } from "three/webgpu";
 import { screenCoordinate, positionGeometry, normalGeometry, tangentGeometry, positionViewDirection } from "three/tsl";
 import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
@@ -113,6 +113,39 @@ check(panels[0] instanceof THREE.BufferGeometry && answers(panels) === ${JSON.st
 const refuses = (make, pattern) => { try { make(); return false; } catch (error) { return pattern.test(String(error.message)); } };
 check(refuses(() => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)]),
   { extrudePath: curve }), /extrudePath is not supported/), "extrudePath refused");
+const paramTexture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+const painted = new THREE.MeshStandardMaterial({ color: 0x336699, emissive: "#ff8800", roughness: 0.4, metalness: 0.2,
+  transparent: true, opacity: 0.5, map: paramTexture, side: THREE.DoubleSide, name: "panel", depthWrite: undefined });
+check(JSON.stringify([painted.color.r, painted.color.g, painted.color.b, painted.emissive.r, painted.emissive.g, painted.emissive.b,
+  painted.roughness, painted.metalness, painted.transparent, painted.opacity, painted.side, painted.name, painted.depthWrite]) ===
+  ${JSON.stringify(JSON.stringify((() => { const m = new three.MeshStandardMaterial({ color: 0x336699, emissive: "#ff8800", roughness: 0.4, metalness: 0.2, transparent: true, opacity: 0.5, side: three.DoubleSide, name: "panel" }); return [m.color.r, m.color.g, m.color.b, m.emissive.r, m.emissive.g, m.emissive.b, m.roughness, m.metalness, m.transparent, m.opacity, m.side, m.name, m.depthWrite]; })()))} &&
+  painted.map === paramTexture, "material parameters as three's setValues");
+const bumped = new THREE.MeshStandardMaterial({ normalMap: paramTexture, normalScale: new THREE.Vector2(0.25, -0.5) });
+check(bumped.normalMap === paramTexture && bumped.normalScale.x === 0.25 && bumped.normalScale.y === -0.5, "normalMap parameters");
+bumped.normalScale.set(1, 2);
+check(bumped.normalScale.y === 2, "normalScale is the material's own Vector2");
+const orm = new THREE.MeshStandardMaterial({ roughnessMap: paramTexture, metalnessMap: paramTexture, aoMap: paramTexture,
+  aoMapIntensity: 0.6, emissiveMap: paramTexture });
+check(orm.roughnessMap === paramTexture && orm.metalnessMap === paramTexture && orm.aoMap === paramTexture &&
+  orm.emissiveMap === paramTexture && orm.aoMapIntensity === 0.6, "packed ORM and emissive map parameters");
+const twin = painted.clone();
+check(twin instanceof THREE.MeshStandardMaterial && twin !== painted && twin.map === painted.map && twin.roughness === painted.roughness, "material clone");
+twin.roughness = 0.95;
+check(painted.roughness !== 0.95, "a clone is independent");
+const sprite = new THREE.SpriteMaterial({ transparent: false });
+check(sprite.transparent === false, "SpriteMaterial parameters after its defaults");
+check(refuses(() => new THREE.MeshBasicMaterial({ wireframe: true }), /TN_NATIVE_MATERIAL_PARAMETER: MeshBasicMaterial\.wireframe/), "unbound material parameter refused");
+const shadowRenderer = new WebGPURenderer({ canvas: { width: 1, height: 1 } });
+check(shadowRenderer.shadowMap.enabled === false && shadowRenderer.shadowMap.type === THREE.PCFShadowMap, "three's shadowMap defaults");
+check(refuses(() => { shadowRenderer.shadowMap.type = 3; }, /TN_NATIVE_SHADOWMAP_TYPE_UNSUPPORTED/), "VSMShadowMap refused");
+shadowRenderer.shadowMap.enabled = true;
+shadowRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+check(shadowRenderer.shadowMap.enabled && shadowRenderer.shadowMap.type === THREE.PCFSoftShadowMap, "shadowMap settings");
+// The settings reach the player with the renderer's others when it draws (tn.setRendererState).
+shadowRenderer.render(new THREE.Scene(), new THREE.PerspectiveCamera());
+check(shadowRenderer.getMaxAnisotropy() === 16, "WebGPU's maximum anisotropy");
+paramTexture.anisotropy = 8;
+check(paramTexture.anisotropy === 8 && refuses(() => { paramTexture.anisotropy = 0; }, /anisotropy must be/), "texture anisotropy");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");
@@ -224,7 +257,7 @@ await bundleNativeEngine({ entry, outfile, boot: false });
 const run = spawnSync(resolve(executable), ["--check-game", outfile], {
   encoding: "utf8", env: { ...process.env, SDL_AUDIO_DRIVER: "dummy" } });
 assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-assert.match(run.stdout, /engine=native gameRuntime=v8 startup=passed/);
+assert.match(run.stdout, /engine=native gameRuntime=v8 startup=passed shadowMap=on:2/);
 const { build } = createRequire(resolve(native, "package.json"))("esbuild");
 const writer = resolve(work, "package-writer.mjs");
 await build({ entryPoints: [resolve(native, "../assets/src/native-package.ts")], outfile: writer,

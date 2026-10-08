@@ -59,6 +59,14 @@ struct StandardMaterial {
  * positionLocal by it and normalLocal by its inverse transpose. `instanceColor`: the per-instance
  * colour (attribute instanceColor) multiplies the material colour, as setupDiffuseColor does.
  */
+/** The scalar and emissive maps MeshStandardMaterial reads besides map and normalMap, as bits of
+ *  VertexVariant::pbrMaps. Each is sampled at `<name>UvTransform * vec3(uv, 1)` from texture `<name>`. */
+enum PbrMap : uint8_t { kRoughnessMap, kMetalnessMap, kAoMap, kEmissiveMap, kSpecularColorMap, kSpecularIntensityMap, kPbrMapCount };
+inline constexpr const char* kPbrMapNames[kPbrMapCount] = {"roughnessMap", "metalnessMap", "aoMap", "emissiveMap",
+                                                           "specularColorMap", "specularIntensityMap"};
+/** MeshStandardMaterial's PbrMaps; the ones after it are MeshPhysicalMaterial's own. */
+inline constexpr int kStandardPbrMapCount = kSpecularColorMap;
+
 struct VertexVariant {
     bool background = false;
     uint8_t fog = 0; // 0 none, 1 Fog (range), 2 FogExp2 (density)
@@ -96,19 +104,12 @@ struct VertexVariant {
      */
     bool normalMap = false;
     /**
-     * Standard and Physical only: `metalnessMap` and `roughnessMap` (linear data, as glTF packs them in
-     * one metallicRoughness texture) scale the uniforms by their blue and green channels, sampled at
-     * `metalnessUvTransform` / `roughnessUvTransform` (three's MaterialNode METALNESS / ROUGHNESS).
+     * MeshStandardMaterial's roughnessMap (.g), metalnessMap (.b), aoMap (.r, aoMapIntensity) and
+     * emissiveMap (.rgb), and MeshPhysicalMaterial's specularColorMap (.rgb) and specularIntensityMap
+     * (.a), one bit per PbrMap; read only by the standard and physical programs.
      */
-    bool metalnessMap = false;
-    bool roughnessMap = false;
-    /**
-     * Physical only: `specularColorMap` (rgb, an sRGB texture decoded by its GPU format) and
-     * `specularIntensityMap` (alpha) scale specularColor and specularIntensity (MaterialNode
-     * SPECULAR_COLOR / SPECULAR_INTENSITY), at `specularColorUvTransform` / `specularIntensityUvTransform`.
-     */
-    bool specularColorMap = false;
-    bool specularIntensityMap = false;
+    uint8_t pbrMaps = 0;
+    [[nodiscard]] bool reads(PbrMap map) const { return (pbrMaps >> map) & 1u; }
     /**
      * The map's colorSpace is SRGBColorSpace: the sampled texel is decoded with three's
      * `sRGBTransferEOTF` in the fragment, as upstream's ColorSpaceNode does, rather than by a
@@ -127,7 +128,7 @@ struct VertexVariant {
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
-               (map ? "t" : "") + (normalMap ? "N" : "") + (metalnessMap ? "M" : "") + (roughnessMap ? "R" : "") + (specularColorMap ? "C" : "") + (specularIntensityMap ? "I" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
+               (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };
@@ -146,6 +147,8 @@ struct VertexVariant {
 // atlas `vsm{i}` and storage page table `vsmTable{i}` in both standard and basic lit programs.
 struct LightLayout {
     std::string kinds = "d";
+    /** three's PCFSoftShadowMap: shadowed directional and spot lights read PCFSoftShadowFilter. */
+    bool softShadows = false;
     /** Any upper-case kind: that light's shadow map is read (`light{i}Shadow*`, texture `shadow{i}`). */
     [[nodiscard]] bool shadowed() const {
         for (const char c : kinds)

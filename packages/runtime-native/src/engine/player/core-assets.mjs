@@ -33,8 +33,7 @@ export function createAssetLoader(options = {}) {
     async texture(path, settings) {
       const value = await load("texture", path, settings !== undefined);
       if (settings === undefined) return value;
-        if (settings.anisotropy !== undefined)
-          throw new Error("TN_NATIVE_ASSET_ANISOTROPY_UNSUPPORTED: native sampler anisotropy is unbound");
+        if (settings.anisotropy !== undefined) value.anisotropy = settings.anisotropy;
         value.colorSpace = settings.data === true ? "" : "srgb";
         if (settings.wrap !== undefined) value.wrapS = value.wrapT = settings.wrap;
         if (typeof settings.repeat === "number") value.repeat.setScalar(settings.repeat);

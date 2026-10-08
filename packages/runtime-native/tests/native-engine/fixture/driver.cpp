@@ -247,7 +247,7 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 throw Unsupported{"this build has no glTF loader"};
 #endif
             }
-            if (command == "render" && (t.size() == 9 || (t.size() == 10 && t[9] == "shadowMap"))) {
+            if (command == "render" && (t.size() == 9 || (t.size() == 10 && (t[9] == "shadowMap" || t[9] == "shadowMapSoft")))) {
                 if (!render) throw Unsupported{"this driver does not render: use the render-capable driver"};
                 auto scene = objects_.find(t[1]);
                 auto camera = objects_.find(t[2]);
@@ -260,6 +260,7 @@ int Driver::run(std::istream& in, std::ostream& out) {
                 request.srgb = t[7] == "srgb";
                 request.png = decode(t[8].substr(2));
                 request.shadowMap = t.size() == 10;
+                request.shadowMapType = t.size() == 10 && t[9] == "shadowMapSoft" ? 2 : 1;
                 request.tsl = std::move(tsl_);
                 tsl_.clear();
                 if (const std::string failed = render(scene->second, camera->second, request); !failed.empty()) {

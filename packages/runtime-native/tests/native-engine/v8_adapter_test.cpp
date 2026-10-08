@@ -427,6 +427,7 @@ void catalogCoverage() {
         {"NeutralToneMapping", tn::engine::NeutralToneMapping},
         {"PCFSoftShadowMap", tn::engine::PCFSoftShadowMap},
         {"LoopOnce", 2200}, {"LoopRepeat", 2201}, {"LoopPingPong", 2202},
+        {"PCFShadowMap", 1},
         {"FrontSide", static_cast<double>(tn::engine::Side::Front)},
         {"BackSide", static_cast<double>(tn::engine::Side::Back)},
         {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},

@@ -15,6 +15,7 @@
 #include <string_view>
 
 #include "engine/foundation/math/Color.h"
+#include "engine/foundation/math/Vector.h"
 #include "engine/scene/texture.h"
 #include "engine/shader/position_node.h"
 
@@ -35,7 +36,7 @@ public:
     const MaterialType type;
     const bool nodeMaterial;
     shader::MaterialNodes nodes;
-    const uint32_t id;  // three's material id counter
+    uint32_t id;  // three's material id counter; a clone takes the next one
     std::string name;
 
     // Material
@@ -75,6 +76,8 @@ public:
     // Texture slots by three's property name (`map`, `normalMap`, ...); empty slots are absent.
     std::map<std::string, std::shared_ptr<const Texture>> maps;
 
+    /** three's Material.clone: every value copied, textures and nodes shared, with its own id and version. */
+    [[nodiscard]] std::shared_ptr<Material> clone() const;
     /** three's `material.needsUpdate = true`: the renderer rebuilds what depends on the material. */
     void needsUpdate() { ++version_; }
     [[nodiscard]] uint32_t version() const { return version_; }

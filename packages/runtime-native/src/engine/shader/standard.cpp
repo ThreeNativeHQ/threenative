@@ -390,9 +390,7 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         ? v.swizzle(v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(4)}))), "xyz")
         : v.attribute("instanceColor", Type::vec(3));
     // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
-    const ExprId uv = (variant.map || variant.normalMap || variant.metalnessMap || variant.roughnessMap ||
-                       variant.specularColorMap || variant.specularIntensityMap) && !variant.background
-        ? v.attribute("uv", Type::vec(2)) : kInvalid;
+    const ExprId uv = (variant.map || variant.normalMap || variant.pbrMaps) && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
 
@@ -425,7 +423,7 @@ static ExprId srgbDecode(Program& f, ExprId channel) {
 }
 
 // NormalMapNode for a tangent-space map on a geometry without tangents: three's perturbNormal2Arb,
-// the tangent frame from the screen-space derivatives of the view position and the map's uv. The map
+// the tangent frame from the screen-space derivatives of the view position and the uv. The map
 // is linear data; normalScale scales the xy of the decoded vector. faceDirection flips the frame for a
 // back face. Called after the fragment's other varyings exist, so `uv` takes the vertex stage's slot.
 static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
@@ -439,7 +437,8 @@ static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId s
     const ExprId scaled = f.mul(f.swizzle(decoded, "xy"), f.uniform("normalScale", Type::vec(2)));
     const ExprId mapN = f.construct(Type::vec(3), {scaled, f.swizzle(decoded, "z")});
     const ExprId q0 = f.call("dFdx", {eye}), q1 = f.call("dFdy", {eye});
-    const ExprId st0 = f.call("dFdx", {at}), st1 = f.call("dFdy", {at});
+    // TangentUtils takes the derivatives of the geometry's uv itself, not of the map's transformed uv.
+    const ExprId st0 = f.call("dFdx", {uv}), st1 = f.call("dFdy", {uv});
     const ExprId q1perp = f.call("cross", {q1, surfaceNormal}), q0perp = f.call("cross", {surfaceNormal, q0});
     const ExprId T = f.add(f.mul(q1perp, f.swizzle(st0, "x")), f.mul(q0perp, f.swizzle(st1, "x")));
     const ExprId B = f.add(f.mul(q1perp, f.swizzle(st0, "y")), f.mul(q0perp, f.swizzle(st1, "y")));
@@ -451,6 +450,16 @@ static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId s
     // Held in a variable: the derivatives above must run in uniform control flow, and a pure
     // expression is emitted where it is used, which can be inside a later light or environment branch.
     return f.load(f.var(Type::vec(3), f.call("normalize", {result})));
+}
+
+// MaterialNode's texture for a PbrMap: its own uv transform over the geometry's uv. Declares
+// instanceColor before uv so the fragment's varyings keep the vertex stage's order.
+static ExprId pbrTexel(Program& f, const VertexVariant& variant, PbrMap map) {
+    const std::string name = kPbrMapNames[map];
+    if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
+    const ExprId uv = f.varying("uv", Type::vec(2));
+    const ExprId transform = f.uniform(name + "UvTransform", Type::mat(3, 3));
+    return f.sample(f.texture2d(name), f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy"));
 }
 
 // three's setupDiffuseColor: the map texel multiplies the diffuse colour and alpha. It is sampled at
@@ -467,16 +476,6 @@ static ExprId mapTexel(Program& f, const VertexVariant& variant) {
                                                    srgbDecode(f, f.swizzle(texel, "y")),
                                                    srgbDecode(f, f.swizzle(texel, "z"))});
     return f.construct(Type::vec(4), {rgb, f.swizzle(texel, "w")});
-}
-
-// MaterialNode.getTexture(property).<channel>: a linear data map at its own uv transform. Declares
-// instanceColor before uv so the fragment's varyings keep the vertex stage's order.
-static ExprId dataMapChannel(Program& f, const VertexVariant& variant, const char* slot, const char* transform,
-                             const char* channel) {
-    if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
-    const ExprId uv = f.varying("uv", Type::vec(2));
-    const ExprId at = f.swizzle(f.mul(f.uniform(transform, Type::mat(3, 3)), f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
-    return f.swizzle(f.sample(f.texture2d(slot), at), channel);
 }
 
 // setupDiffuseColor: an instanced mesh with instanceColor multiplies the material colour by it.
@@ -534,8 +533,7 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     for (const auto& node : variant.nodes.graphs()) collect(node);
     for (const auto& [name, type] : out.fragment.varyings()) {
         if (name == "normalView" || name == "positionView" ||
-            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap || variant.metalnessMap || variant.roughnessMap ||
-                                               variant.specularColorMap || variant.specularIntensityMap))) continue;
+            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
@@ -577,7 +575,27 @@ static ExprId vogelDisk(Program& f, Tsl& t, int i, ExprId phi) {
 // shadowPosition = shadowMatrix * (positionWorld + normalWorld * normalBias), divided by w, y flipped,
 // z biased; PCFShadowFilter's five Vogel-disk taps rotated by interleaved gradient noise of the
 // fragment coordinate; 1 outside the shadow frustum; then mix(1, shadow, intensity).
-static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld) {
+// three's PCFSoftShadowFilter: the uv snapped to the texel grid, four gathers around it compared with
+// z, and the 3x3 texel footprint weighted by the fractional position, over nine.
+static ExprId softShadowSamples(Program& f, Tsl& t, uint32_t map, ExprId uv, ExprId z, ExprId mapSize) {
+    const ExprId texelSize = f.div(f.construct(Type::vec(2), {t.f(1)}), mapSize);
+    const ExprId fr = f.call("fract", {f.add(f.mul(uv, mapSize), f.construct(Type::vec(2), {t.f(0.5f)}))});
+    const ExprId snapped = f.sub(uv, f.mul(f.sub(fr, f.construct(Type::vec(2), {t.f(0.5f)})), texelSize));
+    const ExprId c1 = f.gatherCompare(map, snapped, z, -1, 1);
+    const ExprId c2 = f.gatherCompare(map, snapped, z, 1, 1);
+    const ExprId c3 = f.gatherCompare(map, snapped, z, -1, -1);
+    const ExprId c4 = f.gatherCompare(map, snapped, z, 1, -1);
+    const ExprId fx = f.swizzle(fr, "x"), fy = f.swizzle(fr, "y");
+    const auto lane = [&](ExprId v, const char* c) { return f.swizzle(v, c); };
+    const ExprId row1 = f.mul(f.add(f.add(f.call("mix", {lane(c1, "x"), lane(c2, "y"), fx}), lane(c1, "y")), lane(c2, "x")), fy);
+    const ExprId row2 = f.add(f.add(f.call("mix", {lane(c1, "w"), lane(c2, "z"), fx}), lane(c1, "z")), lane(c2, "w"));
+    const ExprId row3 = f.add(f.add(f.call("mix", {lane(c3, "x"), lane(c4, "y"), fx}), lane(c3, "y")), lane(c4, "x"));
+    const ExprId row4 = f.mul(f.add(f.add(f.call("mix", {lane(c3, "w"), lane(c4, "z"), fx}), lane(c3, "z")), lane(c4, "w")),
+                              t.oneMinus(fy));
+    return f.mul(f.add(f.add(f.add(row1, row2), row3), row4), t.f(1.0f / 9.0f));
+}
+
+static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld, bool soft) {
     const std::string at = "light" + std::to_string(index);
     const uint32_t map = f.textureDepth("shadow" + std::to_string(index));
     const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
@@ -587,16 +605,21 @@ static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positio
     const ExprId x = f.swizzle(projected, "x"), y = t.oneMinus(f.swizzle(projected, "y"));
     const ExprId z = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
     const ExprId uv = f.construct(Type::vec(2), {x, y});
-    const ExprId texelSize = f.div(f.construct(Type::vec(2), {t.f(1)}), f.uniform(at + "ShadowMapSize", Type::vec(2)));
-    const ExprId radiusScaled = f.mul(f.uniform(at + "ShadowRadius", Type::f32()), f.swizzle(texelSize, "x"));
-    const ExprId phi = noisePhi(f, t);
-    ExprId sum = kInvalid;
-    for (int i = 0; i < 5; ++i) {
-        const ExprId disk = vogelDisk(f, t, i, phi);
-        const ExprId tap = f.sampleCompare(map, f.add(uv, f.mul(disk, radiusScaled)), z);
-        sum = sum == kInvalid ? tap : f.add(sum, tap);
+    ExprId shadow = kInvalid;
+    if (soft) {
+        shadow = softShadowSamples(f, t, map, uv, z, f.uniform(at + "ShadowMapSize", Type::vec(2)));
+    } else {
+        const ExprId texelSize = f.div(f.construct(Type::vec(2), {t.f(1)}), f.uniform(at + "ShadowMapSize", Type::vec(2)));
+        const ExprId radiusScaled = f.mul(f.uniform(at + "ShadowRadius", Type::f32()), f.swizzle(texelSize, "x"));
+        const ExprId phi = noisePhi(f, t);
+        ExprId sum = kInvalid;
+        for (int i = 0; i < 5; ++i) {
+            const ExprId disk = vogelDisk(f, t, i, phi);
+            const ExprId tap = f.sampleCompare(map, f.add(uv, f.mul(disk, radiusScaled)), z);
+            sum = sum == kInvalid ? tap : f.add(sum, tap);
+        }
+        shadow = f.mul(sum, t.f(1.0f / 5.0f));
     }
-    ExprId shadow = f.mul(sum, t.f(1.0f / 5.0f));
     // frustumTest: x and y in [0, 1] and z <= 1, else 1.
     shadow = f.select(f.less(x, t.f(0)), t.f(1), shadow);
     shadow = f.select(f.less(t.f(1), x), t.f(1), shadow);
@@ -715,7 +738,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
 
 // `kind` upper case: the light casts a shadow this mesh receives; `positionWorld` is then read.
 static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView,
-                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid) {
+                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool softShadows = false) {
     const std::string at = "light" + std::to_string(index);
     ExprId color = f.uniform(at + "Color", Type::vec(3));
     if (kind >= '1' && kind <= '8') {
@@ -724,7 +747,7 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
     }
     if (kind >= 'A' && kind <= 'Z') {
         const ExprId shadow = kind == 'P' ? pointShadowFactor(f, t, index, positionWorld, normalWorld)
-                                          : shadowFactor(f, t, index, positionWorld, normalWorld);
+                                          : shadowFactor(f, t, index, positionWorld, normalWorld, softShadows);
         color = f.mul(color, shadow); // colorNode.mul(shadowNode)
         kind = static_cast<char>(kind - 'A' + 'a');
     }
@@ -785,21 +808,21 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
-    // MaterialNode METALNESS / ROUGHNESS: the uniform times the map's blue / green; a node replaces both.
-    ExprId metalnessValue = variant.nodes.metalnessNode ? kInvalid : f.uniform("metalness", Type::f32());
-    if (variant.metalnessMap && !variant.nodes.metalnessNode)
-        metalnessValue = f.mul(metalnessValue, dataMapChannel(f, variant, "metalnessMap", "metalnessUvTransform", "z"));
-    ExprId roughnessValue = variant.nodes.roughnessNode ? kInvalid : f.uniform("roughness", Type::f32());
-    if (variant.roughnessMap && !variant.nodes.roughnessNode)
-        roughnessValue = f.mul(roughnessValue, dataMapChannel(f, variant, "roughnessMap", "roughnessUvTransform", "y"));
-    const ExprId metalness = nodeValue(f, variant.nodes.metalnessNode, Type::f32(), metalnessValue);
+    // MaterialNode.METALNESS / ROUGHNESS: the factor times the map's blue / green channel.
+    ExprId metalnessFactor = variant.nodes.metalnessNode ? kInvalid : f.uniform("metalness", Type::f32());
+    if (metalnessFactor != kInvalid && variant.reads(kMetalnessMap))
+        metalnessFactor = f.mul(metalnessFactor, f.swizzle(pbrTexel(f, variant, kMetalnessMap), "z"));
+    const ExprId metalness = nodeValue(f, variant.nodes.metalnessNode, Type::f32(), metalnessFactor);
+    ExprId roughnessFactor = variant.nodes.roughnessNode ? kInvalid : f.uniform("roughness", Type::f32());
+    if (roughnessFactor != kInvalid && variant.reads(kRoughnessMap))
+        roughnessFactor = f.mul(roughnessFactor, f.swizzle(pbrTexel(f, variant, kRoughnessMap), "y"));
 
     // getRoughness: max(roughness, 0.0525) + getGeometryRoughness, capped at 1.
     const ExprId dxy = f.call("max", {f.call("abs", {f.call("dFdx", {normalViewGeometry})}),
                                       f.call("abs", {f.call("dFdy", {normalViewGeometry})})});
     const ExprId geometryRoughness =
         f.call("max", {f.call("max", {f.swizzle(dxy, "x"), f.swizzle(dxy, "y")}), f.swizzle(dxy, "z")});
-    ExprId roughness = f.call("min", {f.add(f.call("max", {nodeValue(f, variant.nodes.roughnessNode, Type::f32(), roughnessValue), t.f(0.0525f)}),
+    ExprId roughness = f.call("min", {f.add(f.call("max", {nodeValue(f, variant.nodes.roughnessNode, Type::f32(), roughnessFactor), t.f(0.0525f)}),
                                                   geometryRoughness), t.f(1)});
 
     // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.
@@ -813,11 +836,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     if (physical) {
         const ExprId ior = f.uniform("ior", Type::f32());
         ExprId specularIntensity = f.uniform("specularIntensity", Type::f32());
-        if (variant.specularIntensityMap)
-            specularIntensity = f.mul(specularIntensity, dataMapChannel(f, variant, "specularIntensityMap", "specularIntensityUvTransform", "w"));
+        if (variant.reads(kSpecularIntensityMap))
+            specularIntensity = f.mul(specularIntensity, f.swizzle(pbrTexel(f, variant, kSpecularIntensityMap), "w"));
         ExprId specularColor = f.uniform("specularColor", Type::vec(3));
-        if (variant.specularColorMap)
-            specularColor = f.mul(specularColor, dataMapChannel(f, variant, "specularColorMap", "specularColorUvTransform", "xyz"));
+        if (variant.reads(kSpecularColorMap))
+            specularColor = f.mul(specularColor, f.swizzle(pbrTexel(f, variant, kSpecularColorMap), "xyz"));
         const ExprId f0Base =
             f.call("min", {f.mul(t.pow2(f.div(f.sub(ior, t.f(1)), f.add(ior, t.f(1)))), specularColor),
                            f.construct(Type::vec(3), {t.f(1)})});
@@ -837,7 +860,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
         directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
@@ -879,10 +902,26 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         environmentDiffuse = f.mul(f.mul(diffuseContribution, energyLoss), cosineWeightedIrradiance);
     }
 
-    const ExprId emissive = nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), variant.nodes.emissiveNode ? kInvalid : f.uniform("emissive", Type::vec(3)));
+    // MaterialNode.EMISSIVE: emissive * emissiveIntensity (the uniform), times the emissiveMap texel.
+    ExprId emissiveFactor = variant.nodes.emissiveNode ? kInvalid : f.uniform("emissive", Type::vec(3));
+    if (emissiveFactor != kInvalid && variant.reads(kEmissiveMap))
+        emissiveFactor = f.mul(emissiveFactor, f.swizzle(pbrTexel(f, variant, kEmissiveMap), "xyz"));
+    const ExprId emissive = nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), emissiveFactor);
     // LightsNode: (directDiffuse + indirectDiffuse) + (directSpecular + indirectSpecular),
     // then NodeMaterial adds emissive. Do not regroup the f32 sum by light source.
-    const ExprId totalIndirectDiffuse = environmentDiffuse == kInvalid ? indirectDiffuse : f.add(indirectDiffuse, environmentDiffuse);
+    ExprId totalIndirectDiffuse = environmentDiffuse == kInvalid ? indirectDiffuse : f.add(indirectDiffuse, environmentDiffuse);
+    if (variant.reads(kAoMap)) {
+        // MaterialNode.AO, then PhysicalLightingModel.ambientOcclusion: indirect diffuse times the
+        // occlusion, indirect specular times its roughness-shaped specular occlusion.
+        const ExprId ao = f.add(f.mul(f.sub(f.swizzle(pbrTexel(f, variant, kAoMap), "x"), t.f(1)), f.uniform("aoMapIntensity", Type::f32())), t.f(1));
+        totalIndirectDiffuse = f.mul(totalIndirectDiffuse, ao);
+        if (environmentSpecular != kInvalid) {
+            const ExprId dotNV = t.saturate(t.dot(n, positionViewDirection));
+            const ExprId aoExp = f.call("exp2", {f.neg(t.oneMinus(f.mul(roughness, t.f(-16))))});
+            const ExprId specularOcclusion = t.saturate(f.sub(ao, t.oneMinus(f.call("pow", {f.add(dotNV, ao), aoExp}))));
+            environmentSpecular = f.mul(environmentSpecular, specularOcclusion);
+        }
+    }
     const ExprId totalSpecular = environmentSpecular == kInvalid ? directSpecular : f.add(directSpecular, environmentSpecular);
     const ExprId outgoing = f.add(f.add(f.add(directDiffuse, totalIndirectDiffuse), totalSpecular), emissive);
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
@@ -997,7 +1036,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId shininess = phong ? f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)}) : kInvalid;
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
         if (phong)

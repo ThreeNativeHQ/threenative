@@ -2471,7 +2471,7 @@
     },
     "MeshBasicMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2514,7 +2514,7 @@
     },
     "MeshBasicNodeMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2571,7 +2571,7 @@
     },
     "MeshLambertMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2625,7 +2625,7 @@
     },
     "MeshPhongMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2688,10 +2688,11 @@
     },
     "MeshPhysicalMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "anisotropy",
+        "aoMapIntensity",
         "blending",
         "clearcoat",
         "color.b",
@@ -2728,6 +2729,8 @@
       "setters": [
         "alphaTest",
         "anisotropy",
+        "aoMap",
+        "aoMapIntensity",
         "blending",
         "clearcoat",
         "color",
@@ -2742,6 +2745,7 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "emissiveMap",
         "envMap",
         "envMapIntensity",
         "fog",
@@ -2772,8 +2776,10 @@
         "visible"
       ],
       "members": [
+        "aoMap",
         "color",
         "emissive",
+        "emissiveMap",
         "envMap",
         "map",
         "metalnessMap",
@@ -2788,9 +2794,10 @@
     },
     "MeshStandardMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
+        "aoMapIntensity",
         "blending",
         "color.b",
         "color.g",
@@ -2816,6 +2823,8 @@
       ],
       "setters": [
         "alphaTest",
+        "aoMap",
+        "aoMapIntensity",
         "blending",
         "color",
         "color.b",
@@ -2828,6 +2837,7 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "emissiveMap",
         "envMap",
         "envMapIntensity",
         "fog",
@@ -2847,8 +2857,10 @@
         "visible"
       ],
       "members": [
+        "aoMap",
         "color",
         "emissive",
+        "emissiveMap",
         "envMap",
         "map",
         "metalnessMap",
@@ -2860,9 +2872,10 @@
     },
     "MeshStandardNodeMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
+        "aoMapIntensity",
         "blending",
         "color.b",
         "color.g",
@@ -2895,6 +2908,8 @@
       ],
       "setters": [
         "alphaTest",
+        "aoMap",
+        "aoMapIntensity",
         "blending",
         "color",
         "color.b",
@@ -2908,6 +2923,7 @@
         "emissive.g",
         "emissive.r",
         "emissiveIntensity",
+        "emissiveMap",
         "emissiveNode",
         "envMap",
         "envMapIntensity",
@@ -2933,8 +2949,10 @@
         "visible"
       ],
       "members": [
+        "aoMap",
         "color",
         "emissive",
+        "emissiveMap",
         "envMap",
         "map",
         "metalnessMap",
@@ -4906,7 +4924,7 @@
     },
     "SpriteMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",
@@ -4953,7 +4971,7 @@
     },
     "SpriteNodeMaterial": {
       "constructor": true,
-      "methods": [],
+      "methods": ["clone"],
       "getters": [
         "alphaTest",
         "blending",

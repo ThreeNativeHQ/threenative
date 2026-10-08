@@ -14,7 +14,7 @@ export const {
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
   EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, LoopPingPong, AttachedBindMode, FrontSide, BackSide, DoubleSide, StaticDrawUsage, DynamicDrawUsage,
-  NoBlending, NormalBlending, AdditiveBlending, PropertyBinding, getConsoleFunction, setConsoleFunction,
+  NoBlending, NormalBlending, AdditiveBlending, PCFShadowMap, PropertyBinding, getConsoleFunction, setConsoleFunction,
 } = globalThis;
 // Texture sources (typed array, canvas, ImageBitmap) the engine copies; see core-textures.mjs.
 import { DataTexture, Texture } from "./core-textures.mjs";

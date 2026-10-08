@@ -15,8 +15,10 @@
 #include "engine/scene/material.h"
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
+#include "engine/shader/standard.h"
 
 #include <cmath>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -104,6 +106,10 @@ void materialNumber(ClassBinding& b, const char* name, double Material::*field) 
 }
 
 void registerMaterialBase(ClassBinding& b) {
+    b.methods["clone"] = [](void* self, const Args&, Store& store) {
+        const std::shared_ptr<Material> copy = as<Material>(self)->clone();
+        return store.adopt(std::string(copy->typeName()), std::static_pointer_cast<void>(copy));
+    };
     b.getters["type"] = [](void* self) { return string(std::string(as<Material>(self)->typeName())); };
     b.getters["id"] = [](void* self) { return Value::of(double(as<Material>(self)->id)); };
     b.getters["name"] = [](void* self) { return string(as<Material>(self)->name); };
@@ -176,10 +182,12 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialColor(b, "color", &Material::color);
     materialMapSlot(b);
     if (type == MaterialType::Basic) return;
+    // A tangent-space normal map, which the lit programs perturb with three's perturbNormal2Arb, and
+    // its scale: the member alias, written whole with a Vector2 (three's setValues assigns it).
     materialMapSlot(b, "normalMap");
     fixedMember(b, "normalScale", memberAliasMethod(&Material::normalScale, "Vector2"));
     b.setters["normalScale"] = [](void* self, const Value& v, Store& store) {
-        as<Material>(self)->normalScale = store.ref<Vector2>(v, "Vector2");
+        as<Material>(self)->normalScale.copy(store.ref<Vector2>(v, "Vector2"));
         as<Material>(self)->needsUpdate();
     };
     materialColor(b, "emissive", &Material::emissive);
@@ -194,8 +202,9 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "envMapIntensity", &Material::envMapIntensity);
     materialNumber(b, "roughness", &Material::roughness);
     materialNumber(b, "metalness", &Material::metalness);
-    materialMapSlot(b, "metalnessMap");
-    materialMapSlot(b, "roughnessMap");
+    // The standard program's scalar and emissive maps (shader::kPbrMapNames) and the occlusion strength.
+    for (int k = 0; k < shader::kStandardPbrMapCount; ++k) materialMapSlot(b, shader::kPbrMapNames[k]);
+    materialNumber(b, "aoMapIntensity", &Material::aoMapIntensity);
     if (type == MaterialType::Standard) return;
     materialNumber(b, "ior", &Material::ior);
     materialNumber(b, "specularIntensity", &Material::specularIntensity);
@@ -211,6 +220,7 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
 }
 
 void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false) {
+    // A parameters object is applied by the language adapter (V8's setValues) after construction.
     b.ctor = [type, node](const Args& a, Store&) -> std::shared_ptr<void> {
         if (!a.empty()) throw Unsupported{"a material parameters object is not supported"};
         return std::static_pointer_cast<void>(detail::makeShared<Material>(type, node));
@@ -439,6 +449,14 @@ void registerTextureFields(ClassBinding& b) {
     b.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) as<Texture>(self)->needsUpdate();
     };
+    b.getters["generateMipmaps"] = [](void* self) { return Value::of(as<Texture>(self)->generateMipmaps); };
+    b.setters["generateMipmaps"] = [](void* self, const Value& v) { as<Texture>(self)->generateMipmaps = flag(v); };
+    b.getters["anisotropy"] = [](void* self) { return Value::of(as<Texture>(self)->anisotropy); };
+    b.setters["anisotropy"] = [](void* self, const Value& v) {
+        const double anisotropy = number(v);
+        if (!(anisotropy >= 1) || !std::isfinite(anisotropy)) throw Unsupported{"anisotropy must be a finite number of at least 1"};
+        as<Texture>(self)->anisotropy = anisotropy;
+    };
     b.getters["flipY"] = [](void* self) { return Value::of(as<Texture>(self)->flipY); };
     b.setters["flipY"] = [](void* self, const Value& v) { as<Texture>(self)->flipY = flag(v); as<Texture>(self)->needsUpdate(); };
     textureNumber<Texture>(b, "mapping", &Texture::mapping);
@@ -447,9 +465,6 @@ void registerTextureFields(ClassBinding& b) {
     textureNumber<Texture>(b, "magFilter", &Texture::magFilter);
     textureNumber<Texture>(b, "minFilter", &Texture::minFilter);
     textureNumber<Texture>(b, "rotation", &Texture::rotation);
-    textureNumber<Texture>(b, "anisotropy", &Texture::anisotropy);
-    b.getters["generateMipmaps"] = [](void* self) { return Value::of(as<Texture>(self)->generateMipmaps); };
-    b.setters["generateMipmaps"] = [](void* self, const Value& v) { as<Texture>(self)->generateMipmaps = flag(v); };
     // three's `texture.source`: the texture's own image record, whose version moves with needsUpdate.
     fixedMember(b, "source", [](void* self, const Args&, Store& store) {
         return store.adoptAlias("Source", self, self);
@@ -511,6 +526,7 @@ void registerMaterialBindings(Registry& classes) {
         auto& b = classes[name];
         registerMeshMaterial(b, MaterialType::Basic, node);
         const auto ctor = b.ctor;
+        // SpriteMaterial's defaults; V8's setValues applies a parameters object after them, as three does.
         b.ctor = [ctor](const Args& a, Store& store) {
             auto value = ctor(a, store);
             auto* material = static_cast<Material*>(value.get());

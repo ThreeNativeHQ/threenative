@@ -18,6 +18,20 @@ class NativeBackend {
   gpu = { requestAdapter: () => globalThis.tn.requestAdapter() };
 }
 
+// three's renderer.shadowMap: the facade hands `enabled` and `type` to the player with the renderer's
+// other settings before each frame (tn.setRendererState). A type the engine has no filter for is
+// refused when it is set, as well as there.
+class ShadowMap {
+  enabled = false;
+  #type = 1; // PCFShadowMap, three's default
+  get type() { return this.#type; }
+  set type(value) {
+    if (value !== 1 && value !== 2)
+      throw new Error("TN_NATIVE_SHADOWMAP_TYPE_UNSUPPORTED: renderer.shadowMap.type must be PCFShadowMap or PCFSoftShadowMap");
+    this.#type = value;
+  }
+}
+
 export class WebGPURenderer {
   constructor({ canvas }) { this.domElement = canvas; }
   backend = new NativeBackend();
@@ -34,11 +48,13 @@ export class WebGPURenderer {
     reset() {},
   };
   // WebGPURenderer's defaults; the player applies them before each frame it draws.
-  shadowMap = { enabled: false, type: 1 };
+  shadowMap = new ShadowMap();
   toneMapping = 0;
   toneMappingExposure = 1;
   outputColorSpace = "srgb";
   setPixelRatio() {}
+  // WebGPUCapabilities.getMaxAnisotropy: WebGPU samplers clamp maxAnisotropy to 16.
+  getMaxAnisotropy() { return 16; }
   setSize(width, height) {
     this.domElement.width = width;
     this.domElement.height = height;

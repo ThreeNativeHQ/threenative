@@ -140,6 +140,7 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     std::array<double, 4> clear{0, 0, 0, 0};
     if (scene.background) clear = {scene.background->r, scene.background->g, scene.background->b, 1};
     gpu.database.shadowMapEnabled = r.shadowMap;
+    gpu.database.shadowMapType = r.shadowMapType;
     const char* dumpDirectory = std::getenv("TN_TRAA_DUMP");
     const bool dumpTraa = dumpDirectory && *dumpDirectory &&
         std::any_of(r.tsl.begin(), r.tsl.end(), [](const auto& op) { return op.first == "traa-history"; });

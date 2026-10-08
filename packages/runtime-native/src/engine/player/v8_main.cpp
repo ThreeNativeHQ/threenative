@@ -172,6 +172,8 @@ class V8Game {
 
     Object3D* scene() const { return scene_; }
     Camera* camera() const { return camera_; }
+    bool shadowMapEnabled() const { return shadowMap_; }
+    int shadowMapType() const { return shadowMapType_; }
 
   private:
     std::unique_ptr<mystral::js::Engine> services_;
@@ -199,7 +201,8 @@ class V8Game {
     // The last frame the player drew: three's `renderer.info.render` draw calls and triangles.
     uint32_t drawCalls_ = 0;
     uint64_t triangles_ = 0;
-    bool shadowMap_ = false;
+    bool shadowMap_ = false;  // three's WebGPURenderer defaults: shadowMap off, PCFShadowMap
+    int shadowMapType_ = 1;
     bool outputChanged_ = true;
     static void loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -216,6 +219,7 @@ class V8Game {
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
         database.shadowMapEnabled = shadowMap_;
+        database.shadowMapType = shadowMapType_;
     }
   private:
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -362,7 +366,7 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
     v8::String::Utf8Value space(isolate, colorSpace);
     const std::string spaceText(*space, space.length());
     if (spaceText != "srgb" && spaceText != "srgb-linear") return refuse("outputColorSpace " + spaceText);
-    // WebGPU's ShadowNode filters PCFShadowMap and PCFSoftShadowMap alike; the native port is that filter.
+    // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
     if (!enabled->IsBoolean() || !type->IsNumber() || (type.As<v8::Number>()->Value() != 1 && type.As<v8::Number>()->Value() != 2))
         return refuse("shadowMap.enabled must be a boolean and shadowMap.type PCFShadowMap or PCFSoftShadowMap");
     const OutputState output{tone->second, exposure.As<v8::Number>()->Value(), spaceText == "srgb"};
@@ -372,6 +376,7 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
         game.outputChanged_ = true;
     }
     game.shadowMap_ = enabled->IsTrue();
+    game.shadowMapType_ = static_cast<int>(type.As<v8::Number>()->Value());
 }
 
 // three's `adapter` as the facade backend hands it out: `{ info: { architecture, ... }, limits: {} }`,
@@ -798,7 +803,8 @@ int main(int argc, char** argv) {
             json::Value parsed; json::Error error;
             if (!json::parse(response, parsed, error) || parsed.find("error")) return 1;
         }
-        return std::printf("TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed\n"), 0;
+        return std::printf("TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed shadowMap=%s:%d\n",
+                           game.shadowMapEnabled() ? "on" : "off", game.shadowMapType()), 0;
     }
 
     player::Game configured;
