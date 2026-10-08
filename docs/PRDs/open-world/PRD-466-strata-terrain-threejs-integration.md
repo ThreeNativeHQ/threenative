@@ -3904,7 +3904,11 @@ An independent diagnostic pass (in-page A/B on the forest meadow, RTX 2080) rank
 4. **Imported normal maps lost their glTF green flip** (`normalScale` not copied). **Fixed** in
    `e60883bd3`, with DirectX-authored maps (spruce branch, LargePlainsBoulder002,
    Large_VolcanicRock_002, ScotsPine_01_*) kept unflipped per a curl test on the staged maps.
-5. ACES crushes the dark crowns (15.0% below 0.08 vs AgX 8.4% at matched brightness). **Open.**
+5. ACES crushes the dark crowns (15.0% below 0.08 vs AgX 8.4% at matched brightness). **Tried, kept
+   ACES.** In-page A/B at the same exposure: AgX lifted the crowns (near-black 24.3% → 8.3%) but a fresh
+   judge read it as washed teal-grey (3/10 vs ACES 4.5); Neutral at +0.3 EV opened the crowns (18.6%) but
+   blew out the cloud cores, turned the sky cartoon cyan and darkened the meadow (66 vs 77), judged 4 vs
+   4.5 on the meadow. The crown gain has to come from canopy fill light, not the tone curve.
 6. GTAO multiplies direct sun and haze (`sky.ts`); AO off raises meadow 12%, crowns 15%. **Open.**
 7. (Suspected) imported foliage has no transmission, so backlit grass gets 14% of its light from the
    real sun. 8. (Suspected) mid/far terrain detail is replaced by flat colour beyond 32–115 m.
