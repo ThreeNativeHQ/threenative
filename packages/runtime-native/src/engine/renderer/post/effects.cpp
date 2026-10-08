@@ -51,10 +51,34 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
             passes_.push_back({std::move(source)});
             auto& pass = passes_.back();
             const auto& stages = pass.source.package.variants.at(0).stages;
-            pass.pipeline = pipelines_.get(
-                stages[0], &stages[1],
-                PipelineTarget{pass.source.redFormat ? WGPUTextureFormat_R8Unorm : WGPUTextureFormat_RGBA16Float,
-                               WGPUTextureFormat_Undefined, WGPUCullMode_None});
+            std::vector<WGPUBindGroupLayoutEntry> entries;
+            for (const auto& binding : stages[1].bindings) {
+                WGPUBindGroupLayoutEntry entry{};
+                entry.binding = binding.binding;
+                entry.visibility = WGPUShaderStage_Fragment;
+                if (binding.kind == shader::BindingKind::Uniform) {
+                    entry.buffer.type = WGPUBufferBindingType_Uniform;
+                    entry.buffer.minBindingSize = stages[1].uniformBlockSize;
+                } else if (binding.kind == shader::BindingKind::Texture) {
+                    entry.texture.sampleType = binding.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
+                    entry.texture.viewDimension = WGPUTextureViewDimension_2D;
+                } else {
+                    entry.sampler.type = WGPUSamplerBindingType_Filtering;
+                }
+                entries.push_back(entry);
+            }
+            WGPUBindGroupLayoutDescriptor layoutDesc{};
+            layoutDesc.entryCount = entries.size();
+            layoutDesc.entries = entries.data();
+            pass.layout = wgpuDeviceCreateBindGroupLayout(device, &layoutDesc);
+            WGPUPipelineLayoutDescriptor pipelineLayoutDesc{};
+            pipelineLayoutDesc.bindGroupLayoutCount = 1;
+            pipelineLayoutDesc.bindGroupLayouts = &pass.layout;
+            pass.pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDesc);
+            PipelineTarget target{pass.source.redFormat ? WGPUTextureFormat_R8Unorm : WGPUTextureFormat_RGBA16Float,
+                                  WGPUTextureFormat_Undefined, WGPUCullMode_None};
+            target.layout = pass.pipelineLayout;
+            pass.pipeline = pipelines_.get(stages[0], &stages[1], target);
             if (!pass.pipeline)
                 throw std::runtime_error("TN_POST_PIPELINE_REFUSED: " + pass.source.output);
             if (stages[1].uniformBlockSize) {
@@ -83,9 +107,14 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
             }
         }
     } catch (...) {
-        for (auto& pass : passes_)
+        for (auto& pass : passes_) {
             if (pass.uniforms)
                 wgpuBufferRelease(pass.uniforms);
+            if (pass.pipelineLayout)
+                wgpuPipelineLayoutRelease(pass.pipelineLayout);
+            if (pass.layout)
+                wgpuBindGroupLayoutRelease(pass.layout);
+        }
         for (auto& [name, image] : images_) {
             if (image.sampler)
                 wgpuSamplerRelease(image.sampler);
@@ -100,9 +129,12 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
 }
 PostEffects::~PostEffects() {
     clearTargets();
-    for (auto& pass : passes_)
+    for (auto& pass : passes_) {
         if (pass.uniforms)
             wgpuBufferRelease(pass.uniforms);
+        wgpuPipelineLayoutRelease(pass.pipelineLayout);
+        wgpuBindGroupLayoutRelease(pass.layout);
+    }
     for (auto& [name, image] : images_) {
         wgpuSamplerRelease(image.sampler);
         wgpuTextureViewRelease(image.view);
@@ -147,6 +179,12 @@ void PostEffects::input(const std::string& name, WGPUTextureView view) {
         inputs_[name] = view;
     else
         inputs_.erase(name);
+}
+bool PostEffects::reads(const std::string& name) const {
+    for (const auto& pass : passes_)
+        for (const auto& [binding, read] : pass.source.reads)
+            if (read == name) return true;
+    return false;
 }
 WGPUTextureView PostEffects::view(const std::string& name) const {
     if (const auto it = targets_.find(name); it != targets_.end())
@@ -235,13 +273,11 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
             }
             entries.push_back(entry);
         }
-        const auto layout = wgpuRenderPipelineGetBindGroupLayout(pass.pipeline, 0);
         WGPUBindGroupDescriptor groupDesc{};
-        groupDesc.layout = layout;
+        groupDesc.layout = pass.layout;
         groupDesc.entryCount = entries.size();
         groupDesc.entries = entries.data();
         const auto group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
-        wgpuBindGroupLayoutRelease(layout);
         WGPURenderPassColorAttachment color{};
         color.view = target.view;
         color.loadOp = WGPULoadOp_Clear;

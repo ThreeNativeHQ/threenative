@@ -947,9 +947,44 @@ void skinnedCrowdPixels() {
     }
 }
 
+// PRD-526: glTF stores WEIGHTS_0 as normalized unsigned bytes. The shader reads vec4<f32>, so the
+// vertex format must be Unorm8x4: bound as Float32x4 the buffer reads as zeros and the rig vanishes.
+void skinnedNormalizedWeights() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 180);
+    player::SkinnedCrowd crowd;
+    RenderDatabase database;
+    database.batching = false;
+    database.render(renderer, crowd.scene(), crowd.camera());
+    const auto floats = read(renderer, events);
+    auto* walker = static_cast<SkinnedMesh*>(crowd.scene().getObjectByName("walker-0"));
+    const auto weights = walker->geometry->attributes.at("skinWeight");
+    std::vector<double> bytes;
+    for (uint64_t i = 0; i < weights->count() * 4; ++i)
+        bytes.push_back(std::round(weights->getComponent(i / 4, int(i % 4)) * 255));
+    walker->geometry->setAttribute("skinWeight", BufferAttribute::fromDoubles(Scalar::U8, bytes, 4, true));
+    database.render(renderer, crowd.scene(), crowd.camera());
+    const auto normalized = read(renderer, events);
+    CHECK(!floats.empty() && floats.size() == normalized.size());
+    std::size_t covered = 0, differ = 0;
+    for (std::size_t p = 0; p + 3 < floats.size(); p += 4) {
+        int delta = 0;
+        for (int channel = 0; channel < 3; ++channel)
+            delta = std::max(delta, std::abs(int(floats[p + channel]) - int(normalized[p + channel])));
+        differ += delta > 8;
+        covered += floats[p] + floats[p + 1] + floats[p + 2] > 0;
+    }
+    std::printf("normalized skin weights: %zu covered pixels, %zu differ by more than 8 levels\n", covered, differ);
+    // One-in-255 weight rounding moves a few edge pixels; a vanished rig would differ by thousands.
+    CHECK(covered > 1000 && differ <= 40);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights})

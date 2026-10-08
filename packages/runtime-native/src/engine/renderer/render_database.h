@@ -136,6 +136,13 @@ class RenderDatabase {
     std::vector<uint64_t> depthKeys_;
     std::vector<std::string> diagnostics_;
     uint64_t rebuilds_ = 0;
+    struct Converted {
+        std::shared_ptr<BufferStore> store;
+        uint32_t version = 0;
+        const BufferStore* source = nullptr;
+    };
+    std::unordered_map<const BufferAttribute*, Converted> converted_;
+    BufferStore* floatStore(const BufferGeometry& g, const char* name);
     uint64_t frame_ = 0;
     std::size_t previousDrawCount_ = 0;
     std::array<double, 4> prepareMs_{};

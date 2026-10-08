@@ -143,6 +143,30 @@ BufferStore* store(const BufferGeometry& g, const char* name) {
 
 } // namespace
 
+// The renderer binds position, normal, uv and skin weights as float32. glTF stores quantized models
+// with normalized 8/16-bit attributes (GLTFExporter writes int8 normals, WEIGHTS_0 is unsigned byte
+// in most files): they reach the shader as a dequantized float32 copy, kept while the source is unchanged.
+BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* name) {
+    const auto it = g.attributes.find(name);
+    if (it == g.attributes.end() || !it->second) return nullptr;
+    const BufferAttribute& attribute = *it->second;
+    if (attribute.store->scalar() == Scalar::F32) return attribute.store.get();
+    Converted& copy = converted_[&attribute];
+    if (!copy.store || copy.version != attribute.version() || copy.source != attribute.store.get()) {
+        const uint64_t items = attribute.count() * static_cast<uint64_t>(attribute.itemSize);
+        std::vector<float> values;
+        values.reserve(items);
+        for (uint64_t i = 0; i < attribute.count(); ++i)
+            for (int c = 0; c < attribute.itemSize; ++c)
+                values.push_back(static_cast<float>(attribute.getComponent(i, c)));
+        copy.store = std::make_shared<BufferStore>(Scalar::F32, items);
+        copy.store->write(0, values.data(), values.size() * sizeof(float));
+        copy.version = attribute.version();
+        copy.source = attribute.store.get();
+    }
+    return copy.store.get();
+}
+
 RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, bool materialize) {
     return record(mesh, records_[&mesh], materialize);
 }
@@ -170,8 +194,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
                                        u);
             return r;
         }
-        r.buffers = {store(*mesh.geometry, "position"), store(*mesh.geometry, "normal"), store(*mesh.geometry, "uv"),
-                     mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
+        r.buffers = {floatStore(*mesh.geometry, "position"), floatStore(*mesh.geometry, "normal"),
+                     floatStore(*mesh.geometry, "uv"), mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
         r.drawable = r.buffers[0] != nullptr;
     }
     if (!materialize || !r.drawable)
@@ -271,7 +295,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                         DrawItem& d = items.back();
                         d.skinnedRig = static_cast<SkinnedMesh*>(&object);
                         d.skinIndices = store(*mesh.geometry, "skinIndex");
-                        d.skinWeights = store(*mesh.geometry, "skinWeight");
+                        d.skinWeights = floatStore(*mesh.geometry, "skinWeight");
                         if (skinned.skeleton && d.skinIndices && d.skinWeights) {
                             if (skeletonsUpdated_.insert(skinned.skeleton.get()).second)
                                 skinned.skeleton->update();

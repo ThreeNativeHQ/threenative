@@ -143,6 +143,45 @@ WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
     return wgpuTextureCreateView(texture, &desc);
 }
 
+// One mip level from the one above it, as WebGPUTextureUtils.generateMipmaps blits it: every
+// destination texel samples the source bilinearly at its centre. An sRGB format filters in linear
+// light and re-encodes, so the average is taken on decoded values.
+std::vector<uint8_t> nextMipLevel(const std::vector<uint8_t>& src, uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh,
+                                  bool srgb) {
+    auto decode = [srgb](uint8_t byte) {
+        const float v = byte / 255.0f;
+        return srgb ? (v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f)) : v;
+    };
+    auto encode = [srgb](float v) {
+        v = std::clamp(v, 0.0f, 1.0f);
+        if (srgb) v = v <= 0.0031308f ? v * 12.92f : 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f;
+        return static_cast<uint8_t>(std::lround(v * 255.0f));
+    };
+    std::vector<uint8_t> dst(size_t(dw) * dh * 4);
+    for (uint32_t y = 0; y < dh; ++y) {
+        const float fy = (y + 0.5f) * sh / dh - 0.5f;
+        const int y0 = int(std::floor(fy));
+        const float ty = fy - y0;
+        const uint32_t ya = uint32_t(std::clamp(y0, 0, int(sh) - 1)), yb = uint32_t(std::clamp(y0 + 1, 0, int(sh) - 1));
+        for (uint32_t x = 0; x < dw; ++x) {
+            const float fx = (x + 0.5f) * sw / dw - 0.5f;
+            const int x0 = int(std::floor(fx));
+            const float tx = fx - x0;
+            const uint32_t xa = uint32_t(std::clamp(x0, 0, int(sw) - 1)), xb = uint32_t(std::clamp(x0 + 1, 0, int(sw) - 1));
+            for (int c = 0; c < 4; ++c) {
+                auto at = [&](uint32_t px, uint32_t py) { return src[(size_t(py) * sw + px) * 4 + c]; };
+                const bool linear = c == 3 || !srgb;
+                auto value = [&](uint32_t px, uint32_t py) { return linear ? at(px, py) / 255.0f : decode(at(px, py)); };
+                const float top = value(xa, ya) * (1 - tx) + value(xb, ya) * tx;
+                const float bottom = value(xa, yb) * (1 - tx) + value(xb, yb) * tx;
+                const float mixed = top * (1 - ty) + bottom * ty;
+                dst[(size_t(y) * dw + x) * 4 + c] = linear ? static_cast<uint8_t>(std::lround(std::clamp(mixed, 0.0f, 1.0f) * 255.0f)) : encode(mixed);
+            }
+        }
+    }
+    return dst;
+}
+
 // three's wrapping and filter constants (1000/1001/1002, 1000/1001) to WebGPU's.
 WGPUAddressMode addressMode(uint16_t wrap) {
     switch (static_cast<TextureWrap>(wrap)) {
@@ -442,6 +481,8 @@ Renderer::~Renderer() {
     releaseTargets();
     releaseOutputGroup();
     wgpuSamplerRelease(outputSampler_);
+    if (outputPipelineLayout_) wgpuPipelineLayoutRelease(outputPipelineLayout_);
+    if (outputLayout_) wgpuBindGroupLayoutRelease(outputLayout_);
     wgpuSamplerRelease(lutSampler_);
     wgpuSamplerRelease(compareSampler_);
     for (auto& [light, shadow] : virtualShadows_) shadowMaps_.push_back(shadow.map);
@@ -467,8 +508,10 @@ void Renderer::releaseTargets() {
     if (depth_) wgpuTextureRelease(depth_);
     if (sceneView_) wgpuTextureViewRelease(sceneView_);
     if (sceneColor_) wgpuTextureRelease(sceneColor_);
-    colorView_ = depthView_ = sceneView_ = nullptr;
-    depth_ = sceneColor_ = nullptr;
+    if (normalView_) wgpuTextureViewRelease(normalView_);
+    if (normalTexture_) wgpuTextureRelease(normalTexture_);
+    colorView_ = depthView_ = sceneView_ = normalView_ = nullptr;
+    depth_ = sceneColor_ = normalTexture_ = nullptr;
     releaseOutputGroup();  // it binds the scene target
 }
 
@@ -486,6 +529,34 @@ void Renderer::setOutput(const OutputState& output) {
     outputFragment_ = shader::buildStage(programs.fragment, 0);
     if (!outputVertex_.wgsl.ok() || !outputFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: output program");
     releaseOutputGroup();  // its layout belongs to the previous program
+    // An explicit layout: the output program declares the scene binding even when a post graph
+    // never samples it, and an automatic layout would drop it and refuse the bind group.
+    if (outputPipelineLayout_) wgpuPipelineLayoutRelease(outputPipelineLayout_);
+    if (outputLayout_) wgpuBindGroupLayoutRelease(outputLayout_);
+    std::vector<WGPUBindGroupLayoutEntry> layoutEntries;
+    for (const shader::Binding& b : outputFragment_.bindings) {
+        WGPUBindGroupLayoutEntry e = {};
+        e.binding = b.binding;
+        e.visibility = WGPUShaderStage_Fragment;
+        if (b.kind == shader::BindingKind::Uniform) {
+            e.buffer.type = WGPUBufferBindingType_Uniform;
+            e.buffer.minBindingSize = outputFragment_.uniformBlockSize;
+        } else if (b.kind == shader::BindingKind::Texture) {
+            e.texture.sampleType = WGPUTextureSampleType_Float;
+            e.texture.viewDimension = WGPUTextureViewDimension_2D;
+        } else {
+            e.sampler.type = WGPUSamplerBindingType_Filtering;
+        }
+        layoutEntries.push_back(e);
+    }
+    WGPUBindGroupLayoutDescriptor layoutDesc = {};
+    layoutDesc.entryCount = layoutEntries.size();
+    layoutDesc.entries = layoutEntries.data();
+    outputLayout_ = wgpuDeviceCreateBindGroupLayout(device_, &layoutDesc);
+    WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {};
+    pipelineLayoutDesc.bindGroupLayoutCount = 1;
+    pipelineLayoutDesc.bindGroupLayouts = &outputLayout_;
+    outputPipelineLayout_ = wgpuDeviceCreatePipelineLayout(device_, &pipelineLayoutDesc);
     gpu_.destroy(outputUniforms_);
     outputUniforms_ = gpu_.createBuffer(std::max<uint32_t>(16, outputFragment_.uniformBlockSize), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
 }
@@ -610,6 +681,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     if (record.view) wgpuTextureViewRelease(record.view);
     if (record.sampler) wgpuSamplerRelease(record.sampler);
     if (record.gpu.type != 0) gpu_.destroy(record.gpu);
+    if (record.mipped) wgpuTextureRelease(record.mipped);
     record = MaterialTexture{};
     // Match WebGPUTextureUtils: FloatType stays RGBA32Float; sRGB byte textures decode before
     // filtering in the GPU, not after filtering in the material/PMREM shader.
@@ -619,8 +691,13 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
                                     : texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb
                                                        : WGPUTextureFormat_RGBA8Unorm;
     if (texture.hasImage()) {
-        record.gpu = gpu_.createTexture(texture.width, texture.height, format,
-                                        WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
+        // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
+        const bool mipmaps = texture.generateMipmaps && !texture.isFloat();
+        uint32_t levels = 1;
+        for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++levels;
+        if (levels == 1)
+            record.gpu = gpu_.createTexture(texture.width, texture.height, format,
+                                            WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
         const uint64_t expected = uint64_t(texture.width) * texture.height * (texture.isFloat() ? 16u : 4u);
         if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
         std::vector<uint8_t> flipped;
@@ -632,8 +709,42 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
                 std::memcpy(flipped.data() + size_t(y) * row, texture.data.data() + size_t(texture.height - 1 - y) * row, row);
             pixels = flipped.data();
         }
-        if (record.gpu.type != 0 && gpu_.writeTexture(record.gpu, pixels, texture.data.size()) == GpuStatus::Ok)
-            record.view = view2d(gpu_.texture(record.gpu), format);
+        if (levels == 1) {
+            if (record.gpu.type != 0 && gpu_.writeTexture(record.gpu, pixels, texture.data.size()) == GpuStatus::Ok)
+                record.view = view2d(gpu_.texture(record.gpu), format);
+        } else {
+            WGPUTextureDescriptor desc = {};
+            desc.dimension = WGPUTextureDimension_2D;
+            desc.size = {texture.width, texture.height, 1};
+            desc.format = format;
+            desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+            desc.mipLevelCount = levels;
+            desc.sampleCount = 1;
+            record.mipped = wgpuDeviceCreateTexture(device_, &desc);
+            std::vector<uint8_t> level(pixels, pixels + texture.data.size());
+            uint32_t width = texture.width, height = texture.height;
+            for (uint32_t i = 0; i < levels; ++i) {
+                WGPUImageCopyTexture_Compat destination = {};
+                destination.texture = record.mipped;
+                destination.mipLevel = i;
+                destination.aspect = WGPUTextureAspect_All;
+                WGPUTextureDataLayout_Compat layout = {};
+                layout.bytesPerRow = width * 4;
+                layout.rowsPerImage = height;
+                const WGPUExtent3D extent = {width, height, 1};
+                wgpuQueueWriteTexture(queue_, &destination, level.data(), level.size(), &layout, &extent);
+                const uint32_t nextWidth = std::max(1u, width / 2), nextHeight = std::max(1u, height / 2);
+                if (i + 1 < levels) level = nextMipLevel(level, width, height, nextWidth, nextHeight, texture.isSRGB());
+                width = nextWidth;
+                height = nextHeight;
+            }
+            WGPUTextureViewDescriptor view = {};
+            view.dimension = WGPUTextureViewDimension_2D;
+            view.mipLevelCount = levels;
+            view.arrayLayerCount = 1;
+            view.format = format;
+            record.view = wgpuTextureCreateView(record.mipped, &view);
+        }
     }
     WGPUSamplerDescriptor sampler = {};
     sampler.addressModeU = addressMode(texture.wrapS);
@@ -641,6 +752,11 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     sampler.addressModeW = WGPUAddressMode_ClampToEdge;
     sampler.magFilter = filterMode(texture.magFilter);
     sampler.minFilter = filterMode(texture.minFilter);
+    // NearestMipmapLinear and LinearMipmapLinear blend between two levels, the other filters take one.
+    sampler.mipmapFilter = texture.minFilter == static_cast<uint16_t>(TextureFilter::NearestMipmapLinear) ||
+                                   texture.minFilter == static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
+                               ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
+    sampler.lodMaxClamp = 32;  // a zeroed C descriptor clamps the level of detail to 0, which hides the chain
     sampler.maxAnisotropy = 1;
     record.sampler = wgpuDeviceCreateSampler(device_, &sampler);
     record.version = texture.version();
@@ -731,6 +847,7 @@ void Renderer::releaseMaterialTextures() {
         if (record.view) wgpuTextureViewRelease(record.view);
         if (record.sampler) wgpuSamplerRelease(record.sampler);
         if (record.gpu.type != 0) gpu_.destroy(record.gpu);
+        if (record.mipped) wgpuTextureRelease(record.mipped);
     }
     materialTextures_.clear();
     for (auto& [key, group] : mapGroups_)
@@ -1668,6 +1785,48 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                .first->second;
     }
 
+    // A post pass that reads "normal" (GTAO, denoise) gets three's MRT normal output as a second
+    // pass over the same draws: each draw's own vertex stage (skinning, morphs, instancing, position
+    // nodes included, so the depth matches the main pass exactly) with a fragment that writes the
+    // interpolated view-space normal, depth-tested Equal against the main pass's depth.
+    std::vector<Planned> normalPlan;
+    const bool normalPass = postEffects_ && postEffects_->reads("normal");
+    if (normalPass) {
+        if (normalFragment_.wgsl.code.empty()) {
+            shader::Program fragment{shader::Stage::Fragment};
+            fragment.output("color", fragment.construct(shader::Type::vec(4),
+                {fragment.call("normalize", {fragment.varying("normalView", shader::Type::vec(3))}), fragment.constant(0.f)}));
+            normalFragment_ = shader::buildStage(fragment, 1);
+            if (!normalFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: post normal program");
+        }
+        for (const Planned& draw : plan) {
+            const DrawItem& item = *draw.item;
+            // The sky and unlit materials write no view-space normal (their programs have no normalView).
+            if (item.background || item.kind == MaterialKind::Basic) continue;
+            if (item.transparent || item.sprite || item.material->alphaTest > 0 || item.nodes.normalNode)
+                throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: transparent/sprite/alpha-tested/normalNode draw");
+            PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
+                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
+            target.layout = draw.program->pipelineLayout; target.depthWrite = false;
+            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            target.skinIndex = skinIndexFormat(item);
+            const auto pipeline = pipelines_.get(draw.program->vertex, &normalFragment_, target);
+            if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
+            Planned normal = draw;
+            normal.pipeline = pipeline;
+            normalPlan.push_back(normal);
+        }
+        if (!normalTexture_) {
+            WGPUTextureDescriptor desc = {};
+            desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+            desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
+            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+            normalTexture_ = wgpuDeviceCreateTexture(device_, &desc);
+            normalView_ = view2d(normalTexture_, WGPUTextureFormat_RGBA16Float);
+        }
+        postEffects_->input("normal", normalView_);
+    }
+
     // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
     // shadow passes first, so the main pass samples this frame's maps.
     WGPURenderPipeline bound = nullptr;
@@ -1830,6 +1989,22 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     wgpuRenderPassEncoderExecuteBundles(pass, 1, &mainBundle_);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
+    if (normalPass) {
+        WGPURenderPassColorAttachment normals{};
+        normals.view = normalView_; normals.loadOp = WGPULoadOp_Clear; normals.storeOp = WGPUStoreOp_Store;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        normals.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+        WGPURenderPassDepthStencilAttachment normalDepth{};
+        normalDepth.view = depthView_; normalDepth.depthReadOnly = true;
+        WGPURenderPassDescriptor normalDesc{};
+        normalDesc.colorAttachmentCount = 1; normalDesc.colorAttachments = &normals;
+        normalDesc.depthStencilAttachment = &normalDepth;
+        auto normalEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &normalDesc);
+        bound = nullptr; boundIndex = nullptr;
+        for (const Planned& p : normalPlan) encode(normalEncoder, p, false);
+        wgpuRenderPassEncoderEnd(normalEncoder); wgpuRenderPassEncoderRelease(normalEncoder);
+    }
     if (traa_) {
         WGPURenderPassColorAttachment motion{};
         motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Clear; motion.storeOp = WGPUStoreOp_Store;
@@ -1872,8 +2047,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
 }
 
 void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
-    WGPURenderPipeline pipeline = pipelines_.get(
-        outputVertex_, &outputFragment_, PipelineTarget{WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None});
+    PipelineTarget outputTarget{WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None};
+    outputTarget.layout = outputPipelineLayout_;
+    WGPURenderPipeline pipeline = pipelines_.get(outputVertex_, &outputFragment_, outputTarget);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
     for (const auto& field : outputFragment_.uniforms) {
@@ -1887,9 +2063,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
     put(block, outputFragment_, "toneMappingExposure", std::array<double, 1>{output_.toneMappingExposure});
     if (outputFragment_.uniformBlockSize) gpu_.writeBuffer(outputUniforms_, 0, block.data(), outputFragment_.uniformBlockSize);
     if (!outputGroup_) {
-        WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
-        outputGroup_ = bindGroup(layout, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_);
-        wgpuBindGroupLayoutRelease(layout);
+        outputGroup_ = bindGroup(outputLayout_, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_);
     }
     WGPURenderPassColorAttachment color = {};
     color.view = colorView_;

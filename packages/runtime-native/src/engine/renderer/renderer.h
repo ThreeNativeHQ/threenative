@@ -283,6 +283,7 @@ private:
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         Handle gpu;
+        WGPUTexture mipped = nullptr;  // the texture when it carries a mip chain (gpu is then unused)
         WGPUTextureView view = nullptr;
         WGPUSampler sampler = nullptr;
         uint32_t version = 0;
@@ -362,6 +363,11 @@ private:
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureView sceneView_ = nullptr;
+    // View-space normals for post passes that read "normal" (three's MRT `normal: normalView`),
+    // drawn after the main pass; created with the first such frame, released with the targets.
+    WGPUTexture normalTexture_ = nullptr;
+    WGPUTextureView normalView_ = nullptr;
+    shader::StageModule normalFragment_;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
     std::unique_ptr<TraaPass> traa_;
@@ -374,6 +380,8 @@ private:
     Handle outputUniforms_;
     WGPUSampler outputSampler_ = nullptr;
     WGPUBindGroup outputGroup_ = nullptr;
+    WGPUBindGroupLayout outputLayout_ = nullptr;
+    WGPUPipelineLayout outputPipelineLayout_ = nullptr;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     uint64_t renderId_ = 0;
