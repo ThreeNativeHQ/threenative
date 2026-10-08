@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // PRD-531's VM artifact, explicitly selected. Strict Perry packaging never calls this path.
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readFile, mkdir, writeFile, rename, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -199,18 +200,45 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
   return { outfile, bytes: Buffer.byteLength(output), profile: { engine: "native", gameRuntime: "v8" } };
 }
 
+/**
+ * Cooks a project's assets for the native engine beside the game bundle: its own `assets` config,
+ * decoder-free (the engine's loaders decode no meshopt or KTX2), with the native package on, which
+ * the player reads from `<bundle dir>/native/assets.tnpk`.
+ */
+export async function cookNativeEngineAssets({ project, outfile }) {
+  project = resolve(project);
+  const config = resolve(project, "threenative.config.ts");
+  let assets = {};
+  if (existsSync(config)) {
+    const built = await build({ entryPoints: [config], bundle: true, write: false, format: "esm",
+      platform: "node", logLevel: "silent", packages: "external" });
+    const module = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString("base64")}`);
+    assets = module.default?.assets ?? {};
+  }
+  const { compileAssets } = await import(resolve(repo, "packages/assets/dist/index.js"));
+  await compileAssets({ cwd: project, config: { ...assets, nativePackage: true }, platform: "desktop",
+    runtimeDecoders: { ktx2: false, meshopt: false } });
+  const output = resolve(project, assets.output ?? "public", "native/assets.tnpk");
+  const target = resolve(dirname(resolve(outfile)), "native/assets.tnpk");
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, await readFile(output));
+  return target;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const flags = new Map();
   for (let i = 0; i < args.length; i += 2) {
-    if (!["--entry", "--out", "--engine", "--game-runtime"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
+    if (!["--entry", "--out", "--engine", "--game-runtime", "--assets"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
       throw new Error(`TN_NATIVE_ENGINE_ARGS: invalid or repeated option ${args[i]}`);
     flags.set(args[i], args[i + 1]);
   }
   if (flags.get("--engine") !== "native" || flags.get("--game-runtime") !== "v8" || !flags.get("--entry") || !flags.get("--out"))
-    throw new Error("Usage: bundle-native-engine.mjs --engine native --game-runtime v8 --entry <src/game.ts> --out <game.js>");
+    throw new Error("Usage: bundle-native-engine.mjs --engine native --game-runtime v8 --entry <src/game.ts> --out <game.js> [--assets <project dir>]");
   try {
     console.log(JSON.stringify(await bundleNativeEngine({ entry: flags.get("--entry"), outfile: flags.get("--out") })));
+    if (flags.has("--assets"))
+      console.log(JSON.stringify({ assets: await cookNativeEngineAssets({ project: flags.get("--assets"), outfile: flags.get("--out") }) }));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
