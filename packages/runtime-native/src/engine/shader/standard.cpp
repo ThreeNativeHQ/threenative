@@ -6,6 +6,7 @@
 // BRDF_BlinnPhong) as materials/nodes/Mesh{Lambert,Phong}NodeMaterial.js wire them.
 
 #include "standard.h"
+#include "cube_uv.h"
 #include <stdexcept>
 #include <algorithm>
 #include "engine/shader/tsl/tsl.h"
@@ -192,7 +193,7 @@ ExprId roughnessToMip(Program& p, ExprId roughness) {
 }
 
 // bilinearCubeUV(envMap, direction, mipInt)
-ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt) {
+ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt, const std::string& prefix) {
     auto f = [&](float v) { return p.constant(v); };
     auto v2 = [&](ExprId x, ExprId y) { return p.construct(Type::vec(2), {x, y}); };
     const VarId face = p.var(Type::f32(), cubeFace(p, direction));
@@ -207,21 +208,21 @@ ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt)
     ExprId x = p.add(p.swizzle(p.load(uv), "x"), p.mul(p.load(face), faceSize));
     x = p.add(x, p.mul(filterInt, f(48)));  // 3 * minTileSize(16)
     ExprId y = p.add(p.swizzle(p.load(uv), "y"),
-                     p.mul(f(4), p.sub(p.call("exp2", {p.uniform("envMapMaxMip", Type::f32())}), faceSize)));
-    x = p.mul(x, p.uniform("envMapTexelWidth", Type::f32()));
-    y = p.mul(y, p.uniform("envMapTexelHeight", Type::f32()));
+                     p.mul(f(4), p.sub(p.call("exp2", {p.uniform(prefix + "MaxMip", Type::f32())}), faceSize)));
+    x = p.mul(x, p.uniform(prefix + "TexelWidth", Type::f32()));
+    y = p.mul(y, p.uniform(prefix + "TexelHeight", Type::f32()));
     return p.swizzle(p.sampleLevel(env, v2(x, y), f(0)), "xyz");
 }
 
 // textureCubeUV(envMap, sampleDir, roughness)
-ExprId textureCubeUV(Program& p, uint32_t env, ExprId direction, ExprId roughness) {
+ExprId textureCubeUV(Program& p, uint32_t env, ExprId direction, ExprId roughness, const std::string& prefix = "envMap") {
     auto f = [&](float v) { return p.constant(v); };
-    const ExprId mip = p.call("clamp", {roughnessToMip(p, roughness), f(-2.0f), p.uniform("envMapMaxMip", Type::f32())});
+    const ExprId mip = p.call("clamp", {roughnessToMip(p, roughness), f(-2.0f), p.uniform(prefix + "MaxMip", Type::f32())});
     const ExprId mipF = p.call("fract", {mip});
     const ExprId mipInt = p.call("floor", {mip});
-    const VarId color = p.var(Type::vec(3), bilinearCubeUV(p, env, direction, mipInt));
+    const VarId color = p.var(Type::vec(3), bilinearCubeUV(p, env, direction, mipInt, prefix));
     p.If(p.equal(mipF, f(0)), [] {}, [&] {
-        const ExprId next = bilinearCubeUV(p, env, direction, p.add(mipInt, f(1)));
+        const ExprId next = bilinearCubeUV(p, env, direction, p.add(mipInt, f(1)), prefix);
         p.assign(color, p.call("mix", {p.load(color), next, mipF}));
     });
     return p.load(color);
@@ -250,6 +251,10 @@ ExprId transformDirection(Program& p, ExprId m, ExprId v) {
 }
 
 }  // namespace
+
+ExprId pmremSample(Program& p, uint32_t texture, ExprId direction, ExprId roughness, std::string_view prefix) {
+    return textureCubeUV(p, texture, direction, roughness, std::string(prefix));
+}
 
 std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
     std::vector<std::string> out;

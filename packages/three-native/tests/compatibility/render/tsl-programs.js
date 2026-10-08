@@ -27,6 +27,7 @@ import {
   normalWorld,
   normalize,
   pass,
+  pmremTexture,
   positionLocal,
   positionWorld,
   screenUV,
@@ -414,26 +415,31 @@ async function temporalFixture({ renderer, scene, camera, traaDump }, firstCutFr
   return { render: draw };
 }
 
+/** Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity. */
+function equirectSky() {
+  const width = 128;
+  const height = 64;
+  const pixels = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; ++y)
+    for (let x = 0; x < width; ++x) {
+      const at = (y * width + x) * 4;
+      pixels[at] = 20 + ((x * 160) % 220);
+      pixels[at + 1] = 30 + Math.floor((y * 180) / height);
+      pixels[at + 2] = 220 - Math.floor((x * 150) / width);
+      pixels[at + 3] = 255;
+    }
+  const sky = new DataTexture(pixels, width, height);
+  sky.mapping = EquirectangularReflectionMapping;
+  sky.colorSpace = SRGBColorSpace;
+  sky.magFilter = LinearFilter;
+  sky.minFilter = LinearMipmapLinearFilter;
+  sky.needsUpdate = true;
+  return sky;
+}
+
 export const programs = {
   "sky-equirect"({ target }) {
-    // Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity.
-    const width = 128;
-    const height = 64;
-    const pixels = new Uint8Array(width * height * 4);
-    for (let y = 0; y < height; ++y)
-      for (let x = 0; x < width; ++x) {
-        const at = (y * width + x) * 4;
-        pixels[at] = 20 + ((x * 160) % 220);
-        pixels[at + 1] = 30 + Math.floor((y * 180) / height);
-        pixels[at + 2] = 220 - Math.floor((x * 150) / width);
-        pixels[at + 3] = 255;
-      }
-    const sky = new DataTexture(pixels, width, height);
-    sky.mapping = EquirectangularReflectionMapping;
-    sky.colorSpace = SRGBColorSpace;
-    sky.magFilter = LinearFilter;
-    sky.minFilter = LinearMipmapLinearFilter;
-    sky.needsUpdate = true;
+    const sky = equirectSky();
     target.background = target.environment = sky;
     target.backgroundIntensity = target.environmentIntensity = 2.5;
     target.backgroundRotation.set(0.1, 0.4, 0);
@@ -546,6 +552,12 @@ export const programs = {
       perlin3,
       perlin2.add(cells.x.mul(0.3)),
       cells.y.add(cells3.x).mul(0.4),
+      1,
+    );
+  },
+  async "pmrem-texture"({ target }) {
+    target.colorNode = vec4(
+      pmremTexture(equirectSky(), normalize(positionWorld), uv().x.mul(0.9)),
       1,
     );
   },

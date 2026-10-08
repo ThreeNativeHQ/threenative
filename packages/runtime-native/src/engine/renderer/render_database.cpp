@@ -5,6 +5,9 @@
 #include "engine/renderer/projection/plan.h"
 
 #include <algorithm>
+#include <stdexcept>
+#include <unordered_set>
+#include <functional>
 #include <cmath>
 #include <chrono>
 #include <limits>
@@ -15,6 +18,26 @@
 namespace tn::engine {
 
 namespace {
+
+// The texture a material's node graphs prefilter through pmremTexture, or null. One per material:
+// a second, different source is refused rather than silently sharing the first one's PMREM.
+const Texture* findPmremSource(const Material& material) {
+    const Texture* found = nullptr;
+    std::unordered_set<const shader::graph::NodeData*> seen;
+    const std::function<void(const shader::graph::Node&)> visit = [&](const shader::graph::Node& node) {
+        if (!node || !seen.insert(node.get()).second) return;
+        if (node->kind == shader::graph::Kind::Pmrem) {
+            const auto* texture = static_cast<const Texture*>(node->object.get());
+            if (found && found != texture)
+                throw std::runtime_error("TN_NATIVE_PMREM_UNSUPPORTED: one material samples two pmremTexture sources");
+            found = texture;
+        }
+        for (const auto* list : {&node->args, &node->body, &node->otherwise})
+            for (const auto& child : *list) visit(child);
+    };
+    for (const auto& graph : material.nodes.graphs()) visit(graph);
+    return found;
+}
 
 Matrix toArray(const Matrix4& m) {
     Matrix out{};
@@ -286,6 +309,18 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     return d;
+}
+
+const Texture* RenderDatabase::pmremSource(const Material& material) {
+    std::array<const void*, 7> roots{};
+    const auto graphs = material.nodes.pointers();
+    std::copy(graphs.begin(), graphs.end(), roots.begin());
+    if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; })) return nullptr;
+    PmremSource& cached = pmremSources_[&material];
+    if (cached.roots != roots || cached.version != material.version()) {
+        cached = PmremSource{material.version(), roots, findPmremSource(material)};
+    }
+    return cached.texture;
 }
 
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
@@ -901,6 +936,15 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     for (DrawItem& item : items) {
         const Material& source = *static_cast<const Material*>(item.materialKey);
         item.fog = world && source.fog ? world->fog.get() : nullptr;
+        // three's materialEnvRotation: the scene's environmentRotation when the scene has an
+        // environment and the material no envMap, else the material's envMapRotation (identity here).
+        item.pmremMap = pmremSource(source);
+        if (item.pmremMap) {
+            Matrix4 rotation;
+            if (world && world->environment && source.maps.find("envMap") == source.maps.end())
+                rotation.makeRotationFromEuler(world->environmentRotation).transpose();
+            item.pmremRotation = toArray(rotation);
+        }
         if (item.kind != MaterialKind::Standard && item.kind != MaterialKind::Physical) continue;
         const Material& material = *static_cast<const Material*>(item.materialKey);
         const auto found = material.maps.find("envMap");

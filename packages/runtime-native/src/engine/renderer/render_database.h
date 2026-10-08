@@ -66,6 +66,16 @@ class RenderDatabase {
     [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }
 
   private:
+    // A material's pmremTexture source, walked once per material version: the graph roots are kept
+    // so a new material at a freed one's address never reads the old answer.
+    // ponytail: entries for released materials stay until the database goes; prune if materials churn.
+    struct PmremSource {
+        uint32_t version = 0;
+        std::array<const void*, 7> roots{};
+        const Texture* texture = nullptr;
+    };
+    std::unordered_map<const Material*, PmremSource> pmremSources_;
+    const Texture* pmremSource(const Material& material);
     std::shared_ptr<BufferGeometry> backgroundGeometry_;
     shader::StandardMaterial backgroundParams_;
     using GeometryKey = std::array<BufferStore*, 4>;

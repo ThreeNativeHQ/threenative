@@ -5,6 +5,6 @@ export const {
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
   normalViewGeometry, instanceIndex, cameraViewMatrix, color, ivec2, nodeObject, reflect, textureLoad,
-  mx_noise_float, mx_worley_noise_vec2,
+  mx_noise_float, mx_worley_noise_vec2, pmremTexture,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
 } = globalThis.tsl;

@@ -1,10 +1,12 @@
 #pragma once
 
 #include "engine/abi/tsl_call.h"
+#include "threenative/abi/tn_abi.h"
 #include "engine/shader/graph/graph.h"
 
 #include <v8.h>
 
+#include <functional>
 #include <memory>
 #include <set>
 #include <string>
@@ -20,6 +22,8 @@ class Tsl {
     void install(v8::Local<v8::Context> context, v8::Local<v8::Object> target);
     bool unwrap(v8::Local<v8::Value> value, engine::shader::graph::Node& node) const;
     v8::Local<v8::Object> wrap(engine::shader::graph::Node node);
+    /** The engine object a JS value wraps, as the adapter unwraps it; set by the adapter. */
+    std::function<bool(v8::Local<v8::Value>, tn_handle_t&)> engineObject;
 
   private:
     struct Wrapper;

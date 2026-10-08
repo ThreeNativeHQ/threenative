@@ -88,6 +88,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         node->type = node->args[0]->type;
         return node;
     }
+    // pmremTexture(texture, direction, level): three's PMREMNode over an equirectangular texture.
+    // Outside an environment there is no context to supply the direction or the level, so both are
+    // required (three reads builder.context.getUV / getTextureLevel, which a material lacks).
+    if (!method && name == "pmremTexture") {
+        arity(3);
+        if (args[0].kind != TslArg::Kind::Object || (args[0].cls != "Texture" && args[0].cls != "DataTexture") || !args[0].object)
+            throw std::runtime_error("pmremTexture needs an engine Texture");
+        return g::pmremTexture(args[0].object, arg(1), arg(2));
+    }
     // MaterialX noise (three's MaterialXNodes.js over mx_noise.js; the WGSL is materialx_noise.h).
     // mx_noise_float(texcoord = uv(), amplitude = 1, pivot = 0) is perlin * amplitude + pivot, and
     // mx_worley_noise_vec2(texcoord = uv(), jitter = 1) uses metric 1, as three's wrapper does.

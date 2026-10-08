@@ -373,6 +373,7 @@ Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : tsl_(std::make_u
     v8::Local<v8::ObjectTemplate> instance = v8::ObjectTemplate::New(isolate_);
     instance->SetInternalFieldCount(kWrapperFields);
     instanceTemplate_.Reset(isolate_, instance);
+    tsl_->engineObject = [this](v8::Local<v8::Value> value, tn_handle_t& handle) { return unwrap(value, handle); };
 }
 
 Adapter::~Adapter() {

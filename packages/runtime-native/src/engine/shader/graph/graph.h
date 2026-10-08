@@ -31,6 +31,7 @@ enum class Kind : uint8_t {
     Unary, Binary, Math, Swizzle, Join, Convert, Select, Texture,
     StorageElement, VarRead, LoopIndex,
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
+    Pmrem,
 };
 
 enum class UnOp : uint8_t { Negate };
@@ -39,6 +40,7 @@ enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal };
 struct NodeData {
     Kind kind = Kind::Constant;
     std::shared_ptr<const PostEffect> post;
+    std::shared_ptr<const void> object; // Pmrem: the source texture (an engine Texture) the renderer prefilters
     Type type;
     std::string name;
     std::string lanes;
@@ -84,6 +86,12 @@ Node equal(Node a, Node b);
 Node select(Node condition, Node whenTrue, Node whenFalse);
 Node swizzle(Node value, std::string_view lanes);
 Node texture(std::string_view map, Node uvs);
+/**
+ * TSL's `pmremTexture(texture, direction, level)`: the texture's PMREM (prefiltered radiance, cubeUV
+ * layout) sampled along `direction` at roughness `level`. `texture` is the engine Texture the
+ * renderer prefilters; the program samples it as "pmrem".
+ */
+Node pmremTexture(std::shared_ptr<const void> texture, Node direction, Node level);
 
 #define TN_GRAPH_UNARY(name) Node name(Node a);
 #define TN_GRAPH_BINARY(name) Node name(Node a, Node b);

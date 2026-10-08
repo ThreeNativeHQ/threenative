@@ -125,7 +125,8 @@ constexpr const char* kSlotNames[] = {
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
-    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform"};
+    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform",
+    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -635,7 +636,8 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
 WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                                   WGPUTextureView view, WGPUSampler sampler, WGPUTextureView mapView,
                                   WGPUSampler mapSampler, WGPUTextureView envView, WGPUSampler envSampler,
-                                  WGPUTextureView normalView, WGPUSampler normalSampler) {
+                                  WGPUTextureView normalView, WGPUSampler normalSampler,
+                                  WGPUTextureView pmremView, WGPUSampler pmremSampler) {
     std::vector<WGPUBindGroupEntry> entries;
     for (const shader::Binding& b : stage.bindings) {
         WGPUBindGroupEntry e = {};
@@ -666,10 +668,12 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             else e.sampler = compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
             const auto postView = postEffects_ ? postEffects_->view(b.name.substr(2)) : nullptr;
-            e.textureView = postView ? postView : b.name == "t_map" ? mapView : b.name == "t_normalMap" ? normalView : b.name == "t_env" ? envView : view;
+            e.textureView = postView ? postView : b.name == "t_map" ? mapView : b.name == "t_normalMap" ? normalView : b.name == "t_env" ? envView
+                            : b.name == "t_pmrem" ? pmremView : view;
         } else if (b.kind == shader::BindingKind::Sampler) {
             const bool postView = postEffects_ && postEffects_->view(b.name.substr(4));
-            e.sampler = postView ? postEffects_->sampler(b.name.substr(4)) : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler : sampler;
+            e.sampler = postView ? postEffects_->sampler(b.name.substr(4)) : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler
+                        : b.name == "smp_pmrem" ? pmremSampler : sampler;
         } else {
             throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
         }
@@ -1701,6 +1705,13 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             put(frameUniforms_, f, fs[kEnvMapTexelHeight], std::array<double, 1>{env.texelHeight});
             put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{env.maxMip});
         }
+        if (item.pmremMap) {
+            const EnvironmentGpu& pmrem = environment(*item.pmremMap);
+            put(frameUniforms_, f, fs[kPmremRotation], item.pmremRotation);
+            put(frameUniforms_, f, fs[kPmremTexelWidth], std::array<double, 1>{pmrem.texelWidth});
+            put(frameUniforms_, f, fs[kPmremTexelHeight], std::array<double, 1>{pmrem.texelHeight});
+            put(frameUniforms_, f, fs[kPmremMaxMip], std::array<double, 1>{pmrem.maxMip});
+        }
         for (std::size_t i = 0; i < lights.direct.size() && i < program.lightSlots.size(); ++i) {
             const DirectLight& l = lights.direct[i];
             const auto& slot = program.lightSlots[i];
@@ -1850,11 +1861,12 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
-        if (!p.item->map && !p.item->envMap && !p.item->normalMap) continue;
+        if (!p.item->map && !p.item->envMap && !p.item->normalMap && !p.item->pmremMap) continue;
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
         const MaterialTexture* map = p.item->map && !p.item->background ? materialTexture(*p.item->map) : nullptr;
         const BackgroundCube* cube = p.item->background ? &backgroundCube(*p.item->map) : nullptr;
         const EnvironmentGpu* env = p.item->envMap ? &environment(*p.item->envMap) : nullptr;
+        const EnvironmentGpu* pmrem = p.item->pmremMap ? &environment(*p.item->pmremMap) : nullptr;
         const WGPUTextureView mapView = cube ? cube->view : map ? map->view : nullptr, envView = env ? env->view : nullptr;
         const WGPUSampler mapSampler = cube ? cube->sampler : map ? map->sampler : nullptr, envSampler = env ? env->sampler : nullptr;
         const std::string key = std::to_string(reinterpret_cast<uintptr_t>(p.program)) + "|" +
@@ -1862,13 +1874,15 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                 std::to_string(reinterpret_cast<uintptr_t>(mapSampler)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(envView)) + "|" +
                                 std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->view : nullptr)) + "|" +
-                                std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->sampler : nullptr));
+                                std::to_string(reinterpret_cast<uintptr_t>(normal ? normal->sampler : nullptr)) + "|" +
+                                std::to_string(reinterpret_cast<uintptr_t>(pmrem ? pmrem->view : nullptr));
         const auto found = mapGroups_.find(key);
         p.mapGroup = found != mapGroups_.end()
                          ? found->second
                          : mapGroups_.emplace(key, bindGroup(p.program->layouts[1], p.program->fragment, uniformBuffer_,
                                                              lutView_, lutSampler_, mapView, mapSampler, envView, envSampler,
-                                                         normal ? normal->view : nullptr, normal ? normal->sampler : nullptr))
+                                                         normal ? normal->view : nullptr, normal ? normal->sampler : nullptr,
+                                                         pmrem ? pmrem->view : nullptr, pmrem ? pmrem->sampler : nullptr))
                                .first->second;
     }
 
