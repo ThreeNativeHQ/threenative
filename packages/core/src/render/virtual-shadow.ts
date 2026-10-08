@@ -48,6 +48,7 @@ import {
 } from "three/webgpu";
 import { lodChainOf } from "../model-lod.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
+import { type ITextureManager, settleShadowTarget } from "./shadow-target-settle.js";
 import {
   DirectionalClipmap,
   type IBoundsLike,
@@ -80,7 +81,13 @@ export interface IVirtualShadowOptions {
    * increasing. Default `[16, 48, 144]`: three windows, each three times wider than the last.
    */
   readonly clipExtents?: readonly number[];
-  /** Texels per level edge. Default: the light's `shadow.mapSize.width`. */
+  /**
+   * Texels per level edge. Default: the light's `shadow.mapSize.width`. Fixed for the node's life:
+   * `#init` is the only writer of a level's `shadow.mapSize`, the node's `options` are read-only, and
+   * a later `shadow.mapSize` on the source light is not synced (see `syncShadowSettings`). That is
+   * what keeps each level's depth texture from being re-created under a cached bind group; see
+   * `settleShadowTarget`.
+   */
   readonly mapSize?: number;
   /**
    * Texels per edge of each level's mover map — the map tracked casters draw into every frame.
@@ -2143,9 +2150,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * created once, at the settled size, and the bind groups that follow are built against it.
    */
   #settleTargets(renderer: unknown): void {
-    const manager = renderer as
-      | { _textures?: { updateRenderTarget?: (target: RenderTarget) => void } }
-      | undefined;
+    const manager = renderer as { _textures?: ITextureManager } | undefined;
     const textures = manager?._textures;
     // A renderer that does not expose the manager (a test double, the native host) settles itself.
     if (typeof textures?.updateRenderTarget !== "function") return;
@@ -2154,7 +2159,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       ...this.#levels.map((level) => level.moverNode),
     ]) {
       const target = (node as { shadowMap?: RenderTarget | null }).shadowMap;
-      if (target) textures.updateRenderTarget(target);
+      if (target) settleShadowTarget(textures, target);
     }
   }
 

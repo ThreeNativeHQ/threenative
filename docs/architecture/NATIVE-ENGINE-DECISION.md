@@ -32,7 +32,7 @@ flowchart LR
 ```
 
 **Out of scope of this record:** the reference outputs and baselines
-([PRD-498](../PRDs/native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md)) and the
+([PRD-498](../PRDs/done/native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md)) and the
 API catalog that turns the inventory into bindings
 ([PRD-500](../PRDs/done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)).
 

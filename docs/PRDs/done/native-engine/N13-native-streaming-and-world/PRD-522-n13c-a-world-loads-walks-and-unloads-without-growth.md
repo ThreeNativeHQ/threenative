@@ -8,7 +8,7 @@
 
 ## Context
 
-§16 sets N13's acceptance as a world-load/walk/unload fixture with budgets and failure/recovery behaviour. §15.4 requires no sustained memory growth across repeated bounded load/unload cycles, with CPU and GPU allocation accounting published. §15.3 names streaming Machinefall content as a representative workload. Its current baseline (`?scene=map-walk`) is recorded in `docs/verification/runtime-perf-state.md`, measured in a browser under Xvfb, so it must be reproduced on the native host before it counts as a native baseline (§3 R4). Machinefall is a game outside this repository. The fixture runs through the N01 runner ([PRD-498](../../../native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md)).
+§16 sets N13's acceptance as a world-load/walk/unload fixture with budgets and failure/recovery behaviour. §15.4 requires no sustained memory growth across repeated bounded load/unload cycles, with CPU and GPU allocation accounting published. §15.3 names streaming Machinefall content as a representative workload. Its current baseline (`?scene=map-walk`) is recorded in `docs/verification/runtime-perf-state.md`, measured in a browser under Xvfb, so it must be reproduced on the native host before it counts as a native baseline (§3 R4). Machinefall is a game outside this repository. The fixture runs through the N01 runner ([PRD-498](../PRD-498-n01-baseline-and-differential-fixture-runner.md)).
 
 ## Solution
 

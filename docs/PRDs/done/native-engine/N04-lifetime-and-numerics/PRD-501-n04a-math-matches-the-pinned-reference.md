@@ -4,7 +4,7 @@
 **Complexity:** 3 — scalar math classes ported against a fixed oracle; wide but shallow
 **Owner:** João
 **Work package:** N04 — [lifetime and numerics](README.md), [native-engine batch](../../../native-engine/README.md)
-**Depends on:** [PRD-500](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-498](../../../native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md) (fixture runner)
+**Depends on:** [PRD-500](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md), [PRD-498](../PRD-498-n01-baseline-and-differential-fixture-runner.md) (fixture runner)
 
 ## Context
 
