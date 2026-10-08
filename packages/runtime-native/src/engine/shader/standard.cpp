@@ -388,7 +388,8 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         ? v.swizzle(v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(4)}))), "xyz")
         : v.attribute("instanceColor", Type::vec(3));
     // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
-    const ExprId uv = (variant.map || variant.normalMap) && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
+    const ExprId uv = (variant.map || variant.normalMap || variant.metalnessMap || variant.roughnessMap) && !variant.background
+        ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
 
@@ -465,6 +466,16 @@ static ExprId mapTexel(Program& f, const VertexVariant& variant) {
     return f.construct(Type::vec(4), {rgb, f.swizzle(texel, "w")});
 }
 
+// MaterialNode.getTexture(property).<channel>: a linear data map at its own uv transform. Declares
+// instanceColor before uv so the fragment's varyings keep the vertex stage's order.
+static ExprId dataMapChannel(Program& f, const VertexVariant& variant, const char* slot, const char* transform,
+                             const char* channel) {
+    if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
+    const ExprId uv = f.varying("uv", Type::vec(2));
+    const ExprId at = f.swizzle(f.mul(f.uniform(transform, Type::mat(3, 3)), f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
+    return f.swizzle(f.sample(f.texture2d(slot), at), channel);
+}
+
 // setupDiffuseColor: an instanced mesh with instanceColor multiplies the material colour by it.
 static ExprId materialColor(Program& f, const VertexVariant& variant, ExprId diffuse) {
     const ExprId color = f.swizzle(diffuse, "xyz");
@@ -506,7 +517,7 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     Program& v = out.vertex;
     for (const auto& [name, type] : out.fragment.varyings()) {
         if (name == "normalView" || name == "positionView" ||
-            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap))) continue;
+            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap || variant.metalnessMap || variant.roughnessMap))) continue;
         ExprId value;
         if (name == "positionWorld")
             value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position), "xyz");
@@ -752,14 +763,21 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
-    const ExprId metalness = nodeValue(f, variant.nodes.metalnessNode, Type::f32(), variant.nodes.metalnessNode ? kInvalid : f.uniform("metalness", Type::f32()));
+    // MaterialNode METALNESS / ROUGHNESS: the uniform times the map's blue / green; a node replaces both.
+    ExprId metalnessValue = variant.nodes.metalnessNode ? kInvalid : f.uniform("metalness", Type::f32());
+    if (variant.metalnessMap && !variant.nodes.metalnessNode)
+        metalnessValue = f.mul(metalnessValue, dataMapChannel(f, variant, "metalnessMap", "metalnessUvTransform", "z"));
+    ExprId roughnessValue = variant.nodes.roughnessNode ? kInvalid : f.uniform("roughness", Type::f32());
+    if (variant.roughnessMap && !variant.nodes.roughnessNode)
+        roughnessValue = f.mul(roughnessValue, dataMapChannel(f, variant, "roughnessMap", "roughnessUvTransform", "y"));
+    const ExprId metalness = nodeValue(f, variant.nodes.metalnessNode, Type::f32(), metalnessValue);
 
     // getRoughness: max(roughness, 0.0525) + getGeometryRoughness, capped at 1.
     const ExprId dxy = f.call("max", {f.call("abs", {f.call("dFdx", {normalViewGeometry})}),
                                       f.call("abs", {f.call("dFdy", {normalViewGeometry})})});
     const ExprId geometryRoughness =
         f.call("max", {f.call("max", {f.swizzle(dxy, "x"), f.swizzle(dxy, "y")}), f.swizzle(dxy, "z")});
-    ExprId roughness = f.call("min", {f.add(f.call("max", {nodeValue(f, variant.nodes.roughnessNode, Type::f32(), variant.nodes.roughnessNode ? kInvalid : f.uniform("roughness", Type::f32())), t.f(0.0525f)}),
+    ExprId roughness = f.call("min", {f.add(f.call("max", {nodeValue(f, variant.nodes.roughnessNode, Type::f32(), roughnessValue), t.f(0.0525f)}),
                                                   geometryRoughness), t.f(1)});
 
     // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.

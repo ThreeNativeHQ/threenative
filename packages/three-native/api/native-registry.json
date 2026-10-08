@@ -2669,10 +2669,12 @@
         "iridescence",
         "map",
         "metalness",
+        "metalnessMap",
         "name",
         "needsUpdate",
         "opacity",
         "roughness",
+        "roughnessMap",
         "sheen",
         "side",
         "specularColor",
@@ -2685,7 +2687,15 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "envMap", "map", "specularColor"],
+      "members": [
+        "color",
+        "emissive",
+        "envMap",
+        "map",
+        "metalnessMap",
+        "roughnessMap",
+        "specularColor"
+      ],
       "callbacks": []
     },
     "MeshStandardMaterial": {
@@ -2735,16 +2745,18 @@
         "fog",
         "map",
         "metalness",
+        "metalnessMap",
         "name",
         "needsUpdate",
         "opacity",
         "roughness",
+        "roughnessMap",
         "side",
         "toneMapped",
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "envMap", "map"],
+      "members": ["color", "emissive", "envMap", "map", "metalnessMap", "roughnessMap"],
       "callbacks": []
     },
     "MeshStandardNodeMaterial": {
@@ -2803,6 +2815,7 @@
         "fog",
         "map",
         "metalness",
+        "metalnessMap",
         "metalnessNode",
         "name",
         "needsUpdate",
@@ -2811,13 +2824,14 @@
         "opacityNode",
         "positionNode",
         "roughness",
+        "roughnessMap",
         "roughnessNode",
         "side",
         "toneMapped",
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "envMap", "map"],
+      "members": ["color", "emissive", "envMap", "map", "metalnessMap", "roughnessMap"],
       "callbacks": []
     },
     "NumberKeyframeTrack": {

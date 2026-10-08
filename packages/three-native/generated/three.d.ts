@@ -1378,6 +1378,8 @@ normalMapType: NormalMapTypes;
 normalScale: Vector2;
 displacementScale: number;
 displacementBias: number;
+roughnessMap: Texture | null;
+metalnessMap: Texture | null;
 envMap: Texture | null;
 envMapRotation: Euler;
 envMapIntensity: number;
@@ -1426,6 +1428,8 @@ color: Color;
 emissive: Color;
 envMap: Texture | null;
 map: Texture | null;
+metalnessMap: Texture | null;
+roughnessMap: Texture | null;
 fog: boolean;
 blending: Blending;
 }

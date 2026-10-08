@@ -11508,8 +11508,7 @@
           "mutable": true,
           "lifetime": "reference",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -11518,8 +11517,7 @@
           "mutable": true,
           "lifetime": "reference",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -11920,6 +11918,24 @@
           "type": "Texture | null",
           "mutable": true,
           "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "metalnessMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "reference",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "roughnessMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "reference",
           "status": {
             "kind": "supported"
           }
