@@ -182,3 +182,10 @@ smoke pass. Biome passes with 6 existing complexity warnings. No quality waiver 
 - This game runtime is the default until gate T ships, and it is never called a JS-free *application* (§2.1). The engine under it is JS-free (owner, 2026-10-04).
 
 Exact-source coverage refresh completed (2026-10-07): `pnpm --filter @threenative/runtime-native native:coverage` exits 0 on the current sources and rewrites the generated record; `scripts/__tests__/check-native-coverage.spec.ts` passes 6/6. Total 51,484 lines at 83.28% (previous record 24,669 at 78.45%); the record now covers `src/engine/` (25,235 lines, 87.24%) and `src/adapters/` (88.96%). Repairs needed on the way: the Gate E driver joins the engine test aggregate; TS `--check` fixture scripts and the Perry corpus count as uninstrumented; the JS-free player is built so its objects exist; one `llvm-cov export` covers every product object (per-object exports timed out); llvm-cov's "functions have mismatched data" warning (header inline functions compiled into several test binaries) is tolerated and every other warning stays fatal; `update_scaling` runs at one size in this lane only, since instrumented timing cannot judge its 18× ratio, which still runs and fails in test-native. The run surfaced and fixed real reds: V8 writes to `morphAttributes`, `layers.mask` and `morphTargetInfluences[i]`, native inspect `input.wheel`/`input.media`, a Node-version-dependent JSON fixture and three batching-stale expectations. The timing-budget test `native_engine_world_cycles_cpu` failed once under CI host load and passed on rerun; the accepted run was pinned to CCD1.
+
+Native asset resolution (2026-10-08): the cooked package names hand-placed web-root files `/`
+plus their path (`public/assets/x.hdr` is `/assets/x.hdr`), and the player resolves a relative
+request it does not find as that URL. Known divergence, deliberately left: once a project has an
+asset manifest, the web refuses a request the manifest does not list, while native still finds a
+hand-placed `/` file. Native is therefore more permissive than web there; no change until a game
+needs the stricter rule.
