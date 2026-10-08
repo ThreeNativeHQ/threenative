@@ -468,7 +468,7 @@ std::vector<PostPass> postPasses(Node root) {
                               weights = effect.output + "_weights";
             const PostNode post{key(effect.inputs[0]), [&](Program& p, uint32_t, ExprId coordinate) {
                                     tsl::Build scope(p);
-                                    return lower(effect.inputs[0], p, {{"uv", coordinate}});
+                                    return lower(effect.inputs[0], p, {{"uv", coordinate}, {"screenUV", coordinate}});
                                 }};
             auto programs = buildOutput(std::nullopt, false, &post, false);
             PostPass material;

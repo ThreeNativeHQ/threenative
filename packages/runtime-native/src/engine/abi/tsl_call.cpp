@@ -88,6 +88,27 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         node->type = node->args[0]->type;
         return node;
     }
+    // FlipNode: node.flipX() is the node with x replaced by 1 - x (likewise y, z, w).
+    if (method && name.size() == 5 && name.rfind("flip", 0) == 0) {
+        arity(0);
+        const auto source = lhs();
+        const auto flipped = std::string("XYZW").find(name[4]);
+        const uint32_t size = source->type.isVector() ? source->type.rows : 0;
+        if (flipped == std::string::npos || flipped >= size || size < 2 || size > 4)
+            throw std::runtime_error(name + " needs a vector with that component");
+        std::vector<g::Node> lanes;
+        for (uint32_t i = 0; i < size; ++i) {
+            const auto lane = g::swizzle(source, std::string(1, "xyzw"[i]));
+            lanes.push_back(i == flipped ? g::sub(g::float_(1), lane) : lane);
+        }
+        if (size == 2) return g::vec2({lanes[0], lanes[1]});
+        if (size == 3) return g::vec3({lanes[0], lanes[1], lanes[2]});
+        return g::vec4({lanes[0], lanes[1], lanes[2], lanes[3]});
+    }
+    if (!method && name == "screenUV") {
+        arity(0);
+        return g::screenUV();
+    }
     // pmremTexture(texture, direction, level): three's PMREMNode over an equirectangular texture.
     // Outside an environment there is no context to supply the direction or the level, so both are
     // required (three reads builder.context.getUV / getTextureLevel, which a material lacks).

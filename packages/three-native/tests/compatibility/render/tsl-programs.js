@@ -555,6 +555,9 @@ export const programs = {
       1,
     );
   },
+  async "screen-uv"({ target }) {
+    target.colorNode = vec4(screenUV.flipX(), screenUV.x.mul(screenUV.y), 1);
+  },
   async "pmrem-texture"({ target }) {
     target.colorNode = vec4(
       pmremTexture(equirectSky(), normalize(positionWorld), uv().x.mul(0.9)),

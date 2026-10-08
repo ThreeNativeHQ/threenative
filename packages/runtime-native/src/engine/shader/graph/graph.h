@@ -31,7 +31,7 @@ enum class Kind : uint8_t {
     Unary, Binary, Math, Swizzle, Join, Convert, Select, Texture,
     StorageElement, VarRead, LoopIndex,
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
-    Pmrem,
+    Pmrem, ScreenUv,
 };
 
 enum class UnOp : uint8_t { Negate };
@@ -69,6 +69,8 @@ Node varying(std::string_view name, Type type);
 Node builtin(std::string_view name);
 Node positionLocal();
 Node uv();
+/** TSL's screenUV: the fragment's position over the target size; a post pass maps it to its quad's uv. */
+Node screenUV();
 Node instanceIndex();
 
 Node vec2(std::initializer_list<Node> parts);

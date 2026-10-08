@@ -318,6 +318,12 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         const auto cells3 = tsl("mx_worley_noise_vec2", {node(g::mul(positionWorld, g::float_(2)))});
         material->nodes.colorNode = g::vec4({perlin3, g::add(perlin2, g::mul(g::swizzle(cells, "x"), g::float_(0.3))),
             g::mul(g::add(g::swizzle(cells, "y"), g::swizzle(cells3, "x")), g::float_(0.4)), g::float_(1)});
+    } else if (program == "screen-uv") {
+        uint64_t serial = 0;
+        const auto screen = abi::tslCall("screenUV", nullptr, {}, serial);
+        const abi::TslArg receiver = abi::TslArg::of(screen);
+        const auto flipped = abi::tslCall("flipX", &receiver, {}, serial);
+        material->nodes.colorNode = g::vec4({flipped, g::mul(g::swizzle(screen, "x"), g::swizzle(screen, "y")), g::float_(1)});
     } else if (program == "pmrem-texture") {
         uint64_t serial = 0;
         const auto positionWorld = g::varying("positionWorld", Type::vec(3));

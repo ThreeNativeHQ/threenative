@@ -109,6 +109,10 @@ const METHODS = [
   "smoothstep",
   "select",
   "sample",
+  "flipX",
+  "flipY",
+  "flipZ",
+  "flipW",
 ] as const;
 const SWIZZLES: Readonly<Record<string, string>> = {
   x: "x",
@@ -201,5 +205,16 @@ export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
   const exports: Record<string, unknown> = {};
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
+  // TSL's node constants, built on first read.
+  for (const name of ["screenUV"]) {
+    let node: ITslNode | undefined;
+    Object.defineProperty(exports, name, {
+      enumerable: true,
+      get: () => {
+        node ??= wrap(call(name, null, []));
+        return node;
+      },
+    });
+  }
   return exports;
 }

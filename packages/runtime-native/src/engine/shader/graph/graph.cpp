@@ -206,6 +206,13 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Convert: return convert(expression(d.args[0]), d.type);
         case Kind::Select:
             return program_.select(expression(d.args[0]), expression(d.args[1]), expression(d.args[2]));
+        case Kind::ScreenUv: {
+            // ScreenNode.UV: screenCoordinate / screenSize, the render target's size when drawing into one.
+            const auto input = inputs_.find("screenUV");
+            if (input != inputs_.end()) return input->second;
+            return program_.div(program_.swizzle(program_.builtin("position"), "xy"),
+                                program_.uniform("screenSize", Type::vec(2)));
+        }
         case Kind::Pmrem: {
             // PMREMNode.setup: a render-target PMREM flips y, then materialEnvRotation turns it.
             const ExprId direction = expression(d.args[0]), level = expression(d.args[1]);
@@ -431,6 +438,7 @@ Node builtin(std::string_view name) {
 }
 Node positionLocal() { return makeNode(Kind::PositionLocal, Type::vec(3)); }
 Node uv() { return attribute("uv", Type::vec(2)); }
+Node screenUV() { return makeNode(Kind::ScreenUv, Type::vec(2)); }
 Node instanceIndex() { return builtin("instanceIndex"); }
 
 Node vec2(std::initializer_list<Node> parts) { return makeJoin(2, parts); }

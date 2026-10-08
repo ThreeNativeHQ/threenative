@@ -172,7 +172,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "render_particles:particles-sprite,fluid-particles"
                 "render_skinned:skinned-*" "render_morph:morph-*" "render_gltf:gltf-model-*"
                 "render_data_textures:textures-data-*" "render_materialx:materialx-*"
-                "render_pmrem:pmrem-*")
+                "render_pmrem:pmrem-*" "render_screen_uv:screen-uv")
             string(REPLACE ":" ";" render_pair "${render_case}")
             list(GET render_pair 0 render_name)
             list(GET render_pair 1 render_glob)

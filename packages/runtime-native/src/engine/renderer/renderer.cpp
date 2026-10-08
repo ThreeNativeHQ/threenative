@@ -126,7 +126,7 @@ constexpr const char* kSlotNames[] = {
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
     "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform",
-    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation"};
+    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -1705,6 +1705,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             put(frameUniforms_, f, fs[kEnvMapTexelHeight], std::array<double, 1>{env.texelHeight});
             put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{env.maxMip});
         }
+        put(frameUniforms_, f, fs[kScreenSize], std::array<double, 2>{double(width_), double(height_)});
         if (item.pmremMap) {
             const EnvironmentGpu& pmrem = environment(*item.pmremMap);
             put(frameUniforms_, f, fs[kPmremRotation], item.pmremRotation);

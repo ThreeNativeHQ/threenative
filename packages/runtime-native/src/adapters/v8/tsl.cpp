@@ -376,7 +376,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "toVar", "assign", "element", "Else", "abs", "sin", "cos", "floor", "fract",
                              "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
-                             "sample", "setResolutionScale"})
+                             "sample", "setResolutionScale", "flipX", "flipY", "flipZ", "flipW"})
         node->Set(str(isolate_, name), function(context, name, true));
     for (const char* lanes : {"x", "y", "z", "w", "xy", "xyz", "zyx", "yx"}) {
         auto data = std::make_unique<Call>(Call{this, std::string("swizzle:") + lanes, true});
@@ -409,7 +409,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     module->Set(context, str(isolate_, "normalViewGeometry"), wrap(g::varying("normalViewGeometry", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "cameraViewMatrix"), wrap(g::uniform("viewMatrix", Type::mat(4, 4)))).Check();
     module->Set(context, str(isolate_, "instanceIndex"), wrap(g::instanceIndex())).Check();
-    module->Set(context, str(isolate_, "screenUV"), wrap(g::uv())).Check();
+    module->Set(context, str(isolate_, "screenUV"), wrap(g::screenUV())).Check();
     module->Set(context, str(isolate_, "materialColor"), wrap(g::uniform("diffuse", Type::vec(4)))).Check();
     module->Set(context, str(isolate_, "materialEmissive"), wrap(g::uniform("emissive", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "materialMetalness"), wrap(g::uniform("metalness", Type::f32()))).Check();
