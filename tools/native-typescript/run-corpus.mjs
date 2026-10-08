@@ -439,13 +439,24 @@ function compileWithPerry({ perry, project, out, env, extraFlags = [] }) {
   return { ok: true, output };
 }
 
+/**
+ * One native case in a staged project that is removed afterwards: a three-import case builds a
+ * Rust adapter into it (about 300 MB), and /tmp is RAM. TN_NATIVE_TS_KEEP=1 keeps it for debugging.
+ */
 async function runNative(name, info, target, plan = {}) {
   const missing = missingExpectationNote(name);
   if (missing !== undefined) return { ok: false, note: missing };
+  const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "tn-native-ts-"));
+  try {
+    return await runNativeIn(tmp, name, info, target, plan);
+  } finally {
+    if (process.env.TN_NATIVE_TS_KEEP !== "1") await fsp.rm(tmp, { recursive: true, force: true });
+  }
+}
 
+async function runNativeIn(tmp, name, info, target, plan) {
   const entry = path.join(CORPUS, `${name}.ts`);
   const modules = collectModules(entry);
-  const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "tn-native-ts-"));
   const three = importsThree(entry);
   // A cross target with no engine archives for its ABI cannot link a three-import case: refuse it
   // with the missing archives named, rather than trying the host archives and reporting a link error.
