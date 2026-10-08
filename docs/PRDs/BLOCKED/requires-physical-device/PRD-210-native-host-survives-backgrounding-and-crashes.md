@@ -4,12 +4,13 @@ prd_contract: v1
 
 # PRD-210 — the native host survives backgrounding, memory pressure, and its own crashes
 
-**Status:** BLOCKED — every box is ticked; only the `## Blocked on` list is open (2026-10-07).
+**Status:** BLOCKED — every box is ticked; only the owner call in `## Blocked on` is open (2026-10-08).
 Phases 1-4 landed 2026-08-24. The closing run on 2026-10-07 reran every proof on `54f032353` and
-added the desktop, Pixel 8 and emulator rungs. Evidence:
+added the desktop, Pixel 8 and emulator rungs. On 2026-10-08 the Pixel 8 audio-suspend rung and ten
+relaunch cycles passed. Evidence:
 [`../../../verification/prd-210-2026-08-23.md`](../../../verification/prd-210-2026-08-23.md).
 
-**Priority:** P0 — Six recorded SIGSEGV exits with handlers suppressing tombstones; only the on-device audio proof and one owner call remain.
+**Priority:** P0 — Six recorded SIGSEGV exits with handlers suppressing tombstones; only one owner call remains.
 **Complexity:** +2 for 6–10 files, +2 for complex state logic (lifecycle state machine, signal
 handling), +2 for multi-platform behaviour change = **6 → MEDIUM mode**, checkpoint after every
 phase (device proofs make phases slow; drift is expensive).
@@ -196,9 +197,6 @@ and emulator results named separately. Caller census for the new export(s) paste
 
 ## Blocked on
 
-- **The owner's Pixel 8, unlocked:** AudioContext suspended on background on a physical device.
-  The probe APK and rung are built (emulator and desktop are green). Ten relaunch cycles on the
-  Pixel ride the same session.
 - **Owner call:** whether `display.backgroundMode:"continue"` on Android should clear
   `SDL_HINT_ANDROID_BLOCK_ON_PAUSE` and run frames against a destroyed surface, or stay
   documented as desktop-only.
