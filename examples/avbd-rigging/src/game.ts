@@ -1006,8 +1006,10 @@ export class RiggingScene extends Scene<IRiggingState, IPhysicsContext> {
       admission: this.#benchmark?.admission,
     };
     publishRiggingRows(run, rows);
-    console.log(`TN_AVBD_TIMING_RESULT:${JSON.stringify(result)}`);
-    benchmarkResults.push(result);
+    const text = JSON.stringify(result);
+    console.log(`TN_AVBD_TIMING_RESULT:${text}`);
+    // Game state must stay JSON-safe for the playtest bridge; keep exactly what the console marker carries.
+    benchmarkResults.push(JSON.parse(text) as typeof result);
     benchmarkIndex += 1;
     const next = riggingRuns[benchmarkIndex];
     if (next === undefined) benchmarkIndex = -1;
