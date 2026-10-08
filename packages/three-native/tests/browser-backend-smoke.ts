@@ -7,6 +7,7 @@ import path from "node:path";
 
 import type * as THREE from "three";
 
+import type { defineAudioClasses } from "../src/audio.js";
 import {
   type IRegistryDump,
   type TnAbiModule,
@@ -14,6 +15,7 @@ import {
   defineBrowserClasses,
   engineRef,
 } from "../src/browser-backend.js";
+import { bindWebEngine } from "../src/browser-entry.js";
 
 const modulePath = process.argv[2];
 if (modulePath === undefined) throw new Error("usage: browser-backend-smoke.ts <abi module .js>");
@@ -179,4 +181,66 @@ try {
 }
 check(rejected.includes("must be a function"), "a non-function callback is refused");
 engine.collect();
+
+// three's audio classes on the web engine: bound by the entry over the engine's Object3D, reading
+// world poses off the Wasm scene. Node has no WebAudio; a recording context
+// stands in for it, so only the engine side is under test here (the WebAudio side: audio.spec.ts).
+{
+  const web = (await bindWebEngine(createTnAbi, [
+    "AudioContext",
+    "AudioListener",
+    "Audio",
+    "PositionalAudio",
+    "AudioLoader",
+    "Object3D",
+    "PerspectiveCamera",
+    "Mesh",
+    "Scene",
+  ])) as unknown as typeof THREE;
+  const sound = web as unknown as ReturnType<typeof defineAudioClasses>;
+  const heard: string[] = [];
+  const spatial = (who: string) => ({
+    setPosition: (x: number, y: number, z: number) => heard.push(`${who}:${x},${y},${z}`),
+    setOrientation: () => undefined,
+  });
+  const node = (extra: object = {}) => ({
+    connect: () => undefined,
+    disconnect: () => undefined,
+    ...extra,
+  });
+  const param = { value: 1, setTargetAtTime: () => undefined };
+  sound.AudioContext.setContext({
+    currentTime: 0,
+    destination: node(),
+    listener: spatial("listener"),
+    createGain: () => node({ gain: param }),
+    createPanner: () => node(spatial("voice")),
+    createBufferSource: () =>
+      node({ start: () => undefined, stop: () => undefined, playbackRate: param, detune: param }),
+  } as never);
+  const scene = new web.Scene();
+  const camera = new web.PerspectiveCamera();
+  const listener = new sound.AudioListener();
+  camera.add(listener as never);
+  scene.add(camera);
+  camera.position.set(0, 1, 5);
+  const boat = new web.Mesh();
+  scene.add(boat);
+  const voice = new sound.PositionalAudio(listener);
+  boat.add(voice as never);
+  voice.setBuffer({ duration: 1 } as AudioBuffer);
+  voice.play();
+  boat.position.set(-4, 0, 1);
+  check(
+    listener instanceof web.Object3D && listener.parent === camera,
+    "the listener is an engine child",
+  );
+  check(voice instanceof sound.Audio && voice.parent === boat, "the voice is welded to the mesh");
+  // What three's renderer does each frame: world matrices, then each audio object's override.
+  scene.updateMatrixWorld(true);
+  listener.updateMatrixWorld(true);
+  voice.updateMatrixWorld(true);
+  check(heard.includes("listener:0,1,5"), `listener pose ${heard.join(" ")}`);
+  check(heard.includes("voice:-4,0,1"), `voice pose ${heard.join(" ")}`);
+}
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

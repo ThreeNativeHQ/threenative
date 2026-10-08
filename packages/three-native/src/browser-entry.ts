@@ -9,6 +9,7 @@
  */
 import catalogJson from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
+import { type IAudioEngine, defineAudioClasses } from "./audio.js";
 import {
   type IRegistryDump,
   type TnAbiModule,
@@ -81,7 +82,19 @@ export async function bindWebEngine(
   const { classes } = defineBrowserClasses(registry as IRegistryDump, createWasmRuntime(module));
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   const bound: Record<string, unknown> = { ...classes };
+  // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
+  // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
+  const audio = defineAudioClasses({
+    ...(classes as unknown as Omit<IAudioEngine, "read">),
+    read: async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`TN_AUDIO_FETCH: ${String(response.status)} ${url}`);
+      return response.arrayBuffer();
+    },
+  });
+  const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
+  Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
   if (isWebHostModule(module))
-    bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never);
+    bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, audio.updateAudio);
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
