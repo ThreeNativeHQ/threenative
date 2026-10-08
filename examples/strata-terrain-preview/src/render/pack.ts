@@ -364,10 +364,10 @@ function tintedFoliage(
     const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
     material.colorNode = mix(sampled.rgb.mul(green), straw.mul(grain), dry.max(dune));
     if (fieldGrass)
-      material.colorNode = mix(vec3(0.025, 0.052, 0.008), vec3(0.2, 0.31, 0.065), tip).mul(
+      material.colorNode = mix(vec3(0.06, 0.1, 0.025), vec3(0.2, 0.31, 0.065), tip).mul(
         grain.mul(24).clamp(0.4, 1.4),
       );
-    material.aoNode = mix(0.35, 0.95, tip);
+    material.aoNode = mix(fieldGrass ? 0.55 : 0.35, 0.95, tip);
   }
   if (otherBiome && stone)
     material.colorNode = sampled.rgb.mul(
