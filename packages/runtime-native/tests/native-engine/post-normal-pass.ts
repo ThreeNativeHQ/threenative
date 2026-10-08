@@ -33,7 +33,12 @@ occlusion.radius.value = 1; // a unit box's contact shadow, not the default quar
 writeFileSync(graph, JSON.stringify(exportTslGraph(occlusion.getTextureNode())));
 
 function fixture(withBox: boolean): IFixture {
-  const set = (id: string, field: string, value: number): FixtureOp => ({ op: "set", id, path: field, value });
+  const set = (id: string, field: string, value: number): FixtureOp => ({
+    op: "set",
+    id,
+    path: field,
+    value,
+  });
   const ops: FixtureOp[] = [
     { op: "new", id: "scene", class: "Scene", args: [] },
     { op: "new", id: "camera", class: "PerspectiveCamera", args: [60, width / height, 0.1, 100] },
@@ -44,7 +49,12 @@ function fixture(withBox: boolean): IFixture {
     { op: "call", id: "camera", method: "updateProjectionMatrix", args: [] },
     { op: "new", id: "material", class: "MeshStandardMaterial", args: [] },
     { op: "new", id: "groundGeometry", class: "PlaneGeometry", args: [12, 12] },
-    { op: "new", id: "ground", class: "Mesh", args: [{ ref: "groundGeometry" }, { ref: "material" }] },
+    {
+      op: "new",
+      id: "ground",
+      class: "Mesh",
+      args: [{ ref: "groundGeometry" }, { ref: "material" }],
+    },
     set("ground", "rotation.x", -Math.PI / 2),
     { op: "call", id: "scene", method: "add", args: [{ ref: "ground" }] },
   ];
@@ -62,8 +72,18 @@ function fixture(withBox: boolean): IFixture {
     adaptedFrom: "original, a GTAO frame over a box on a plane",
     tolerance: { abs: 0 },
     ops,
-    render: { scene: "scene", camera: "camera", width, height, toneMapping: "none", toneMappingExposure: 1, outputColorSpace: "srgb" },
-    observe: [{ id: "scene", kind: "pixels", metric: { maxPixelMismatchRatio: 0, maxPerceptualDeltaE: 0 } }],
+    render: {
+      scene: "scene",
+      camera: "camera",
+      width,
+      height,
+      toneMapping: "none",
+      toneMappingExposure: 1,
+      outputColorSpace: "srgb",
+    },
+    observe: [
+      { id: "scene", kind: "pixels", metric: { maxPixelMismatchRatio: 0, maxPerceptualDeltaE: 0 } },
+    ],
   };
 }
 
@@ -93,6 +113,8 @@ function darkPixels(name: string, withBox: boolean, level: number): number {
 const level = 200;
 const box = darkPixels("box", true, level);
 const plane = darkPixels("plane", false, level);
-if (box < 100) throw new Error(`TN_POST_NORMAL_NO_OCCLUSION: only ${box} occluded pixels around the box`);
-if (plane > box / 20) throw new Error(`TN_POST_NORMAL_NOISE: ${plane} dark pixels on a bare plane (box ${box})`);
+if (box < 100)
+  throw new Error(`TN_POST_NORMAL_NO_OCCLUSION: only ${box} occluded pixels around the box`);
+if (plane > box / 20)
+  throw new Error(`TN_POST_NORMAL_NOISE: ${plane} dark pixels on a bare plane (box ${box})`);
 console.info("post normal pass ok");

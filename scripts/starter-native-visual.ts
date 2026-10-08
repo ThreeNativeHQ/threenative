@@ -349,14 +349,17 @@ export async function runStarterNativeVisual(args: readonly string[]) {
     const bundle = path.join(temporary, "starter-visual.js");
     try {
       // esbuild is a runtime-native dependency; the workspace root does not install it.
-      await promisify(execFile)(path.join(ROOT, "packages/runtime-native/node_modules/.bin/esbuild"), [
-        path.join(ROOT, "packages/runtime-native/scripts/starter-visual-page.ts"),
-        "--bundle",
-        "--platform=browser",
-        "--format=iife",
-        "--global-name=TnStarterVisual",
-        `--outfile=${bundle}`,
-      ]);
+      await promisify(execFile)(
+        path.join(ROOT, "packages/runtime-native/node_modules/.bin/esbuild"),
+        [
+          path.join(ROOT, "packages/runtime-native/scripts/starter-visual-page.ts"),
+          "--bundle",
+          "--platform=browser",
+          "--format=iife",
+          "--global-name=TnStarterVisual",
+          `--outfile=${bundle}`,
+        ],
+      );
     } catch (error) {
       throw new Error("TN_STARTER_VISUAL_PAGE_UNAVAILABLE: bundle build failed", { cause: error });
     }
