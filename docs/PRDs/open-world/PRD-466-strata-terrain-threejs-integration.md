@@ -3987,6 +3987,11 @@ loading about 14% of the main thread. The old timer yield was also one slice per
 its slice from the measured host gap behind the loading curtain only, so play-time streaming keeps
 8 ms; (2) ground per cell at admission instead of all 218,809 placements up front, so the spawn
 cells wait only for their own placements; (3) verify on a real display or device, where frames are
-not Xvfb-throttled, before changing the deadline.
+not Xvfb-throttled, before changing the deadline. Option (1) is ruled out as an automatic change:
+`WorldCells` also calls `addInSlices` to attach chunk models during play (`world-cells.ts`
+`#attachChunks`), so a gap-sized slice would stretch a 16 ms native play frame toward 33 ms while
+streaming. Under Xvfb the native frame is about 58 ms, so the measured one-slice-per-frame duty
+(about 14%) is mostly the lane's present throttle. On a 60 fps display the same pacing gives about
+50% duty. Option (3) therefore comes before any deadline or slicing change.
 
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
