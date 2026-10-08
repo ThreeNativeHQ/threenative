@@ -364,6 +364,20 @@ bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::bi
                 out.push_back(tn::binding::Value::array(std::move(items)));
                 break;
             }
+            case TN_VALUE_RECORD: {
+                // count alternating string-key/value pairs, as a record is returned (an options object).
+                if (v.count > UINT32_MAX / 2 || (v.count && !v.values)) return false;
+                std::vector<std::pair<std::string, tn::binding::Value>> fields;
+                for (uint64_t k = 0; k < v.count; ++k) {
+                    const tn_value_t& key = v.values[k * 2];
+                    if (key.kind != TN_VALUE_STRING || (!key.text && key.count)) return false;
+                    tn::binding::Args value;
+                    if (!toBinding(context, &v.values[k * 2 + 1], 1, value, depth + 1)) return false;
+                    fields.emplace_back(std::string(key.text ? key.text : "", key.count), std::move(value[0]));
+                }
+                out.push_back(tn::binding::Value::record(std::move(fields)));
+                break;
+            }
             default: return false;
         }
     }

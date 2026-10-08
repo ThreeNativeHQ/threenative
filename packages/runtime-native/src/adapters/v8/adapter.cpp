@@ -183,6 +183,37 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
             v.kind = TN_VALUE_NUMBERS;
             v.numbers = arrays.back().data();
             v.count = arrays.back().size();
+        } else if (arg->IsObject() && !arg->IsFunction() && arg.As<v8::Object>()->InternalFieldCount() == 0) {
+            // A plain options object (`{ depth, bevelEnabled }`): own enumerable keys whose values are
+            // numbers, booleans, strings or native objects. An undefined value is left out, as three
+            // reads `options.x !== undefined`; anything else is refused.
+            v8::Local<v8::Object> object = arg.As<v8::Object>();
+            v8::Local<v8::Array> keys;
+            if (!object->GetOwnPropertyNames(ctx).ToLocal(&keys)) return false;
+            values.emplace_back();
+            auto& pairs = values.back();
+            pairs.reserve(keys->Length() * 2);
+            for (uint32_t k = 0; k < keys->Length(); ++k) {
+                v8::Local<v8::Value> key, e;
+                if (!keys->Get(ctx, k).ToLocal(&key) || !object->Get(ctx, key).ToLocal(&e)) return false;
+                if (e->IsUndefined()) continue;
+                tn_value_t field{};
+                if (e->IsNumber()) { field.kind = TN_VALUE_NUMBER; field.number = e.As<v8::Number>()->Value(); }
+                else if (e->IsBoolean()) { field.kind = TN_VALUE_BOOL; field.boolean = e->IsTrue() ? 1 : 0; }
+                else if (e->IsString()) {
+                    v8::String::Utf8Value utf8(isolate, e);
+                    texts.emplace_back(*utf8 ? *utf8 : "");
+                    field.kind = TN_VALUE_STRING; field.text = texts.back().c_str(); field.count = texts.back().size();
+                } else if (a.unwrap(e, h)) { field.kind = TN_VALUE_HANDLE; field.handle = h; a.holdIfCallback(h); }
+                else return false;
+                v8::String::Utf8Value name(isolate, key);
+                texts.emplace_back(*name ? *name : "");
+                tn_value_t keyValue{};
+                keyValue.kind = TN_VALUE_STRING; keyValue.text = texts.back().c_str(); keyValue.count = texts.back().size();
+                pairs.push_back(keyValue);
+                pairs.push_back(field);
+            }
+            v.kind = TN_VALUE_RECORD; v.values = pairs.data(); v.count = pairs.size() / 2;
         } else if (!arg->IsUndefined() && !arg->IsNull()) {
             return false;
         }

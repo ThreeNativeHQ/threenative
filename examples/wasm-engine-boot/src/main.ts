@@ -1,5 +1,8 @@
 import game from "./game.js";
 
+// Reachable from a debugging probe; the scenarios read the playtest bridge instead.
+Object.assign(globalThis, { __wasmEngineBootGame: game });
+
 const app = document.querySelector<HTMLElement>("#app");
 if (app === null) throw new Error("Missing #app element.");
 

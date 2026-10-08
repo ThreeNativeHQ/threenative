@@ -622,8 +622,31 @@ void color_set() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// PRD-540: `children` answers the attached objects in order, as three's array does.
+void children() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, first{}, second{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &first, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &second, &d.value) == TN_OK);
+    tn_value_t result{};
+    CHECK(tn_get(scene, "children", &result, &d.value) == TN_OK && result.kind == TN_VALUE_ARRAY && result.count == 0);
+    // three's add(...objects) and remove(...objects): every argument, in order, in one call.
+    const tn_value_t both[2] = {ref(first), ref(second)};
+    CHECK(tn_invoke(scene, "add", both, 2, &result, &d.value) == TN_OK);
+    CHECK(tn_get(scene, "children", &result, &d.value) == TN_OK && result.kind == TN_VALUE_ARRAY && result.count == 2);
+    CHECK(result.values[0].kind == TN_VALUE_HANDLE && same(result.values[0].handle, first));
+    CHECK(result.values[1].kind == TN_VALUE_HANDLE && same(result.values[1].handle, second));
+    CHECK(tn_invoke(scene, "remove", both, 2, &result, &d.value) == TN_OK);
+    CHECK(tn_get(scene, "children", &result, &d.value) == TN_OK && result.count == 0);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children})

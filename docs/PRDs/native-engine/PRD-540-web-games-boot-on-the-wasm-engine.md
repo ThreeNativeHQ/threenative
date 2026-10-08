@@ -57,6 +57,10 @@ reach geometry arrays directly.
 | Wasm renderer | `createRenderer` in `packages/core/src/renderer.ts` | `WebGLRenderer` fallback refused under `native` | Phase 2 |
 | TSL and post on Wasm | template `src/render/` → back-end entry → C ABI | Shared with the PRD-531 V8 back end | Phase 3 |
 
+## Decisions
+
+- 2026-10-08 (owner, relayed by the coordinator): no stubs or mocks for unreached imports. A symbol a game reaches is made real by its owner (TSL Node classes: lane-531; MeshBVH: lane-assets); an import nothing reaches leaves the bundle (lane-tier-imports).
+
 ## Execution Phases
 
 #### Phase 1: The opt-in routes a web build to the Wasm back end
@@ -69,7 +73,9 @@ reach geometry arrays directly.
 Known gap, not claimed: `pnpm dev` reads the project's own Vite config, which does not add the
 plugin, so the dev server still bundles upstream three under `engine: "native"`. The template gate
 judges native boots on the built output for that reason. Gates on 2026-10-08: `pnpm typecheck`
-passed; `pnpm lint` has no error; the `create-threenative` and `three-native` suites pass, with two
+was first reported as passing, which was wrong: colour codes hid a TS2741 in a `build.spec.ts`
+fixture (the new required `engine` field) and one in the example; both fixed, and the root
+`pnpm typecheck` exits 0; `pnpm lint` has no error; the `create-threenative` and `three-native` suites pass, with two
 asset-compile cases that timed out at load 30 and passed when rerun alone. `pnpm budgets` fails on
 a stale native coverage digest. This lane changed no `packages/runtime-native` file.
 
@@ -77,8 +83,11 @@ a stale native coverage digest. This lane changed no `packages/runtime-native` f
 **Status:** PARTIAL
 **Files:** `packages/runtime-native/` (product Wasm entry), `packages/three-native/src/` (renderer facade), `packages/core/src/renderer.ts`, a playtest scenario
 - [x] The `WebGPURenderer` facade initializes on the page's canvas, reports a hardware adapter, and presents a non-blank frame from `render(scene, camera)`. proof: `cmake --build packages/runtime-native/build/wasm-browser --target tn-native-engine-web`, then `pnpm --filter wasm-engine-boot build && pnpm --filter wasm-engine-boot playtest:renderer` — 2026-10-08: PASS on the desktop, Chromium WebGPU under the runner's private Xvfb, adapter `nvidia turing` (the engine's own adapter, not SwiftShader). `examples/wasm-engine-boot/renderer.html` is plain three built through `threenative build --target web` with `engine: "native"`: the bundle carries no upstream three, the product host (`packages/runtime-native/src/engine/wasm/web_host.cpp`) draws 2 draws / 13 triangles per frame (box plus output pass), 30+ frames, and the box region is non-blank on the `#102030` clear colour. Two engine gaps this page found, each red then green: `new MeshStandardMaterial({ color })` failed with `TN_BROWSER_ARGUMENT_UNSUPPORTED` (the back end now applies three's `setValues`, `browser-parameters.spec.ts` 2/2), and `new Color(0x102030)` read the hex as the red channel (the binding now follows three's one-argument `Color.set`, `native_engine_abi_color_set` under Node-Wasm, all ten `abi_test` cases pass).
-- [ ] A `@threenative/core` game without TSL in its own source boots through `createRenderer` under `engine: "native"`, presents frames, and never constructs `WebGLRenderer`. proof: `pnpm --filter wasm-engine-boot playtest:game`
-  Open, blocked on phase 3: 2026-10-08 the game bundles, then fails while `@threenative/core` is still being evaluated: `TN_NATIVE_UNBOUND_LINE3`. A Node probe that evaluates `packages/core/dist/index.js` against the same binding lists every unbound name core touches at module scope: `BatchedMesh CodeNode FunctionNode Line Line3 LineLoop LineSegments Node Points REVISION ShadowBaseNode StructTypeNode TSL Triangle uint wgsl wgslFn`. Core subclasses three's `Node` and calls `wgslFn` at import time, so no core game can load before the TSL node classes exist on the Wasm back end (phase 3). The math and object classes (`Line3`, `Triangle`, `Line`, `LineSegments`, `LineLoop`, `Points`, `BatchedMesh`) and `REVISION` are engine bindings the catalog does not publish yet.
+- [ ] A `@threenative/core` game without TSL in its own source boots through `createRenderer` under `engine: "native"`, presents frames, and never constructs `WebGLRenderer`. proof: `pnpm --filter wasm-engine-boot build && pnpm --filter wasm-engine-boot playtest:game` — open. 2026-10-08 it passed on the desktop (Chromium WebGPU, private Xvfb, `nvidia turing`): the fixture game (`examples/wasm-engine-boot/src/game.ts`, `defineGame` with the playtest plugin) reaches runtime readiness with no console error, its frame count advances, and a lit box and sphere fill the asserted region. `renderer.kind` is `webgpu`; `WebGLRenderer` is a refusal under the native engine, so a fallback would have failed the start. It passed only on the scratch branch `scratch/ne-wasm-templates-stubs`, where `three-mesh-bvh` resolved to refusal stubs and a refused class could be subclassed; the owner forbids stubs, so that run proves nothing shippable. The box reopens until core imports load for real: core subclasses `ShadowBaseNode` at import time (`VirtualShadowNode`, `packages/core/src/render/virtual-shadow.ts:728`; lane-531 makes the TSL Node classes real) and imports `three-mesh-bvh/webgpu` (`gpu-scene-bvh.ts`; lane-tier-imports moves it behind the feature that uses it). `three-mesh-bvh` itself now resolves to the engine MeshBVH (`packages/three-native/src/addons/mesh-bvh.ts`, from lane-assets). What the scratch run found and what landed for real, each red then green:
+  - Core touched 17 unbound names while it was still being imported: 16 from `three-mesh-bvh` (`BatchedMesh CodeNode FunctionNode Line Line3 LineLoop LineSegments Node Points REVISION StructTypeNode TSL Triangle uint wgsl wgslFn`) and `ShadowBaseNode` from core. The stubs that got past them stay on the scratch branch only.
+  - The class chain, `is*` flags, `userData` and the `traverse` family are now JavaScript on the browser back end (`browser-surface.spec.ts`, 0/4 then 4/4).
+  - `Object3D.children` is bound in the engine (`native_engine_abi_children`), and the catalog and registry snapshot follow (the engine dump equals the snapshot ignoring whitespace; the Wasm `--check` cannot read host files, so the native ctest owns that check).
+  - `add(a, b, c)` added only `a`; `add` and `remove` now take every argument, as three's do (same test, red then green).
 
 #### Phase 3: Template TSL and post run on the Wasm back end
 **Status:** NOT STARTED

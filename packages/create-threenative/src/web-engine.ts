@@ -16,14 +16,17 @@ export interface IWebEnginePlugin {
   load(id: string): Promise<string | null>;
 }
 
-/** The binding runtime: bundled beside this module in `dist`, or the workspace source. */
-function runtimeModule(): string {
-  const built = fileURLToPath(new URL("./web-engine-runtime.js", import.meta.url));
-  if (existsSync(built)) return built;
-  const source = fileURLToPath(new URL("../../three-native/src/browser-entry.ts", import.meta.url));
-  if (existsSync(source)) return source;
-  throw new Error(`TN_WEB_ENGINE_RUNTIME_MISSING: neither ${built} nor ${source} exists.`);
+/** A browser module: bundled beside this one in `dist`, or the three-native workspace source. */
+function browserModule(built: string, source: string): string {
+  const bundled = fileURLToPath(new URL(`./${built}`, import.meta.url));
+  if (existsSync(bundled)) return bundled;
+  const workspace = fileURLToPath(new URL(`../../three-native/src/${source}`, import.meta.url));
+  if (existsSync(workspace)) return workspace;
+  throw new Error(`TN_WEB_ENGINE_RUNTIME_MISSING: neither ${bundled} nor ${workspace} exists.`);
 }
+
+/** The binding runtime every upstream three import resolves through. */
+const runtimeModule = () => browserModule("web-engine-runtime.js", "browser-entry.ts");
 
 function wasmModule(root: string): string {
   let entry: string;
@@ -66,6 +69,10 @@ export function createWebEnginePlugin(root: string): IWebEnginePlugin {
     enforce: "pre",
     resolveId(source) {
       if ((UPSTREAM as readonly string[]).includes(source)) return WEB_ENGINE_ID;
+      // The engine's MeshBVH answers picking with its own raycast; the upstream package extends
+      // three's math classes and cannot load over the engine.
+      if (source === "three-mesh-bvh")
+        return browserModule("web-engine-mesh-bvh.js", "addons/mesh-bvh.ts");
       if (/^three\/(?:src|build)\//u.test(source))
         throw new Error(
           `TN_NATIVE_UPSTREAM_IMPORT: ${source} would bundle upstream three under engine "native"; import from three, three/webgpu or three/tsl.`,

@@ -54,7 +54,10 @@ export interface INativePackageEntry {
   readonly dependencies?: readonly number[];
   readonly kind: number;
   readonly name: string;
-  /** GPU upload size in bytes; the writer defaults it to 0 when unknown. */
+  /**
+   * GPU upload size in bytes; the writer defaults it to 0. For a Buffer entry it is the entry's
+   * use: 0 is CPU data a decoder reads (any length), above 0 a GPU buffer (4-byte aligned).
+   */
   readonly uploadSize?: number;
 }
 
@@ -122,6 +125,17 @@ function validateEntries(entries: readonly IEncodedNativeEntry[]): void {
     if (!Number.isSafeInteger(entry.uploadSize) || entry.uploadSize < 0) {
       invalid(
         `entry ${String(index)} uploadSize ${String(entry.uploadSize)} is not a non-negative integer`,
+      );
+    }
+    // A Buffer's uploadSize states its use: above 0 the engine uploads it as a GPU buffer, which
+    // must be 4-byte aligned; 0 means a CPU decoder reads it (audio, .hdr), at any length.
+    if (
+      entry.kind === NativeEntryKind.Buffer &&
+      entry.uploadSize > 0 &&
+      entry.data.length % 4 !== 0
+    ) {
+      invalid(
+        `entry ${String(index)} is a GPU buffer (uploadSize ${String(entry.uploadSize)}) of ${String(entry.data.length)} bytes, not a multiple of four`,
       );
     }
     for (const dependency of entry.dependencies) {

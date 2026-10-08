@@ -5644,10 +5644,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_EXTRUDEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -12533,8 +12532,7 @@
           "lifetime": "reference",
           "default": "[]",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -14151,13 +14149,446 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_PATH"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "autoClose",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "string | \"Curve\"",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "currentPoint",
+          "type": "Vector2",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "absarc",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aStartAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aEndAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aClockwise",
+                  "type": "boolean",
+                  "optional": true
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "absellipse",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "xRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "yRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aStartAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aEndAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aClockwise",
+                  "type": "boolean",
+                  "optional": true
+                },
+                {
+                  "name": "aRotation",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "arc",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aStartAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aEndAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aClockwise",
+                  "type": "boolean",
+                  "optional": true
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "bezierCurveTo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aCP1x",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aCP1y",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aCP2x",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aCP2y",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "closePath",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "ellipse",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "xRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "yRadius",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aStartAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aEndAngle",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aClockwise",
+                  "type": "boolean",
+                  "optional": true
+                },
+                {
+                  "name": "aRotation",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getLength",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector2[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "lineTo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "x",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "y",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "moveTo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "x",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "y",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "quadraticCurveTo",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "aCPx",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aCPy",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aX",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "aY",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setFromPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "vectors",
+                  "type": "Vector2[]",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "splineThru",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "pts",
+                  "type": "Vector2[]",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "PerspectiveCamera",
@@ -16922,12 +17353,21 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_SHAPE"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Path",
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "holes",
+          "type": "Path[]",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": []
     },
     {
@@ -16935,10 +17375,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_SHAPEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
