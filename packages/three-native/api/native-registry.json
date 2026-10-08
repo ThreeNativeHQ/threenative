@@ -321,10 +321,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -377,7 +379,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -430,10 +434,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -486,7 +492,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -643,10 +651,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -699,7 +709,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -750,10 +762,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -806,7 +820,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -817,10 +833,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -873,7 +891,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -1105,10 +1125,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -1161,7 +1183,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -1975,10 +1999,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -2031,7 +2057,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -3299,10 +3327,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -3355,7 +3385,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -3601,10 +3633,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -3657,7 +3691,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -3837,10 +3873,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -3893,7 +3931,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -4204,10 +4244,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -4260,7 +4302,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -4839,10 +4883,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -4895,7 +4941,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },
@@ -4906,10 +4954,12 @@
         "applyMatrix4",
         "center",
         "clearGroups",
+        "clone",
         "computeBoundingBox",
         "computeBoundingSphere",
         "computeVertexNormals",
         "deleteAttribute",
+        "dispose",
         "getAttribute",
         "getIndex",
         "hasAttribute",
@@ -4962,7 +5012,9 @@
         "attributes.uv",
         "boundingBox",
         "boundingSphere",
-        "index"
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
       ],
       "callbacks": []
     },

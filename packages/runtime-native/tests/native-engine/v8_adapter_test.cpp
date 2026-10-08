@@ -900,6 +900,28 @@ void attributeArrays() {
     if (got != "true,true,5,5,true,36,true,9") std::fprintf(stderr, "attribute arrays: %s\n", got.c_str());
 }
 
+// three's geometry.clone() is a deep copy of the same class, dispose() leaves the CPU data usable,
+// and morphAttributes reads back the attributes it was given.
+void geometryLifecycle() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const box = new BoxGeometry(2, 1, 1);
+        const target = new Float32BufferAttribute(new Float32Array(72), 3);
+        box.morphAttributes.position = [target];
+        const copy = box.clone();
+        copy.getAttribute("position").setX(0, 9);
+        box.dispose();
+        const morphs = box.morphAttributes;
+        [copy instanceof BoxGeometry, copy.type, copy !== box, box.getAttribute("position").getX(0),
+         copy.getAttribute("position").getX(0), copy.getIndex().count, morphs.position.length, morphs.position[0] === target,
+         copy.morphAttributes.position.length, copy.morphAttributes.position[0] !== target, morphs.normal.length].join()
+    )JS");
+    CHECK(got == "true,BoxGeometry,true,1,9,36,1,true,1,true,0");
+    if (got != "true,BoxGeometry,true,1,9,36,1,true,1,true,0") std::fprintf(stderr, "geometry lifecycle: %s\n", got.c_str());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", unsupported}, {"gc_release", gcRelease},
@@ -908,4 +930,4 @@ TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", un
              {"scene", scene}, {"raycaster_lod", raycasterLOD},
              {"catalog_coverage", catalogCoverage},
              {"callback_cycle", callbackCycle}, {"tsl_api", tslApi}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
-             {"attribute_arrays", attributeArrays})
+             {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle})

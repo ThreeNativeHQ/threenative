@@ -318,4 +318,31 @@ engine.collect();
   ].join();
   check(got === "true,true,5,5,true,36,true,9", `attribute arrays ${got}`);
 }
+// three's geometry.clone() is a deep copy of the same class, dispose() leaves the CPU data usable,
+// and morphAttributes reads back the attributes it was given, on the web as on V8.
+{
+  const web = (await bindWebEngine(createTnAbi, [
+    "BoxGeometry",
+    "Float32BufferAttribute",
+  ])) as unknown as typeof THREE;
+  const box = new web.BoxGeometry(2, 1, 1);
+  const target = new web.Float32BufferAttribute(new Float32Array(72) as never, 3);
+  box.morphAttributes.position = [target];
+  const copy = box.clone();
+  (copy.getAttribute("position") as InstanceType<typeof THREE.BufferAttribute>).setX(0, 9);
+  box.dispose();
+  const morphs = box.morphAttributes as { position: unknown[]; normal: unknown[] };
+  const got = [
+    copy instanceof web.BoxGeometry,
+    copy.type,
+    copy !== box,
+    (box.getAttribute("position") as InstanceType<typeof THREE.BufferAttribute>).getX(0),
+    (copy.getAttribute("position") as InstanceType<typeof THREE.BufferAttribute>).getX(0),
+    copy.getIndex()?.count,
+    morphs.position.length,
+    morphs.position[0] === target,
+    morphs.normal.length,
+  ].join();
+  check(got === "true,BoxGeometry,true,1,9,36,1,true,0", `geometry lifecycle ${got}`);
+}
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

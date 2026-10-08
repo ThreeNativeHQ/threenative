@@ -470,6 +470,27 @@ void registerBufferGeometry(ClassBinding& b) {
         if (nonIndexed == nullptr) return chain();
         return store.adopt("BufferGeometry", std::static_pointer_cast<void>(nonIndexed));
     };
+    // three's clone(): a geometry of the same class and parameters holding copies of every array.
+    b.methods["clone"] = [](void* self, const Args&, Store& store) {
+        std::shared_ptr<BufferGeometry> copy = as<BufferGeometry>(self)->clone();
+        const std::string type = copy->type;
+        return store.adopt(type, std::static_pointer_cast<void>(copy));
+    };
+    b.methods["dispose"] = [](void* self, const Args&, Store&) {
+        as<BufferGeometry>(self)->dispose();
+        return Value{Value::Kind::Undefined};
+    };
+    // morphAttributes.position / .normal read back as three's arrays of the attributes themselves.
+    for (const bool normals : {false, true}) {
+        b.members[normals ? "morphAttributes.normal" : "morphAttributes.position"] =
+            [normals](void* self, const Args&, Store& store) {
+                std::vector<Value> targets;
+                const BufferGeometry* geometry = as<BufferGeometry>(self);
+                for (const auto& target : normals ? geometry->morphNormals : geometry->morphPositions)
+                    targets.push_back(store.share("BufferAttribute", target));
+                return Value::array(std::move(targets));
+            };
+    }
 }
 
 // -------------------------------------------------------------------- generators

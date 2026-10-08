@@ -83,6 +83,18 @@ void geometry() {
     const Handle indexBuffer = cache.sync(index, WGPUBufferUsage_Index | WGPUBufferUsage_CopySrc);
     const auto got = readBack(gpu, d.events, indexBuffer, 8);
     CHECK(got.size() == 8 && std::memcmp(got.data(), tri, 6) == 0);
+
+    // three's geometry.dispose(): the next sweep lets the GPU copy go while the store lives on, and
+    // drawing the store again uploads it whole.
+    auto shared = std::make_shared<BufferStore>(Scalar::F32, 30);
+    cache.sync(*shared, usage);
+    const size_t held = cache.entries();
+    const uint64_t uploads = cache.stats().fullUploads;
+    shared->releaseGpuCopy();
+    cache.sweep();
+    CHECK(cache.entries() == held - 1);
+    cache.sync(*shared, usage);
+    CHECK(cache.entries() == held && cache.stats().fullUploads == uploads + 1);
 }
 
 void pipelines() {

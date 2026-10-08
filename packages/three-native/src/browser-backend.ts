@@ -378,6 +378,38 @@ export function defineBrowserClasses(
           : {}),
       });
     }
+    // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
+    // a holder made per read, as the V8 adapter makes it: each tail reads and writes the full path.
+    const holders = new Map<string, string[]>();
+    for (const path of binding.setters) {
+      const dot = path.indexOf(".");
+      if (dot < 0) continue;
+      const head = path.slice(0, dot);
+      if (binding.members.includes(head) || binding.getters.includes(head)) continue;
+      const tails = holders.get(head) ?? [];
+      if (!tails.includes(path)) tails.push(path);
+      holders.set(head, tails);
+    }
+    for (const [head, paths] of holders) {
+      Object.defineProperty(prototype, head, {
+        configurable: true,
+        get(this: object) {
+          const ref = refOf(this);
+          const holder = {};
+          for (const path of paths) {
+            const readable = binding.members.includes(path) || binding.getters.includes(path);
+            Object.defineProperty(holder, path.slice(head.length + 1), {
+              enumerable: true,
+              ...(readable ? { get: () => fromEngine(runtime.get(ref, path)) } : {}),
+              ...(setters.has(path)
+                ? { set: (value: unknown) => runtime.set(ref, path, toEngine(value)) }
+                : {}),
+            });
+          }
+          return holder;
+        },
+      });
+    }
     // A write-only setter (three's `texture.needsUpdate`) is a property too: without an accessor
     // the write lands on a plain JS property and never reaches the engine.
     for (const property of binding.setters) {

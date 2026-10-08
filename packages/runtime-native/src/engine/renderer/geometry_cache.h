@@ -25,7 +25,10 @@ public:
     Handle sync(BufferStore& store, uint32_t usage);
     /** Drops a store's GPU copy (deferred until the GPU is done with it). */
     void forget(const BufferStore& store);
-    /** Drops the GPU copies of shared-owned stores that no longer exist; the renderer calls it per frame. */
+    /**
+     * Drops the GPU copies of shared-owned stores that no longer exist or that a geometry's
+     * `dispose()` released; the renderer calls it per frame.
+     */
     void sweep();
 
     struct Stats {
@@ -48,6 +51,7 @@ private:
         // address a new store may now hold. Stores outside a shared_ptr are never swept.
         std::weak_ptr<const BufferStore> owner;
         bool tracked = false;
+        uint32_t releases = 0;  // the store's gpuReleases() when this copy was made
     };
     GpuResources& gpu_;
     std::unordered_map<const BufferStore*, Entry> entries_;

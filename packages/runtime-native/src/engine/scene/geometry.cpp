@@ -459,6 +459,55 @@ void BufferGeometry::normalizeNormals() {
     }
 }
 
+namespace {
+
+// three's BufferAttribute.clone: a new array of the same type holding the same elements, and the
+// attribute's settings (name, usage, gpuType).
+std::shared_ptr<BufferAttribute> cloneAttribute(const BufferAttribute& source) {
+    auto copy = std::make_shared<BufferAttribute>(source.store->scalar(), source.store->count(), source.itemSize,
+                                                  source.normalized);
+    copy->store->write(0, source.store->data(), source.store->byteLength());
+    copy->name = source.name;
+    copy->usage = source.usage;
+    copy->gpuType = source.gpuType;
+    return copy;
+}
+
+}  // namespace
+
+std::shared_ptr<BufferGeometry> BufferGeometry::clone() const {
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->type = type;
+    geometry->parameters = parameters;
+    geometry->copy(*this);
+    return geometry;
+}
+
+BufferGeometry& BufferGeometry::copy(const BufferGeometry& source) {
+    index = source.index ? cloneAttribute(*source.index) : nullptr;
+    attributes.clear();
+    for (const auto& [name, attribute] : source.attributes) setAttribute(name, cloneAttribute(*attribute));
+    morphPositions.clear();
+    morphNormals.clear();
+    for (const auto& target : source.morphPositions) morphPositions.push_back(cloneAttribute(*target));
+    for (const auto& target : source.morphNormals) morphNormals.push_back(cloneAttribute(*target));
+    morphTargetsRelative = source.morphTargetsRelative;
+    groups = source.groups;
+    boundingBox = source.boundingBox ? std::make_shared<Box3>(*source.boundingBox) : nullptr;
+    boundingSphere = source.boundingSphere ? std::make_shared<Sphere>(*source.boundingSphere) : nullptr;
+    drawRange = source.drawRange;
+    name = source.name;
+    bumpRevision();
+    return *this;
+}
+
+void BufferGeometry::dispose() {
+    if (index) index->store->releaseGpuCopy();
+    for (const auto& [name, attribute] : attributes) attribute->store->releaseGpuCopy();
+    for (const auto& target : morphPositions) target->store->releaseGpuCopy();
+    for (const auto& target : morphNormals) target->store->releaseGpuCopy();
+}
+
 std::shared_ptr<BufferGeometry> BufferGeometry::toNonIndexed() const {
     if (index == nullptr) return nullptr;
     auto geometry = std::make_shared<BufferGeometry>();

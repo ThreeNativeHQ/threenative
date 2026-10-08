@@ -282,6 +282,7 @@ struct MethodData {
     tn::abi::SetterSlot setter;  // the numeric write's setter for the class last written
     bool own = false;            // a read-only fixed member: once read, it becomes an own data property of the wrapper, as three defines it
     uint16_t type = 0;           // the catalog type whose wrappers own that slot: a getter borrowed by another class must not read it
+    bool readable = false;       // a holder tail the binding also reads (`morphAttributes.position`)
 };
 
 // three defines position, rotation, quaternion and scale as read-only own data properties. Once a
@@ -1003,6 +1004,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             const std::string head = path.substr(0, dot);
             if (binding.members.count(head) > 0 || binding.getters.count(head) > 0) continue;
             holders[head].push_back(new MethodData{this, path, {}});
+            holders[head].back()->readable = binding.getters.count(path) > 0 || binding.members.count(path) > 0;
         }
         for (const auto& [head, paths] : holders) {
             auto* tails = new std::vector<MethodData*>(paths);
@@ -1033,7 +1035,28 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                     tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
                                     throwStatus(isolate, diagnostic);
                             }, v8::External::New(isolate, tail)).ToLocalChecked();
-                        holder->SetAccessorProperty(str(isolate, name), v8::Local<v8::Function>(), set);
+                        // A tail the binding also reads (`morphAttributes.position`) reads back through the
+                        // holder too, so the holder is three's whole plain object.
+                        v8::Local<v8::Function> get;
+                        if (tail->readable)
+                            get = v8::Function::New(ctx,
+                                [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                                    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                                    v8::Isolate* isolate = info.GetIsolate();
+                                    v8::Local<v8::Value> owner;
+                                    tn_handle_t h{};
+                                    if (!info.This()->GetPrivate(isolate->GetCurrentContext(),
+                                            v8::Private::ForApi(isolate, str(isolate, "tn:holder-owner"))).ToLocal(&owner) ||
+                                        !owner->IsObject() || !d->adapter->unwrap(owner.As<v8::Object>(), h)) return;
+                                    tn_value_t result{};
+                                    tn_diagnostic_t diagnostic{nullptr, 0};
+                                    if (tn_get(h, d->name.c_str(), &result, &diagnostic) != TN_OK) {
+                                        throwStatus(isolate, diagnostic);
+                                        return;
+                                    }
+                                    info.GetReturnValue().Set(fromValue(*d->adapter, result));
+                                }, v8::External::New(isolate, tail)).ToLocalChecked();
+                        holder->SetAccessorProperty(str(isolate, name), get, set);
                     }
                     info.GetReturnValue().Set(holder);
                 }, v8::External::New(isolate_, tails)));

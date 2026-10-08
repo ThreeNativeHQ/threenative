@@ -32,8 +32,8 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
         e = Entry{};
         isNew = true;
     }
-    // A resize reallocates: the old copy is retired and the whole store goes up again.
-    if (!isNew && (e.byteLength != byteLength || e.epoch != store.epoch())) {
+    // A resize reallocates, and a disposed geometry let its copy go: the whole store goes up again.
+    if (!isNew && (e.byteLength != byteLength || e.epoch != store.epoch() || e.releases != store.gpuReleases())) {
         gpu_.destroy(e.buffer);
         isNew = true;
     }
@@ -43,6 +43,7 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
         e.epoch = store.epoch();
         e.owner = store.weak_from_this();
         e.tracked = !e.owner.expired();
+        e.releases = store.gpuReleases();
         upload(e.buffer, store, 0, store.byteLength());
         ++stats_.fullUploads;
     } else if (store.version() != e.version) {
@@ -74,7 +75,8 @@ void GeometryCache::forget(const BufferStore& store) {
 
 void GeometryCache::sweep() {
     for (auto it = entries_.begin(); it != entries_.end();) {
-        if (it->second.tracked && it->second.owner.expired()) {
+        const auto owner = it->second.owner.lock();
+        if (it->second.tracked && (owner == nullptr || owner->gpuReleases() != it->second.releases)) {
             gpu_.destroy(it->second.buffer);
             it = entries_.erase(it);
         } else {
