@@ -388,7 +388,8 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         ? v.swizzle(v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(4)}))), "xyz")
         : v.attribute("instanceColor", Type::vec(3));
     // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
-    const ExprId uv = (variant.map || variant.normalMap || variant.metalnessMap || variant.roughnessMap) && !variant.background
+    const ExprId uv = (variant.map || variant.normalMap || variant.metalnessMap || variant.roughnessMap ||
+                       variant.specularColorMap || variant.specularIntensityMap) && !variant.background
         ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
@@ -517,7 +518,8 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     Program& v = out.vertex;
     for (const auto& [name, type] : out.fragment.varyings()) {
         if (name == "normalView" || name == "positionView" ||
-            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap || variant.metalnessMap || variant.roughnessMap))) continue;
+            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap || variant.metalnessMap || variant.roughnessMap ||
+                                               variant.specularColorMap || variant.specularIntensityMap))) continue;
         ExprId value;
         if (name == "positionWorld")
             value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position), "xyz");
@@ -790,10 +792,14 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     ExprId f0Dielectric;
     if (physical) {
         const ExprId ior = f.uniform("ior", Type::f32());
-        const ExprId specularIntensity = f.uniform("specularIntensity", Type::f32());
+        ExprId specularIntensity = f.uniform("specularIntensity", Type::f32());
+        if (variant.specularIntensityMap)
+            specularIntensity = f.mul(specularIntensity, dataMapChannel(f, variant, "specularIntensityMap", "specularIntensityUvTransform", "w"));
+        ExprId specularColor = f.uniform("specularColor", Type::vec(3));
+        if (variant.specularColorMap)
+            specularColor = f.mul(specularColor, dataMapChannel(f, variant, "specularColorMap", "specularColorUvTransform", "xyz"));
         const ExprId f0Base =
-            f.call("min", {f.mul(t.pow2(f.div(f.sub(ior, t.f(1)), f.add(ior, t.f(1)))),
-                                 f.uniform("specularColor", Type::vec(3))),
+            f.call("min", {f.mul(t.pow2(f.div(f.sub(ior, t.f(1)), f.add(ior, t.f(1)))), specularColor),
                            f.construct(Type::vec(3), {t.f(1)})});
         f0Dielectric = f.mul(f0Base, specularIntensity);
         specularColorBlended = f.call("mix", {f0Dielectric, diffuseColor, metalness});

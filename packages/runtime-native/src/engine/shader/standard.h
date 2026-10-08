@@ -103,6 +103,13 @@ struct VertexVariant {
     bool metalnessMap = false;
     bool roughnessMap = false;
     /**
+     * Physical only: `specularColorMap` (rgb, an sRGB texture decoded by its GPU format) and
+     * `specularIntensityMap` (alpha) scale specularColor and specularIntensity (MaterialNode
+     * SPECULAR_COLOR / SPECULAR_INTENSITY), at `specularColorUvTransform` / `specularIntensityUvTransform`.
+     */
+    bool specularColorMap = false;
+    bool specularIntensityMap = false;
+    /**
      * The map's colorSpace is SRGBColorSpace: the sampled texel is decoded with three's
      * `sRGBTransferEOTF` in the fragment, as upstream's ColorSpaceNode does, rather than by a
      * hardware -srgb texture format (whose rounding differs from the shader formula).
@@ -120,7 +127,7 @@ struct VertexVariant {
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
-               (map ? "t" : "") + (normalMap ? "N" : "") + (metalnessMap ? "M" : "") + (roughnessMap ? "R" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
+               (map ? "t" : "") + (normalMap ? "N" : "") + (metalnessMap ? "M" : "") + (roughnessMap ? "R" : "") + (specularColorMap ? "C" : "") + (specularIntensityMap ? "I" : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };

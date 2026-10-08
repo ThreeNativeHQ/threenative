@@ -25106,6 +25106,24 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "specularColorMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "reference",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "specularIntensityMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "reference",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []

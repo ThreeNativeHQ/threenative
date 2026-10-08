@@ -125,7 +125,7 @@ constexpr const char* kSlotNames[] = {
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
-    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "metalnessUvTransform", "roughnessUvTransform"};
+    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "metalnessUvTransform", "roughnessUvTransform", "specularColorUvTransform", "specularIntensityUvTransform"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -1629,6 +1629,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.normalMap = item.normalMap != nullptr;
         v.metalnessMap = item.metalnessMap != nullptr;
         v.roughnessMap = item.roughnessMap != nullptr;
+        v.specularColorMap = item.specularColorMap != nullptr;
+        v.specularIntensityMap = item.specularIntensityMap != nullptr;
         v.mapSRGB = false;  // WGSLNodeBuilder uses GPU sRGB formats; no shader colour conversion.
         return v;
     };
@@ -1707,6 +1709,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         }
         if (item.metalnessMap) put(frameUniforms_, f, fs[kMetalnessUvTransform], uvTransformOf(*item.metalnessMap));
         if (item.roughnessMap) put(frameUniforms_, f, fs[kRoughnessUvTransform], uvTransformOf(*item.roughnessMap));
+        if (item.specularColorMap) put(frameUniforms_, f, fs[kSpecularColorUvTransform], uvTransformOf(*item.specularColorMap));
+        if (item.specularIntensityMap)
+            put(frameUniforms_, f, fs[kSpecularIntensityUvTransform], uvTransformOf(*item.specularIntensityMap));
         if (item.envMap) {
             const EnvironmentGpu& env = environment(*item.envMap);
             put(frameUniforms_, f, fs[kEnvRotation], item.envRotation);
@@ -1865,10 +1870,13 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
-        if (!p.item->map && !p.item->envMap && !p.item->normalMap && !p.item->metalnessMap && !p.item->roughnessMap) continue;
+        if (!p.item->map && !p.item->envMap && !p.item->normalMap && !p.item->metalnessMap && !p.item->roughnessMap &&
+            !p.item->specularColorMap && !p.item->specularIntensityMap) continue;
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
         std::vector<std::tuple<std::string, WGPUTextureView, WGPUSampler>> named;
-        for (const auto& [slot, texture] : {std::pair{"metalnessMap", p.item->metalnessMap}, std::pair{"roughnessMap", p.item->roughnessMap}})
+        for (const auto& [slot, texture] : {std::pair{"metalnessMap", p.item->metalnessMap}, std::pair{"roughnessMap", p.item->roughnessMap},
+                                            std::pair{"specularColorMap", p.item->specularColorMap},
+                                            std::pair{"specularIntensityMap", p.item->specularIntensityMap}})
             if (texture) {
                 const MaterialTexture* gpu = materialTexture(*texture);
                 named.emplace_back(slot, gpu->view, gpu->sampler);
