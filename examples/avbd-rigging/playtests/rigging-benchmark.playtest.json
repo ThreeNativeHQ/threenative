@@ -2482,7 +2482,8 @@
         "id": "GameState",
         "path": "benchmarkFailures",
         "equals": 0,
-        "throughoutSteps": true
+        "throughoutSteps": true,
+        "allowTrivial": "Zero benchmark failures is a held invariant from load; benchmarkCompleted must independently reach 7."
       },
       {
         "id": "GameState",
@@ -2492,13 +2493,15 @@
       {
         "id": "GameState",
         "path": "benchmarkRun",
-        "equals": "off"
+        "equals": "off",
+        "allowTrivial": "The run returns to off after the last window; benchmarkCompleted 7 proves the windows ran."
       },
       {
         "id": "GameState",
         "path": "pausedAdditionalSteps",
         "equals": 0,
-        "throughoutSteps": true
+        "throughoutSteps": true,
+        "allowTrivial": "Zero extra paused steps is a held invariant checked at every staged wait."
       }
     ]
   }
