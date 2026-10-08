@@ -217,6 +217,25 @@ void adopt(v8::Isolate* isolate, v8::Local<v8::Context> ctx, v8::Local<v8::Objec
     self->DefineOwnProperty(ctx, str(isolate, name), value, v8::ReadOnly).FromMaybe(false);
 }
 
+// `new` on a JS subclass (`class Voice extends Object3D`) constructs its nearest engine ancestor:
+// new.target's constructor chain is walked to the first function this adapter installed, so the
+// subclass's own name (or a bundler's rename of it) never reaches tn_construct.
+v8::Local<v8::Function> engineConstructor(v8::Isolate* isolate, v8::Local<v8::Value> target,
+    const std::unordered_map<uint16_t, v8::Global<v8::FunctionTemplate>>& classes) {
+    const v8::Local<v8::Value> newTarget = target;
+    v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+    while (target->IsFunction()) {
+        v8::String::Utf8Value name(isolate, target.As<v8::Function>()->GetName());
+        const auto cls = classes.find(*name ? tn_type_id(*name) : 0);
+        v8::Local<v8::Function> installed;
+        if (cls != classes.end() && cls->second.Get(isolate)->GetFunction(ctx).ToLocal(&installed) &&
+            installed->StrictEquals(target))
+            return installed;
+        target = target.As<v8::Object>()->GetPrototype();
+    }
+    return newTarget.As<v8::Function>();
+}
+
 }  // namespace
 
 Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : tsl_(std::make_unique<Tsl>(isolate)), isolate_(isolate), context_(context) {
@@ -542,7 +561,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_ABI_VALUE: unsupported argument")));
                     return;
                 }
-                v8::String::Utf8Value cls(isolate, info.NewTarget().As<v8::Function>()->GetName());
+                v8::String::Utf8Value cls(isolate, engineConstructor(isolate, info.NewTarget(), a.classes_)->GetName());
                 tn_handle_t h{};
                 tn_diagnostic_t diagnostic{nullptr, 0};
                 if (tn_construct(a.context(), *cls, args.data(), static_cast<uint32_t>(args.size()), &h, &diagnostic) != TN_OK) {
