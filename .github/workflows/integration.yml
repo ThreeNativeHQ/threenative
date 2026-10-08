@@ -377,7 +377,7 @@ jobs:
         run: pnpm exec vitest run packages/core/__tests__/temporal-chain.spec.ts packages/core/__tests__/render-chain.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/create-threenative/__tests__/temporal-aa.spec.ts packages/create-threenative/__tests__/temporal-initial-projection.spec.ts packages/create-threenative/__tests__/temporal-resolve.spec.ts packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts scripts/__tests__/temporal-aa-evidence.spec.ts scripts/__tests__/temporal-aa-quality.spec.ts --maxWorkers=2
       - name: Render temporal motion and reset variants
         run: node --import tsx scripts/verify-temporal-aa.ts
-      # The strict 31-arm corpus (verify-temporal-motion.ts) is PRD-537's proof and fails by design until
+      # The strict 31-arm corpus (verify-temporal-motion.ts) is PRD-539's proof and fails by design until
       # a reconstructor clears its edge/reveal gate; this job enforces the shipped ghosting scope.
       - name: Measure animated-character ghosting against the zero-velocity control
         run: node --import tsx scripts/verify-temporal-ghosting.ts
