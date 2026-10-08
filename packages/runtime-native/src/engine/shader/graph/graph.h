@@ -64,6 +64,8 @@ Node uint_(Node value);
 Node uniform(std::string_view name, Type type, std::vector<float> values = {});
 Node attribute(std::string_view name, Type type);
 Node varying(std::string_view name, Type type);
+/** TSL's `varying(node, name)`: `value` computed in the vertex stage, read by name in the fragment. */
+Node varying(Node value, std::string_view name);
 Node builtin(std::string_view name);
 Node positionLocal();
 Node uv();

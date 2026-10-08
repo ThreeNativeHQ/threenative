@@ -1,10 +1,13 @@
-// The 25 upstream graphs from reference.ts, authored against the native V8 tsl global.
+// The 32 upstream graphs from reference.ts, authored against the native V8 tsl global.
 const {
   Fn,
   If,
   Loop,
   abs,
   attribute,
+  cameraPosition,
+  cameraProjectionMatrix,
+  cameraWorldMatrix,
   clamp,
   cos,
   cross,
@@ -21,7 +24,9 @@ const {
   max,
   min,
   mix,
+  normalWorld,
   normalize,
+  positionGeometry,
   positionLocal,
   pow,
   select,
@@ -33,6 +38,7 @@ const {
   uint,
   uniform,
   uv,
+  varying,
   vec2,
   vec3,
   vec4,
@@ -70,6 +76,13 @@ const CORPUS = [
   ["vec2-swizzle", "color", vec4(vec2(u, time).yx, 0, 1)],
   ["instance-offset", "position", vec4(positionLocal.add(vec3(float(instanceIndex), 0, 0)), 1)],
   ["time-wave", "position", vec4(positionLocal.add(vec3(0, sin(time.add(positionLocal.x)), 0)), 1)],
+  ["camera-position", "color", vec4(cameraPosition, 1)],
+  ["camera-projection", "position", cameraProjectionMatrix.mul(vec4(positionGeometry, 1))],
+  ["camera-world-matrix", "color", cameraWorldMatrix.mul(vec4(1, 0, 0, 0))],
+  ["position-geometry", "position", vec4(positionGeometry.xy, 0, 1)],
+  ["normal-world", "color", vec4(normalWorld, 1)],
+  ["varying-fragment", "color", vec4(varying(positionGeometry.mul(u), "scaled"), 1)],
+  ["varying-vertex", "position", vec4(varying(positionGeometry.mul(u), "scaled"), 1)],
 ];
 
 const positions = instancedArray(16, "vec4").setName("positions");

@@ -6,6 +6,7 @@ export const {
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
   normalViewGeometry, instanceIndex, cameraViewMatrix, color, ivec2, nodeObject, reflect, textureLoad,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
+  cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
 } = globalThis.tsl;
 export const {
   oneMinus, screenCoordinate, positionGeometry, normalGeometry, tangentGeometry, positionViewDirection,

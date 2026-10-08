@@ -402,7 +402,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
-                             "ao", "denoise", "smaa", "bloom", "oneMinus"})
+                             "ao", "denoise", "smaa", "bloom", "oneMinus", "varying"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     module->Set(context, str(isolate_, "positionLocal"), wrap(g::positionLocal())).Check();
@@ -410,6 +410,9 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     module->Set(context, str(isolate_, "normalViewGeometry"), wrap(g::varying("normalViewGeometry", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "cameraViewMatrix"), wrap(g::uniform("viewMatrix", Type::mat(4, 4)))).Check();
     module->Set(context, str(isolate_, "instanceIndex"), wrap(g::instanceIndex())).Check();
+    // TSL's node constants, built by the shared table as the Wasm back end builds them.
+    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "positionGeometry", "normalWorld"})
+        module->Set(context, str(isolate_, name), wrap(abi::tslCall(name, nullptr, {}, nextScope_))).Check();
     module->Set(context, str(isolate_, "screenUV"), wrap(g::uv())).Check();
     // three's ScreenNode coordinate (the fragment's pixel position) and its geometry attributes.
     module->Set(context, str(isolate_, "screenCoordinate"), wrap(g::swizzle(g::builtin("position"), "xy"))).Check();

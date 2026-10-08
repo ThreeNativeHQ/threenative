@@ -63,8 +63,8 @@ int corpus(Runtime& rt, const char* path) {
         v8::String::Utf8Value error(rt.isolate, caught.Exception());
         throw std::runtime_error(*error ? *error : "corpus failed");
     }
-    if (!value->IsArray() || value.As<v8::Array>()->Length() != 25)
-        throw std::runtime_error("corpus must return 25 graphs");
+    if (!value->IsArray() || value.As<v8::Array>()->Length() != 32)
+        throw std::runtime_error("corpus must return 32 graphs");
     const auto graphs = value.As<v8::Array>();
     using namespace tn::engine::shader;
     for (uint32_t i = 0; i < graphs->Length(); ++i) {

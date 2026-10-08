@@ -70,6 +70,15 @@ const FUNCTIONS = [
   "textureLoad",
   "reflect",
   "convertToTexture",
+  "varying",
+] as const;
+/** Node constants the shared table builds with no arguments, each built when read. */
+const CONSTANTS = [
+  "cameraPosition",
+  "cameraProjectionMatrix",
+  "cameraWorldMatrix",
+  "positionGeometry",
+  "normalWorld",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
@@ -194,5 +203,10 @@ export function defineTsl(runtime: ITslRuntime): Record<string, unknown> {
   const exports: Record<string, unknown> = {};
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
+  for (const name of CONSTANTS)
+    Object.defineProperty(exports, name, {
+      enumerable: true,
+      get: () => wrap(call(name, null, [])),
+    });
   return exports;
 }

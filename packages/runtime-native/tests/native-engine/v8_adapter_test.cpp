@@ -2,10 +2,13 @@
 #include "check.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/bindings.h"
+#include "engine/abi/tsl_call.h"
 #include "engine/animation/mixer.h"
 #include "engine/foundation/ThreeConstants.h"
 #include "engine/foundation/math/Color.h"
+#include "engine/shader/standard.h"
 #include "engine/shader/tsl/tsl.h"
+#include "engine/shader/wgsl.h"
 #include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
@@ -600,6 +603,65 @@ void tslApi() {
         CHECK(g::lower(actual, program) != tn::engine::shader::kInvalid);
         CHECK(program.diagnostics().empty());
     }
+
+    // Midway's node set through a basic material: varying(node) and normalWorld are written by the
+    // vertex stage it links, never read as vertex attributes; the camera accessors are uniforms.
+    v8::Local<v8::Value> made;
+    const bool ran = v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(rt.isolate, R"JS((() => {
+        const m = new MeshBasicNodeMaterial();
+        const world = tsl.varying(tsl.positionGeometry.mul(2), 'world');
+        m.colorNode = tsl.vec4(world.add(tsl.normalWorld).add(tsl.cameraPosition),
+            tsl.cameraWorldMatrix.mul(tsl.cameraProjectionMatrix.mul(tsl.vec4(world, 1))).x);
+        return m;
+    })())JS")).ToLocalChecked()->Run(ctx).ToLocal(&made);
+    CHECK(ran);
+    tn_handle_t basic{};
+    if (ran && adapter.unwrap(made, basic)) {
+        namespace s = tn::engine::shader;
+        s::VertexVariant variant;
+        variant.nodes.colorNode = tn::abi::shaderNode(basic, "colorNode");
+        const auto programs = s::buildBasic(variant);
+        CHECK(programs.diagnostics.empty() && programs.vertex.ok() && programs.fragment.ok());
+        const std::string vertex = programs.vertex.dump(true), fragment = programs.fragment.dump(true);
+        for (const char* name : {"world", "normalView"}) {
+            CHECK(vertex.find(std::string("output ") + name + " =") != std::string::npos);
+            CHECK(vertex.find(std::string("attribute:") + name) == std::string::npos);
+        }
+        CHECK(vertex.find("mul(attribute:position:vec3<f32>, 2f:f32)") != std::string::npos);
+        for (const char* uniform : {"cameraPosition:vec3", "cameraWorldMatrix:mat4x4", "cameraProjectionMatrix:mat4x4", "viewMatrix:mat4x4"})
+            CHECK(fragment.find(std::string("uniform:") + uniform) != std::string::npos);
+        CHECK(s::WgslEmitter::emit(programs.vertex).ok() && s::WgslEmitter::emit(programs.fragment, 1).ok());
+        if (vertex.find("attribute:world") != std::string::npos || vertex.find("output world =") == std::string::npos)
+            std::fprintf(stderr, "TSL basic vertex:\n%s\n", vertex.c_str());
+    } else CHECK(false);
+
+    // Two different nodes under one explicit varying name are refused, not silently merged.
+    v8::Local<v8::Value> clash;
+    CHECK(v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(rt.isolate, R"JS((() => {
+        const m = new MeshBasicNodeMaterial();
+        m.colorNode = tsl.vec4(tsl.varying(tsl.positionGeometry, 'dup').add(tsl.varying(tsl.positionGeometry.mul(2), 'dup')), 1);
+        return m;
+    })())JS")).ToLocalChecked()->Run(ctx).ToLocal(&clash));
+    tn_handle_t clashing{};
+    CHECK(adapter.unwrap(clash, clashing));
+    namespace s = tn::engine::shader;
+    s::VertexVariant clashVariant;
+    clashVariant.nodes.colorNode = tn::abi::shaderNode(clashing, "colorNode");
+    std::string refused;
+    try { s::buildBasic(clashVariant); } catch (const std::runtime_error& error) { refused = error.what(); }
+    CHECK(refused == "TN_TSL_VARYING_CONFLICT: dup");
+
+    // An instanced basic material's normalView goes through the instance matrix, as a lit one's does.
+    s::VertexVariant instanced;
+    instanced.instanced = true;
+    uint64_t serial = 0;
+    instanced.nodes.colorNode = g::vec4({tn::abi::tslCall("normalWorld", nullptr, {}, serial), g::float_(1)});
+    const auto instancedPrograms = s::buildBasic(instanced);
+    const std::string instancedVertex = instancedPrograms.vertex.dump(true);
+    const auto normalOutput = instancedVertex.find("output normalView =");
+    CHECK(normalOutput != std::string::npos &&
+          instancedVertex.find("instanceMatrix0", normalOutput) != std::string::npos);
+    CHECK(instancedPrograms.vertex.ok() && s::WgslEmitter::emit(instancedPrograms.vertex).ok());
 }
 
 // PRD-531 slice 3: the real V8 material setter owns a graph after its JS wrapper is gone.
