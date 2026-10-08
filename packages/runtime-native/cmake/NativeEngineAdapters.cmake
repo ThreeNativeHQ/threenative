@@ -97,6 +97,10 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-imports.mjs
                 $<TARGET_FILE:tn-native-engine-player-v8> ${TN_PLAYER_IMPORTS_MODE})
         set_tests_properties(native_engine_player_imports PROPERTIES LABELS "native-engine")
+        add_test(NAME native_engine_player_gc
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-gc.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_gc PROPERTIES LABELS "native-engine")
     endif()
 
     # Both CP1 arms on a small L4: 64 cubes + the ground + the output pass, 66 draws in each.
