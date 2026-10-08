@@ -161,5 +161,14 @@ describe("native-AOT driver", () => {
     expect(sourceKey([a])).toBe(first);
     writeFileSync(a, "two");
     expect(sourceKey([a])).not.toBe(first);
+    // ...and by the engine archives it links: touching one rebuilds the game.
+    writeFileSync(a, "one");
+    const archive = join(dir, "libtn_engine_renderer.a");
+    writeFileSync(archive, "x");
+    const linked = sourceKey([a], dir);
+    expect(sourceKey([a], dir)).toBe(linked);
+    const { utimesSync } = await import("node:fs");
+    utimesSync(archive, new Date(2030, 0, 1), new Date(2030, 0, 1));
+    expect(sourceKey([a], dir)).not.toBe(linked);
   });
 });

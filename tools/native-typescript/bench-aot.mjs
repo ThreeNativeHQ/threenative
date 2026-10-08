@@ -33,9 +33,17 @@ function named(code, message) {
 }
 
 /** Everything the binary is built from: a changed source, facade, adapter or bridge rebuilds it. */
-export function sourceKey(files) {
+export function sourceKey(files, engineBuild) {
   const hash = createHash("sha256");
   for (const file of files) hash.update(fs.readFileSync(file));
+  // The compiled game links the engine's archives: a rebuilt engine must rebuild it, or it would run
+  // against the engine it was first linked with.
+  if (engineBuild !== undefined)
+    for (const name of fs
+      .readdirSync(engineBuild)
+      .filter((entry) => /^lib.*\.a$/.test(entry))
+      .sort())
+      hash.update(`${name}:${fs.statSync(path.join(engineBuild, name)).mtimeMs}`);
   return hash.digest("hex").slice(0, 16);
 }
 
@@ -85,21 +93,22 @@ async function build(exe) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const bridgeDir = path.join(
-    process.env.TN_NATIVE_ENGINE_BUILD ?? path.join(REPO, "packages/runtime-native/build/tn-linux"),
-    "three-bridge",
-    "bench-aot",
-  );
+  const engineBuild =
+    process.env.TN_NATIVE_ENGINE_BUILD ?? path.join(REPO, "packages/runtime-native/build/tn-linux");
+  const bridgeDir = path.join(engineBuild, "three-bridge", "bench-aot");
   await fsp.mkdir(bridgeDir, { recursive: true });
-  const key = sourceKey([
-    ENTRY,
-    POSE,
-    ...["three.ts", "three-aot.ts", "tn_three_bench.cpp", "tn_three_shim.c"].map((name) =>
-      path.join(HERE, "three", name),
-    ),
-    path.join(HERE, "three", "perry-adapter", "src", "lib.rs"),
-    path.join(HERE, "three", "perry-adapter", "package.json"),
-  ]);
+  const key = sourceKey(
+    [
+      ENTRY,
+      POSE,
+      ...["three.ts", "three-aot.ts", "tn_three_bench.cpp", "tn_three_shim.c"].map((name) =>
+        path.join(HERE, "three", name),
+      ),
+      path.join(HERE, "three", "perry-adapter", "src", "lib.rs"),
+      path.join(HERE, "three", "perry-adapter", "package.json"),
+    ],
+    engineBuild,
+  );
   const exe = path.join(bridgeDir, `l4-workload-aot-${key}`);
   if (!fs.existsSync(exe)) await build(exe);
   await fsp.rm(options.out, { force: true });
