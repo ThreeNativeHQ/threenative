@@ -7549,6 +7549,11 @@
         "source": "three"
       },
       {
+        "symbol": "CatmullRomCurve3",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "CircleGeometry",
         "kind": "class",
         "source": "three"
@@ -7837,6 +7842,11 @@
         "symbol": "TorusGeometry",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "TubeGeometry",
+        "kind": "class",
+        "source": "three"
       },
       {
         "symbol": "Vector2",

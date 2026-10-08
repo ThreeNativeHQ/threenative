@@ -3017,13 +3017,271 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_CATMULLROMCURVE3"
+        "kind": "supported"
       },
       "extends": null,
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "arcLengthDivisions",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "closed",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "curveType",
+          "type": "\"centripetal\" | \"chordal\" | \"catmullrom\"",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "tension",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "string | \"Curve\"",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "points",
+          "type": "Vector3[]",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "getLength",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getLengths",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "number[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPoint",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "t",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPointAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "u",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getSpacedPoints",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "divisions",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3[]"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getTangent",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "t",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getTangentAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "u",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "optionalTarget",
+                  "type": "Vector3",
+                  "optional": true
+                }
+              ],
+              "returns": "Vector3"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getUtoTmapping",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "u",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "distance",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "updateArcLengths",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "CineonToneMapping",
@@ -18924,10 +19182,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_TUBEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []

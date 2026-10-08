@@ -370,6 +370,37 @@ readonly projectionMatrix: Matrix4;
 readonly projectionMatrixInverse: Matrix4;
 }
 
+/** Catalog supported: three/CatmullRomCurve3. */
+export declare class CatmullRomCurve3 {
+constructor();
+arcLengthDivisions: number;
+closed: boolean;
+curveType: "centripetal" | "chordal" | "catmullrom";
+tension: number;
+readonly type: string | "Curve";
+readonly points: Vector3[];
+
+  getLength(): number;
+
+  getLengths(divisions?: number): number[];
+
+  getPoint(t: number, optionalTarget?: Vector3): Vector3;
+
+  getPointAt(u: number, optionalTarget?: Vector3): Vector3;
+
+  getPoints(divisions?: number): Vector3[];
+
+  getSpacedPoints(divisions?: number): Vector3[];
+
+  getTangent(t: number, optionalTarget?: Vector3): Vector3;
+
+  getTangentAt(u: number, optionalTarget?: Vector3): Vector3;
+
+  getUtoTmapping(u: number, distance: number): number;
+
+  updateArcLengths(): void;
+}
+
 /** Catalog partial (native-not-implemented): three/CineonToneMapping. */
 export declare const CineonToneMapping: 3;
 
@@ -2333,6 +2364,11 @@ export declare const TriangleStripDrawMode: 1;
 
 /** Catalog partial (native-not-implemented): three/TrianglesDrawMode. */
 export declare const TrianglesDrawMode: 0;
+
+/** Catalog supported: three/TubeGeometry. */
+export declare class TubeGeometry extends BufferGeometry {
+constructor();
+}
 
 /** Catalog partial (native-not-implemented): three/TypedArray. */
 export type TypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array;
