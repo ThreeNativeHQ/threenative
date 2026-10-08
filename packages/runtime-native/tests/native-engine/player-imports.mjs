@@ -25,7 +25,20 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
-  "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", ...constants];
+  "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "Shape", "Path", "ShapeGeometry",
+  "ExtrudeGeometry", ...constants];
+const panel = (T) => {
+  const shape = new T.Shape();
+  shape.moveTo(-0.3, -0.2); shape.lineTo(0.25, -0.2); shape.quadraticCurveTo(0.3, -0.2, 0.3, -0.15);
+  shape.lineTo(0.3, 0.2); shape.absarc(0.2, 0.2, 0.1, 0, Math.PI / 2, false); shape.lineTo(-0.3, 0.3);
+  const gauge = new T.Path(); gauge.absarc(0, 0, 0.08, 0, Math.PI * 2, true);
+  shape.holes.push(gauge);
+  return [new T.ExtrudeGeometry(shape, { depth: 0.026, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 2, curveSegments: 8 }),
+    new T.ExtrudeGeometry(shape, { depth: 0.1, steps: 2, bevelEnabled: false, curveSegments: 12 }),
+    new T.ShapeGeometry(shape, 16), shape.holes.length];
+};
+const answers = (geometries) => JSON.stringify(geometries.slice(0, 3).map((g) => [g.getAttribute("position").array, g.getAttribute("uv").array,
+  g.getAttribute("normal").array, g.groups].map((v) => Array.isArray(v) ? v : Array.from(v))).concat([geometries[3]]));
 await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
@@ -79,6 +92,24 @@ check(authored.attributes === authored.attributes && authored.attributes.positio
 authored.deleteAttribute("instanceOffset");
 check(Object.keys(authored.attributes).join() === "position" && authored.attributes.instanceOffset === undefined, "attributes after delete");
 check(Object.keys(new THREE.PlaneGeometry().attributes).join() === "position,normal,uv", "generator attributes");
+const panel = (T) => {
+  const shape = new T.Shape();
+  shape.moveTo(-0.3, -0.2); shape.lineTo(0.25, -0.2); shape.quadraticCurveTo(0.3, -0.2, 0.3, -0.15);
+  shape.lineTo(0.3, 0.2); shape.absarc(0.2, 0.2, 0.1, 0, Math.PI / 2, false); shape.lineTo(-0.3, 0.3);
+  const gauge = new T.Path(); gauge.absarc(0, 0, 0.08, 0, Math.PI * 2, true);
+  shape.holes.push(gauge);
+  return [new T.ExtrudeGeometry(shape, { depth: 0.026, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 2, curveSegments: 8 }),
+    new T.ExtrudeGeometry(shape, { depth: 0.1, steps: 2, bevelEnabled: false, curveSegments: 12 }),
+    new T.ShapeGeometry(shape, 16), shape.holes.length];
+};
+const answers = (geometries) => JSON.stringify(geometries.slice(0, 3).map((g) => [g.getAttribute("position").array, g.getAttribute("uv").array,
+  g.getAttribute("normal").array, g.groups].map((v) => Array.isArray(v) ? v : Array.from(v))).concat([geometries[3]]));
+const panels = panel(THREE);
+check(panels[0] instanceof THREE.BufferGeometry && answers(panels) === ${JSON.stringify(answers(panel(three)))}, "Shape, holes and ExtrudeGeometry as three");
+const refuses = (make, pattern) => { try { make(); return false; } catch (error) { return pattern.test(String(error.message)); } };
+check(refuses(() => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)]),
+  { extrudePath: curve }), /extrudePath is not supported/), "extrudePath refused");
+check(refuses(() => new THREE.MeshBasicMaterial({ color: 0xff0000 }), /parameters object is not supported/), "material parameters still refused");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");

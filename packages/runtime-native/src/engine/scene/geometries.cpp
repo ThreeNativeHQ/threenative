@@ -5,6 +5,11 @@
 #include "engine/scene/geometries.h"
 
 #include "engine/foundation/math/ieee754.h"
+#include "engine/scene/shape_utils.h"
+
+#include <array>
+#include <cfloat>
+#include <optional>
 
 #include <algorithm>
 #include <charconv>
@@ -648,7 +653,7 @@ std::shared_ptr<BufferGeometry> makeTubeGeometry(const Curve& path, double tubul
     geometry->type = "TubeGeometry";
     // three's parameters hold the path object itself; with no JSON for it, `parameters` is refused
     // rather than answered without the path.
-    const FrenetFrames frames = path.computeFrenetFrames(tubularSegments, closed);
+    const FrenetFrames frames = computeFrenetFrames(path, tubularSegments, closed);
     Builder builder;
     Vector3 normal;
     const auto segment = [&](double i) {
@@ -687,6 +692,311 @@ std::shared_ptr<BufferGeometry> makeTubeGeometry(const Curve& path, double tubul
         }
     }
     finish(*geometry, builder);
+    return geometry;
+}
+
+// ---------------------------------------------------------------------------- ShapeGeometry
+
+std::shared_ptr<BufferGeometry> makeShapeGeometry(const std::vector<std::shared_ptr<Shape>>& shapes, bool asArray,
+                                                  double curveSegments) {
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->type = "ShapeGeometry";
+    // three's parameters hold the shape objects themselves, so `parameters` is refused.
+    Builder builder;
+    double groupStart = 0;
+    double groupCount = 0;
+    const auto addShape = [&](const Shape& shape) {
+        const auto indexOffset = static_cast<uint32_t>(builder.positions.size() / 3);
+        std::vector<Vector2> shapeVertices = shape.extractShape(curveSegments);
+        std::vector<std::vector<Vector2>> shapeHoles = shape.extractHoles(curveSegments);
+        if (!ShapeUtils::isClockWise(shapeVertices)) std::reverse(shapeVertices.begin(), shapeVertices.end());
+        for (auto& hole : shapeHoles)
+            if (ShapeUtils::isClockWise(hole)) std::reverse(hole.begin(), hole.end());
+        const auto faces = ShapeUtils::triangulateShape(shapeVertices, shapeHoles);
+        for (const auto& hole : shapeHoles) shapeVertices.insert(shapeVertices.end(), hole.begin(), hole.end());
+        for (const Vector2& vertex : shapeVertices) {
+            builder.positions.insert(builder.positions.end(), {vertex.x, vertex.y, 0});
+            builder.normals.insert(builder.normals.end(), {0, 0, 1});
+            builder.uvs.insert(builder.uvs.end(), {vertex.x, vertex.y});
+        }
+        for (const auto& face : faces) {
+            builder.indices.insert(builder.indices.end(), {face[0] + indexOffset, face[1] + indexOffset, face[2] + indexOffset});
+            groupCount += 3;
+        }
+    };
+    if (!asArray) {
+        addShape(*shapes.at(0));
+    } else {
+        for (size_t i = 0; i < shapes.size(); ++i) {
+            addShape(*shapes[i]);
+            geometry->addGroup(groupStart, groupCount, static_cast<double>(i));
+            groupStart += groupCount;
+            groupCount = 0;
+        }
+    }
+    finish(*geometry, builder);
+    return geometry;
+}
+
+// -------------------------------------------------------------------------- ExtrudeGeometry
+
+namespace {
+
+/** three's ExtrudeGeometry mergeOverlappingPoints: drops points within a scaled 1e-10 of the last. */
+void mergeOverlappingPoints(std::vector<Vector2>& points) {
+    constexpr double THRESHOLD = 1e-10;
+    constexpr double THRESHOLD_SQ = THRESHOLD * THRESHOLD;
+    if (points.empty()) return;
+    Vector2 prevPos = points[0];
+    for (size_t i = 1; i <= points.size(); ++i) {
+        const size_t currentIndex = i % points.size();
+        const Vector2 currentPos = points[currentIndex];
+        const double dx = currentPos.x - prevPos.x;
+        const double dy = currentPos.y - prevPos.y;
+        const double distSq = dx * dx + dy * dy;
+        const double scalingFactorSqrt = std::max({std::abs(currentPos.x), std::abs(currentPos.y), std::abs(prevPos.x),
+                                                   std::abs(prevPos.y)});
+        const double thresholdSqScaled = THRESHOLD_SQ * scalingFactorSqrt * scalingFactorSqrt;
+        if (distSq <= thresholdSqScaled) {
+            points.erase(points.begin() + static_cast<std::ptrdiff_t>(currentIndex));
+            --i;
+            if (points.empty()) return;
+            continue;
+        }
+        prevPos = currentPos;
+    }
+}
+
+double jsSign(double v) { return std::isnan(v) ? v : v > 0 ? 1 : v < 0 ? -1 : v; }
+
+Vector2 getBevelVec(const Vector2& inPt, const Vector2& inPrev, const Vector2& inNext) {
+    double v_trans_x, v_trans_y, shrink_by;
+    const double v_prev_x = inPt.x - inPrev.x, v_prev_y = inPt.y - inPrev.y;
+    const double v_next_x = inNext.x - inPt.x, v_next_y = inNext.y - inPt.y;
+    const double v_prev_lensq = v_prev_x * v_prev_x + v_prev_y * v_prev_y;
+    const double collinear0 = v_prev_x * v_next_y - v_prev_y * v_next_x;
+    if (std::abs(collinear0) > DBL_EPSILON) {
+        const double v_prev_len = std::sqrt(v_prev_lensq);
+        const double v_next_len = std::sqrt(v_next_x * v_next_x + v_next_y * v_next_y);
+        const double ptPrevShift_x = inPrev.x - v_prev_y / v_prev_len;
+        const double ptPrevShift_y = inPrev.y + v_prev_x / v_prev_len;
+        const double ptNextShift_x = inNext.x - v_next_y / v_next_len;
+        const double ptNextShift_y = inNext.y + v_next_x / v_next_len;
+        const double sf = ((ptNextShift_x - ptPrevShift_x) * v_next_y - (ptNextShift_y - ptPrevShift_y) * v_next_x) /
+                          (v_prev_x * v_next_y - v_prev_y * v_next_x);
+        v_trans_x = ptPrevShift_x + v_prev_x * sf - inPt.x;
+        v_trans_y = ptPrevShift_y + v_prev_y * sf - inPt.y;
+        const double v_trans_lensq = v_trans_x * v_trans_x + v_trans_y * v_trans_y;
+        if (v_trans_lensq <= 2) return {v_trans_x, v_trans_y};
+        shrink_by = std::sqrt(v_trans_lensq / 2);
+    } else {
+        bool direction_eq = false;
+        if (v_prev_x > DBL_EPSILON) {
+            if (v_next_x > DBL_EPSILON) direction_eq = true;
+        } else if (v_prev_x < -DBL_EPSILON) {
+            if (v_next_x < -DBL_EPSILON) direction_eq = true;
+        } else if (jsSign(v_prev_y) == jsSign(v_next_y)) {
+            direction_eq = true;
+        }
+        if (direction_eq) {
+            v_trans_x = -v_prev_y;
+            v_trans_y = v_prev_x;
+            shrink_by = std::sqrt(v_prev_lensq);
+        } else {
+            v_trans_x = v_prev_x;
+            v_trans_y = v_prev_y;
+            shrink_by = std::sqrt(v_prev_lensq / 2);
+        }
+    }
+    return {v_trans_x / shrink_by, v_trans_y / shrink_by};
+}
+
+Vector2 scalePt2(const Vector2& pt, const Vector2& vec, double size) {
+    Vector2 out = pt;
+    out.addScaledVector(vec, size);
+    return out;
+}
+
+std::vector<Vector2> bevelMovements(const std::vector<Vector2>& contour) {
+    std::vector<Vector2> movements(contour.size());
+    for (size_t i = 0, il = contour.size(), j = il - 1, k = i + 1; i < il; ++i, ++j, ++k) {
+        if (j == il) j = 0;
+        if (k == il) k = 0;
+        movements[i] = getBevelVec(contour[i], contour[j], contour[k]);
+    }
+    return movements;
+}
+
+}  // namespace
+
+std::shared_ptr<BufferGeometry> makeExtrudeGeometry(const std::vector<std::shared_ptr<Shape>>& shapes,
+                                                    const ExtrudeOptions& options) {
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->type = "ExtrudeGeometry";
+    // three's parameters hold the shape objects and the options object, so `parameters` is refused.
+    std::vector<double> verticesArray;
+    std::vector<double> uvArray;
+    const auto addShape = [&](const Shape& shape) {
+        std::vector<double> placeholder;
+        const double curveSegments = options.curveSegments.value_or(12);
+        const double steps = options.steps.value_or(1);
+        const double depth = options.depth.value_or(1);
+        const bool bevelEnabled = options.bevelEnabled.value_or(true);
+        double bevelThickness = options.bevelThickness.value_or(0.2);
+        double bevelSize = options.bevelSize.value_or(bevelThickness - 0.1);
+        double bevelOffset = options.bevelOffset.value_or(0);
+        double bevelSegments = options.bevelSegments.value_or(3);
+        if (!bevelEnabled) {
+            bevelSegments = 0;
+            bevelThickness = 0;
+            bevelSize = 0;
+            bevelOffset = 0;
+        }
+        std::vector<Vector2> vertices = shape.extractShape(curveSegments);
+        std::vector<std::vector<Vector2>> holes = shape.extractHoles(curveSegments);
+        if (!ShapeUtils::isClockWise(vertices)) {
+            std::reverse(vertices.begin(), vertices.end());
+            for (auto& hole : holes)
+                if (ShapeUtils::isClockWise(hole)) std::reverse(hole.begin(), hole.end());
+        }
+        mergeOverlappingPoints(vertices);
+        for (auto& hole : holes) mergeOverlappingPoints(hole);
+        // `contour` is the outline itself; `vertices` becomes a copy with the holes appended.
+        std::vector<Vector2> contour = vertices;
+        for (const auto& hole : holes) vertices.insert(vertices.end(), hole.begin(), hole.end());
+        const size_t vlen = vertices.size();
+        const auto v = [&](double x, double y, double z) { placeholder.insert(placeholder.end(), {x, y, z}); };
+
+        const std::vector<Vector2> contourMovements = bevelMovements(contour);
+        std::vector<std::vector<Vector2>> holesMovements;
+        std::vector<Vector2> verticesMovements = contourMovements;
+        for (const auto& hole : holes) {
+            holesMovements.push_back(bevelMovements(hole));
+            verticesMovements.insert(verticesMovements.end(), holesMovements.back().begin(), holesMovements.back().end());
+        }
+        std::vector<std::array<uint32_t, 3>> faces;
+        if (bevelSegments == 0) {
+            faces = ShapeUtils::triangulateShape(contour, holes);
+        } else {
+            std::vector<Vector2> contractedContourVertices;
+            std::vector<std::vector<Vector2>> expandedHoleVertices;
+            for (double b = 0; b < bevelSegments; b += 1) {
+                const double t = b / bevelSegments;
+                const double z = bevelThickness * ieee754::cos(t * kPi / 2);
+                const double bs = bevelSize * ieee754::sin(t * kPi / 2) + bevelOffset;
+                for (size_t i = 0; i < contour.size(); ++i) {
+                    const Vector2 vert = scalePt2(contour[i], contourMovements[i], bs);
+                    v(vert.x, vert.y, -z);
+                    if (t == 0) contractedContourVertices.push_back(vert);
+                }
+                for (size_t h = 0; h < holes.size(); ++h) {
+                    std::vector<Vector2> oneHoleVertices;
+                    for (size_t i = 0; i < holes[h].size(); ++i) {
+                        const Vector2 vert = scalePt2(holes[h][i], holesMovements[h][i], bs);
+                        v(vert.x, vert.y, -z);
+                        if (t == 0) oneHoleVertices.push_back(vert);
+                    }
+                    if (t == 0) expandedHoleVertices.push_back(std::move(oneHoleVertices));
+                }
+            }
+            faces = ShapeUtils::triangulateShape(contractedContourVertices, expandedHoleVertices);
+        }
+        const double bs = bevelSize + bevelOffset;
+        for (size_t i = 0; i < vlen; ++i) {
+            const Vector2 vert = bevelEnabled ? scalePt2(vertices[i], verticesMovements[i], bs) : vertices[i];
+            v(vert.x, vert.y, 0);
+        }
+        for (double s = 1; s <= steps; s += 1) {
+            for (size_t i = 0; i < vlen; ++i) {
+                const Vector2 vert = bevelEnabled ? scalePt2(vertices[i], verticesMovements[i], bs) : vertices[i];
+                v(vert.x, vert.y, depth / steps * s);
+            }
+        }
+        for (double b = bevelSegments - 1; b >= 0; b -= 1) {
+            const double t = b / bevelSegments;
+            const double z = bevelThickness * ieee754::cos(t * kPi / 2);
+            const double bs2 = bevelSize * ieee754::sin(t * kPi / 2) + bevelOffset;
+            for (size_t i = 0; i < contour.size(); ++i) {
+                const Vector2 vert = scalePt2(contour[i], contourMovements[i], bs2);
+                v(vert.x, vert.y, depth + z);
+            }
+            for (size_t h = 0; h < holes.size(); ++h)
+                for (size_t i = 0; i < holes[h].size(); ++i) {
+                    const Vector2 vert = scalePt2(holes[h][i], holesMovements[h][i], bs2);
+                    v(vert.x, vert.y, depth + z);
+                }
+        }
+
+        const auto addVertex = [&](double index) {
+            const auto at = static_cast<size_t>(index) * 3;
+            verticesArray.insert(verticesArray.end(), {placeholder[at], placeholder[at + 1], placeholder[at + 2]});
+        };
+        const auto f3 = [&](double a, double b, double c) {
+            addVertex(a);
+            addVertex(b);
+            addVertex(c);
+            // WorldUVGenerator.generateTopUV: each vertex's x and y.
+            const size_t next = verticesArray.size() / 3;
+            for (size_t k = next - 3; k < next; ++k) uvArray.insert(uvArray.end(), {verticesArray[k * 3], verticesArray[k * 3 + 1]});
+        };
+        const auto f4 = [&](double a, double b, double c, double d) {
+            addVertex(a);
+            addVertex(b);
+            addVertex(d);
+            addVertex(b);
+            addVertex(c);
+            addVertex(d);
+            // WorldUVGenerator.generateSideWallUV over the indexes three hands it: A, B, C, D.
+            const size_t next = verticesArray.size() / 3;
+            const size_t index[4] = {next - 6, next - 3, next - 2, next - 1};
+            const auto at = [&](size_t i, int c) { return verticesArray[index[i] * 3 + c]; };
+            const bool alongX = std::abs(at(0, 1) - at(1, 1)) < std::abs(at(0, 0) - at(1, 0));
+            const auto uv = [&](size_t i) { return Vector2(alongX ? at(i, 0) : at(i, 1), 1 - at(i, 2)); };
+            for (size_t i : {0, 1, 3, 1, 2, 3}) {
+                const Vector2 p = uv(i);
+                uvArray.insert(uvArray.end(), {p.x, p.y});
+            }
+        };
+        const auto fv = static_cast<double>(vlen);
+        // buildLidFaces
+        double start = static_cast<double>(verticesArray.size() / 3);
+        if (bevelEnabled) {
+            double offset = 0;
+            for (const auto& face : faces) f3(face[2] + offset, face[1] + offset, face[0] + offset);
+            offset = fv * (steps + bevelSegments * 2);
+            for (const auto& face : faces) f3(face[0] + offset, face[1] + offset, face[2] + offset);
+        } else {
+            for (const auto& face : faces) f3(face[2], face[1], face[0]);
+            for (const auto& face : faces) f3(face[0] + fv * steps, face[1] + fv * steps, face[2] + fv * steps);
+        }
+        geometry->addGroup(start, static_cast<double>(verticesArray.size() / 3) - start, 0);
+        // buildSideFaces
+        start = static_cast<double>(verticesArray.size() / 3);
+        const auto sidewalls = [&](const std::vector<Vector2>& ring, double layeroffset) {
+            const auto n = static_cast<long long>(ring.size());
+            for (long long i = n - 1; i >= 0; --i) {
+                const double j = static_cast<double>(i);
+                const double k = static_cast<double>(i - 1 < 0 ? n - 1 : i - 1);
+                for (double s = 0, sl = steps + bevelSegments * 2; s < sl; s += 1) {
+                    const double slen1 = fv * s;
+                    const double slen2 = fv * (s + 1);
+                    f4(layeroffset + j + slen1, layeroffset + k + slen1, layeroffset + k + slen2, layeroffset + j + slen2);
+                }
+            }
+        };
+        double layeroffset = 0;
+        sidewalls(contour, layeroffset);
+        layeroffset += static_cast<double>(contour.size());
+        for (const auto& hole : holes) {
+            sidewalls(hole, layeroffset);
+            layeroffset += static_cast<double>(hole.size());
+        }
+        geometry->addGroup(start, static_cast<double>(verticesArray.size() / 3) - start, 1);
+    };
+    for (const auto& shape : shapes) addShape(*shape);
+    geometry->setAttribute("position", BufferAttribute::fromFloats(verticesArray, 3));
+    geometry->setAttribute("uv", BufferAttribute::fromFloats(uvArray, 2));
+    geometry->computeVertexNormals();
     return geometry;
 }
 

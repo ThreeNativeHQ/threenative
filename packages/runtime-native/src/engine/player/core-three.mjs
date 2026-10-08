@@ -5,8 +5,8 @@ export const {
   DataTexture, DirectionalLight, Euler, Float32BufferAttribute, Fog, FogExp2, Frustum, Group,
   HemisphereLight, InstancedBufferAttribute, InstancedMesh, LatheGeometry, LOD, Layers, Matrix3, Matrix4, Mesh,
   MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshPhysicalMaterial,
-  MeshStandardMaterial, NumberKeyframeTrack, Object3D, OrthographicCamera, PerspectiveCamera, Plane, PlaneGeometry,
-  QuaternionKeyframeTrack, VectorKeyframeTrack,
+  MeshStandardMaterial, NumberKeyframeTrack, Object3D, OrthographicCamera, Path, PerspectiveCamera, Plane, PlaneGeometry,
+  QuaternionKeyframeTrack, VectorKeyframeTrack, Shape, ShapeGeometry, ExtrudeGeometry,
   PointLight, Quaternion, Ray, Raycaster, RingGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
   SphereGeometry, SpotLight, Sprite, SpriteMaterial, Texture, TorusGeometry, TubeGeometry, Vector2, Vector3,
   Vector4, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, PCFSoftShadowMap,
@@ -55,7 +55,7 @@ for (const name of ["Object3D", "Scene", "Mesh", "Group", "SkinnedMesh", "Instan
   prototype[`is${name}`] = true;
 }
 const geometries = [BoxGeometry, CircleGeometry, ConeGeometry, CylinderGeometry, PlaneGeometry,
-  RingGeometry, SphereGeometry, TorusGeometry, LatheGeometry, TubeGeometry];
+  RingGeometry, SphereGeometry, TorusGeometry, LatheGeometry, TubeGeometry, ShapeGeometry, ExtrudeGeometry];
 // three's `geometry.attributes` map over the native named attributes: one live view per geometry,
 // reading through getAttribute and writing through setAttribute/deleteAttribute.
 // ponytail: names are three's standard ones plus those set from JS; a custom-named attribute only a
@@ -75,6 +75,13 @@ for (const geometry of [BufferGeometry, ...geometries]) {
     authoredNames.get(this)?.delete(String(name));
     return deleteAttribute.call(this, name);
   };
+  // The registry answers `groups` as canonical JSON text (the fixtures' protocol); three's is an array
+  // of { start, count, materialIndex } in that key order.
+  // ponytail: a fresh array per read, so edit groups with addGroup/clearGroups, as three advises.
+  const groups = Object.getOwnPropertyDescriptor(geometry.prototype, "groups");
+  Object.defineProperty(geometry.prototype, "groups", { get() {
+    return JSON.parse(groups.get.call(this)).map(({ start, count, materialIndex }) => ({ start, count, materialIndex }));
+  } });
 }
 Object.defineProperty(BufferGeometry.prototype, "attributes", { get() {
   if (attributeViews.has(this)) return attributeViews.get(this);
@@ -101,10 +108,32 @@ for (const [base, names] of [
   [BufferGeometry, geometries],
   [BufferAttribute, [Float32BufferAttribute, InstancedBufferAttribute]],
   [Texture, [DataTexture]],
+  [Path, [Shape]],
 ]) {
   for (const derived of names) Object.setPrototypeOf(derived.prototype, base.prototype);
 }
 CatmullRomCurve3.prototype.isCatmullRomCurve3 = true;
+// three's `shape.holes` is the plain array a game pushes paths into: each change writes the whole
+// array through the native setter, so the geometry built from the shape sees it.
+const holeViews = new WeakMap();
+const holes = Object.getOwnPropertyDescriptor(Shape.prototype, "holes");
+Object.defineProperty(Shape.prototype, "holes", {
+  get() {
+    if (!holeViews.has(this)) {
+      const shape = this;
+      holeViews.set(this, new Proxy(holes.get.call(this), { set(target, key, value) {
+        target[key] = value;
+        holes.set.call(shape, [...target]);
+        return true;
+      } }));
+    }
+    return holeViews.get(this);
+  },
+  set(value) {
+    holes.set.call(this, [...value]);
+    holeViews.delete(this);
+  },
+});
 for (const light of [AmbientLight, DirectionalLight, HemisphereLight, PointLight, SpotLight])
   light.prototype.isLight = true;
 for (const material of [MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial,

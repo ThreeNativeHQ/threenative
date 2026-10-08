@@ -9,6 +9,7 @@
 #include "engine/scene/geometry.h"
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace tn::engine {
@@ -52,5 +53,18 @@ std::shared_ptr<BufferGeometry> makeLatheGeometry(const std::vector<Vector2>& po
 std::shared_ptr<BufferGeometry> makeTubeGeometry(const Curve& path, double tubularSegments = 64,
                                                  double radius = 1, double radialSegments = 8,
                                                  bool closed = false);
+
+/** One shape, or (`asArray`) an array of them with one group each, as three's ShapeGeometry. */
+std::shared_ptr<BufferGeometry> makeShapeGeometry(const std::vector<std::shared_ptr<Shape>>& shapes, bool asArray,
+                                                  double curveSegments = 12);
+
+/** three's ExtrudeGeometry options; an empty one takes three's default. extrudePath and UVGenerator are not carried. */
+struct ExtrudeOptions {
+    std::optional<double> curveSegments, steps, depth, bevelThickness, bevelSize, bevelOffset, bevelSegments;
+    std::optional<bool> bevelEnabled;
+};
+
+std::shared_ptr<BufferGeometry> makeExtrudeGeometry(const std::vector<std::shared_ptr<Shape>>& shapes,
+                                                    const ExtrudeOptions& options);
 
 }  // namespace tn::engine
