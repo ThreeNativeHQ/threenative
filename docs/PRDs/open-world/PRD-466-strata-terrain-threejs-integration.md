@@ -3819,4 +3819,10 @@ and the sky masked left the meadow unchanged (81.0 → 83.1) and washed the dist
 camera looks into the sun through gaps, so the stage adds haze, not shafts. A `bloom` stage (0.12,
 radius 0.4, threshold 0.9) changed nothing visible without the sun in frame.
 
+Readiness on this shared host, page start to `worldReady`, same build, alternated arms: authored
+crown normals 82.4 s and 67.0 s, radial 111.3 s and 56.7 s (load 26–42). The spread is host load, not
+the crown-normal mode, so the `terrain.playtest.json` first step (60 s) stays red here for an
+environmental reason; thresholds are unchanged. A quiet-host rerun or the streaming lane's loading
+work is what can turn it green.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
