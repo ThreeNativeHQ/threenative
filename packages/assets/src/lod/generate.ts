@@ -126,7 +126,7 @@ export const LOD_GENERATOR = "threenative-discrete-lod";
  * Bumped when the *generated levels* change, so a stale cook cache cannot serve the old chain. The
  * artifact schema stays put: a chain with or without the terminal level reads the same.
  */
-export const LOD_GENERATOR_VERSION = 4;
+export const LOD_GENERATOR_VERSION = 3;
 /** Bumped with the output layout so a stale cache entry cannot hide a schema change. */
 export const LOD_ARTIFACT_SCHEMA_VERSION = 1;
 /** The pinned simplifier this artifact's error metric was produced with. */
@@ -970,25 +970,15 @@ function animatedNodes(document: Document): Set<GltfNode> {
 
 function meshFlags(document: Document, animated: Set<GltfNode>): Map<Mesh, IMeshFlags> {
   const flags = new Map<Mesh, IMeshFlags>();
-  const levelNamed = new Set<Mesh>();
-  let levelNodes = 0;
   for (const node of reachableNodes(document)) {
     const mesh = node.getMesh();
     if (mesh === null) continue;
     const current = flags.get(mesh) ?? { animated: false, authoredLod: false, skinned: false };
     current.skinned ||= node.getSkin() !== null;
     current.animated ||= animated.has(node);
-    if (authoredLodName(node.getName()) || authoredLodName(mesh.getName())) {
-      levelNamed.add(mesh);
-      levelNodes += 1;
-    }
+    current.authoredLod ||= authoredLodName(node.getName()) || authoredLodName(mesh.getName());
     flags.set(mesh, current);
   }
-  // An authored chain is two or more level-named nodes in one asset. A lone level name (a pack's
-  // `_LOD2` exported as a model of its own) has no sibling for anything to select, so it is this
-  // asset's LOD0 and gets a generated chain like any other mesh.
-  if (levelNodes > 1)
-    for (const mesh of levelNamed) (flags.get(mesh) as IMeshFlags).authoredLod = true;
   return flags;
 }
 
