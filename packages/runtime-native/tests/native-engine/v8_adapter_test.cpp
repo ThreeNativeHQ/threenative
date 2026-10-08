@@ -877,6 +877,29 @@ void skeletal() {
     if (!ran) { v8::String::Utf8Value error(rt.isolate, caught.Exception()); std::fprintf(stderr, "skeletal: %s\n", *error); }
 }
 
+// three's attribute.array is the attribute's own typed array: one object per attribute, of the
+// attribute's scalar type, and an element write is what the attribute (and every engine read) holds.
+void attributeArrays() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const g = new BufferGeometry();
+        g.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
+        const p = g.getAttribute("position");
+        const a = p.array;
+        a[3] = 5;
+        g.computeBoundingBox();
+        const index = new BoxGeometry().getIndex();
+        const wide = new BufferAttribute(new Uint32Array([7, 8]), 1);
+        wide.array[1] = 9;
+        [a instanceof Float32Array, p.array === a, p.getX(1), g.boundingBox.max.x,
+         index.array instanceof Uint16Array, index.array.length, wide.array instanceof Uint32Array, wide.getX(1)].join()
+    )JS");
+    CHECK(got == "true,true,5,5,true,36,true,9");
+    if (got != "true,true,5,5,true,36,true,9") std::fprintf(stderr, "attribute arrays: %s\n", got.c_str());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", unsupported}, {"gc_release", gcRelease},
@@ -884,4 +907,5 @@ TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", un
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},
              {"catalog_coverage", catalogCoverage},
-             {"callback_cycle", callbackCycle}, {"tsl_api", tslApi}, {"node_materials", nodeMaterials}, {"skeletal", skeletal})
+             {"callback_cycle", callbackCycle}, {"tsl_api", tslApi}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
+             {"attribute_arrays", attributeArrays})

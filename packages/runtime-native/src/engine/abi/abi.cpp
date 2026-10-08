@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "engine/abi/abi_internal.h"
+#include "engine/scene/geometry.h"
 #include "engine/scene/material.h"
 #include "engine/abi/bindings.h"
 #include "engine/foundation/handles.h"
@@ -356,6 +357,8 @@ bool toBinding(tn_context* context, const tn_value_t* in, uint32_t count, tn::bi
             case TN_VALUE_NUMBERS:
                 if (!v.numbers && v.count) return false;
                 out.push_back(tn::binding::Value::list(v.count ? std::vector<double>(v.numbers, v.numbers + v.count) : std::vector<double>{}));
+                // A typed array names its type in `text` (null-terminated), as `a:Uint16Array:` does.
+                if (v.text) out.back().text = v.text;
                 break;
             case TN_VALUE_ARRAY: {
                 if (v.count > UINT32_MAX) return false;
@@ -714,4 +717,31 @@ extern "C" tn_status_t tn_tsl_compile(tn_handle_t material, const char* wgsl_pat
         }
         return ok(diagnostic);
     });
+}
+
+// A JS back end that shares the engine's memory (the Wasm one) answers three's `attribute.array`
+// with a typed array over the attribute's own storage, so an element write is a write to the
+// attribute. The view leases the store, so it cannot reallocate under the view, until
+// tnw_attribute_view_release. out[0] is the data address, out[1] the element count and out[2] the
+// Scalar; the result is the lease (0: not an attribute).
+extern "C" uintptr_t tnw_attribute_view(const tn_handle_t* attribute, uint64_t* out) {
+    tn::binding::Object* object = attribute ? tn::abi::objectOf(*attribute) : nullptr;
+    if (object == nullptr || out == nullptr) return 0;
+    const std::string& cls = object->cls;
+    if (cls != "BufferAttribute" && cls != "Float32BufferAttribute" && cls != "Uint16BufferAttribute" &&
+        cls != "Uint32BufferAttribute" && cls != "InstancedBufferAttribute")
+        return 0;
+    auto store = static_cast<tn::engine::BufferAttribute*>(object->ptr.get())->store;
+    store->acquireLease();
+    out[0] = reinterpret_cast<uintptr_t>(store->data());
+    out[1] = store->count();
+    out[2] = static_cast<uint64_t>(store->scalar());
+    return reinterpret_cast<uintptr_t>(new std::shared_ptr<tn::engine::BufferStore>(std::move(store)));
+}
+
+extern "C" void tnw_attribute_view_release(uintptr_t lease) {
+    auto* store = reinterpret_cast<std::shared_ptr<tn::engine::BufferStore>*>(lease);
+    if (store == nullptr) return;
+    (*store)->releaseLease();
+    delete store;
 }

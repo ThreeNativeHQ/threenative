@@ -269,10 +269,13 @@ private:
             v8::String::Utf8Value text(isolate_, value);
             return "s:" + encode(*text ? *text : "");
         }
-        if (kind == "numbers" && value->IsArray()) {
-            v8::Local<v8::Array> array = value.As<v8::Array>();
+        if (kind == "numbers" && (value->IsArray() || value->IsTypedArray())) {
+            // A typed array (`attribute.array`) is read element by element, as a plain array is.
+            v8::Local<v8::Object> array = value.As<v8::Object>();
+            const uint32_t length = value->IsArray() ? value.As<v8::Array>()->Length()
+                                                     : static_cast<uint32_t>(value.As<v8::TypedArray>()->Length());
             std::string out;
-            for (uint32_t i = 0; i < array->Length(); ++i) {
+            for (uint32_t i = 0; i < length; ++i) {
                 v8::Local<v8::Value> e = array->Get(ctx, i).ToLocalChecked();
                 if (!e->IsNumber()) throw Unsupported{"numbers observation holds a non-number"};
                 out += (i ? "," : "") + bits(e.As<v8::Number>()->Value());

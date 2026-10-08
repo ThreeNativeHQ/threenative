@@ -285,4 +285,37 @@ engine.collect();
     "extrude is a BufferGeometry",
   );
 }
+// three's attribute.array is the attribute's own typed array: of its scalar type, one per attribute,
+// and an element write is what the engine reads back.
+{
+  const web = (await bindWebEngine(createTnAbi, [
+    "BufferGeometry",
+    "Float32BufferAttribute",
+    "BufferAttribute",
+    "BoxGeometry",
+  ])) as unknown as typeof THREE;
+  const g = new web.BufferGeometry();
+  g.setAttribute(
+    "position",
+    new web.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0] as never, 3),
+  );
+  const p = g.getAttribute("position") as InstanceType<typeof THREE.BufferAttribute>;
+  const a = p.array;
+  a[3] = 5;
+  g.computeBoundingBox();
+  const index = new web.BoxGeometry().getIndex() as InstanceType<typeof THREE.BufferAttribute>;
+  const wide = new web.BufferAttribute(new Uint32Array([7, 8]), 1);
+  wide.array[1] = 9;
+  const got = [
+    a instanceof Float32Array,
+    p.array === a,
+    p.getX(1),
+    g.boundingBox?.max.x,
+    index.array instanceof Uint16Array,
+    index.array.length,
+    wide.array instanceof Uint32Array,
+    wide.getX(1),
+  ].join();
+  check(got === "true,true,5,5,true,36,true,9", `attribute arrays ${got}`);
+}
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

@@ -50,6 +50,11 @@ export interface IBrowserRuntime {
   get(self: IEngineRef, path: string): EngineValue;
   set(self: IEngineRef, path: string, value: EngineValue): void;
   release(self: IEngineRef): void;
+  /**
+   * three's `attribute.array`: a typed array over the attribute's own storage, so an element write
+   * is a write to the attribute (see createWasmRuntime). Absent where no memory is shared.
+   */
+  attributeArray?(self: IEngineRef): TypedArray;
   /** Sets (or, with null, clears) a callback the engine runs; `handler` gets the engine's arguments. */
   setCallback(
     self: IEngineRef,
@@ -70,6 +75,36 @@ export interface IBrowserEngine {
 }
 
 const REF = Symbol("tn.engineRef");
+
+type TypedArray =
+  | Float32Array
+  | Float64Array
+  | Int8Array
+  | Uint8Array
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array;
+/** A number list that came from a typed array names it, so the engine keeps three's storage type. */
+const TYPED = Symbol("tn.typedArray");
+// The engine's Scalar order: F32, F64, I8, U8, I16, U16, I32, U32.
+const SCALARS = [
+  Float32Array,
+  Float64Array,
+  Int8Array,
+  Uint8Array,
+  Int16Array,
+  Uint16Array,
+  Int32Array,
+  Uint32Array,
+];
+const ATTRIBUTE_CLASSES = new Set([
+  "BufferAttribute",
+  "Float32BufferAttribute",
+  "Uint16BufferAttribute",
+  "Uint32BufferAttribute",
+  "InstancedBufferAttribute",
+]);
 
 interface IWrapped {
   [REF]: IEngineRef;
@@ -245,8 +280,12 @@ export function defineBrowserClasses(
     if (value === null || value === undefined) return null;
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
-    if (Array.isArray(value) || ArrayBuffer.isView(value))
-      return Array.from(value as ArrayLike<unknown>, toEngine);
+    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      const list = Array.from(value as unknown as ArrayLike<number>);
+      Object.defineProperty(list, TYPED, { value: value.constructor.name });
+      return list;
+    }
+    if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
     if (typeof value === "object" && REF in value) {
       // An object with callbacks passed into the engine is held until the next safe point.
       if (callbackNames.has((value as IWrapped)[REF].key)) held.add(value);
@@ -402,6 +441,26 @@ export function defineBrowserClasses(
     classes[name] = cls;
     byType.set(runtime.typeId(name), cls);
   }
+  // three's `attribute.array` is the attribute's own typed array: one per attribute, viewed again
+  // only when Wasm memory growth detached the last one.
+  const attributeArray = runtime.attributeArray;
+  if (attributeArray !== undefined) {
+    const arrays = new WeakMap<object, TypedArray>();
+    for (const name of ATTRIBUTE_CLASSES) {
+      const cls = classes[name];
+      if (cls === undefined) continue;
+      Object.defineProperty(cls.prototype, "array", {
+        configurable: true,
+        get(this: object) {
+          const cached = arrays.get(this);
+          if (cached !== undefined && cached.buffer.byteLength !== 0) return cached;
+          const array = attributeArray.call(runtime, refOf(this));
+          arrays.set(this, array);
+          return array;
+        },
+      });
+    }
+  }
   const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
   const isFlag = (field: { name: string; type: string; mutable?: boolean }) =>
     /^is[A-Z]/u.test(field.name) &&
@@ -450,6 +509,9 @@ type AbiCall =
   | "_tn_set_callback"
   | "_tn_diagnostic_release";
 export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
+  Partial<
+    Record<"_tnw_attribute_view" | "_tnw_attribute_view_release", (...args: number[]) => number>
+  > &
   Record<"HEAPU8", Uint8Array> &
   Record<"HEAPF64", Float64Array> &
   Record<"UTF8ToString", (pointer: number, maxBytes?: number) => string> &
@@ -574,8 +636,11 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     if (value.every((item) => typeof item === "number")) {
       const numbers = alloc(Math.max(8, value.length * 8));
       abi.HEAPF64.set(value as number[], numbers / 8);
+      const typed = (value as { [TYPED]?: string })[TYPED];
+      const name = typed === undefined ? 0 : string(typed).pointer;
       const w = view();
       w.setUint32(pointer, KIND.numbers, true);
+      w.setUint32(pointer + 32, name, true);
       w.setUint32(pointer + 48, numbers, true);
       w.setBigUint64(pointer + 40, BigInt(value.length), true);
     } else {
@@ -665,6 +730,30 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     }, "vi");
   };
 
+  // A view over the attribute's storage, leased so it cannot reallocate under the view; the lease
+  // goes back when the collector takes the view. Wasm memory growth replaces the heap's buffer and
+  // detaches every view over the old one, so the attribute's getter asks `current()` each time.
+  // ponytail: a view a game keeps across a growth reads as empty; keep the attribute, not its array.
+  const viewAttribute = (handle: number, out: number): number => {
+    const call = abi._tnw_attribute_view;
+    if (call === undefined)
+      throw new TypeError("TN_WASM_MODULE: this module exports no attribute views");
+    return call(handle, out);
+  };
+  const leases = new FinalizationRegistry<number>((lease) =>
+    abi._tnw_attribute_view_release?.(lease),
+  );
+  const attributeView = (
+    Typed: (typeof SCALARS)[number],
+    address: number,
+    count: number,
+    lease: number,
+  ): TypedArray => {
+    const array = new Typed(abi.HEAPU8.buffer as ArrayBuffer, address, count);
+    leases.register(array, lease);
+    return array;
+  };
+
   const context = scoped(() => {
     const version = alloc(32);
     abi._tn_engine_version(version);
@@ -734,6 +823,20 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         const diag = diagnostic();
         abi._tn_object_release(handleOf(self), diag);
         abi._tn_diagnostic_release(diag);
+      }),
+    attributeArray: (self) =>
+      scoped(() => {
+        const out = alloc(24);
+        const lease = viewAttribute(handleOf(self), out);
+        if (lease === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
+        const v = view();
+        const [address, count, scalar] = [0, 8, 16].map((at) =>
+          Number(v.getBigUint64(out + at, true)),
+        );
+        const Typed = SCALARS[scalar ?? -1];
+        if (Typed === undefined)
+          throw new TypeError(`TN_NATIVE_UNSUPPORTED array: scalar ${String(scalar)}`);
+        return attributeView(Typed, address ?? 0, count ?? 0, lease);
       }),
     setCallback: (self, name, handler) =>
       scoped(() => {
