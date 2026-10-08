@@ -73,7 +73,8 @@ void fog() {
     CHECK(code.code.find("f_alphaTest") == std::string::npos);
     const auto output = code.code.find("out.color = ");
     CHECK(output != std::string::npos);
-    CHECK(code.code.substr(output, code.code.find('\n', output) - output).ends_with(", 1f);"));
+    // NodeMaterial.setup's max(0) clamp wraps it; the alpha lane is still the literal 1.
+    CHECK(code.code.substr(output, code.code.find('\n', output) - output).ends_with(", 1f), vec4<f32>(0f));"));
 }
 
 void unsupported() {

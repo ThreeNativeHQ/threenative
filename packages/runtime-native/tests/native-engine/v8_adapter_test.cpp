@@ -632,7 +632,7 @@ void tslApi() {
         {"tsl.float(0.25).mix(1,2)", g::mix(g::float_(1), g::float_(2), g::float_(0.25))},
         {"tsl.float(0.25).smoothstep(0,1)", g::smoothstep(g::float_(0), g::float_(1), g::float_(0.25))},
         {"tsl.float(0.25).clamp(0,1)", g::clamp(g::float_(0.25), g::float_(0), g::float_(1))},
-        {"tsl.screenUV", g::uv()},
+        {"tsl.screenUV", g::screenUV()},
         {"tsl.materialColor", g::uniform("diffuse", tn::engine::shader::Type::vec(4))},
         {"tsl.materialEmissive", g::uniform("emissive", tn::engine::shader::Type::vec(3))},
         {"tsl.materialMetalness", g::uniform("metalness", tn::engine::shader::Type::f32())},

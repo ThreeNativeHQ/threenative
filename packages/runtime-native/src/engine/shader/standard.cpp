@@ -418,6 +418,7 @@ ExprId fogColor(Program& f, const VertexVariant& variant, ExprId outgoing);
 ExprId materialOutput(Program& f, const VertexVariant& variant, ExprId outgoing, ExprId alpha) {
     const ExprId clamped = f.call("max", {f.construct(Type::vec(4), {outgoing, alpha}),
                                           f.construct(Type::vec(4), {f.constant(0.0f)})});
+    if (!variant.fog) return clamped;  // no fog to mix: one clamp expression, not one per lane
     return f.construct(Type::vec(4), {fogColor(f, variant, f.swizzle(clamped, "xyz")), f.swizzle(clamped, "w")});
 }
 
