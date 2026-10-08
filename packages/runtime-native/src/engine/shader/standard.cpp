@@ -421,7 +421,7 @@ static ExprId srgbDecode(Program& f, ExprId channel) {
 }
 
 // NormalMapNode for a tangent-space map on a geometry without tangents: three's perturbNormal2Arb,
-// the tangent frame from the screen-space derivatives of the view position and the map's uv. The map
+// the tangent frame from the screen-space derivatives of the view position and the uv. The map
 // is linear data; normalScale scales the xy of the decoded vector. faceDirection flips the frame for a
 // back face. Called after the fragment's other varyings exist, so `uv` takes the vertex stage's slot.
 static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
@@ -435,7 +435,8 @@ static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId s
     const ExprId scaled = f.mul(f.swizzle(decoded, "xy"), f.uniform("normalScale", Type::vec(2)));
     const ExprId mapN = f.construct(Type::vec(3), {scaled, f.swizzle(decoded, "z")});
     const ExprId q0 = f.call("dFdx", {eye}), q1 = f.call("dFdy", {eye});
-    const ExprId st0 = f.call("dFdx", {at}), st1 = f.call("dFdy", {at});
+    // TangentUtils takes the derivatives of the geometry's uv itself, not of the map's transformed uv.
+    const ExprId st0 = f.call("dFdx", {uv}), st1 = f.call("dFdy", {uv});
     const ExprId q1perp = f.call("cross", {q1, surfaceNormal}), q0perp = f.call("cross", {surfaceNormal, q0});
     const ExprId T = f.add(f.mul(q1perp, f.swizzle(st0, "x")), f.mul(q0perp, f.swizzle(st1, "x")));
     const ExprId B = f.add(f.mul(q1perp, f.swizzle(st0, "y")), f.mul(q0perp, f.swizzle(st1, "y")));

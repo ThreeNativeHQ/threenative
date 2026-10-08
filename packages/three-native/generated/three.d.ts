@@ -1374,6 +1374,7 @@ aoMapIntensity: number;
 emissive: Color;
 emissiveIntensity: number;
 bumpScale: number;
+normalMap: Texture | null;
 normalMapType: NormalMapTypes;
 normalScale: Vector2;
 displacementScale: number;
@@ -1428,6 +1429,8 @@ envMap: Texture | null;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+normalMap: Texture | null;
+normalScale: Vector2;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -2945,6 +2948,8 @@ emissive: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+normalMap: Texture | null;
+normalScale: Vector2;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -2969,6 +2974,8 @@ specular: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+normalMap: Texture | null;
+normalScale: Vector2;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */

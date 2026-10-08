@@ -117,6 +117,10 @@ check(JSON.stringify([painted.color.r, painted.color.g, painted.color.b, painted
   painted.roughness, painted.metalness, painted.transparent, painted.opacity, painted.side, painted.name, painted.depthWrite]) ===
   ${JSON.stringify(JSON.stringify((() => { const m = new three.MeshStandardMaterial({ color: 0x336699, emissive: "#ff8800", roughness: 0.4, metalness: 0.2, transparent: true, opacity: 0.5, side: three.DoubleSide, name: "panel" }); return [m.color.r, m.color.g, m.color.b, m.emissive.r, m.emissive.g, m.emissive.b, m.roughness, m.metalness, m.transparent, m.opacity, m.side, m.name, m.depthWrite]; })()))} &&
   painted.map === paramTexture, "material parameters as three's setValues");
+const bumped = new THREE.MeshStandardMaterial({ normalMap: paramTexture, normalScale: new THREE.Vector2(0.25, -0.5) });
+check(bumped.normalMap === paramTexture && bumped.normalScale.x === 0.25 && bumped.normalScale.y === -0.5, "normalMap parameters");
+bumped.normalScale.set(1, 2);
+check(bumped.normalScale.y === 2, "normalScale is the material's own Vector2");
 const sprite = new THREE.SpriteMaterial({ transparent: false });
 check(sprite.transparent === false, "SpriteMaterial parameters after its defaults");
 check(refuses(() => new THREE.MeshBasicMaterial({ wireframe: true }), /material parameter 'wireframe' is not bound natively/), "unbound material parameter refused");

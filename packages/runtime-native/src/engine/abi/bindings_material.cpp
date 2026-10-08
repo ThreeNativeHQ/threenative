@@ -177,6 +177,14 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialColor(b, "color", &Material::color);
     materialMapSlot(b);
     if (type == MaterialType::Basic) return;
+    // A tangent-space normal map, which the lit programs perturb with three's perturbNormal2Arb, and
+    // its scale: the member alias, written whole with a Vector2 (three's setValues assigns it).
+    materialMapSlot(b, "normalMap");
+    fixedMember(b, "normalScale", memberAliasMethod(&Material::normalScale, "Vector2"));
+    b.setters["normalScale"] = [](void* self, const Value& v, Store& store) {
+        as<Material>(self)->normalScale.copy(store.ref<Vector2>(v, "Vector2"));
+        as<Material>(self)->needsUpdate();
+    };
     materialColor(b, "emissive", &Material::emissive);
     materialNumber(b, "emissiveIntensity", &Material::emissiveIntensity);
     if (type == MaterialType::Lambert) return;

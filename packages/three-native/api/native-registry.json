@@ -2540,13 +2540,15 @@
         "map",
         "name",
         "needsUpdate",
+        "normalMap",
+        "normalScale",
         "opacity",
         "side",
         "toneMapped",
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "map"],
+      "members": ["color", "emissive", "map", "normalMap", "normalScale"],
       "callbacks": []
     },
     "MeshPhongMaterial": {
@@ -2596,6 +2598,8 @@
         "map",
         "name",
         "needsUpdate",
+        "normalMap",
+        "normalScale",
         "opacity",
         "shininess",
         "side",
@@ -2607,7 +2611,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "map", "specular"],
+      "members": ["color", "emissive", "map", "normalMap", "normalScale", "specular"],
       "callbacks": []
     },
     "MeshPhysicalMaterial": {
@@ -2675,6 +2679,8 @@
         "metalness",
         "name",
         "needsUpdate",
+        "normalMap",
+        "normalScale",
         "opacity",
         "roughness",
         "sheen",
@@ -2689,7 +2695,15 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "envMap", "map", "specularColor"],
+      "members": [
+        "color",
+        "emissive",
+        "envMap",
+        "map",
+        "normalMap",
+        "normalScale",
+        "specularColor"
+      ],
       "callbacks": []
     },
     "MeshStandardMaterial": {
@@ -2741,6 +2755,8 @@
         "metalness",
         "name",
         "needsUpdate",
+        "normalMap",
+        "normalScale",
         "opacity",
         "roughness",
         "side",
@@ -2748,7 +2764,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "envMap", "map"],
+      "members": ["color", "emissive", "envMap", "map", "normalMap", "normalScale"],
       "callbacks": []
     },
     "MeshStandardNodeMaterial": {
@@ -2810,7 +2826,9 @@
         "metalnessNode",
         "name",
         "needsUpdate",
+        "normalMap",
         "normalNode",
+        "normalScale",
         "opacity",
         "opacityNode",
         "positionNode",
@@ -2821,7 +2839,7 @@
         "transparent",
         "visible"
       ],
-      "members": ["color", "emissive", "envMap", "map"],
+      "members": ["color", "emissive", "envMap", "map", "normalMap", "normalScale"],
       "callbacks": []
     },
     "NumberKeyframeTrack": {
