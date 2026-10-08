@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { IPlaytestReport } from "../../packages/playtest/src/report.js";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   requireTemporalRenderEvidence,
   writeTemporalMotionSummary,
@@ -66,7 +66,7 @@ describe("temporal motion summary", () => {
   it.each([true, false])(
     "retains an unqualified artifact for missing checks (equivalence=%s)",
     async (authoredLinearEquivalent) => {
-      const directory = await mkdtemp(path.join(tmpdir(), "temporal-summary-"));
+      const directory = await makeTempDir("temporal-summary-");
       const filename = path.join(directory, "summary.json");
       const measurement = { authoredLinearEquivalent, checks: {}, results: { retained: true } };
       try {
@@ -92,7 +92,7 @@ describe("temporal motion summary", () => {
   it.each([true, false])(
     "retains failed equivalence evidence before rejecting cubic interpretation (quality=%s)",
     async (qualityPass) => {
-      const directory = await mkdtemp(path.join(tmpdir(), "temporal-summary-"));
+      const directory = await makeTempDir("temporal-summary-");
       const filename = path.join(directory, "summary.json");
       const measurement = {
         authoredLinearEquivalent: false,
@@ -119,7 +119,7 @@ describe("temporal motion summary", () => {
   it.each([true, false])(
     "preserves the original quality gate (quality=%s)",
     async (qualityPass) => {
-      const directory = await mkdtemp(path.join(tmpdir(), "temporal-summary-"));
+      const directory = await makeTempDir("temporal-summary-");
       const filename = path.join(directory, "summary.json");
       try {
         const result = writeTemporalMotionSummary(filename, {

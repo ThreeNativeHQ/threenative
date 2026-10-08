@@ -30,9 +30,10 @@ const scenario = JSON.parse(
     "utf8",
   ),
 );
-// Same qualified hardware WebGPU flags as verify-temporal-motion.ts: without the Vulkan/ANGLE
-// flags a headless Linux run silently serves WebGPU from SwiftShader, so the adapter must be named.
-const QUALIFIED_WEBGPU_ARGS = [
+// Hardware WebGPU is opt-in (TN_WEBGPU_HARDWARE=1): the Vulkan/ANGLE flags lose the device on a runner
+// without a GPU. Without them a headless Linux run serves WebGPU from SwiftShader, so the adapter is
+// always recorded in the summary.
+const HARDWARE_WEBGPU_ARGS = [
   "--enable-unsafe-webgpu",
   "--enable-features=Vulkan",
   "--use-angle=vulkan",
@@ -54,7 +55,10 @@ for (const variant of ARMS) {
   const report = await runStandalonePlaytest({
     allowSoftwareAdapter: true,
     artifactDirectory,
-    browserArgs: [...WEBGPU_BROWSER_ARGS, ...QUALIFIED_WEBGPU_ARGS],
+    browserArgs: [
+      ...WEBGPU_BROWSER_ARGS,
+      ...(process.env.TN_WEBGPU_HARDWARE === "1" ? HARDWARE_WEBGPU_ARGS : []),
+    ],
     headless: false,
     port: 0,
     projectPath: path.join(root, "examples/abyss-framework"),
