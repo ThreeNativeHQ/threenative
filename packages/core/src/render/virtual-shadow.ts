@@ -81,7 +81,13 @@ export interface IVirtualShadowOptions {
    * increasing. Default `[16, 48, 144]`: three windows, each three times wider than the last.
    */
   readonly clipExtents?: readonly number[];
-  /** Texels per level edge. Default: the light's `shadow.mapSize.width`. */
+  /**
+   * Texels per level edge. Default: the light's `shadow.mapSize.width`. Fixed for the node's life:
+   * `#init` is the only writer of a level's `shadow.mapSize`, the node's `options` are read-only, and
+   * a later `shadow.mapSize` on the source light is not synced (see `syncShadowSettings`). That is
+   * what keeps each level's depth texture from being re-created under a cached bind group; see
+   * `settleShadowTarget`.
+   */
   readonly mapSize?: number;
   /**
    * Texels per edge of each level's mover map — the map tracked casters draw into every frame.

@@ -26,6 +26,12 @@ export interface ITextureManager {
  *
  * So when the depth texture already exists, the size three would have recorded is recorded first and
  * the registration finds nothing new. Otherwise the call is the plain registration.
+ *
+ * This covers the first registration only. A real resize (`target.setSize()` on a target a bind group
+ * already holds) still re-creates the depth texture under that group, and is not handled here:
+ * `VirtualShadowNode` never resizes a level target after `#init`, which is the only writer of the
+ * levels' `shadow.mapSize` (see its `mapSize` option). A caller that does resize one has to refresh
+ * the bind groups that hold its depth texture.
  */
 export function settleShadowTarget(textures: ITextureManager, target: RenderTarget): void {
   const record = textures.get?.(target);
