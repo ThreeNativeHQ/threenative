@@ -523,17 +523,32 @@ void Object3D::updateMatrix() {
     matrix.copy(composed);
 }
 
+namespace {
+// memcmp(a, b, 128) != 0 without the library call: one pass of word loads that vectorizes, the same
+// bitwise answer (a signed zero or a NaN payload differs, an unchanged NaN does not).
+inline bool bitsDiffer(const std::array<double, 16>& a, const std::array<double, 16>& b) {
+    uint64_t diff = 0;
+    for (std::size_t i = 0; i < 16; ++i) {
+        uint64_t x, y;
+        std::memcpy(&x, &a[i], sizeof x);
+        std::memcpy(&y, &b[i], sizeof y);
+        diff |= x ^ y;
+    }
+    return diff != 0;
+}
+}  // namespace
+
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
     if (plain && identityParent && matrixAutoUpdate && matrixWorldAutoUpdate && !pivot) {
         Matrix4 composed;
         composed.compose(position, quaternion, scale);
-        const bool changed = std::memcmp(matrix.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0;
+        const bool changed = bitsDiffer(matrix.elements, composed.elements);
         matrix.copy(composed);
         if (changed) bump();
         const uint64_t parentId = parent ? parent->id() + 1 : 0;
         const uint64_t parentRevision = parent ? parent->revision() : 0;
         if (changed || matrixWorldNeedsUpdate || force || worldParentId_ != parentId || worldParentRevision_ != parentRevision) {
-            if (std::memcmp(matrixWorld.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0) bump();
+            if (bitsDiffer(matrixWorld.elements, composed.elements)) bump();
             matrixWorld.copy(composed);
             matrixWorldNeedsUpdate = false;
             worldParentId_ = parentId;

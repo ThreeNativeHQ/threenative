@@ -340,6 +340,26 @@ void revision() {
     exact.matrix.elements[12] = 0.0;
     exact.updateMatrixWorldSelf(true, true, true);
     CHECK(exact.revision() == published + 1 && !std::signbit(exact.matrixWorld.elements[12]));
+
+    // The fused flat-lane update (auto-composed plain object, identity parent) publishes the same
+    // way: a settled object stays at its revision, a signed-zero move is a change, an edit of the
+    // world matrix alone is repaired under force and counted, and nothing else bumps.
+    Object3D fused;
+    fused.updateMatrixWorldSelf(true, true, true);
+    const auto settled = fused.revision();
+    for (int frame = 0; frame < 5; ++frame) CHECK(!fused.updateMatrixWorldSelf(false, true, true));
+    CHECK(fused.revision() == settled);
+    fused.position.x = -0.0;  // +0 -> -0: the composed matrix differs in one sign bit
+    CHECK(fused.updateMatrixWorldSelf(false, true, true));
+    CHECK(fused.revision() == settled + 2 && std::signbit(fused.matrixWorld.elements[12]));
+    const auto afterZero = fused.revision();
+    CHECK(!fused.updateMatrixWorldSelf(false, true, true) && fused.revision() == afterZero);
+    fused.matrixWorld.elements[3] = 7;  // a stray world edit, invisible to the unforced update
+    CHECK(!fused.updateMatrixWorldSelf(false, true, true) && fused.matrixWorld.elements[3] == 7);
+    CHECK(fused.updateMatrixWorldSelf(true, true, true));
+    CHECK(fused.revision() == afterZero + 1 && fused.matrixWorld.elements[3] == 0);
+    fused.position.set(1, 2, 3);
+    CHECK(fused.updateMatrixWorldSelf(false, true, true) && fused.revision() == afterZero + 3);
 }
 
 // Ported from three r185 test/unit/src/core/Object3D.tests.js. The source holds 37 QUnit.test
