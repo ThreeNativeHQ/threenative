@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <filesystem>
 #include <cstdlib>
@@ -252,13 +253,20 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
 #else
         return refuse("TN_NATIVE_GLTF_UNAVAILABLE: this player was built without cgltf");
 #endif
-    } else if (kind == "audio" || kind == "buffer") {
-        // Encoded bytes a JS decoder parses: WebAudio's decodeAudioData, or an HDRLoader's .hdr.
+    } else if (kind == "audio") {
+        // The cooked package carries audio as its encoded bytes; WebAudio's decodeAudioData decodes them.
         if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Buffer))
-            return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: " + kind + " requires a Buffer entry: " + path);
+            return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: audio requires a Buffer entry: " + path);
         auto bytes = v8::ArrayBuffer::New(isolate, data.size());
         std::copy(data.begin(), data.end(), static_cast<uint8_t*>(bytes->Data()));
         value = bytes;
+    } else if (kind == "buffer") {
+        // Raw bytes a JS decoder parses (an HDRLoader's .hdr), copied out of the package.
+        if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Buffer))
+            return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: buffer requires a Buffer entry: " + path);
+        auto buffer = v8::ArrayBuffer::New(isolate, data.size());
+        if (!data.empty()) std::memcpy(buffer->Data(), data.data(), data.size());
+        value = buffer;
     } else {
         if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Texture) || data.size() < 12)
             return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: texture requires an RGBA8 Texture entry: " + path);
