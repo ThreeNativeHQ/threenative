@@ -44,7 +44,7 @@ Value numbers(const std::vector<double>& values) { return Value::list(values); }
 BufferGeometry& geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
-        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry"};
+        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "LatheGeometry", "TubeGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -149,6 +149,19 @@ void registerBufferAttribute(ClassBinding& b) {
     b.getters["itemSize"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->itemSize)); };
     b.getters["normalized"] = [](void* self) { return Value::of(as<BufferAttribute>(self)->normalized); };
     b.getters["usage"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->usage)); };
+    // three's usage is a hint the WebGPU backend keeps and the engine uploads on needsUpdate either
+    // way; a value that is none of three's nine *Usage constants is refused.
+    const auto setUsage = [](void* self, const Value& v) {
+        const double usage = number(v);
+        if (usage < 35040 || usage > 35050 || usage == 35043 || usage == 35047 || usage != std::floor(usage))
+            throw Unsupported{"usage must be one of three's *DrawUsage, *ReadUsage or *CopyUsage constants"};
+        as<BufferAttribute>(self)->usage = static_cast<uint32_t>(usage);
+    };
+    b.setters["usage"] = setUsage;
+    b.methods["setUsage"] = [setUsage](void* self, const Args& a, Store&) {
+        setUsage(self, a.at(0));
+        return chain();
+    };
     b.getters["gpuType"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->gpuType)); };
     b.getters["version"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->version())); };
     b.getters["updateRanges"] = [](void* self) { return updateRangesJson(*as<BufferAttribute>(self)); };
@@ -506,6 +519,108 @@ void registerGeometryGenerators(Registry& classes) {
         return makeRingGeometry(optional(a, 0, 0.5), optional(a, 1, 1), optional(a, 2, 32),
                                 optional(a, 3, 1), optional(a, 4, 0), optional(a, 5, 6.283185307179586));
     });
+    // three's LatheGeometry(points, segments, phiStart, phiLength): points is an array of Vector2. A
+    // one-point profile reads past its end in three, so it is refused rather than guessed.
+    ClassBinding& lathe = classes["LatheGeometry"];
+    registerBufferGeometry(lathe);
+    lathe.ctor = [](const Args& a, Store& store) {
+        std::vector<Vector2> points{{0, -0.5}, {0.5, 0}, {0, 0.5}};
+        if (!a.empty() && a.at(0).kind != Value::Kind::Undefined) {
+            points.clear();
+            for (const Value& ref : refsOf(a.at(0))) points.push_back(store.ref<Vector2>(ref, "Vector2"));
+            if (points.size() == 1) throw Unsupported{"LatheGeometry needs at least two points"};
+        }
+        return std::static_pointer_cast<void>(
+            makeLatheGeometry(points, optional(a, 1, 12), optional(a, 2, 0), optional(a, 3, 6.283185307179586)));
+    };
+}
+
+// -------------------------------------------------------------------------------- curves
+
+/** A Vector3 answer: written into the caller's target and returned, as three does, or a new one. */
+Value vectorAnswer(const Vector3& value, const Args& a, size_t target, Store& store) {
+    if (target < a.size() && a.at(target).kind != Value::Kind::Undefined && a.at(target).kind != Value::Kind::Null) {
+        store.ref<Vector3>(a.at(target), "Vector3").copy(value);
+        return a.at(target);
+    }
+    return store.adopt("Vector3", std::make_shared<Vector3>(value));
+}
+
+Value vectorList(const std::vector<Vector3>& values, Store& store) {
+    std::vector<Value> out;
+    for (const Vector3& value : values) out.push_back(store.adopt("Vector3", std::make_shared<Vector3>(value)));
+    return Value::array(std::move(out));
+}
+
+std::string curveTypeArg(const Value& v) {
+    if (v.kind != Value::Kind::String || (v.text != "centripetal" && v.text != "chordal" && v.text != "catmullrom"))
+        throw Unsupported{"curveType must be centripetal, chordal or catmullrom"};
+    return v.text;
+}
+
+// three's CatmullRomCurve3(points, closed, curveType, tension) and the Curve methods it inherits.
+// Fewer than two points read past the array in three, so they are refused.
+void registerCatmullRomCurve3(ClassBinding& b) {
+    b.ctor = [](const Args& a, Store& store) {
+        std::vector<std::shared_ptr<Vector3>> points;
+        if (!a.empty() && a.at(0).kind != Value::Kind::Undefined)
+            for (const Value& ref : refsOf(a.at(0))) points.push_back(store.shared<Vector3>(ref, "Vector3"));
+        if (points.size() < 2) throw Unsupported{"CatmullRomCurve3 needs at least two points"};
+        const bool closed = boolean(a, 1, false);
+        const std::string curveType =
+            a.size() > 2 && a.at(2).kind != Value::Kind::Undefined ? curveTypeArg(a.at(2)) : "centripetal";
+        return std::static_pointer_cast<void>(
+            std::make_shared<CatmullRomCurve3>(std::move(points), closed, curveType, optional(a, 3, 0.5)));
+    };
+    b.getters["type"] = [](void* self) { return string(as<CatmullRomCurve3>(self)->type); };
+    b.getters["closed"] = [](void* self) { return Value::of(as<CatmullRomCurve3>(self)->closed); };
+    b.setters["closed"] = [](void* self, const Value& v) { as<CatmullRomCurve3>(self)->closed = flag(v); };
+    b.getters["curveType"] = [](void* self) { return string(as<CatmullRomCurve3>(self)->curveType); };
+    b.setters["curveType"] = [](void* self, const Value& v) { as<CatmullRomCurve3>(self)->curveType = curveTypeArg(v); };
+    b.getters["tension"] = [](void* self) { return Value::of(as<CatmullRomCurve3>(self)->tension); };
+    b.setters["tension"] = [](void* self, const Value& v) { as<CatmullRomCurve3>(self)->tension = number(v); };
+    b.getters["arcLengthDivisions"] = [](void* self) { return Value::of(as<CatmullRomCurve3>(self)->arcLengthDivisions); };
+    b.setters["arcLengthDivisions"] = [](void* self, const Value& v) {
+        as<CatmullRomCurve3>(self)->arcLengthDivisions = number(v);
+    };
+    b.members["points"] = [](void* self, const Args&, Store& store) {
+        std::vector<Value> points;
+        for (const auto& point : as<CatmullRomCurve3>(self)->points) points.push_back(store.share("Vector3", point));
+        return Value::array(std::move(points));
+    };
+    b.methods["getPoint"] = [](void* self, const Args& a, Store& store) {
+        return vectorAnswer(as<CatmullRomCurve3>(self)->getPoint(number(a.at(0))), a, 1, store);
+    };
+    b.methods["getPointAt"] = [](void* self, const Args& a, Store& store) {
+        return vectorAnswer(as<CatmullRomCurve3>(self)->getPointAt(number(a.at(0))), a, 1, store);
+    };
+    b.methods["getTangent"] = [](void* self, const Args& a, Store& store) {
+        return vectorAnswer(as<CatmullRomCurve3>(self)->getTangent(number(a.at(0))), a, 1, store);
+    };
+    b.methods["getTangentAt"] = [](void* self, const Args& a, Store& store) {
+        return vectorAnswer(as<CatmullRomCurve3>(self)->getTangentAt(number(a.at(0))), a, 1, store);
+    };
+    b.methods["getPoints"] = [](void* self, const Args& a, Store& store) {
+        return vectorList(as<CatmullRomCurve3>(self)->getPoints(optional(a, 0, 5)), store);
+    };
+    b.methods["getSpacedPoints"] = [](void* self, const Args& a, Store& store) {
+        return vectorList(as<CatmullRomCurve3>(self)->getSpacedPoints(optional(a, 0, 5)), store);
+    };
+    b.methods["getLength"] = [](void* self, const Args&, Store&) {
+        return Value::of(as<CatmullRomCurve3>(self)->getLength());
+    };
+    b.methods["getLengths"] = [](void* self, const Args& a, Store&) {
+        const auto* curve = as<CatmullRomCurve3>(self);
+        return numbers(curve->getLengths(optional(a, 0, curve->arcLengthDivisions)));
+    };
+    b.methods["updateArcLengths"] = [](void* self, const Args&, Store&) {
+        as<CatmullRomCurve3>(self)->updateArcLengths();
+        return Value{};
+    };
+    b.methods["getUtoTmapping"] = [](void* self, const Args& a, Store&) {
+        const double distance = a.size() > 1 && a.at(1).kind == Value::Kind::Number ? a.at(1).number : 0;
+        return Value::of(as<CatmullRomCurve3>(self)->getUtoTmapping(number(a.at(0)), distance));
+    };
 }
 
 }  // namespace
@@ -537,6 +652,18 @@ void registerGeometryBindings(Registry& classes) {
     };
     registerBufferGeometry(classes["BufferGeometry"]);
     registerGeometryGenerators(classes);
+    registerCatmullRomCurve3(classes["CatmullRomCurve3"]);
+    // three's TubeGeometry(path, tubularSegments, radius, radialSegments, closed). Its default path is
+    // a QuadraticBezierCurve3, which is not bound, so a missing path is refused.
+    ClassBinding& tube = classes["TubeGeometry"];
+    registerBufferGeometry(tube);
+    tube.ctor = [](const Args& a, Store& store) {
+        if (a.empty() || a.at(0).kind == Value::Kind::Undefined)
+            throw Unsupported{"TubeGeometry needs a path; its default QuadraticBezierCurve3 is unbound"};
+        const auto& path = store.ref<CatmullRomCurve3>(a.at(0), "CatmullRomCurve3");
+        return std::static_pointer_cast<void>(makeTubeGeometry(path, optional(a, 1, 64), optional(a, 2, 1),
+                                                               optional(a, 3, 8), boolean(a, 4, false)));
+    };
 }
 
 }  // namespace tn::binding

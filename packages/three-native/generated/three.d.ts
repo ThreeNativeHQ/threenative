@@ -76,7 +76,7 @@ export declare const AttributeGPUType = {
 } as const;
 export type AttributeGPUType = (typeof AttributeGPUType)[keyof typeof AttributeGPUType];
 
-/** Catalog partial (native-not-implemented): three/BackSide. */
+/** Catalog supported: three/BackSide. */
 export declare const BackSide: 1;
 
 /** Catalog partial (native-not-implemented): three/BaseEvent. */
@@ -370,6 +370,37 @@ readonly projectionMatrix: Matrix4;
 readonly projectionMatrixInverse: Matrix4;
 }
 
+/** Catalog supported: three/CatmullRomCurve3. */
+export declare class CatmullRomCurve3 {
+constructor();
+arcLengthDivisions: number;
+closed: boolean;
+curveType: "centripetal" | "chordal" | "catmullrom";
+tension: number;
+readonly type: string | "Curve";
+readonly points: Vector3[];
+
+  getLength(): number;
+
+  getLengths(divisions?: number): number[];
+
+  getPoint(t: number, optionalTarget?: Vector3): Vector3;
+
+  getPointAt(u: number, optionalTarget?: Vector3): Vector3;
+
+  getPoints(divisions?: number): Vector3[];
+
+  getSpacedPoints(divisions?: number): Vector3[];
+
+  getTangent(t: number, optionalTarget?: Vector3): Vector3;
+
+  getTangentAt(u: number, optionalTarget?: Vector3): Vector3;
+
+  getUtoTmapping(u: number, distance: number): number;
+
+  updateArcLengths(): void;
+}
+
 /** Catalog partial (native-not-implemented): three/CineonToneMapping. */
 export declare const CineonToneMapping: 3;
 
@@ -577,7 +608,7 @@ color: Color;
 target: Object3D;
 }
 
-/** Catalog partial (native-not-implemented): three/DoubleSide. */
+/** Catalog supported: three/DoubleSide. */
 export declare const DoubleSide: 2;
 
 /** Catalog partial (native-not-implemented): three/DstAlphaFactor. */
@@ -589,7 +620,7 @@ export declare const DstColorFactor: 208;
 /** Catalog partial (native-not-implemented): three/DynamicCopyUsage. */
 export declare const DynamicCopyUsage: 35050;
 
-/** Catalog partial (native-not-implemented): three/DynamicDrawUsage. */
+/** Catalog supported: three/DynamicDrawUsage. */
 export declare const DynamicDrawUsage: 35048;
 
 /** Catalog partial (native-not-implemented): three/DynamicReadUsage. */
@@ -696,7 +727,7 @@ density: number;
   clone(): FogExp2;
 }
 
-/** Catalog partial (native-not-implemented): three/FrontSide. */
+/** Catalog supported: three/FrontSide. */
 export declare const FrontSide: 0;
 
 /** Catalog supported: three/webgpu/Frustum. */
@@ -823,6 +854,11 @@ readonly levels: Array<{ object: Object3D; distance: number; hysteresis: number;
   removeLevel(distance: number): boolean;
 
   update(camera: Camera): void;
+}
+
+/** Catalog supported: three/LatheGeometry. */
+export declare class LatheGeometry extends BufferGeometry {
+constructor();
 }
 
 /** Catalog supported: three/Layers. */
@@ -2208,7 +2244,7 @@ export declare const SrcColorFactor: 202;
 /** Catalog partial (native-not-implemented): three/StaticCopyUsage. */
 export declare const StaticCopyUsage: 35046;
 
-/** Catalog partial (native-not-implemented): three/StaticDrawUsage. */
+/** Catalog supported: three/StaticDrawUsage. */
 export declare const StaticDrawUsage: 35044;
 
 /** Catalog partial (native-not-implemented): three/StaticReadUsage. */
@@ -2328,6 +2364,11 @@ export declare const TriangleStripDrawMode: 1;
 
 /** Catalog partial (native-not-implemented): three/TrianglesDrawMode. */
 export declare const TrianglesDrawMode: 0;
+
+/** Catalog supported: three/TubeGeometry. */
+export declare class TubeGeometry extends BufferGeometry {
+constructor();
+}
 
 /** Catalog partial (native-not-implemented): three/TypedArray. */
 export type TypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array;

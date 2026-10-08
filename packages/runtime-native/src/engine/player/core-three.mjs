@@ -1,17 +1,17 @@
 // Identity-preserving imports over the V8 adapter, never upstream Three.js.
 export const {
   AmbientLight, AnimationAction, AnimationClip, AnimationMixer, Bone, Box3, BoxGeometry,
-  BufferAttribute, BufferGeometry, Camera, CircleGeometry, Color, ConeGeometry, CylinderGeometry,
+  BufferAttribute, BufferGeometry, Camera, CatmullRomCurve3, CircleGeometry, Color, ConeGeometry, CylinderGeometry,
   DataTexture, DirectionalLight, Euler, Float32BufferAttribute, Fog, FogExp2, Frustum, Group,
-  HemisphereLight, InstancedBufferAttribute, InstancedMesh, LOD, Layers, Matrix3, Matrix4, Mesh,
+  HemisphereLight, InstancedBufferAttribute, InstancedMesh, LatheGeometry, LOD, Layers, Matrix3, Matrix4, Mesh,
   MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshPhysicalMaterial,
   MeshStandardMaterial, Object3D, OrthographicCamera, PerspectiveCamera, Plane, PlaneGeometry,
   PointLight, Quaternion, Ray, Raycaster, RingGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
-  SphereGeometry, SpotLight, Sprite, SpriteMaterial, Texture, TorusGeometry, Vector2, Vector3,
+  SphereGeometry, SpotLight, Sprite, SpriteMaterial, Texture, TorusGeometry, TubeGeometry, Vector2, Vector3,
   Vector4, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, PCFSoftShadowMap,
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
-  EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, AttachedBindMode, PropertyBinding, getConsoleFunction, setConsoleFunction,
+  EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, AttachedBindMode, FrontSide, BackSide, DoubleSide, StaticDrawUsage, DynamicDrawUsage, PropertyBinding, getConsoleFunction, setConsoleFunction,
 } = globalThis;
 
 export const clone = globalThis.__tnCloneSkeleton;
@@ -59,12 +59,13 @@ for (const [base, names] of [
   [Camera, [PerspectiveCamera, OrthographicCamera]],
   [Mesh, [SkinnedMesh, InstancedMesh]],
   [BufferGeometry, [BoxGeometry, CircleGeometry, ConeGeometry, CylinderGeometry, PlaneGeometry,
-    RingGeometry, SphereGeometry, TorusGeometry]],
+    RingGeometry, SphereGeometry, TorusGeometry, LatheGeometry, TubeGeometry]],
   [BufferAttribute, [Float32BufferAttribute, InstancedBufferAttribute]],
   [Texture, [DataTexture]],
 ]) {
   for (const derived of names) Object.setPrototypeOf(derived.prototype, base.prototype);
 }
+CatmullRomCurve3.prototype.isCatmullRomCurve3 = true;
 for (const light of [AmbientLight, DirectionalLight, HemisphereLight, PointLight, SpotLight])
   light.prototype.isLight = true;
 for (const material of [MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial,
