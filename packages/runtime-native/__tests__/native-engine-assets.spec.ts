@@ -1,21 +1,16 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PNG } from "pngjs";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 import { NativeEntryKind, readNativePackageManifest } from "../../assets/src/native-package.js";
 import { cookNativeEngineAssets } from "../scripts/bundle-native-engine.mjs";
 
-const roots: string[] = [];
-afterEach(async () => {
-  for (const root of roots.splice(0)) await rm(root, { force: true, recursive: true });
-});
-
 describe("cookNativeEngineAssets", () => {
   it("cooks the project's assets into the package the native player reads beside its bundle", async () => {
-    const project = await mkdtemp(path.join(tmpdir(), "tn-native-engine-assets-"));
-    roots.push(project);
+    const project = await makeTempDir("tn-native-engine-assets-");
     await mkdir(path.join(project, "assets"));
     const image = new PNG({ height: 2, width: 2 });
     image.data.fill(255);
