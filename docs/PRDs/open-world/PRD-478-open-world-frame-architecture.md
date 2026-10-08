@@ -68,6 +68,7 @@ Change where the frame's work runs, not how much of it a frame skips:
 
 ## Blocked on
 
+- AC-2's early-route GPU p95: PRD-538 (draft PR 460), which redraws only the shadow-map pages a streaming invalidation names instead of the whole 4096² level.
 - AC-1, AC-2, Phase 1's and Phase 2's timing boxes: the RTX 2080 on a quiet desktop. On 2026-10-07 the desktop load average stayed between 31 and 112 (other sessions and CI runners), and the laptop's Intel GPU cannot stand in for NVIDIA numbers.
 - Phase 1's coverage box: the owner's side-by-side review of the camp and highway aerials against `?refShadow=1`.
 - AC-3's "no late objects" clause: develop fails it too (far forest blocks stream in late at 150–300 m); PRD-537 (draft PR 459) plans the whole-map far impostors that should fix it.
