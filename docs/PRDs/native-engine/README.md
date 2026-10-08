@@ -28,7 +28,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-504](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 7/7 | done |
 | [PRD-505](../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 6/6 | done |
 | [PRD-506](../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 6/6 | done |
-| [PRD-507](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 0/4 | not started |
+| [PRD-507](../done/native-engine/N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 4/4 | done |
 | [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | Native scene graph, transforms, cameras and geometry (N06) | 7/7 | done |
 | [PRD-509](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | GPU resources, presentation and device loss (N07) | 8/8 | done |
 | [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | A typed shader IR with ordered effects (N08a) | 4/4 | done |
@@ -67,7 +67,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md#decisions). **Where these differ from the proposal below, these win.**
 
 1. **The engine is JS-free.** Every engine system runs in C++ on every target. Gate E is mandatory.
-2. **Speed first.** Game code ships on V8 through generated bindings: [N18](PRD-531-n18-v8-game-runtime-adapter.md) is the first game runtime, no longer optional. Gate T ([N05](N05-native-typescript-qualification/README.md), [N17](PRD-530-n17-strict-native-typescript-game-packaging.md)) is a later milestone; the N05 spike still runs early and blocks nothing.
+2. **Speed first.** Game code ships on V8 through generated bindings: [N18](PRD-531-n18-v8-game-runtime-adapter.md) is the first game runtime, no longer optional. Gate T ([N05](../done/native-engine/N05-native-typescript-qualification/README.md), [N17](PRD-530-n17-strict-native-typescript-game-packaging.md)) is a later milestone; the N05 spike still runs early and blocks nothing.
 3. **Early perf checkpoint.** [CP1](PRD-534-cp1-the-native-engine-earns-the-port.md) measures native against current ThreeNative after N06 + N09. If it fails, N11–N15 do not start.
 4. **One engine everywhere.** The web runs the C++ core in Wasm ([N19](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) is mandatory), so the core is Wasm-safe from day one. The legacy engine, the TS systems and upstream Three.js at runtime are deleted ([N21](PRD-535-n21-the-js-engine-is-deleted.md)).
 5. **Accepted agent calls:** the game API stays vanilla Three.js, measured from what templates import; `ctx.renderer.raw` survives as the compatible renderer; one binding catalog serves several VMs; bulk paths only where CP1 shows crossing cost; legacy is deleted one release after promotion.
@@ -95,10 +95,10 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | N04b | ↳ [PRD-502 — Handles keep identity and aliases](../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | N03 |
 | N04c | ↳ [PRD-503 — Unreachable cycles are reclaimed](../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | N04b |
 | N04d | ↳ [PRD-504 — Buffers cross the ABI with an owner](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | N04b |
-| N05 | [Native TypeScript compiler qualification](N05-native-typescript-qualification/README.md) | N03 + minimal N04 |
+| N05 | [Native TypeScript compiler qualification](../done/native-engine/N05-native-typescript-qualification/README.md) | N03 + minimal N04 |
 | N05a | ↳ [PRD-505 — The language corpus compiles on Linux x64](../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | N03 |
 | N05b | ↳ [PRD-506 — Three imports bind natively and callbacks are reclaimed](../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | N05a, N04b, N04c |
-| N05c | ↳ [PRD-507 — The same corpus runs on Android arm64](N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | N05a |
+| N05c | ↳ [PRD-507 — The same corpus runs on Android arm64](../done/native-engine/N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | N05a |
 | N06 | [PRD-508 — Native scene graph, transforms, cameras and geometry](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | N04 |
 | N07 | [PRD-509 — GPU resources, presentation and device loss](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | N02, N03 |
 | N08 | [Native TSL and shader packages](N08-native-tsl-and-shader-packages/README.md) | N03, N07 |

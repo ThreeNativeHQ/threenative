@@ -20,7 +20,7 @@ Every later PRD proves itself by comparing the native engine against the pinned 
 ## Out of scope
 
 - The investment-gate comparisons themselves: [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md).
-- Native-TS versus native-C++ driver cost: [N05](N05-native-typescript-qualification/README.md) and PRD-533.
+- Native-TS versus native-C++ driver cost: [N05](../done/native-engine/N05-native-typescript-qualification/README.md) and PRD-533.
 
 ## Execution Phases
 

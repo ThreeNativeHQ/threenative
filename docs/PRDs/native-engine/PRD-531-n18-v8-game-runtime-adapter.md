@@ -24,7 +24,7 @@ The CP1 checkpoint ([PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md)) 
 
 ## Out of scope
 
-- The browser-JS back end ([PRD-532](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md)). The AOT game runtime ([N05](N05-native-typescript-qualification/README.md)).
+- The browser-JS back end ([PRD-532](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md)). The AOT game runtime ([N05](../done/native-engine/N05-native-typescript-qualification/README.md)).
 
 ## Execution Phases
 

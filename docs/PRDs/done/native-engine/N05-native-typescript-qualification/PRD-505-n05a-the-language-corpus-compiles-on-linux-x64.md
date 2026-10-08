@@ -3,7 +3,7 @@
 **Status:** IN PROGRESS — the compiler is now Perry (decision 11 in NATIVE-ENGINE-DECISION.md, 2026-10-05); every box proven with tslang is reopened and re-proves with Perry. Early spike for gate T; blocks nothing else (owner decision 2)
 **Complexity:** 4 — a third-party LLVM-based compiler, pinned and cached, plus a fixture corpus; no engine code yet
 **Owner:** João
-**Work package:** N05 — [native-engine batch](../../../native-engine/README.md) · [N05 index](../../../native-engine/N05-native-typescript-qualification/README.md)
+**Work package:** N05 — [native-engine batch](../../../native-engine/README.md) · [N05 index](README.md)
 **Depends on:** [PRD-500 — API catalog, binding ABI and version protocol](../PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md)
 
 ## Context
@@ -43,7 +43,7 @@ adapter and callback lifetime are [PRD-506](PRD-506-n05b-three-imports-bind-nati
 ## Out of scope
 
 - `three` / `three/webgpu` / `three/tsl` import resolution, native callbacks, wrapper rooting — [PRD-506](PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md).
-- Android arm64 — [PRD-507](../../../native-engine/N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md).
+- Android arm64 — [PRD-507](PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md).
 - Shipping a game artifact — [PRD-530 (N17)](../../../native-engine/PRD-530-n17-strict-native-typescript-game-packaging.md).
 
 ## Execution Phases

@@ -75,7 +75,7 @@ Owner decisions, João, 2026-10-04 (interview):
    and Android, the browser's own engine on web) through generated bindings. That makes
    [PRD-531 (N18)](../PRDs/native-engine/PRD-531-n18-v8-game-runtime-adapter.md) the first shipping
    game runtime. Gate T
-   ([N05](../PRDs/native-engine/N05-native-typescript-qualification/README.md),
+   ([N05](../PRDs/done/native-engine/N05-native-typescript-qualification/README.md),
    [PRD-530](../PRDs/native-engine/PRD-530-n17-strict-native-typescript-game-packaging.md)) is a
    later milestone. The N05 spike still runs early, but it gates nothing on the path to promotion.
 3. **An early perf checkpoint can stop the program.**
