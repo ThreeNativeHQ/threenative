@@ -377,10 +377,29 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_AUDIO"
+        "kind": "partial",
+        "gaps": ["members-not-catalogued", "media-sources-unbound"]
       },
-      "extends": null,
+      "extends": "Object3D",
+      "constructor": [
+        {
+          "name": "listener",
+          "type": "AudioListener",
+          "optional": false
+        }
+      ],
+      "fields": [],
+      "methods": []
+    },
+    {
+      "name": "AudioListener",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "partial",
+        "gaps": ["members-not-catalogued", "media-sources-unbound"]
+      },
+      "extends": "Object3D",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -15003,6 +15022,25 @@
       },
       "extends": null,
       "constructor": [],
+      "fields": [],
+      "methods": []
+    },
+    {
+      "name": "PositionalAudio",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "partial",
+        "gaps": ["members-not-catalogued", "media-sources-unbound"]
+      },
+      "extends": "Audio",
+      "constructor": [
+        {
+          "name": "listener",
+          "type": "AudioListener",
+          "optional": false
+        }
+      ],
       "fields": [],
       "methods": []
     },
