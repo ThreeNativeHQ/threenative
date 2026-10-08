@@ -49,10 +49,10 @@ Layer: the cook (`packages/assets/`). The game sets nothing; the scale is the ke
 - [x] The model pass's self-check counts what LOD0 draws, so a card chain cooks without `TN_ASSETS_MODEL_DRIFT` and a LOD0 drift still throws. proof: `model-pass.spec.ts` drift cases green; the conifer cook threw `vertices 5997 -> 7573; bounding box drifted 2.109%` before; `vitest run packages/assets` 485 passed, 2 skipped
 
 #### Phase 2: Both runtimes draw it
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/__tests__/`
 
-- [ ] Core builds a card level whose geometry draws the scaled copies. proof: a core spec that loads a cooked card GLB
+- [x] Core builds a card level whose geometry draws the scaled copies. proof: `model-lod-loader.spec.ts` "draws a level whose indices reach vertex copies appended after LOD0's" — 5 passed; no core change was needed
 - [ ] The native desktop host draws the same chain. proof: PRD-377's native consumer playtest on a cooked card asset
 
 #### Phase 3: Machinefall
