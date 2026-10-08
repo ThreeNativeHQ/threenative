@@ -12,6 +12,10 @@
 // refused **with a reason** — so a stage that silently no-op'd is never mistaken for one
 // you turned off. What it does not own: any colour, and any strength that is not a quality
 // tier. Those are arguments, supplied by `postprocessing.ts`, yours to change.
+//
+// It imports no effect. Every `three/addons` post node a stage builds arrives in `effects`, which
+// `quality.ts` fills with exactly the nodes its tiers can turn on, so a node no tier enables is
+// never imported and never reaches the bundle. `WorldEnvironment.requiredEffects` names what a preset needs.
 
 import {
   ACESFilmicToneMapping,
@@ -22,15 +26,15 @@ import {
   type PerspectiveCamera,
   type Scene,
 } from "three";
-import { bloom } from "three/addons/tsl/display/BloomNode.js";
-import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
-import { fxaa } from "three/addons/tsl/display/FXAANode.js";
-import { ao } from "three/addons/tsl/display/GTAONode.js";
-import { godrays } from "three/addons/tsl/display/GodraysNode.js";
-import { smaa } from "three/addons/tsl/display/SMAANode.js";
-import { ssgi } from "three/addons/tsl/display/SSGINode.js";
-import { ssr } from "three/addons/tsl/display/SSRNode.js";
-import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
+import type { bloom } from "three/addons/tsl/display/BloomNode.js";
+import type { denoise } from "three/addons/tsl/display/DenoiseNode.js";
+import type { fxaa } from "three/addons/tsl/display/FXAANode.js";
+import type { ao } from "three/addons/tsl/display/GTAONode.js";
+import type { godrays } from "three/addons/tsl/display/GodraysNode.js";
+import type { smaa } from "three/addons/tsl/display/SMAANode.js";
+import type { ssgi } from "three/addons/tsl/display/SSGINode.js";
+import type { ssr } from "three/addons/tsl/display/SSRNode.js";
+import type { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import {
   color,
   convertToTexture,
@@ -47,8 +51,45 @@ import {
   vec2,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { AutoExposureNode, applyExposure } from "./autoExposure.js";
+import type { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
+
+/**
+ * The post nodes this game's tiers can turn on, keyed by their `three/addons` export names, plus
+ * `autoExposure` (this folder's `autoExposure.ts`). A stage whose node is absent here cannot run:
+ * `apply` throws naming the import to add, rather than shipping every node to every game.
+ */
+export interface IWorldEnvironmentEffects {
+  readonly ao?: typeof ao;
+  readonly autoExposure?: {
+    readonly AutoExposureNode: typeof AutoExposureNode;
+    readonly applyExposure: typeof applyExposure;
+  };
+  readonly bloom?: typeof bloom;
+  readonly denoise?: typeof denoise;
+  readonly fxaa?: typeof fxaa;
+  readonly godrays?: typeof godrays;
+  readonly sharpen?: typeof sharpen;
+  readonly smaa?: typeof smaa;
+  readonly ssgi?: typeof ssgi;
+  readonly ssr?: typeof ssr;
+}
+
+export type WorldEnvironmentEffect = keyof IWorldEnvironmentEffects;
+
+/** The line that brings each effect in. Printed by the throw when a preset needs a missing one. */
+const EFFECT_IMPORTS: Record<WorldEnvironmentEffect, string> = {
+  ao: 'import { ao } from "three/addons/tsl/display/GTAONode.js";',
+  autoExposure: 'import * as autoExposure from "./autoExposure.js";',
+  bloom: 'import { bloom } from "three/addons/tsl/display/BloomNode.js";',
+  denoise: 'import { denoise } from "three/addons/tsl/display/DenoiseNode.js";',
+  fxaa: 'import { fxaa } from "three/addons/tsl/display/FXAANode.js";',
+  godrays: 'import { godrays } from "three/addons/tsl/display/GodraysNode.js";',
+  sharpen: 'import { sharpen } from "three/addons/tsl/display/SharpenNode.js";',
+  smaa: 'import { smaa } from "three/addons/tsl/display/SMAANode.js";',
+  ssgi: 'import { ssgi } from "three/addons/tsl/display/SSGINode.js";',
+  ssr: 'import { ssr } from "three/addons/tsl/display/SSRNode.js";',
+};
 
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
 export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
@@ -76,6 +117,12 @@ const TONEMAP: Record<TonemapMode, number> = {
 };
 
 export interface IWorldEnvironmentOptions {
+  /**
+   * The post nodes the stages below may build, imported by `quality.ts`. Turning a stage on
+   * without its node throws naming the import; a node here that no tier turns on only costs
+   * bundle size. Empty by default.
+   */
+  readonly effects?: IWorldEnvironmentEffects;
   /** Screen-space indirect diffuse light. Godot calls this `ssil_enabled`. */
   readonly ssgiEnabled?: boolean;
   readonly ssgiQuality?: SsgiQuality;
@@ -369,6 +416,9 @@ export type OutputRenderer = {
  * unless it reads that line.
  */
 export class WorldEnvironment {
+  /** What a preset needs in `effects`; `apply` throws on any of these that is missing. */
+  static readonly requiredEffects = requiredEffects;
+
   readonly #options: Required<IWorldEnvironmentOptions>;
 
   constructor(options: IWorldEnvironmentOptions = {}) {
@@ -397,6 +447,7 @@ export class WorldEnvironment {
       // than to a branch every call site has to remember.
       authoredStageNames: options.authoredStageNames ?? [],
       authoredStages: options.authoredStages ?? (() => []),
+      effects: options.effects ?? {},
       ssgiEnabled: options.ssgiEnabled ?? false,
       ssgiQuality: quality,
       ssgiIntensity: options.ssgiIntensity ?? 1,
@@ -452,24 +503,21 @@ export class WorldEnvironment {
     const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
     raw.toneMapping = TONEMAP[options.tonemapMode];
 
-    const requested: string[] = (
-      ["ssgi", "ambientOcclusion", "godRays", "ssr", "sharpen", "bloom", "vignette"] as const
-    ).filter(
-      (name) =>
-        (name === "ssgi" && options.ssgiEnabled) ||
-        (name === "ambientOcclusion" && options.gtaoEnabled) ||
-        (name === "godRays" && options.godraysEnabled) ||
-        (name === "ssr" && options.ssrEnabled) ||
-        (name === "sharpen" && options.sharpenEnabled) ||
-        (name === "bloom" && options.bloomEnabled) ||
-        (name === "vignette" && options.vignetteAmount > 0),
+    const requested = requestedStages(options, target.baseColour !== undefined);
+    const missing = requiredEffects(options, target.baseColour !== undefined).filter(
+      (name) => options.effects[name] === undefined,
     );
-    requested.push(...options.authoredStageNames);
-    if (
-      options.screenSpaceAA !== "disabled" &&
-      (requested.length > 0 || target.baseColour !== undefined)
-    )
-      requested.push("antialias");
+    if (missing.length > 0)
+      throw new Error(
+        `TN_WORLD_ENVIRONMENT_EFFECT_MISSING: this preset turns on stages that need ${missing.join(", ")}. Add to src/render/quality.ts and pass in \`effects\`: ${missing.map((name) => EFFECT_IMPORTS[name]).join(" ")}`,
+      );
+    const effect = <K extends WorldEnvironmentEffect>(
+      name: K,
+    ): NonNullable<IWorldEnvironmentEffects[K]> => {
+      const value = options.effects[name];
+      if (value === undefined) throw new Error(`effect ${name} is not in effects`);
+      return value;
+    };
 
     // With no stage running there is no node graph to install — the renderer's own
     // tone-mapping path renders the frame, and the exposure scalar is live there (measured:
@@ -525,12 +573,16 @@ export class WorldEnvironment {
     const base = target.baseColour?.(scenePass) ?? scenePass.getTextureNode("output");
     const colour = convertToTexture(base);
     const exposure = options.autoExposureEnabled
-      ? new AutoExposureNode(colour, options.exposurePolicy, options.exposure)
+      ? new (effect("autoExposure").AutoExposureNode)(
+          colour,
+          options.exposurePolicy,
+          options.exposure,
+        )
       : undefined;
     const exposed =
       exposure === undefined
         ? colour.mul(options.exposure)
-        : applyExposure(colour, exposure.exposureNode);
+        : effect("autoExposure").applyExposure(colour, exposure.exposureNode);
     let released = false;
     const releaseGraph = (): void => {
       if (released) return;
@@ -549,14 +601,14 @@ export class WorldEnvironment {
       scenePass.dispose();
     };
     const giDenoise = (node: ChainNode): ChainNode =>
-      options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
+      options.denoiseEnabled ? denoised(effect("denoise")(node, depth(), normal(), view)) : node;
 
     let releaseBloom = (): void => {};
     const stages: ChainStage[] = [
       stage({
         name: "ssgi",
         build: (input) => {
-          const gi = ssgi(input, depth(), normal(), view);
+          const gi = effect("ssgi")(input, depth(), normal(), view);
           const tier = SSGI_QUALITY[options.ssgiQuality];
           gi.sliceCount.value = tier.sliceCount;
           gi.stepCount.value = tier.stepCount;
@@ -601,7 +653,7 @@ export class WorldEnvironment {
       stage({
         name: "ambientOcclusion",
         build: (input) => {
-          const contact = ao(depth(), normal(), view);
+          const contact = effect("ao")(depth(), normal(), view);
           contact.radius.value = options.gtaoRadius;
           contact.scale.value = options.gtaoScale;
           contact.samples.value = options.gtaoSamples;
@@ -616,7 +668,7 @@ export class WorldEnvironment {
           // sampling otherwise reads as a speckled halo around every contact — around feet on a
           // plain floor most of all — which is exactly the "not smooth" a player notices first.
           const occlusion = options.denoiseEnabled
-            ? denoised(denoise(contact.getTextureNode(), depth(), normal(), view))
+            ? denoised(effect("denoise")(contact.getTextureNode(), depth(), normal(), view))
             : contact;
           return input.mul(occlusion.r);
         },
@@ -643,7 +695,7 @@ export class WorldEnvironment {
         },
         build: (input) => {
           const light = target.godraysLight as DirectionalLight;
-          const shafts = godrays(depth(), view, light);
+          const shafts = effect("godrays")(depth(), view, light);
           shafts.density.value = options.godraysDensity;
           shafts.maxDensity.value = options.godraysMaxDensity;
           shafts.raymarchSteps.value = options.godraysSteps;
@@ -654,7 +706,8 @@ export class WorldEnvironment {
           // silhouettes the depth term owns. Denoise before the floor: the floor's
           // subtraction amplifies relative noise on near-floor values.
           let shaft: ChainNode = convertToTexture(shafts);
-          if (options.denoiseEnabled) shaft = denoised(denoise(shaft, depth(), normal(), view));
+          if (options.denoiseEnabled)
+            shaft = denoised(effect("denoise")(shaft, depth(), normal(), view));
           // Floor, then scale, then tint. The floor is what turns this from a whole-frame
           // brightener into a shaft renderer; the tint by the light's own colour is what
           // stops a warm sun throwing a white beam.
@@ -680,12 +733,17 @@ export class WorldEnvironment {
           // reflections onto a second copy builds two parallel graphs, and the frame comes
           // out as the bare background colour.
           const base = convertToTexture(input);
-          const reflections = ssr(base, depth(), normal() as unknown as Parameters<typeof ssr>[2], {
-            camera: view,
-            metalnessNode: metal().r,
-            roughnessNode: rough().g,
-            reflectNonMetals: true,
-          });
+          const reflections = effect("ssr")(
+            base,
+            depth(),
+            normal() as unknown as Parameters<typeof ssr>[2],
+            {
+              camera: view,
+              metalnessNode: metal().r,
+              roughnessNode: rough().g,
+              reflectNonMetals: true,
+            },
+          );
           reflections.maxDistance.value = options.ssrMaxDistance;
           reflections.resolutionScale = options.ssrResolutionScale;
           return base.add(reflections);
@@ -699,7 +757,7 @@ export class WorldEnvironment {
           // it, so running it before bloom would sharpen edges that bloom then spreads
           // back out. The third argument keeps the node from materialising its own render
           // target; the chain's graph is fused instead.
-          return sharpen(convertToTexture(input), options.sharpenStrength, false);
+          return effect("sharpen")(convertToTexture(input), options.sharpenStrength, false);
         },
       }),
       stage({
@@ -710,14 +768,14 @@ export class WorldEnvironment {
         },
         build: (input) => {
           const texture = convertToTexture(input);
-          const effect = bloom(
+          const glow = effect("bloom")(
             texture,
             options.bloomStrength,
             options.bloomRadius,
             options.bloomThreshold,
           );
           releaseBloom = () => {
-            effect.dispose();
+            glow.dispose();
             // convertToTexture may return its input. Only the newly allocated RTT is ours.
             const scratch = texture as unknown as {
               isRTTNode?: boolean;
@@ -729,7 +787,7 @@ export class WorldEnvironment {
               scratch._quadMesh.material.dispose();
             }
           };
-          return input.add(effect);
+          return input.add(glow);
         },
       }),
       stage({
@@ -758,8 +816,8 @@ export class WorldEnvironment {
           const peak = max(colour.r, max(colour.g, colour.b));
           const squeezed = colour.div(peak.add(1));
           const filtered = (options.screenSpaceAA === "fxaa"
-            ? fxaa(squeezed)
-            : smaa(squeezed)) as unknown as ChainNode;
+            ? effect("fxaa")(squeezed)
+            : effect("smaa")(squeezed)) as unknown as ChainNode;
           const back = max(filtered.r, max(filtered.g, filtered.b));
           return filtered.div(float(1).sub(back).max(1e-4));
         },
@@ -872,6 +930,53 @@ export class WorldEnvironment {
       })}`,
     );
   }
+}
+
+/** The stages a preset asks the chain for, in chain order; defaults match the constructor's. */
+function requestedStages(options: IWorldEnvironmentOptions, baseColour: boolean): string[] {
+  const requested: string[] = (
+    ["ssgi", "ambientOcclusion", "godRays", "ssr", "sharpen", "bloom", "vignette"] as const
+  ).filter(
+    (name) =>
+      (name === "ssgi" && options.ssgiEnabled === true) ||
+      (name === "ambientOcclusion" && options.gtaoEnabled === true) ||
+      (name === "godRays" && options.godraysEnabled === true) ||
+      (name === "ssr" && options.ssrEnabled === true) ||
+      (name === "sharpen" && options.sharpenEnabled === true) ||
+      (name === "bloom" && options.bloomEnabled !== false) ||
+      (name === "vignette" && (options.vignetteAmount ?? 0) > 0),
+  );
+  requested.push(...(options.authoredStageNames ?? []));
+  const antialias = options.screenSpaceAA ?? "smaa";
+  if (antialias !== "disabled" && (requested.length > 0 || baseColour)) requested.push("antialias");
+  return requested;
+}
+
+/**
+ * Every effect a preset can build: what `quality.ts` must import for that tier, and nothing more.
+ * `baseColour` is whether `apply` is handed one, which on its own requests antialiasing.
+ */
+function requiredEffects(
+  options: IWorldEnvironmentOptions,
+  baseColour = false,
+): WorldEnvironmentEffect[] {
+  const stages = requestedStages(options, baseColour);
+  const effects: WorldEnvironmentEffect[] = [];
+  if (stages.includes("ssgi")) effects.push("ssgi");
+  if (stages.includes("ambientOcclusion")) effects.push("ao");
+  if (stages.includes("godRays")) effects.push("godrays");
+  if (stages.includes("ssr")) effects.push("ssr");
+  if (stages.includes("sharpen")) effects.push("sharpen");
+  if (stages.includes("bloom")) effects.push("bloom");
+  if (stages.includes("antialias"))
+    effects.push(options.screenSpaceAA === "fxaa" ? "fxaa" : "smaa");
+  if (
+    options.denoiseEnabled !== false &&
+    ["ssgi", "ambientOcclusion", "godRays"].some((name) => stages.includes(name))
+  )
+    effects.push("denoise");
+  if (options.autoExposureEnabled === true) effects.push("autoExposure");
+  return effects;
 }
 
 function isChainTier(value: unknown): value is ChainTier {

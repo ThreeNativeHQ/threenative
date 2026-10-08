@@ -24,6 +24,8 @@ import {
   createVolumetricFog,
 } from "../templates/starter/src/render/volumetricFog.js";
 
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import * as autoExposure from "../template-assets/autoExposure.js";
 import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
 
 function required<T>(value: T | undefined | null): T {
@@ -309,6 +311,7 @@ it.each([false, true])(
         autoExposureEnabled: true,
         bloomEnabled: chain,
         screenSpaceAA: "disabled",
+        effects: { autoExposure, bloom },
       }).apply(renderer, scene, camera, {
         baseColour: (scenePass) => {
           passDispose = vi.spyOn(scenePass, "dispose");

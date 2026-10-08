@@ -80,7 +80,7 @@ cancel and an axis-rolled limb is caught where a bone-direction check reads zero
 grid in world UVs over a light floor and a dark structure, `palette.ts`'s five roles with exactly one
 saturated `accent` for anything you can touch, `sky.ts`'s photograph behind everything, and bevelled
 `RoundedBoxGeometry` sunk by its bevel radius. Torch point lights are the only warm light.
-`quality.ts` defines `low`, `medium`, and `high`; `isMobile()` selects `low`, otherwise `high`, and
+`quality.ts` defines `low`, `medium`, and `high` (`effects` there imports only the post nodes they turn on); `isMobile()` selects `low`, otherwise `high`, and
 `setupPost(..., { tier: "low" })` is the named override — unknown tiers throw and `TN_QUALITY_TIER`
 reports the source. VFX appearance belongs in `src/render/vfx.ts`: keep its TSL material, geometry,
 colour, blend, curves, timing and capacity there; gameplay creates `GPUParticles3D` once, adds it with

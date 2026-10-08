@@ -18,6 +18,7 @@ import {
 } from "three";
 import { Scene as GameScene, type ICtx, defineGame } from "../../../../packages/core/src/index.js";
 import { playtest } from "../../../../packages/core/src/playtest.js";
+import * as autoExposure from "../../../../packages/create-threenative/templates/starter/src/render/autoExposure.js";
 import { createVolumetricFog } from "../../../../packages/create-threenative/templates/starter/src/render/volumetricFog.js";
 import { WorldEnvironment } from "../../../../packages/create-threenative/templates/starter/src/render/worldEnvironment.js";
 
@@ -394,6 +395,7 @@ export class FogProbe extends GameScene<FogState> {
     const world = new WorldEnvironment({
       autoExposureEnabled: this.#exposureEnabled,
       exposurePolicy: { ...exposureSettings, enabled: true },
+      effects: { autoExposure },
       bloomEnabled: false,
       screenSpaceAA: "disabled",
       tonemapMode: "neutral",

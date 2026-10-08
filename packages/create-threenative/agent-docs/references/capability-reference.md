@@ -5791,7 +5791,7 @@ class WorldEnvironment
 ```
 
 - **Use when:** turn a lighting or post-processing effect on or off · find out why an effect you enabled is not visible · change how the scene is lit, graded, or tonemapped · match a reference image's lighting
-- **Constraints:** Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped. · A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it. · Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.
+- **Constraints:** Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped. · A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it. · Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks. · It imports no post node: each stage builds from `effects`, which src/render/quality.ts fills with the nodes its tiers turn on. A stage turned on without its node throws TN_WORLD_ENVIRONMENT_EFFECT_MISSING naming the import to add.
 
 ```ts
 src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
@@ -5801,7 +5801,7 @@ src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 
 ### `bloom`
 
-`function` — Glow around bright pixels. Already wired as the `bloom` stage.
+`function` — Glow around bright pixels. Already wired as the `bloom` stage; `bloom` must be in `effects` in src/render/quality.ts.
 
 ```ts
 bloom(node, strength, radius, threshold)
@@ -5835,7 +5835,7 @@ denoise(...)
 
 ### `godrays`
 
-`function` — Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.
+`function` — Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` and add `godrays` to `effects` in src/render/quality.ts.
 
 ```ts
 godrays(textureNode, light, shadowMap, params)
@@ -5852,7 +5852,7 @@ src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 
 ### `ao`
 
-`function` — Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.
+`function` — Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled` and add `ao` to `effects` in src/render/quality.ts.
 
 ```ts
 ao(scene, camera, resolution, radius, intensity)

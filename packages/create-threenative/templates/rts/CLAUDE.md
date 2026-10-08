@@ -78,7 +78,7 @@ the map at its widest zoom, so `terrain.ts` draws a plain under it (grow it with
 the horizon goes with it) and `materials.ts` tiles the ground grid every 16 m — a 4 m line, a faint 1 m
 one inside each square — because a metre grid crosshatches the map into wireframe. Every model is a
 custom TSL material, so an instanced batch's geometry is what you see — change `render/models.ts`, not
-the material. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`,
+the material. `src/render/quality.ts` owns `low`, `medium`, `high` (`effects` there imports only the post nodes they turn on); `isMobile()` chooses `low`,
 otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and
 `TN_QUALITY_TIER` reports the source. `pnpm test` proves behavior, never the look.
 
