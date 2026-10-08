@@ -16,6 +16,7 @@
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
 
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -396,6 +397,9 @@ void registerTextureFields(ClassBinding& b) {
         as<Texture>(self)->name = v.text;
     };
     b.getters["version"] = [](void* self) { return Value::of(double(as<Texture>(self)->version())); };
+    // The pixel layout the image was given as; read-only, since the image is uploaded in that layout.
+    b.getters["type"] = [](void* self) { return Value::of(double(as<Texture>(self)->type)); };
+    b.getters["format"] = [](void* self) { return Value::of(double(as<Texture>(self)->format)); };
     b.setters["needsUpdate"] = [](void* self, const Value& v) {
         if (flag(v)) as<Texture>(self)->needsUpdate();
     };
@@ -427,6 +431,12 @@ void registerTextureClass(ClassBinding& b, bool data) {
             const uint16_t format = a.size() > 3 ? static_cast<uint16_t>(number(a[3])) : kTextureRGBAFormat;
             const uint16_t type = a.size() > 4 ? static_cast<uint16_t>(number(a[4])) : kTextureUnsignedByteType;
             if (format != kTextureRGBAFormat) throw Unsupported{"DataTexture format must be RGBAFormat"};
+            if (type != kTextureUnsignedByteType && type != kTextureFloatType && type != kTextureHalfFloatType)
+                throw Unsupported{"DataTexture type must be UnsignedByteType, FloatType or HalfFloatType"};
+            if (type == kTextureHalfFloatType)
+                for (const double bits : a[0].numbers)
+                    if (!(bits >= 0 && bits <= 65535) || bits != std::floor(bits))
+                        throw Unsupported{"a HalfFloatType DataTexture takes 16-bit half-float bits (a Uint16Array)"};
             texture->setImage(a[0].numbers, a[0].text, width, height, format, type);
         }
         return std::static_pointer_cast<void>(texture);

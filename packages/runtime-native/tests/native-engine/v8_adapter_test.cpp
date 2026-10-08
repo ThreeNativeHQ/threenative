@@ -7,6 +7,7 @@
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/tsl/tsl.h"
 #include "engine/scene/material.h"
+#include "engine/scene/texture.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
@@ -407,6 +408,7 @@ void catalogCoverage() {
         {"NoBlending", static_cast<double>(tn::engine::Blending::None)},
         {"NormalBlending", static_cast<double>(tn::engine::Blending::Normal)},
         {"AdditiveBlending", static_cast<double>(tn::engine::Blending::Additive)},
+        {"HalfFloatType", tn::engine::kTextureHalfFloatType},
     };
     const std::map<std::string, std::string> strings = {
         {"NoColorSpace", tn::engine::NoColorSpace},

@@ -695,23 +695,24 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     // filtering in the GPU, not after filtering in the material/PMREM shader.
     if (texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
         throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: FloatType requires float32-filterable");
-    const WGPUTextureFormat format = texture.isFloat() ? WGPUTextureFormat_RGBA32Float
-                                    : texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb
+    const WGPUTextureFormat format = texture.isFloat()       ? WGPUTextureFormat_RGBA32Float
+                                    : texture.isHalfFloat() ? WGPUTextureFormat_RGBA16Float
+                                    : texture.isSRGB()      ? WGPUTextureFormat_RGBA8UnormSrgb
                                                        : WGPUTextureFormat_RGBA8Unorm;
     if (texture.hasImage()) {
         // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
-        const bool mipmaps = texture.generateMipmaps && !texture.isFloat();
+        const bool mipmaps = texture.generateMipmaps && !texture.isFloat() && !texture.isHalfFloat();
         uint32_t levels = 1;
         for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++levels;
         if (levels == 1)
             record.gpu = gpu_.createTexture(texture.width, texture.height, format,
                                             WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
-        const uint64_t expected = uint64_t(texture.width) * texture.height * (texture.isFloat() ? 16u : 4u);
+        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.bytesPerTexel();
         if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
         std::vector<uint8_t> flipped;
         const uint8_t* pixels = texture.data.data();
         if (texture.flipY) {
-            const size_t row = size_t(texture.width) * (texture.isFloat() ? 16 : 4);
+            const size_t row = size_t(texture.width) * texture.bytesPerTexel();
             flipped.resize(texture.data.size());
             for (uint32_t y = 0; y < texture.height; ++y)
                 std::memcpy(flipped.data() + size_t(y) * row, texture.data.data() + size_t(texture.height - 1 - y) * row, row);

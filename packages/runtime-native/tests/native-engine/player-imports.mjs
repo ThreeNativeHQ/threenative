@@ -21,12 +21,12 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
   "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage",
-  "NoBlending", "NormalBlending", "AdditiveBlending"];
+  "NoBlending", "NormalBlending", "AdditiveBlending", "HalfFloatType"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "Shape", "Path", "ShapeGeometry",
-  "ExtrudeGeometry", ...constants];
+  "ExtrudeGeometry", "DataUtils", ...constants];
 const panel = (T) => {
   const shape = new T.Shape();
   shape.moveTo(-0.3, -0.2); shape.lineTo(0.25, -0.2); shape.quadraticCurveTo(0.3, -0.2, 0.3, -0.15);
@@ -110,6 +110,12 @@ const refuses = (make, pattern) => { try { make(); return false; } catch (error)
 check(refuses(() => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)]),
   { extrudePath: curve }), /extrudePath is not supported/), "extrudePath refused");
 check(refuses(() => new THREE.MeshBasicMaterial({ color: 0xff0000 }), /parameters object is not supported/), "material parameters still refused");
+const halfInputs = [0, -0, 1, -1, 0.5, 1 / 3, 65504, 65505, 70000, -70000, 1e-8, 6e-5, 6.1e-5, 5.96e-8, 3e-8, 2.5e-8, 1e-3, 123.456, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN];
+const halfBits = []; for (let bits = 0; bits < 65536; bits += 5) halfBits.push(bits);
+check(JSON.stringify([halfInputs.map((v) => THREE.DataUtils.toHalfFloat(v)), halfBits.map((b) => THREE.DataUtils.fromHalfFloat(b))]) ===
+  ${JSON.stringify(JSON.stringify((() => { const halfInputs = [0, -0, 1, -1, 0.5, 1 / 3, 65504, 65505, 70000, -70000, 1e-8, 6e-5, 6.1e-5, 5.96e-8, 3e-8, 2.5e-8, 1e-3, 123.456, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN]; const halfBits = []; for (let bits = 0; bits < 65536; bits += 5) halfBits.push(bits); return [halfInputs.map((v) => three.DataUtils.toHalfFloat(v)), halfBits.map((b) => three.DataUtils.fromHalfFloat(b))]; })()))}, "DataUtils half floats");
+const ripple = new THREE.DataTexture(new Uint16Array([15360, 14336, 0, 15360]), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType);
+check(ripple.type === THREE.HalfFloatType, "half-float DataTexture");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");
