@@ -30,6 +30,7 @@ const THREE = { ${names.join(", ")} };
 import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3 } from "three/webgpu";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { Material } from "three";
 import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
@@ -89,9 +90,12 @@ check(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 
 const grid = new THREE.DataTexture(new Uint8Array([1, 2, 3, 4]), 1, 1);
 const version = grid.source.version;
 grid.generateMipmaps = true; grid.anisotropy = 16; grid.needsUpdate = true;
-check(grid.generateMipmaps && grid.anisotropy === 16 && grid.source === grid.source && grid.source.version === version + 1, "texture sampling fields and source");
+check(grid.generateMipmaps && grid.anisotropy === 16 && grid.source === grid.source && grid.source.version === grid.version && grid.version > version, "texture sampling fields and source");
 const lit = new THREE.MeshStandardMaterial({ normalMap: grid, normalScale: new THREE.Vector2(0.5, 0.25) });
 check(lit.normalMap === grid && lit.normalScale.y === 0.25 && lit.normalScale === lit.normalScale, "normalMap and normalScale");
+const before = grid.version; grid.needsUpdate = true;
+check(grid.version === before + 1 && !Object.hasOwn(grid, "needsUpdate"), "needsUpdate reaches the engine");
+check(lit instanceof Material && lit.onBeforeCompile === Material.prototype.onBeforeCompile && lit.isMaterial, "Material base");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
@@ -146,7 +150,14 @@ const scene = new Scene(); const camera = new PerspectiveCamera(); camera.positi
 const player = new Mesh(new BoxGeometry(), new MeshBasicMaterial()); scene.add(player);
 scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
 const renderer = new WebGPURenderer({ canvas: { width: 1280, height: 720 } });
+check(renderer.toneMapping === 0 && renderer.outputColorSpace === "srgb" && !renderer.shadowMap.enabled, "renderer defaults");
+renderer.toneMapping = 4; renderer.toneMappingExposure = 0.62; renderer.shadowMap.enabled = true; renderer.shadowMap.type = 2;
 renderer.render(scene, camera);
+renderer.toneMapping = 5;
+let customRefused = false;
+try { renderer.render(scene, camera); } catch (error) { customRefused = /TN_NATIVE_RENDERER_STATE: toneMapping 5/.test(error.message); }
+check(customRefused, "an unimplemented tone mapping refuses");
+renderer.toneMapping = 4;
 const pipeline = new RenderPipeline(renderer); pipeline.outputNode = vec4(0.2, 0.3, 0.4, 1);
 pipeline.render();
 const target = convertToTexture(vec4(0.2, 0.3, 0.4, 1)).setResolutionScale(0.5);

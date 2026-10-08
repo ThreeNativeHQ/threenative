@@ -28,6 +28,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <cmath>
+#include <map>
+#include <optional>
 #include <filesystem>
 #include <cstdlib>
 #include <memory>
@@ -47,6 +50,7 @@
 #include "engine/assets/package.h"
 #include "engine/assets/gltf/loader.h"
 #include "engine/renderer/renderer.h"
+#include "engine/renderer/render_database.h"
 #include "adapters/v8/tsl.h"
 #include "engine/shader/graph/serialized.h"
 #include "mystral/js/engine.h"
@@ -183,7 +187,19 @@ class V8Game {
     assets::Package assets_;
     shader::graph::Node post_;
     Renderer* renderer_ = nullptr;
+    // three's renderer settings the game last set (WebGPURenderer's defaults until it does).
+    OutputState output_{std::nullopt, 1, true};
+    bool shadowMap_ = false;
+    bool outputChanged_ = true;
     static void loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info);
+  public:
+    void beforeRender(Renderer& renderer, RenderDatabase& database) {
+        if (outputChanged_) renderer.setOutput(output_);
+        outputChanged_ = false;
+        database.shadowMapEnabled = shadowMap_;
+    }
+  private:
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
 };
 
@@ -273,6 +289,52 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
     record->Set(ctx, v8str(isolate, "bytes"), v8::Number::New(isolate, static_cast<double>(entry->size))).Check();
     record->Set(ctx, v8str(isolate, "url"), v8str(isolate, game.assetPath_ + "#" + path)).Check();
     info.GetReturnValue().Set(record);
+}
+
+// `tn.setRendererState({toneMapping, toneMappingExposure, outputColorSpace, shadowMap: {enabled, type}})`:
+// the facade's WebGPURenderer settings, applied before the next frame. A value the native renderer
+// does not implement is refused by name, never mapped to a neighbour.
+void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    const auto ctx = isolate->GetCurrentContext();
+    const auto refuse = [&](const std::string& reason) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_NATIVE_RENDERER_STATE: " + reason)));
+    };
+    if (info.Length() != 1 || !info[0]->IsObject()) return refuse("expected one settings object");
+    const auto settings = info[0].As<v8::Object>();
+    v8::Local<v8::Value> mapping, exposure, colorSpace, shadowMap, enabled, type;
+    if (!settings->Get(ctx, v8str(isolate, "toneMapping")).ToLocal(&mapping) ||
+        !settings->Get(ctx, v8str(isolate, "toneMappingExposure")).ToLocal(&exposure) ||
+        !settings->Get(ctx, v8str(isolate, "outputColorSpace")).ToLocal(&colorSpace) ||
+        !settings->Get(ctx, v8str(isolate, "shadowMap")).ToLocal(&shadowMap))
+        return;
+    if (!mapping->IsNumber() || !exposure->IsNumber() || !std::isfinite(exposure.As<v8::Number>()->Value()) ||
+        !colorSpace->IsString() || !shadowMap->IsObject())
+        return refuse("toneMapping, toneMappingExposure, outputColorSpace and shadowMap are required");
+    if (!shadowMap.As<v8::Object>()->Get(ctx, v8str(isolate, "enabled")).ToLocal(&enabled) ||
+        !shadowMap.As<v8::Object>()->Get(ctx, v8str(isolate, "type")).ToLocal(&type))
+        return;
+    // three's constants: NoToneMapping 0, Linear 1, Reinhard 2, Cineon 3, ACESFilmic 4, AgX 6, Neutral 7.
+    static const std::map<double, std::optional<shader::ToneMapping>> mappings{
+        {0, std::nullopt}, {1, shader::ToneMapping::Linear}, {2, shader::ToneMapping::Reinhard},
+        {3, shader::ToneMapping::Cineon}, {4, shader::ToneMapping::ACESFilmic}, {6, shader::ToneMapping::AgX},
+        {7, shader::ToneMapping::Neutral}};
+    const auto tone = mappings.find(mapping.As<v8::Number>()->Value());
+    if (tone == mappings.end()) return refuse("toneMapping " + std::to_string(mapping.As<v8::Number>()->Value()));
+    v8::String::Utf8Value space(isolate, colorSpace);
+    const std::string spaceText(*space, space.length());
+    if (spaceText != "srgb" && spaceText != "srgb-linear") return refuse("outputColorSpace " + spaceText);
+    // WebGPU's ShadowNode filters PCFShadowMap and PCFSoftShadowMap alike; the native port is that filter.
+    if (!enabled->IsBoolean() || !type->IsNumber() || (type.As<v8::Number>()->Value() != 1 && type.As<v8::Number>()->Value() != 2))
+        return refuse("shadowMap.enabled must be a boolean and shadowMap.type PCFShadowMap or PCFSoftShadowMap");
+    const OutputState output{tone->second, exposure.As<v8::Number>()->Value(), spaceText == "srgb"};
+    if (output.toneMapping != game.output_.toneMapping || output.toneMappingExposure != game.output_.toneMappingExposure ||
+        output.srgb != game.output_.srgb) {
+        game.output_ = output;
+        game.outputChanged_ = true;
+    }
+    game.shadowMap_ = enabled->IsTrue();
 }
 
 void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -411,6 +473,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     auto self = v8::External::New(isolate_, this);
     host->Set(ctx, v8str(isolate_, "loadAsset"), v8::Function::New(ctx, &loadAsset, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     v8::Local<v8::Script> script;
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
@@ -574,6 +637,7 @@ int main(int argc, char** argv) {
     configured.gameRuntime = "v8";
     configured.update = [&game](double dt) { game.tick(dt); };
     configured.initialize = [&game](Renderer& renderer) { game.initialize(renderer); };
+    configured.beforeRender = [&game](Renderer& renderer, RenderDatabase& database) { game.beforeRender(renderer, database); };
     configured.observe = [&game](const std::string& method, const json::Value* argument,
                                  json::Value& result, std::string& error) {
         return game.observe(method, argument, result, error);

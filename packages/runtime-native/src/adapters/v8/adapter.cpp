@@ -1015,6 +1015,27 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                v8::External::New(isolate_, data))
                          : v8::Local<v8::FunctionTemplate>());
         }
+        // A write-only property (`texture.needsUpdate = true`, `material.needsUpdate`): three defines
+        // only its setter, so reading it answers undefined there and here.
+        for (const auto& [path, setter] : binding.setters) {
+            (void)setter;
+            if (path.find('.') != std::string::npos || binding.getters.count(path) || binding.members.count(path)) continue;
+            auto* data = new MethodData{this, path, {}};
+            proto->SetAccessorProperty(str(isolate_, path), v8::Local<v8::FunctionTemplate>(),
+                v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                    tn_handle_t h{};
+                    if (!d->adapter->unwrap(info.This(), h)) return;
+                    std::vector<tn_value_t> args;
+                    std::deque<std::string> texts;
+                    std::deque<std::vector<tn_value_t>> values;
+                    std::vector<std::vector<double>> arrays;
+                    tn_diagnostic_t diagnostic{nullptr, 0};
+                    if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
+                        tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
+                        throwStatus(info.GetIsolate(), diagnostic);
+                }, v8::External::New(isolate_, data)));
+        }
         // A dotted setter whose head is no member object, as three's plain `morphAttributes` holder:
         // `geometry.morphAttributes.position = [...]` writes through a holder object made per read,
         // which keeps its owner privately and forwards each tail to tn_set with the full path.

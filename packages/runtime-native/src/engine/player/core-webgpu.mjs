@@ -13,6 +13,11 @@ for (const material of [MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteN
 // Core still owns createRenderer/wrapRenderer; the player owns the GPU and draws these handles.
 export class WebGPURenderer {
   constructor({ canvas }) { this.domElement = canvas; }
+  // WebGPURenderer's defaults; the player applies them before each frame it draws.
+  shadowMap = { enabled: false, type: 1 };
+  toneMapping = 0;
+  toneMappingExposure = 1;
+  outputColorSpace = "srgb";
   setPixelRatio() {}
   setSize(width, height) {
     this.domElement.width = width;
@@ -22,6 +27,7 @@ export class WebGPURenderer {
   render(scene, camera) {
     globalThis.tn.scene = scene;
     globalThis.tn.camera = camera;
+    globalThis.tn.setRendererState(this);
   }
   dispose() {}
 }

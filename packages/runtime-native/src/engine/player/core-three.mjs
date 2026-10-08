@@ -71,8 +71,17 @@ for (const value of [Color, Vector2, Vector3, Vector4, Quaternion, Euler, Matrix
   value.prototype[`is${value.name}`] = true;
 for (const light of [AmbientLight, DirectionalLight, HemisphereLight, PointLight, SpotLight])
   light.prototype.isLight = true;
+// three's abstract Material: the base the native material classes share for `instanceof` and its
+// default hooks. The engine compiles no WebGL program, so the hooks stay three's no-op defaults;
+// a bare Material has no native class and refuses construction.
+export class Material {
+  constructor() { throw new Error("TN_NATIVE_MATERIAL_ABSTRACT: construct a concrete material class"); }
+  onBeforeCompile() {}
+  customProgramCacheKey() { return this.onBeforeCompile.toString(); }
+}
+Material.prototype.isMaterial = true;
 for (const material of [MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial,
   MeshPhysicalMaterial, MeshStandardMaterial, SpriteMaterial]) {
-  material.prototype.isMaterial = true;
+  Object.setPrototypeOf(material.prototype, Material.prototype);
   material.prototype[`is${material.name}`] = true;
 }

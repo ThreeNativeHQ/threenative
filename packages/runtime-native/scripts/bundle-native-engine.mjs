@@ -87,8 +87,6 @@ function unboundDiagnostic(specifier, name) {
     reason = "the native graph lacks this material/pass/history/storage context binding";
   else if (name === "PropertyBinding" || name.endsWith("ConsoleFunction"))
     reason = "native PropertyBinding exists, but its V8 object/static reflection and diagnostic console hook are unbound";
-  else if (name === "Material")
-    reason = "concrete native material classes are bound; the base Material constructor and identity are unbound";
   return `TN_NATIVE_ENGINE_UNBOUND: ${specifier}:${name} [${reason}]`;
 }
 
