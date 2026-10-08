@@ -168,6 +168,8 @@ renderer.toneMapping = 5;
 let customRefused = false;
 try { renderer.render(scene, camera); } catch (error) { customRefused = /TN_NATIVE_RENDERER_STATE: toneMapping 5/.test(error.message); }
 check(customRefused, "an unimplemented tone mapping refuses");
+check(renderer.info.render.drawCalls === 0 && renderer.info.render.triangles === 0 && renderer.info.render.calls === 0,
+  "renderer.info counts the last drawn frame (none in a check)");
 renderer.toneMapping = 4;
 const pipeline = new RenderPipeline(renderer); pipeline.outputNode = vec4(0.2, 0.3, 0.4, 1);
 pipeline.render();

@@ -192,14 +192,22 @@ class V8Game {
     OutputState output_{std::nullopt, 1, true};
     // The GPU adapter's `info` fields, read before the bundle boots; empty without a GPU (a check).
     std::vector<std::pair<std::string, std::string>> adapterInfo_;
+    // The last frame the player drew: three's `renderer.info.render` draw calls and triangles.
+    uint32_t drawCalls_ = 0;
+    uint64_t triangles_ = 0;
     bool shadowMap_ = false;
     bool outputChanged_ = true;
     static void loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info);
     v8::Local<v8::Value> adapterValue();
   public:
     void setAdapter(std::vector<std::pair<std::string, std::string>> info) { adapterInfo_ = std::move(info); }
+    void frameDrawn(const Renderer& renderer) {
+        drawCalls_ = renderer.lastFrame().draws;
+        triangles_ = renderer.lastFrame().triangles;
+    }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
@@ -356,6 +364,17 @@ v8::Local<v8::Value> V8Game::adapterValue() {
     return adapter;
 }
 
+// `tn.renderInfo()`: { drawCalls, triangles } of the last frame the player drew.
+void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    auto record = v8::Object::New(isolate);
+    record->Set(ctx, v8str(isolate, "drawCalls"), v8::Number::New(isolate, game.drawCalls_)).Check();
+    record->Set(ctx, v8str(isolate, "triangles"), v8::Number::New(isolate, static_cast<double>(game.triangles_))).Check();
+    info.GetReturnValue().Set(record);
+}
+
 void V8Game::requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
     auto ctx = info.GetIsolate()->GetCurrentContext();
@@ -503,6 +522,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "renderInfo"), v8::Function::New(ctx, &renderInfo, self).ToLocalChecked()).Check();
     v8::Local<v8::Script> script;
     if (!v8::Script::Compile(ctx, v8str(isolate_, source.str())).ToLocal(&script) || !script->Run(ctx).ToLocal(&ignored)) {
         v8::String::Utf8Value message(isolate_, tryCatch.Exception());
@@ -714,6 +734,7 @@ int main(int argc, char** argv) {
     configured.update = [&game](double dt) { game.tick(dt); };
     configured.initialize = [&game](Renderer& renderer) { game.initialize(renderer); };
     configured.beforeRender = [&game](Renderer& renderer, RenderDatabase& database) { game.beforeRender(renderer, database); };
+    configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.observe = [&game](const std::string& method, const json::Value* argument,
                                  json::Value& result, std::string& error) {
         return game.observe(method, argument, result, error);

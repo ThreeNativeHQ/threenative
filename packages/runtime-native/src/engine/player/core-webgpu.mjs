@@ -20,6 +20,18 @@ class NativeBackend {
 export class WebGPURenderer {
   constructor({ canvas }) { this.domElement = canvas; }
   backend = new NativeBackend();
+  // three's `renderer.info`, read from the last frame the player drew (one frame behind the
+  // simulation, as a GPU-timed reading is). `reset` has nothing to clear: the player counts per frame.
+  info = {
+    render: {
+      get drawCalls() { return globalThis.tn.renderInfo().drawCalls; },
+      get calls() { return globalThis.tn.renderInfo().drawCalls; },
+      get triangles() { return globalThis.tn.renderInfo().triangles; },
+    },
+    compute: {},
+    frame: 0,
+    reset() {},
+  };
   // WebGPURenderer's defaults; the player applies them before each frame it draws.
   shadowMap = { enabled: false, type: 1 };
   toneMapping = 0;
