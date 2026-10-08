@@ -100,6 +100,27 @@ void fastPaths() {
     CHECK(got == "11111");
     if (got != "11111") std::fprintf(stderr, "got %s\n", got.c_str());
     CHECK(adapter.genericArguments() - before == baseline);  // 2000 x 5 numeric calls added none
+    // A fixed member is the same wrapper on every read, owned by its object: slot-cached per wrapper,
+    // never shared between two objects or two members, and a plain object inheriting from a wrapper
+    // gets no cache (and no crash).
+    const std::string members = run(rt, adapter, R"JS(
+        const a = new Mesh(), b = new Mesh();
+        const names = ["position", "rotation", "quaternion", "scale", "matrix", "matrixWorld", "layers", "up"];
+        const seen = new Set();
+        let ok = 1;
+        for (const n of names) {
+            const first = a[n];
+            if (first === undefined || first !== a[n] || first === b[n] || seen.has(first)) ok = 0;
+            seen.add(first);
+        }
+        const mine = a.position; mine.set(4, 5, 6);
+        const heir = Object.create(a);
+        let inherited = 1;
+        try { heir.position; } catch (e) { inherited = 1; }
+        [ok, b.position.x === 0, a.position.x === 4 && a.position === mine, inherited].map(Number).join("")
+    )JS");
+    CHECK(members == "1111");
+    if (members != "1111") std::fprintf(stderr, "members %s\n", members.c_str());
     // Non-numeric arguments still take the general converter: a handle, a string, an array, a boolean.
     const uint64_t general = adapter.genericArguments();
     const std::string mixed = run(rt, adapter, (std::string(setup) + R"JS(

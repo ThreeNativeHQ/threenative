@@ -16,6 +16,11 @@
 
 namespace tn::adapters::v8adapter {
 
+// An engine wrapper's internal fields: 0 is its Wrapper record, 1.. cache the wrappers of its fixed
+// members (`position`, `rotation`, ...) so a read is a slot load, not a property lookup. A
+// PropertyBinding has two fields, so the count also tells the two kinds apart.
+constexpr int kWrapperFields = 8;
+
 struct Adapter::Wrapper {
     Adapter* adapter;
     tn_handle_t handle;
@@ -197,6 +202,7 @@ struct MethodData {
     // names the same native object for the owner's life, so later reads cross nothing.
     v8::Global<v8::Private> cache;
     bool intersections = false;  // intersectObject(s): the only methods whose third argument is a target array
+    int slot = 0;                // a fixed member's internal-field cache slot; 0: none left, use the private key
 };
 
 }  // namespace
@@ -204,7 +210,7 @@ struct MethodData {
 Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : tsl_(std::make_unique<Tsl>(isolate)), isolate_(isolate), context_(context) {
     v8::HandleScope scope(isolate_);
     v8::Local<v8::ObjectTemplate> instance = v8::ObjectTemplate::New(isolate_);
-    instance->SetInternalFieldCount(1);
+    instance->SetInternalFieldCount(kWrapperFields);
     instanceTemplate_.Reset(isolate_, instance);
 }
 
@@ -265,7 +271,7 @@ v8::Local<v8::Value> Adapter::wrap(tn_handle_t handle) {
 bool Adapter::unwrap(v8::Local<v8::Value> value, tn_handle_t& out) const {
     if (!value->IsObject()) return false;
     v8::Local<v8::Object> object = value.As<v8::Object>();
-    if (object->InternalFieldCount() != 1) return false;
+    if (object->InternalFieldCount() != kWrapperFields) return false;
     auto* w = static_cast<Wrapper*>(object->GetAlignedPointerFromInternalField(0));
     if (!w || w->adapter != this) return false;
     out = w->handle;
@@ -539,7 +545,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             },
             self);
         ctor->SetClassName(str(isolate_, name));
-        ctor->InstanceTemplate()->SetInternalFieldCount(1);
+        ctor->InstanceTemplate()->SetInternalFieldCount(kWrapperFields);
         v8::Local<v8::ObjectTemplate> proto = ctor->PrototypeTemplate();
         for (const auto& [method, fn] : binding.methods) {
             (void)fn;
@@ -712,6 +718,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         for (const auto& [path, member] : binding.members) {
             properties.push_back({path, binding.setters.count(path) > 0, binding.fixedMembers.count(path) > 0});
         }
+        int nextSlot = 1;  // internal-field slots for this class's fixed members
         for (const auto& [path, settable, fixed] : properties) {
             if ((name == "MeshBasicNodeMaterial" || name == "MeshStandardNodeMaterial") && path.ends_with("Node")) {
                 auto* data = new MethodData{this, path, {}};
@@ -747,7 +754,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 continue;
             }
             auto* data = new MethodData{this, path, {}};
-            if (fixed) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
+            if (fixed && nextSlot < kWrapperFields) data->slot = nextSlot++;
+            else if (fixed) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
             proto->SetAccessorProperty(
                 str(isolate_, path),
                 v8::FunctionTemplate::New(
@@ -756,9 +764,16 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                         auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
                         v8::Isolate* isolate = info.GetIsolate();
                         v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
-                        if (!d->cache.IsEmpty()) {
+                        v8::Local<v8::Object> self = info.This();
+                        if (d->slot > 0 && self->InternalFieldCount() == kWrapperFields) {
+                            v8::Local<v8::Data> cached = self->GetInternalField(d->slot);
+                            if (cached->IsValue() && !cached.As<v8::Value>()->IsUndefined()) {
+                                info.GetReturnValue().Set(cached.As<v8::Value>());
+                                return;
+                            }
+                        } else if (!d->cache.IsEmpty()) {
                             v8::Local<v8::Value> cached;
-                            if (info.This()->GetPrivate(ctx, d->cache.Get(isolate)).ToLocal(&cached) && !cached->IsUndefined()) {
+                            if (self->GetPrivate(ctx, d->cache.Get(isolate)).ToLocal(&cached) && !cached->IsUndefined()) {
                                 info.GetReturnValue().Set(cached);
                                 return;
                             }
@@ -772,7 +787,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                             return;
                         }
                         v8::Local<v8::Value> value = fromValue(*d->adapter, result);
-                        if (!d->cache.IsEmpty()) info.This()->SetPrivate(ctx, d->cache.Get(isolate), value).Check();
+                        if (d->slot > 0) self->SetInternalField(d->slot, value);
+                        else if (!d->cache.IsEmpty()) self->SetPrivate(ctx, d->cache.Get(isolate), value).Check();
                         info.GetReturnValue().Set(value);
                     },
                     v8::External::New(isolate_, data)),
