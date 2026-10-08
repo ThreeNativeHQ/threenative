@@ -806,6 +806,46 @@ describe("VirtualShadowNode", () => {
     }
   });
 
+  it("should count window travel in pages whatever the frames sampled, where byMove counts renders", () => {
+    const { camera, light } = world();
+    const extent = 320;
+    const step = 0.164;
+    const options = {
+      clipExtents: [extent],
+      mapSize: 512,
+      refreshStep: step,
+      adaptiveRefresh: false,
+    };
+    const walk = (frames: number): { byMove: number; windowSteps: number } => {
+      const node = setupNode(light, options);
+      try {
+        camera.position.copy(node.clipmap.unproject({ u: 100, v: -100 }));
+        settle(node, camera);
+        const before = node.stats;
+        const stride = 4 * (step * extent + node.clipmap.getWindow(0).pageWorldSize);
+        for (let frame = 1; frame <= frames; frame += 1) {
+          camera.position.copy(
+            node.clipmap.unproject({ u: 100 + (stride * frame) / frames, v: -100 }),
+          );
+          node.updateBefore(frameFor(camera));
+        }
+        return {
+          byMove: node.stats.byMove - before.byMove,
+          windowSteps: node.stats.windowSteps - before.windowSteps,
+        };
+      } finally {
+        node.dispose();
+      }
+    };
+    const once = walk(1);
+    const sampled = walk(4);
+    // One frame or four over the same path: four move renders against one, the same travel.
+    expect(sampled.byMove).toBe(4);
+    expect(once.byMove).toBe(1);
+    expect(once.windowSteps).toBeGreaterThan(0);
+    expect(sampled.windowSteps).toBe(once.windowSteps);
+  });
+
   it("should refuse a refreshStep that would cost the selection guard its trailing edge", () => {
     const { light } = world();
     expect(() => setupNode(light, { clipExtents: [8, 32], refreshStep: 0.9 })).toThrow(RangeError);

@@ -247,6 +247,12 @@ export interface IVirtualShadowStats {
   readonly rendersTotal: number;
   /** Of those, the renders taken because a level's window moved. */
   readonly byMove: number;
+  /**
+   * Pages every level's window travelled between its renders, over the node's lifetime: the sum of
+   * `|ΔminX| + |ΔminY|` at each render. Unlike `byMove` it does not depend on how many frames sampled
+   * the path, so two runs of one route at different frame rates report the same number.
+   */
+  readonly windowSteps: number;
   /** Of those, the renders taken because an invalidation asked and its level's delay had passed. */
   readonly byInvalidation: number;
   /**
@@ -773,6 +779,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   /** Cumulative level renders and the reason each took one; see `IVirtualShadowStats`. */
   #rendersTotal = 0;
   #byMove = 0;
+  #windowSteps = 0;
   #byInvalidation = 0;
   #coalesced = 0;
   /** Read from the URL once, for the `?tnShadowStats=1` marker cadence. */
@@ -1004,6 +1011,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       rendered: 0,
       rendersTotal: 0,
       reuseRatio: 1,
+      windowSteps: 0,
     };
   }
 
@@ -2414,6 +2422,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // frame's single render and every other due level is deferred behind it.
         const grant = due && !budgetSpent;
         if (grant) {
+          // A level's first render places its window; only later renders are travel.
+          if (Number.isFinite(level.minX)) {
+            this.#windowSteps +=
+              Math.abs(window.minX - level.minX) + Math.abs(window.minY - level.minY);
+          }
           level.minX = window.minX;
           level.minY = window.minY;
           level.centerW = this.clipmap.centerLight.w;
@@ -2529,6 +2542,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       rendered,
       rendersTotal: this.#rendersTotal,
       reuseRatio: total === 0 ? 1 : this.#served / total,
+      windowSteps: this.#windowSteps,
     };
     const every = this.options.markerEvery;
     // `?tnShadowStats=1` is the walk's own switch: a 10 s walk is ~600 frames, and a marker every
