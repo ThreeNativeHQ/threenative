@@ -37,7 +37,7 @@ Workloads that already exist: `examples/engine-load-test` (heterogeneous rendera
 #### Phase 2: The measurement
 **Status:** NOT STARTED
 **Files:** `docs/verification/runtime-perf-state.md`
-- [ ] Desktop result for all three arms, on physical hardware with a real display. proof: `pnpm bench:engines -- --arms current,native-v8,native-cpp --workload heterogeneous --target desktop`
+- [x] Desktop result for all three arms, on physical hardware with a real display. proof: `pnpm bench:engines -- --arms current,native-v8,native-cpp --workload heterogeneous --target desktop` — 2026-10-07, Ryzen 9 5900X + NVIDIA RTX 2080, KDE Wayland session, real display (Xwayland `:0`, no Xvfb), CI runners fenced off the benchmark cores: L4 heterogeneous @4096, 1280×720, 600 frames, equal presented work (3 draws, 49,155 triangles per arm). Hot path p50/p95: current (legacy host) 3.09/4.18 ms; native-v8 4.21/4.62 ms with 12,290 ABI crossings per frame; native-cpp 1.01/1.07 ms. GPU p50 0.066 ms in every arm. `current` presented to the display; both native arms render offscreen by the harness's design, so the comparison is the CPU hot path, which excludes presentation. Report `artifacts/engine-load-test/cp1/cp1-report.json`.
 - [ ] Pixel 8 result for all three arms. proof: `pnpm bench:engines -- --arms current,native-v8,native-cpp --workload heterogeneous --target android --device <serial>`
 - [ ] The verdict, proceed or stop, is written into this PRD and the batch index with both numbers. proof: the two runs above
 
