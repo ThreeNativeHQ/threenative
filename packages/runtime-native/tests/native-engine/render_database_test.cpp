@@ -409,6 +409,59 @@ void litScene() {
     CHECK(worst <= 8 && over1 < 320 * 240 * 3 / 1000);
 }
 
+std::vector<uint8_t> readTexture(Renderer& r, EventQueue& events, Handle texture) {
+    std::vector<uint8_t> out;
+    bool done = false;
+    r.gpu().readTexture(texture, [&](GpuStatus s, std::vector<uint8_t> px) {
+        if (s == GpuStatus::Ok) out = std::move(px);
+        done = true;
+    });
+    for (int i = 0; i < 4000 && !done; ++i) {
+        r.poll();
+        events.drain();
+        if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return out;
+}
+
+// presentNext puts the output pass into the target itself: the bytes the blit copies, for the
+// formats a window surface takes, frame after frame, without disturbing the readable frame.
+void presentDirect() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    LitScene s;
+    RenderDatabase database;
+    for (const WGPUTextureFormat format : {WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_BGRA8Unorm}) {
+        const WGPUTextureUsage usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
+        const Handle copied = renderer.gpu().createTexture(160, 120, format, usage);
+        const Handle direct = renderer.gpu().createTexture(160, 120, format, usage);
+        WGPUTextureView copiedView = wgpuTextureCreateView(renderer.gpu().texture(copied), nullptr);
+        WGPUTextureView directView = wgpuTextureCreateView(renderer.gpu().texture(direct), nullptr);
+        for (int frame = 0; frame < 3; ++frame) {
+            s.mesh.rotation.y = 0.4 * (frame + 1);
+            database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+            CHECK(renderer.blitTo(context.getQueue(), copiedView, format));
+            const std::vector<uint8_t> expected = readTexture(renderer, events, copied);
+            const std::vector<uint8_t> readable = read(renderer, events);
+            renderer.presentNext(directView, format);
+            database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+            const std::vector<uint8_t> actual = readTexture(renderer, events, direct);
+            CHECK(database.diagnostics().empty());
+            CHECK(expected.size() == 160 * 120 * 4 && actual == expected);
+            CHECK(std::any_of(expected.begin(), expected.end(), [&](uint8_t b) { return b != expected[0]; }));
+            CHECK(read(renderer, events) == readable);  // a presented frame leaves the readable one alone
+        }
+        wgpuTextureViewRelease(copiedView);
+        wgpuTextureViewRelease(directView);
+        renderer.gpu().destroy(copied);
+        renderer.gpu().destroy(direct);
+    }
+}
+
 void directionalTarget() {
     Scene scene;
     PerspectiveCamera camera;
@@ -1113,7 +1166,7 @@ void convertedCopiesAreSwept() {
 
 }  // namespace
 
-TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept})

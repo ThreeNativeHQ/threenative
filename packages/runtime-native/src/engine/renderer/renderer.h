@@ -226,6 +226,17 @@ public:
      * format. Returns false when the program for it is refused; the frame stays readable either way.
      */
     bool blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat format);
+    /**
+     * The next render() draws its output pass straight into `target`, a view of `format`, in place
+     * of the intermediate RGBA8 frame and the blitTo that copies it: a presented frame costs one
+     * pass, one encoder and one submission fewer. The pixels are the same bytes. That frame is not
+     * kept, so readPixels() still answers the one before; a caller that reads frames back uses
+     * blitTo. `target` is borrowed for that one render() call and must outlive it.
+     */
+    void presentNext(WGPUTextureView target, WGPUTextureFormat format) {
+        presentTarget_ = target;
+        presentFormat_ = format;
+    }
     /** The last frame's pixels, RGBA8 rows tightly packed, delivered from poll(). */
     GpuStatus readPixels(ReadbackCallback done);
     void poll() { gpu_.poll(); }
@@ -334,7 +345,7 @@ private:
     void releaseTargets();
     GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done);
     void releaseOutputGroup();
-    void outputPass(WGPUCommandEncoder encoder, bool timed);
+    void outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureView present, WGPUTextureFormat presentFormat);
 
     WGPUInstance instance_;
     std::unique_ptr<Renderer> probeCapture_;
@@ -397,6 +408,8 @@ private:
     WGPUBindGroup outputGroup_ = nullptr;
     WGPUBindGroupLayout outputLayout_ = nullptr;
     WGPUPipelineLayout outputPipelineLayout_ = nullptr;
+    WGPUTextureView presentTarget_ = nullptr;  // presentNext: the output pass draws here, not into colorView_
+    WGPUTextureFormat presentFormat_ = WGPUTextureFormat_Undefined;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     uint64_t renderId_ = 0;

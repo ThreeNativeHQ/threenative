@@ -84,15 +84,20 @@ void tick() {
     } else if (instance) wgpuInstanceProcessEvents(instance);
     events.drain();
     if (failed || !renderer || !scene || !camera || manualFrames) return;
-    database.render(*renderer, *scene, *camera, {0.02, 0.03, 0.04, 1}, measuring ? &benchCpu : nullptr);
-    if (!database.diagnostics().empty()) return static_cast<void>(fail(database.diagnostics().front()));
+    // A frame nobody reads back draws its output pass straight into the canvas texture: the same
+    // bytes the blit copied, one pass, encoder and submission fewer. The readback frame keeps the
+    // intermediate RGBA8 image and the blit.
     WGPUSurfaceTexture frame = {};
     wgpuSurfaceGetCurrentTexture(surface, &frame);
     if (frame.texture == nullptr) return static_cast<void>(fail("TN_WASM_SURFACE: no canvas texture"));
     WGPUTextureView view = wgpuTextureCreateView(frame.texture, nullptr);
-    const bool presented = renderer->blitTo(queue, view, surfaceFormat);
+    if (!reading) renderer->presentNext(view, surfaceFormat);
+    database.render(*renderer, *scene, *camera, {0.02, 0.03, 0.04, 1}, measuring ? &benchCpu : nullptr);
+    const bool diagnosed = !database.diagnostics().empty();
+    const bool presented = diagnosed || !reading || renderer->blitTo(queue, view, surfaceFormat);
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(frame.texture);
+    if (diagnosed) return static_cast<void>(fail(database.diagnostics().front()));
     // Emdawn presents at the browser's animation boundary, not wgpuSurfacePresent (native-only).
     if (!presented) return static_cast<void>(fail("TN_WASM_SURFACE: blit refused"));
     if (reading) {

@@ -1331,6 +1331,9 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& unjitteredCamera, const LightState& lights,
                           std::array<double, 4> clear) {
     const uint64_t id = ++renderId_;
+    // Taken at once: a frame that throws must not leave a borrowed view armed for the next one.
+    const WGPUTextureView presentTarget = std::exchange(presentTarget_, nullptr);
+    const WGPUTextureFormat presentFormat = presentFormat_;
     CameraState camera = unjitteredCamera;
     if (traa_) camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse);
     const Matrix& view = camera.matrixWorldInverse;
@@ -2094,7 +2097,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
     if (postEffects_) postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_);
-    outputPass(encoder, timed);
+    outputPass(encoder, timed, presentTarget, presentFormat);
     if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 4, gpu_.buffer(timestampResolve_), 0);
     WGPUCommandBufferDescriptor commandDesc = {};
     gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
@@ -2117,8 +2120,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     return id;
 }
 
-void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
-    PipelineTarget outputTarget{WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None};
+void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureView present, WGPUTextureFormat presentFormat) {
+    PipelineTarget outputTarget{present ? presentFormat : WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None};
     outputTarget.layout = outputPipelineLayout_;
     WGPURenderPipeline pipeline = pipelines_.get(outputVertex_, &outputFragment_, outputTarget);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
@@ -2133,11 +2136,14 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
     }
     put(block, outputFragment_, "toneMappingExposure", std::array<double, 1>{output_.toneMappingExposure});
     if (outputFragment_.uniformBlockSize) gpu_.writeBuffer(outputUniforms_, 0, block.data(), outputFragment_.uniformBlockSize);
-    if (!outputGroup_) {
-        outputGroup_ = bindGroup(outputLayout_, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_);
+    // The explicit output layout is shared by the offscreen and the presenting pipeline, so one
+    // group serves both and needs no rebuild when the present format changes.
+    WGPUBindGroup& group = outputGroup_;
+    if (!group) {
+        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_);
     }
     WGPURenderPassColorAttachment color = {};
-    color.view = colorView_;
+    color.view = present ? present : colorView_;
     color.loadOp = WGPULoadOp_Clear;
     color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)
@@ -2155,7 +2161,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
     }
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
     wgpuRenderPassEncoderSetPipeline(pass, pipeline);
-    wgpuRenderPassEncoderSetBindGroup(pass, 0, outputGroup_, 0, nullptr);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderSetVertexBuffer(pass, outputVertex_.attributes.at(0).location, gpu_.buffer(outputTriangle_), 0, 24);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     // three's renderer.info counts its output QuadMesh as one draw of one triangle; so does this.

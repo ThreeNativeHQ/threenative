@@ -210,6 +210,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
         native_engine_uniform_batch_preparation=uniform_batch_preparation
         native_engine_renderer_scene_lit=lit_scene
+        native_engine_renderer_present_direct=present_direct
         native_engine_directional_target=directional_target
         native_engine_renderer_invalidation=invalidation
         native_engine_renderer_scene_alpha=alpha_scene
