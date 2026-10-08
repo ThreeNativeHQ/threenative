@@ -3867,4 +3867,12 @@ native lane's follow-up. The desktop scenario still fails 22 of 62 assertions, m
 measurements the native target cannot provide (Long Tasks, GPU timestamp windows, budget windows),
 plus `props.crags.drawn` and `player.visible` at two steps; these were unreachable before.
 
+Native KTX2 follow-up, located: the licensed models' textures failed because the KTX2 loader looks for
+its Basis transcoder at `basis/` beside the game, where the native `assets/` fallback does not apply.
+With the transcoder also linked at `basis/`, decoding proceeds and the run then loses the device in
+the PR's bounded compressed upload: `TN_STRATA_SPAWN_FAILURE … "Device lost during texture
+preparation."` at 21.7 s on the forest. Native KTX2 therefore needs (1) the transcoder resolved
+through the same asset root and (2) a native fix in `prepareTextureAsync`; both belong to the native
+lane. The shipped staging stays public-only.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
