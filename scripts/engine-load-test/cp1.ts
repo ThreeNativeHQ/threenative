@@ -11,6 +11,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { pushHost, readyDevice, runHostOnDevice } from "./cp1-android.js";
 import { BenchError, type IRunReport, percentile } from "./report.js";
 import { assertEqualPresentedWork } from "./workloads.js";
 
@@ -45,6 +46,8 @@ export interface ICp1ArmResult {
   gpuMs: ISeries | null;
   /** Whether frames went to a window; the native host draws offscreen. */
   presented: boolean;
+  /** The device conditions the preflight read before this arm ran (Android only). */
+  deviceCondition?: unknown;
 }
 
 export interface ICp1Options {
@@ -54,8 +57,11 @@ export interface ICp1Options {
   warmup: number;
   width: number;
   height: number;
-  /** The tn-desktop arm at mode L4, unique materials, ladder = `objects`. */
+  /** The tn-desktop arm at mode L4, unique materials, ladder = `objects`; on Android, the legacy APK. */
   runCurrent: () => Promise<IRunReport>;
+  /** `android` runs the native arms from `adb shell` on `device`; `current` is the caller's. */
+  target?: "desktop" | "android";
+  device?: string;
 }
 
 export function parseCp1Arms(value: string): Cp1Arm[] {
@@ -189,9 +195,15 @@ async function nativeResult(
   options: ICp1Options,
   scratch: string,
 ): Promise<ICp1ArmResult> {
+  const android = options.target === "android";
+  if (arm === "native-aot" && android)
+    throw new BenchError(
+      "TN_BENCH_CP1_ARM_UNSUPPORTED",
+      "native-aot has no Android lane: Perry's Android library is a JNI-loaded shared library, not a host executable",
+    );
   if (arm === "native-aot") return aotResult(repoRoot, options, scratch);
   const host = path.join(repoRoot, "packages/runtime-native/build/tn-linux/tn-native-engine-host");
-  if (!existsSync(host))
+  if (!android && !existsSync(host))
     throw new BenchError(
       "TN_BENCH_CP1_HOST_MISSING",
       `${path.relative(repoRoot, host)} is not built: cmake --build packages/runtime-native/build/tn-linux --target tn-native-engine-host`,
@@ -208,8 +220,9 @@ async function nativeResult(
     `${options.width}x${options.height}`,
   ];
   if (arm === "native-cpp") args.unshift("--cpp");
-  else {
-    const script = path.join(scratch, "l4-workload.js");
+  let script: string | undefined;
+  if (arm !== "native-cpp") {
+    script = path.join(scratch, "l4-workload.js");
     await execFileAsync(
       // esbuild is a runtime-native dependency; the workspace root does not install it.
       path.join(repoRoot, "packages/runtime-native/node_modules/.bin/esbuild"),
@@ -223,22 +236,42 @@ async function nativeResult(
       ],
       { cwd: repoRoot },
     );
-    args.unshift(script);
+    if (!android) args.unshift(script);
   }
-  // The host logs to stdout as well, so the report is read from the file it writes.
-  const file = path.join(scratch, `${arm}.json`);
-  await execFileAsync(host, [...args, "--report", file], {
-    cwd: repoRoot,
-    maxBuffer: 8 * 1024 * 1024,
-  });
-  const report = JSON.parse(await readFile(file, "utf8")) as IHostReport;
+  let report: IHostReport;
+  let deviceCondition: unknown;
+  if (android) {
+    const serial = options.device;
+    if (serial === undefined)
+      throw new BenchError("TN_BENCH_BAD_FLAG", "an Android CP1 run needs --device <serial>");
+    deviceCondition = await readyDevice(serial, arm);
+    await pushHost(repoRoot, serial);
+    const run = await runHostOnDevice(serial, args, script);
+    if (run.exit !== 0)
+      throw new BenchError(
+        "TN_BENCH_CP1_HOST_FAILED",
+        `the host exited ${run.exit} on ${serial}: ${run.log.trim().split("\n").slice(-4).join(" | ")}`,
+      );
+    report = JSON.parse(run.report) as IHostReport;
+  } else {
+    // The host logs to stdout as well, so the report is read from the file it writes.
+    const file = path.join(scratch, `${arm}.json`);
+    await execFileAsync(host, [...args, "--report", file], {
+      cwd: repoRoot,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    report = JSON.parse(await readFile(file, "utf8")) as IHostReport;
+  }
   const driver = arm === "native-cpp" ? "native-cpp" : "native-v8";
   if (report.arm !== driver)
     throw new BenchError(
       "TN_BENCH_ARM_MISMATCH",
       `asked the host for ${driver}, it reported ${report.arm}`,
     );
-  return hostResult(arm, arm === "native-cpp" ? "cpp" : "v8", report);
+  return {
+    ...hostResult(arm, arm === "native-cpp" ? "cpp" : "v8", report),
+    ...(deviceCondition === undefined ? {} : { deviceCondition }),
+  };
 }
 
 export async function runCp1(repoRoot: string, artifactRoot: string, options: ICp1Options) {
@@ -261,6 +294,8 @@ export async function runCp1(repoRoot: string, artifactRoot: string, options: IC
   const overhead = bindingOverhead(results);
   const report = {
     workload: "heterogeneous",
+    target: options.target ?? "desktop",
+    ...(options.device === undefined ? {} : { device: options.device }),
     objects: options.objects,
     frames: options.frames,
     warmup: options.warmup,
@@ -302,7 +337,7 @@ function cp1Markdown(
       `| ${r.arm} (${r.driver}) | ${r.objects} | ${r.hotPathMs.p50.toFixed(2)} / ${r.hotPathMs.p95.toFixed(2)} | ${r.gpuMs?.p50.toFixed(3) ?? "n/a"} | ${r.frameMs.p50.toFixed(2)} | ${r.crossingsPerFrame?.p50 ?? "n/a"} | ${r.drawCalls} | ${r.triangles} |`,
   );
   return [
-    `CP1 heterogeneous L4@${options.objects}, ${options.width}x${options.height}, ${options.frames} frames`,
+    `CP1 heterogeneous L4@${options.objects}, ${options.width}x${options.height}, ${options.frames} frames${options.target === "android" ? `, Android device ${options.device}` : ""}`,
     "",
     "| arm | objects | hot path p50 / p95 ms | GPU p50 ms | frame p50 ms | crossings/frame | draws | triangles |",
     "| --- | --- | --- | --- | --- | --- | --- | --- |",

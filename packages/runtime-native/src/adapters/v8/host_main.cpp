@@ -7,6 +7,11 @@
 //
 //   tn-native-engine-host <workload.js> [--objects N] [--frames N] [--warmup N] [--size WxH]
 //                         [--report out.json] [--cpp | --crowd] [--identity manifest]
+//                         [--v8-snapshot snapshot_blob.bin]
+//
+// `--v8-snapshot` is for Android, whose prebuilt V8 keeps the startup snapshot beside the library
+// (the desktop monolith embeds it); the Pixel lane of CP1 (scripts/engine-load-test/cp1-android.ts)
+// pushes this executable, libv8android.so and that file to /data/local/tmp and runs it from `adb shell`.
 //
 // `--crowd` drives the C++ skinned crowd (player::SkinnedCrowd without its refusal cases: 64
 // identical animated rigs) instead of the L4 twin; the report's workload is `skinned-crowd`.
@@ -49,6 +54,7 @@ struct Options {
     bool cpp = false;
     bool crowd = false;
     std::string identity;  // the artifact identity manifest checked at startup (PRD-530)
+    std::string snapshot;  // V8's startup snapshot, where the platform's V8 keeps it outside the library
 };
 
 double ms(Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); }
@@ -138,6 +144,10 @@ struct CppWorkload {
 
 // ------------------------------------------------------------------------------ the V8 game side
 
+// The bytes have to outlive V8, so they are held for the process.
+std::string g_snapshotBytes;
+v8::StartupData g_snapshot{nullptr, 0};
+
 struct V8Game {
     std::unique_ptr<v8::Platform> platform;
     std::unique_ptr<v8::ArrayBuffer::Allocator> allocator;
@@ -153,6 +163,15 @@ struct V8Game {
     std::shared_ptr<void> sceneHold, cameraHold;
 
     bool start(const Options& o, std::string& error) {
+        if (!o.snapshot.empty()) {
+            std::ifstream blob(o.snapshot, std::ios::binary);
+            std::stringstream bytes;
+            bytes << blob.rdbuf();
+            g_snapshotBytes = bytes.str();
+            if (!blob || g_snapshotBytes.empty()) return error = "cannot read the V8 snapshot " + o.snapshot, false;
+            g_snapshot = {g_snapshotBytes.data(), int(g_snapshotBytes.size())};
+            v8::V8::SetSnapshotDataBlob(&g_snapshot);
+        }
         platform = v8::platform::NewDefaultPlatform();
         v8::V8::InitializePlatform(platform.get());
         v8::V8::Initialize();
@@ -252,6 +271,7 @@ int main(int argc, char** argv) {
         else if (a == "--cpp") o.cpp = true;
         else if (a == "--crowd") o.crowd = true;
         else if (a == "--identity") o.identity = next();
+        else if (a == "--v8-snapshot") o.snapshot = next();
         else if (o.script.empty() && a.rfind("--", 0) != 0) o.script = a;
         else return std::fprintf(stderr, "TN_HOST_ARGS: unknown argument %s\n", a.c_str()), 2;
     }

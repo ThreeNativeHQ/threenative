@@ -46,7 +46,7 @@ export function adbPath(): string {
   return existsSync(sdk) ? sdk : "adb";
 }
 
-async function adb(args: readonly string[], timeoutMs = 120_000): Promise<string> {
+export async function adb(args: readonly string[], timeoutMs = 120_000): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(adbPath(), [...args], { stdio: ["ignore", "pipe", "pipe"] });
     const chunks: string[] = [];
@@ -67,15 +67,29 @@ async function adb(args: readonly string[], timeoutMs = 120_000): Promise<string
   });
 }
 
-async function readDeviceSerial(): Promise<string> {
+/** adb bound to one device: with several attached (a phone and an emulator), an unnamed call answers for whichever adb picks. */
+export function adbOn(serial: string) {
+  return (args: readonly string[], timeoutMs = 120_000): Promise<string> =>
+    adb(["-s", serial, ...args], timeoutMs);
+}
+
+export async function readDeviceSerial(requested?: string): Promise<string> {
   const devices = (await adb(["devices"]))
     .split("\n")
     .slice(1)
     .map((line) => line.trim())
     .filter((line) => line.endsWith("device"));
+  const wanted = requested ?? process.env.ANDROID_SERIAL;
+  if (wanted !== undefined && wanted !== "") {
+    if (!devices.some((line) => line.split(/\s+/)[0] === wanted))
+      throw new Error(`TN_BENCH_NO_DEVICE: ${wanted} is not an attached, online device.`);
+    return wanted;
+  }
   if (devices.length === 0) throw new Error("TN_BENCH_NO_DEVICE: no Android device is attached.");
   if (devices.length > 1)
-    throw new Error(`TN_BENCH_MANY_DEVICES: ${devices.length} attached; set ANDROID_SERIAL.`);
+    throw new Error(
+      `TN_BENCH_MANY_DEVICES: ${devices.length} attached; pass --device or set ANDROID_SERIAL.`,
+    );
   const serial = (devices[0] as string).split(/\s+/)[0] as string;
   return serial;
 }
@@ -93,7 +107,11 @@ async function readDeviceSerial(): Promise<string> {
  * builds. The host prints the file's path once at startup, in a single short line that is never the
  * thing logd drops.
  */
-async function readStoredReport(packageName: string, log: string): Promise<unknown | undefined> {
+async function readStoredReport(
+  adb: ReturnType<typeof adbOn>,
+  packageName: string,
+  log: string,
+): Promise<unknown | undefined> {
   // Gated on this run having reached its report, and that gate is load-bearing. The stored value
   // outlives the run that wrote it, so reading it unconditionally would hand back the *previous*
   // run's numbers under this run's label — the exact shape of failure this benchmark exists to
@@ -150,12 +168,15 @@ export async function runAndroidArm(
   options: IAndroidLadder & {
     allowEmulator?: boolean;
     allowLowBattery: boolean;
+    /** The device to run on; unset, the only attached one (or ANDROID_SERIAL). */
+    serial?: string;
     timeoutMs: number;
   },
 ): Promise<unknown> {
   const definition = ANDROID_ARMS[arm];
   if (definition === undefined) throw new Error(`TN_BENCH_BAD_ARM: ${arm}`);
-  const serial = await readDeviceSerial();
+  const serial = await readDeviceSerial(options.serial);
+  const adb = adbOn(serial);
   const state = await assertSharedDeviceReady(
     serial,
     {
@@ -197,7 +218,7 @@ export async function runAndroidArm(
     const log = await adb(["logcat", "-d"]);
     // Storage first: it carries the whole report, where the log may have lost most of it. The log
     // is still the trigger for "the run is over" and still the only path when storage is absent.
-    const stored = await readStoredReport(definition.packageName, log);
+    const stored = await readStoredReport(adb, definition.packageName, log);
     if (stored !== undefined || log.includes(END) || log.includes(FAILED)) {
       await adb(["shell", "am", "force-stop", definition.packageName]);
       const report = stored ?? parseReport(log);

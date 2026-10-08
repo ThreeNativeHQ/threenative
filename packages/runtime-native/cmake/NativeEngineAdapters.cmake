@@ -41,6 +41,11 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     target_link_libraries(tn-native-engine-host PRIVATE tn_adapter_v8 tn_engine_renderer tn_host_services
         tn_engine_animation)
     set_target_properties(tn-native-engine-host PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    if(ANDROID)
+        # The host is a plain executable for `adb shell` (PRD-534's Pixel lane); wgpu-native's Vulkan
+        # backend and the context log through the NDK's system libraries.
+        target_link_libraries(tn-native-engine-host PRIVATE log android)
+    endif()
     if(NOT APPLE AND NOT WIN32)
         # Dawn and the V8 monolith both carry Abseil, as for mystral-runtime: the same version's
         # duplicate definitions are folded rather than refused.

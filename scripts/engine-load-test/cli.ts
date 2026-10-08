@@ -20,6 +20,7 @@ import {
   startProcess,
   waitForUrl,
 } from "./browser.js";
+import { buildCurrentApk, readyDevice, waitUntilCool } from "./cp1-android.js";
 import { parseCp1Arms, runCp1 } from "./cp1.js";
 import { runCrowd } from "./crowd.js";
 import {
@@ -38,7 +39,7 @@ import {
   renderComparisonMarkdown,
   renderPerformanceCheck,
 } from "./report.js";
-import { runAndroidArm } from "./run-android.js";
+import { adbOn, runAndroidArm } from "./run-android.js";
 import { desktopTimeoutMs, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
 import { exportGodotWeb } from "./run-godot.js";
 import { runWebBench, webBenchOptions } from "./web.js";
@@ -507,21 +508,56 @@ async function runReportCheckCommand(file: string): Promise<void> {
 async function runCp1Command(arms: string): Promise<void> {
   const workloads = parseWorkloads(flag("workloads") ?? flag("workload") ?? "heterogeneous");
   const target = flag("target") ?? "desktop";
-  if (target !== "desktop")
-    throw new BenchError(
-      "TN_BENCH_BAD_FLAG",
-      `CP1 has no ${target} lane yet; the native host is desktop-only`,
-    );
+  if (target !== "desktop" && target !== "android")
+    throw new BenchError("TN_BENCH_BAD_FLAG", `CP1 has no ${target} lane; use desktop or android`);
+  const device = flag("device");
+  if (target === "android" && device === undefined)
+    throw new BenchError("TN_BENCH_BAD_FLAG", "CP1 on android needs --device <serial>");
   const base = ladderOptions();
   const objects = Number(flag("objects") ?? 4096);
   const sections: string[] = [];
   const written: string[] = [];
   for (const workload of workloads) {
-    const run = await runWorkload(workload, arms, base, objects);
+    const run = await runWorkload(workload, arms, base, objects, target, device);
     sections.push(run.markdown);
     written.push(path.relative(repoRoot, run.file));
   }
   process.stdout.write(`${sections.join("\n\n")}\n\nwrote ${written.join(", ")}\n`);
+}
+
+/**
+ * The `current` arm of the Android CP1 lane: the legacy host's APK built from this checkout with the
+ * CP1 bundle, installed on `serial`, then run by the same collector as every tn-android run. The
+ * preflight runs after the install: copying 250 MB heats the phone, and the arm waits it out.
+ */
+async function runCurrentOnAndroid(serial: string, options: ILadderOptions): Promise<IRunReport> {
+  const before = await readyDevice(serial, "current (pre-build)");
+  const apk = await buildCurrentApk(repoRoot, {
+    frames: options.frames,
+    height: options.height,
+    objects: Number(options.ladder),
+    refreshHz: before.activeRefreshHz,
+    ...(options.sourceSha === undefined ? {} : { sourceSha: options.sourceSha }),
+    warmup: options.warmup,
+    width: options.width,
+  });
+  const adb = adbOn(serial);
+  const installed = await adb(["install", "-r", "-t", apk], 300_000);
+  if (!installed.includes("Success"))
+    throw new BenchError(
+      "TN_BENCH_CP1_INSTALL",
+      `adb install failed on ${serial}: ${installed.trim()}`,
+    );
+  await waitUntilCool(serial);
+  return parseRunReport(
+    await runAndroidArm(repoRoot, "tn-android", {
+      ...options,
+      allowEmulator: false,
+      allowLowBattery: false,
+      serial,
+      timeoutMs: desktopTimeoutMs(options),
+    }),
+  );
 }
 
 async function runWorkload(
@@ -529,6 +565,8 @@ async function runWorkload(
   arms: string,
   base: ILadderOptions,
   objects: number,
+  target: "desktop" | "android" = "desktop",
+  device?: string,
 ): Promise<{ file: string; markdown: string }> {
   if (workload === "skinned-crowd")
     return runCrowd(repoRoot, artifactRoot, {
@@ -554,7 +592,12 @@ async function runWorkload(
     warmup: options.warmup,
     width: options.width,
     height: options.height,
-    runCurrent: () => runRequestedArm("tn-desktop", options),
+    target,
+    ...(device === undefined ? {} : { device }),
+    runCurrent: () =>
+      target === "android" && device !== undefined
+        ? runCurrentOnAndroid(device, options)
+        : runRequestedArm("tn-desktop", options),
   });
 }
 
