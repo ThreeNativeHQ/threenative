@@ -4061,8 +4061,6 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #lodBiasStartedAt: number;
   /** The last time a rise or decay step ran. */
   #lodBiasStepAt: number;
-  /** The previous update's clock, so the affordable budget uses a frame delta. */
-  #lodBiasFrameAt: number;
   /** The last time the `TN_LOD_BIAS` line printed. */
   #lodBiasToldAt: number;
   /** The resident ring has been handed to the scene once; see `#seedGpuSources`. */
@@ -4200,7 +4198,6 @@ export class WorldCells extends Group implements IComputeDriven {
     // second of adaptation and a test can drive the loop with an injected `admissionNow`.
     this.#lodBiasStartedAt = this.#now();
     this.#lodBiasStepAt = this.#lodBiasStartedAt;
-    this.#lodBiasFrameAt = this.#lodBiasStartedAt;
     this.#lodBiasToldAt = this.#lodBiasStartedAt - LOD_BIAS_MARKER_SECONDS * 1000;
     this.#gpuValidate = init.gpuSceneValidate;
     this.#occlusion = init.occlusion ?? occlusionMode();
@@ -5045,13 +5042,15 @@ export class WorldCells extends Group implements IComputeDriven {
       return;
     }
     const now = this.#now();
-    // The frame delta the affordable budget is built from, capped at the 60 fps frame: the frame
-    // that draws an expensive main pass is itself long, so reading its own delta would let the cost
-    // it judges pass its own test. A held or clock-less update is just the cap.
-    const frameMs = Math.min(Math.max(0, now - this.#lodBiasFrameAt), 1000 / DEFAULT_TARGET_FPS);
-    this.#lodBiasFrameAt = now;
     if (now - this.#lodBiasStepAt < LOD_BIAS_STEP_SECONDS * 1000) return;
-    const gpuMs = (renderer ?? this.#renderer)?.gpuMainMs?.();
+    const source = renderer ?? this.#renderer;
+    // The frame the budget is a share of: the game's resolved target, 60 fps until one is known.
+    // Never the frame just measured — an expensive pass makes its own frame long and would pass its
+    // own test, and a fast one shrank the share until a 3 ms pass coarsened a world running at
+    // 400 fps against a 120 fps target (PRD-478).
+    const target = source?.targetFps?.();
+    const frameMs = 1000 / (target !== undefined && target > 0 ? target : DEFAULT_TARGET_FPS);
+    const gpuMs = source?.gpuMainMs?.();
     if (gpuMs === undefined) return;
     this.#lodBiasStepAt = now;
     const affordableMs = this.#mainGpuShare * frameMs;

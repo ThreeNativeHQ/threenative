@@ -4191,6 +4191,36 @@ describe("WorldCells adaptive LOD bias", () => {
     world.dispose();
   });
 
+  it("budgets the main pass against the game's target frame, not the frame it just measured", async () => {
+    // A 120 fps target is an 8.33 ms frame, so the main pass may take 4.17 ms. A fast frame used to
+    // shrink that share: at 400 fps a 3 ms pass read as over budget and coarsened the whole world on
+    // a GPU with room to spare (Machinefall: bias 2.5 on a 2.9 ms main pass, PRD-478).
+    let clock = 0;
+    let gpuMain = 3;
+    const world = await loadWorldAt(() => clock);
+    const renderer = {
+      ...lodRenderer(() => gpuMain),
+      targetFps: (): number => 120,
+    } as unknown as IRendererLike;
+    const camera = playerCamera();
+    for (let frame = 0; frame < 3200; frame += 1) {
+      clock += 2.5;
+      world.update(renderer, camera);
+    }
+    expect(lodBias(), "a pass inside the target's share coarsened the world").toBe(1);
+
+    // And the target is what sets it: at 60 fps frames a 5 ms pass is over a 120 fps target's share.
+    gpuMain = 5;
+    for (let frame = 0; frame < 800; frame += 1) {
+      clock += 16;
+      world.update(renderer, camera);
+    }
+    expect(lodBias(), "a pass over the target's share kept the authored selection").toBeGreaterThan(
+      1,
+    );
+    world.dispose();
+  });
+
   it("decays back toward 1 once the main pass is comfortably under budget", async () => {
     let clock = 0;
     let gpuMain: number | undefined = 20;

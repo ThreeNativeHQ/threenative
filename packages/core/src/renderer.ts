@@ -298,6 +298,14 @@ export interface IRendererLike {
    * frame by `game.ts`; `ms` is `undefined` when the frame attributed no main-pass reading.
    */
   noteGpuMainMs?(ms: number | undefined, frame?: number): void;
+  /**
+   * The frame rate the game resolved as its target (`resolveTargetFps`), or `undefined` before one
+   * is known or when it is uncapped. Budgets that are a share of a frame read it, so a frame that ran
+   * faster than the target does not shrink what the next one may spend.
+   */
+  targetFps?(): number | undefined;
+  /** Records the resolved target; called by `game.ts` when it resolves or retargets. */
+  noteTargetFps?(fps: number): void;
   /** Starts a resolve of the GPU timestamps for the frames drawn since the last call. */
   resolveGpuFrame(): void;
   /**
@@ -568,6 +576,7 @@ function wrapRenderer(
   const mainSmoothing = 0.5;
   const mainStaleLimit = 8;
   let gpuMainEma: number | undefined;
+  let targetFps: number | undefined;
   let gpuMainStaleFrames = 0;
   let gpuMainLastFrame: number | undefined;
   const noteGpuMainMs = (ms: number | undefined, frame?: number): void => {
@@ -608,6 +617,10 @@ function wrapRenderer(
     gpuFrameSample,
     gpuMainMs: () => gpuMainEma,
     noteGpuMainMs,
+    targetFps: () => targetFps,
+    noteTargetFps: (fps: number) => {
+      targetFps = Number.isFinite(fps) && fps > 0 ? fps : undefined;
+    },
     gpuComputeMs: () => {
       const timestamp = raw.info?.compute?.timestamp;
       // Three writes `0` before the first resolve and on a failed one, so a non-positive value is

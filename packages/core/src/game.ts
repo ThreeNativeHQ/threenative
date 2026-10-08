@@ -1387,6 +1387,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // does not get adaptive scaling.
     const initialTarget = resolveTargetFps(this.#config, getPlatform());
     let heldTargetFps = initialTarget.targetFps;
+    // Frame-share budgets elsewhere (the world's adaptive LOD) read the target, not the last frame.
+    renderer.noteTargetFps?.(initialTarget.targetFps);
     const scaler =
       renderer.surface().scaleSource === "auto" && initialTarget.targetFps > 0
         ? new ResolutionScaler({
@@ -1438,6 +1440,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 reported.presentedFps ??
                 (reported.presented.p50 > 0 ? 1_000 / reported.presented.p50 : undefined);
               const target = resolveTargetFps(this.#config, getPlatform(), measuredRefreshHz);
+              renderer.noteTargetFps?.(target.targetFps);
               if (
                 scaler !== undefined &&
                 target.targetFps > 0 &&
