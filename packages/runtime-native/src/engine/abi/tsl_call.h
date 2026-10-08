@@ -78,4 +78,10 @@ class TslStatements {
 /** three's `uniform.value = x` for every back end: the uniform node's live values, one per lane. */
 void tslSetUniform(const engine::shader::graph::Node& uniform, const double* values, size_t count);
 
+/**
+ * A live post effect's scalar uniform (`radius`, `samples`, ...) or its `resolutionScale`: read, or
+ * written when `value` is given, which a pass reads again every frame. Throws for anything else.
+ */
+double tslEffectParameter(const engine::shader::graph::Node& node, const std::string& name, const double* value);
+
 }  // namespace tn::abi

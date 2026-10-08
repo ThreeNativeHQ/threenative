@@ -39,7 +39,9 @@ const bound = bindUpstreamExports(names, catalog, classes);
 
 describe("bindUpstreamExports", () => {
   it("binds every registry class and keeps catalog constant values", () => {
-    for (const name of Object.keys(classes)) expect(bound[name], name).toBe(classes[name]);
+    // A registry class three exports by name (DirectionalLightShadow is reached through a light).
+    for (const name of Object.keys(classes).filter((name) => names.includes(name)))
+      expect(bound[name], name).toBe(classes[name]);
     expect(bound.ACESFilmicToneMapping).toBe(4);
     expect(bound.SRGBColorSpace).toBe("srgb");
   });

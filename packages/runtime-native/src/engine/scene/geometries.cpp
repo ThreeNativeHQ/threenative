@@ -22,6 +22,8 @@ namespace tn::engine {
 
 namespace {
 
+double jsSign(double v) { return std::isnan(v) ? v : v > 0 ? 1 : v < 0 ? -1 : v; }  // Math.sign
+
 constexpr double kTwoPi = std::numbers::pi * 2;
 constexpr double kPi = std::numbers::pi;
 
@@ -573,6 +575,103 @@ std::shared_ptr<BufferGeometry> makeRingGeometry(double innerRadius, double oute
     return geometry;
 }
 
+
+// ----------------------------------------------------------------------- RoundedBoxGeometry
+// three/addons/geometries/RoundedBoxGeometry.js: a unit box of 2 * segments + 1 segments per side,
+// made non-indexed, whose every vertex is pushed onto the rounded shell, with the addon's own uvs.
+
+namespace {
+
+/** Vector3.normalize: divideScalar(length() || 1). */
+void normalize3(double v[3]) {
+    const double length = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    const double d = length == 0 || std::isnan(length) ? 1 : length;
+    for (int i = 0; i < 3; ++i) v[i] /= d;
+}
+
+/** The addon's getUv: the arc and flat spans of one face axis mapped to [0, 1]. */
+double roundedUv(const double faceDir[3], const double normal[3], int uvAxis, int projectionAxis, double radius,
+                 double sideLength) {
+    const double totArcLength = 2 * kPi * radius / 4;
+    const double centerLength = std::max(sideLength - 2 * radius, 0.0);
+    const double halfArc = kPi / 4;
+    double projected[3] = {normal[0], normal[1], normal[2]};
+    projected[projectionAxis] = 0;
+    normalize3(projected);
+    const double arcUvRatio = 0.5 * totArcLength / (totArcLength + centerLength);
+    // Vector3.angleTo: acos of the clamped cosine, PI / 2 for a zero vector.
+    const double denominator = std::sqrt((projected[0] * projected[0] + projected[1] * projected[1] +
+                                          projected[2] * projected[2]) *
+                                         (faceDir[0] * faceDir[0] + faceDir[1] * faceDir[1] + faceDir[2] * faceDir[2]));
+    const double angle = denominator == 0 ? kPi / 2
+        : std::acos(std::clamp((projected[0] * faceDir[0] + projected[1] * faceDir[1] + projected[2] * faceDir[2]) /
+                                   denominator, -1.0, 1.0));
+    const double arcAngleRatio = 1.0 - angle / halfArc;
+    if (jsSign(projected[uvAxis]) == 1) return arcAngleRatio * arcUvRatio;
+    const double lenUv = centerLength / (totArcLength + centerLength);
+    return lenUv + arcUvRatio + arcUvRatio * (1.0 - arcAngleRatio);
+}
+
+}  // namespace
+
+std::shared_ptr<BufferGeometry> makeRoundedBoxGeometry(double width, double height, double depth, double segments,
+                                                       double radius) {
+    const double totalSegments = segments * 2 + 1;
+    radius = std::isnan(width) || std::isnan(height) || std::isnan(depth) || std::isnan(radius)
+        ? std::nan("") : std::min({width / 2, height / 2, depth / 2, radius});
+    auto geometry = makeBoxGeometry(1, 1, 1, totalSegments, totalSegments, totalSegments);
+    geometry->type = "RoundedBoxGeometry";
+    geometry->parameters.clear();
+    geometry->parameters["width"] = num(width);
+    geometry->parameters["height"] = num(height);
+    geometry->parameters["depth"] = num(depth);
+    geometry->parameters["segments"] = num(segments);
+    geometry->parameters["radius"] = num(radius);
+    if (totalSegments == 1) return geometry;
+
+    const auto flat = geometry->toNonIndexed();
+    geometry->index = nullptr;
+    for (const char* name : {"position", "normal", "uv"}) geometry->attributes[name] = flat->attributes.at(name);
+    BufferAttribute& positions = *geometry->attributes.at("position");
+    BufferAttribute& normals = *geometry->attributes.at("normal");
+    BufferAttribute& uvs = *geometry->attributes.at("uv");
+
+    const double box[3] = {width / 2 - radius, height / 2 - radius, depth / 2 - radius};
+    const double length = static_cast<double>(positions.count() * 3);
+    const double faceTris = length / 6;
+    const double halfSegmentSize = 0.5 / totalSegments;
+    for (uint64_t vertex = 0; vertex < positions.count(); ++vertex) {
+        const double position[3] = {positions.getX(vertex), positions.getY(vertex), positions.getZ(vertex)};
+        double normal[3] = {position[0], position[1], position[2]};
+        for (double& n : normal) n -= jsSign(n) * halfSegmentSize;
+        normalize3(normal);
+        positions.setXYZ(vertex, box[0] * jsSign(position[0]) + normal[0] * radius,
+                         box[1] * jsSign(position[1]) + normal[1] * radius,
+                         box[2] * jsSign(position[2]) + normal[2] * radius);
+        normals.setXYZ(vertex, normal[0], normal[1], normal[2]);
+        const int side = static_cast<int>(std::floor(static_cast<double>(vertex * 3) / faceTris));
+        constexpr int x = 0, y = 1, z = 2;
+        double u = 0, v = 0;
+        switch (side) {
+            case 0: { const double dir[3] = {1, 0, 0};
+                u = roundedUv(dir, normal, z, y, radius, depth); v = 1.0 - roundedUv(dir, normal, y, z, radius, height); break; }
+            case 1: { const double dir[3] = {-1, 0, 0};
+                u = 1.0 - roundedUv(dir, normal, z, y, radius, depth); v = 1.0 - roundedUv(dir, normal, y, z, radius, height); break; }
+            case 2: { const double dir[3] = {0, 1, 0};
+                u = 1.0 - roundedUv(dir, normal, x, z, radius, width); v = roundedUv(dir, normal, z, x, radius, depth); break; }
+            case 3: { const double dir[3] = {0, -1, 0};
+                u = 1.0 - roundedUv(dir, normal, x, z, radius, width); v = 1.0 - roundedUv(dir, normal, z, x, radius, depth); break; }
+            case 4: { const double dir[3] = {0, 0, 1};
+                u = 1.0 - roundedUv(dir, normal, x, y, radius, width); v = 1.0 - roundedUv(dir, normal, y, x, radius, height); break; }
+            case 5: { const double dir[3] = {0, 0, -1};
+                u = roundedUv(dir, normal, x, y, radius, width); v = 1.0 - roundedUv(dir, normal, y, x, radius, height); break; }
+            default: continue;  // three leaves a vertex past the sixth face untouched
+        }
+        uvs.setXY(vertex, u, v);
+    }
+    return geometry;
+}
+
 // ---------------------------------------------------------------------------- LatheGeometry
 
 std::shared_ptr<BufferGeometry> makeLatheGeometry(const std::vector<Vector2>& points, double segments,
@@ -767,7 +866,6 @@ void mergeOverlappingPoints(std::vector<Vector2>& points) {
     }
 }
 
-double jsSign(double v) { return std::isnan(v) ? v : v > 0 ? 1 : v < 0 ? -1 : v; }
 
 Vector2 getBevelVec(const Vector2& inPt, const Vector2& inPrev, const Vector2& inNext) {
     double v_trans_x, v_trans_y, shrink_by;

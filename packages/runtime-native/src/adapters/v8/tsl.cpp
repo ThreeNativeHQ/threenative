@@ -377,6 +377,15 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         abi::tslSetUniform(target->node, values.data(), values.size());
         return;
     }
+    // `effect.__effect(name[, value])`: a live effect's scalar uniform, which the facade publishes as
+    // three's `effect.radius.value` (engine/abi/tsl_call.h tslEffectParameter).
+    if (name == "__effect") {
+        if (info.Length() < 1 || info.Length() > 2) throw std::runtime_error("expected a parameter name and an optional value");
+        const double value = info.Length() == 2 ? number(info[1]) : 0;
+        info.GetReturnValue().Set(v8::Number::New(isolate_,
+            abi::tslEffectParameter(lhs(), text(isolate_, info[0]), info.Length() == 2 ? &value : nullptr)));
+        return;
+    }
     // Everything else is the shared table (engine/abi/tsl_call.cpp), which the Wasm back end calls too.
     std::vector<abi::TslArg> args;
     for (int i = 0; i < info.Length(); ++i) args.push_back(argument(name, i, info.Length(), info[i]));
@@ -393,7 +402,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "toVar", "assign", "element", "Else", "abs", "sin", "cos", "floor", "fract",
                              "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
-                             "sample", "setResolutionScale"})
+                             "sample", "setResolutionScale", "__effect", "oneMinus", "dispose"})
         node->Set(str(isolate_, name), function(context, name, true));
     for (const char* lanes : {"x", "y", "z", "w", "xy", "xyz", "zyx", "yx"}) {
         auto data = std::make_unique<Call>(Call{this, std::string("swizzle:") + lanes, true});
@@ -418,7 +427,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
-                             "setUniform"})
+                             "setUniform", "ao", "denoise", "smaa", "bloom", "oneMinus"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     module->Set(context, str(isolate_, "positionLocal"), wrap(g::positionLocal())).Check();
@@ -427,6 +436,14 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     module->Set(context, str(isolate_, "cameraViewMatrix"), wrap(g::uniform("viewMatrix", Type::mat(4, 4)))).Check();
     module->Set(context, str(isolate_, "instanceIndex"), wrap(g::instanceIndex())).Check();
     module->Set(context, str(isolate_, "screenUV"), wrap(g::uv())).Check();
+    // three's ScreenNode coordinate (the fragment's pixel position) and its geometry attributes.
+    module->Set(context, str(isolate_, "screenCoordinate"), wrap(g::swizzle(g::builtin("position"), "xy"))).Check();
+    module->Set(context, str(isolate_, "positionGeometry"), wrap(g::attribute("position", Type::vec(3)))).Check();
+    module->Set(context, str(isolate_, "normalGeometry"), wrap(g::attribute("normal", Type::vec(3)))).Check();
+    module->Set(context, str(isolate_, "tangentGeometry"), wrap(g::attribute("tangent", Type::vec(4)))).Check();
+    // positionViewDirection: normalize(-positionView), the standard programs' view-space varying.
+    module->Set(context, str(isolate_, "positionViewDirection"),
+                wrap(g::normalize(g::negate(g::varying("positionView", Type::vec(3)))))).Check();
     module->Set(context, str(isolate_, "materialColor"), wrap(g::uniform("diffuse", Type::vec(4)))).Check();
     module->Set(context, str(isolate_, "materialEmissive"), wrap(g::uniform("emissive", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "materialMetalness"), wrap(g::uniform("metalness", Type::f32()))).Check();

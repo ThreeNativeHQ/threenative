@@ -7,6 +7,9 @@
 #include <stdexcept>
 #include <charconv>
 #include <limits>
+#include <atomic>
+#include <numbers>
+#include "smaa_tables.h"
 
 namespace tn::engine::shader::graph {
 namespace {
@@ -502,6 +505,7 @@ std::vector<PostPass> postPasses(Node root) {
                 reads["input"] = textureName(effect.inputs[0]);
             auto pass = rawPass(effect, effect.output, denoise ? kDenoise : kGtao, std::move(reads), true);
             pass.images = effect.images;
+            pass.effect = n->post;  // its uniforms are read again every frame: `ao.radius.value = r` after install
             pass.clear = denoise ? 0 : 1;
             passes.push_back(std::move(pass));
         }
@@ -509,4 +513,246 @@ std::vector<PostPass> postPasses(Node root) {
     visit(root);
     return passes;
 }
+
+namespace {
+std::atomic<uint64_t> nextLiveEffect{0};
+
+std::string liveName() { return "native_live_post_" + std::to_string(++nextLiveEffect); }
+
+std::vector<float> identity16() {
+    return {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+}
+
+/** A JS `Uint8Array` store: ToUint8 truncates toward zero and wraps; NaN stores 0. */
+uint8_t uint8Of(double value) {
+    if (!std::isfinite(value)) return 0;
+    return static_cast<uint8_t>(static_cast<int64_t>(std::trunc(value)) & 255);
+}
+
+/** GTAONode.js generateMagicSquare / generateMagicSquareNoise(5), verbatim. */
+PostImage magicSquareNoise(const std::string& name) {
+    const int noiseSize = 5;
+    const int count = noiseSize * noiseSize;
+    std::vector<int> square(count, 0);
+    int i = noiseSize / 2, j = noiseSize - 1;
+    for (int num = 1; num <= count;) {
+        if (i == -1 && j == noiseSize) { j = noiseSize - 2; i = 0; }
+        else { if (j == noiseSize) j = 0; if (i < 0) i = noiseSize - 1; }
+        if (square[i * noiseSize + j] != 0) { j -= 2; i++; continue; }
+        square[i * noiseSize + j] = num++;
+        j++; i--;
+    }
+    PostImage image{name, uint32_t(noiseSize), uint32_t(noiseSize), std::vector<uint8_t>(count * 4), true, true};
+    for (int index = 0; index < count; ++index) {
+        const double angle = (2 * std::numbers::pi * square[index]) / count;
+        double x = std::cos(angle), y = std::sin(angle);
+        const double length = std::sqrt(x * x + y * y);  // Vector3.normalize
+        x /= length; y /= length;
+        image.bytes[index * 4] = uint8Of((x * 0.5 + 0.5) * 255);
+        image.bytes[index * 4 + 1] = uint8Of((y * 0.5 + 0.5) * 255);
+        image.bytes[index * 4 + 2] = 127;
+        image.bytes[index * 4 + 3] = 255;
+    }
+    return image;
+}
+
+/** examples/jsm/math/SimplexNoise.js: the 2D noise over a permutation drawn from `random`. */
+class SimplexNoise {
+  public:
+    explicit SimplexNoise(uint32_t seed) {
+        int p[256];
+        for (int& value : p) value = static_cast<int>(std::floor(mulberry32(seed) * 256));
+        for (int i = 0; i < 512; ++i) perm_[i] = p[i & 255];
+    }
+    double noise(double xin, double yin) const {
+        static const int grad3[12][2] = {{1, 1}, {-1, 1}, {1, -1}, {-1, -1}, {1, 0}, {-1, 0},
+                                         {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0, 1}, {0, -1}};
+        const double F2 = 0.5 * (std::sqrt(3.0) - 1.0);
+        const double s = (xin + yin) * F2;
+        const double i = std::floor(xin + s), j = std::floor(yin + s);
+        const double G2 = (3.0 - std::sqrt(3.0)) / 6.0;
+        const double t = (i + j) * G2;
+        const double x0 = xin - (i - t), y0 = yin - (j - t);
+        const int i1 = x0 > y0 ? 1 : 0, j1 = x0 > y0 ? 0 : 1;
+        const double x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+        const double x2 = x0 - 1.0 + 2.0 * G2, y2 = y0 - 1.0 + 2.0 * G2;
+        const int ii = static_cast<int>(i) & 255, jj = static_cast<int>(j) & 255;
+        const int gi[3] = {perm_[ii + perm_[jj]] % 12, perm_[ii + i1 + perm_[jj + j1]] % 12,
+                           perm_[ii + 1 + perm_[jj + 1]] % 12};
+        const double xs[3] = {x0, x1, x2}, ys[3] = {y0, y1, y2};
+        double n = 0;
+        for (int c = 0; c < 3; ++c) {
+            double tc = 0.5 - xs[c] * xs[c] - ys[c] * ys[c];
+            if (tc < 0) continue;
+            tc *= tc;
+            n += tc * tc * (grad3[gi[c]][0] * xs[c] + grad3[gi[c]][1] * ys[c]);
+        }
+        return 70.0 * n;
+    }
+
+  private:
+    int perm_[512];
+};
+
+/** DenoiseNode.js generateDefaultNoise(64). */
+PostImage simplexNoise(const std::string& name, uint32_t seed) {
+    constexpr int size = 64;
+    const SimplexNoise simplex(seed);
+    PostImage image{name, uint32_t(size), uint32_t(size), std::vector<uint8_t>(size * size * 4), true, true};
+    for (int i = 0; i < size; ++i)
+        for (int j = 0; j < size; ++j) {
+            const double x = i, y = j;
+            uint8_t* at = &image.bytes[(i * size + j) * 4];
+            at[0] = uint8Of((simplex.noise(x, y) * 0.5 + 0.5) * 255);
+            at[1] = uint8Of((simplex.noise(x + size, y) * 0.5 + 0.5) * 255);
+            at[2] = uint8Of((simplex.noise(x, y + size) * 0.5 + 0.5) * 255);
+            at[3] = uint8Of((simplex.noise(x + size, y + size) * 0.5 + 0.5) * 255);
+        }
+    return image;
+}
+
+PostImage decodedTable(const std::string& name, bool area) {
+    PostImage image{name, 0, 0, {}, !area, false};
+    image.bytes = smaaTable(area, image.width, image.height);
+    return image;
+}
+
+void requireTexture(const Node& node, const char* what) {
+    try { textureName(node); }
+    catch (const std::exception&) { throw std::runtime_error(std::string("TN_TSL_POST_INPUT: ") + what + " must be a texture node"); }
+}
+}  // namespace
+
+double mulberry32(uint32_t& state) {
+    state += 0x6D2B79F5u;
+    uint32_t t = state;
+    t = (t ^ (t >> 15)) * (t | 1u);
+    t ^= t + (t ^ (t >> 7)) * (t | 61u);
+    return static_cast<double>(t ^ (t >> 14)) / 4294967296.0;
+}
+
+std::shared_ptr<PostEffect> gtaoEffect(Node depth, Node normal) {
+    requireTexture(depth, "GTAO depth");
+    if (normal) requireTexture(normal, "GTAO normal");
+    auto effect = std::make_shared<PostEffect>();
+    effect->kind = "GTAONode";
+    effect->output = liveName();
+    effect->inputs = normal ? std::vector<Node>{depth, normal} : std::vector<Node>{depth};
+    effect->normal = normal != nullptr;
+    effect->parameters = {{"radius", {0.25f}}, {"thickness", {1}}, {"distanceExponent", {1}},
+                          {"distanceFallOff", {1}}, {"scale", {1}}, {"samples", {16}},
+                          {"_cameraProjectionMatrix", identity16()}, {"_cameraProjectionMatrixInverse", identity16()},
+                          {"_temporalDirection", {0}}};
+    effect->images = {magicSquareNoise(effect->output + "_noise")};
+    return effect;
+}
+
+std::shared_ptr<PostEffect> denoiseEffect(Node input, Node depth, Node normal, uint32_t seed) {
+    requireTexture(input, "denoise input");
+    requireTexture(depth, "denoise depth");
+    if (normal) requireTexture(normal, "denoise normal");
+    auto effect = std::make_shared<PostEffect>();
+    effect->kind = "DenoiseNode";
+    effect->output = liveName();
+    effect->inputs = normal ? std::vector<Node>{input, depth, normal} : std::vector<Node>{input, depth};
+    effect->normal = normal != nullptr;
+    // generateDenoiseSamples(16, 2, 1): float32, as the uniform array stores them.
+    std::vector<float> samples;
+    for (int i = 0; i < 16; ++i) {
+        const double angle = 2 * std::numbers::pi * 2 * i / 16;
+        samples.insert(samples.end(), {float(std::cos(angle)), float(std::sin(angle)), float(std::pow(i / 15.0, 1))});
+    }
+    effect->parameters = {{"lumaPhi", {5}}, {"depthPhi", {5}}, {"normalPhi", {5}}, {"radius", {5}}, {"index", {0}},
+                          {"_cameraProjectionMatrixInverse", identity16()}, {"sampleVectors", samples}};
+    effect->images = {simplexNoise(effect->output + "_noise", seed)};
+    return effect;
+}
+
+std::shared_ptr<PostEffect> smaaEffect(Node input) {
+    auto effect = std::make_shared<PostEffect>();
+    effect->kind = "SMAANode";
+    effect->output = liveName();
+    effect->inputs = {std::move(input)};
+    // SMAANode: the area table filters linearly, the search table is nearest; neither repeats nor flips.
+    effect->images = {decodedTable(effect->output + "_area", true), decodedTable(effect->output + "_search", false)};
+    return effect;
+}
+
+Node effectNode(const std::shared_ptr<PostEffect>& effect) {
+    auto n = std::make_shared<NodeData>();
+    n->kind = Kind::PostEffect;
+    n->type = Type::vec(4);
+    n->name = effect->output;
+    n->args = effect->inputs;
+    n->post = effect;
+    return n;
+}
+
+namespace {
+Node renderTexture(Node source, double scale) {
+    auto target = std::make_shared<NodeData>();
+    target->kind = Kind::RenderTexture;
+    target->name = liveName();
+    target->type = Type::vec(4);
+    target->args = {std::move(source), uv()};
+    target->scale = scale;
+    return target;
+}
+Node sampleAt(const Node& target, Node coordinate) {
+    auto sampled = std::make_shared<NodeData>(*target);
+    sampled->args[1] = std::move(coordinate);
+    return sampled;
+}
+/** `Fn(() => { ...statements; return value; })()`: the body with its return value. */
+Node functionCall(const Block& block, Node value) {
+    auto body = std::make_shared<NodeData>(*block.node());
+    body->type = value->type;
+    body->args = {std::move(value)};
+    return body;
+}
+}  // namespace
+
+Node bloom(Node input, double strength, double radius, double threshold) {
+    const std::string id = std::to_string(++nextLiveEffect);
+    const Node strengthU = uniform("bloomStrength" + id, Type::f32(), {float(strength)});
+    const Node radiusU = uniform("bloomRadius" + id, Type::f32(), {float(radius)});
+    const Node thresholdU = uniform("bloomThreshold" + id, Type::f32(), {float(threshold)});
+    const Node smoothWidthU = uniform("bloomSmoothWidth" + id, Type::f32(), {0.01f});
+    constexpr double resolutionScale = 0.5;
+    // luminosityHighPass: luminance by the Rec. 709 coefficients of the linear working space.
+    const Node luma = dot(swizzle(input, "xyz"), vec3({float_(0.2126), float_(0.7152), float_(0.0722)}));
+    const Node alpha = smoothstep(thresholdU, add(thresholdU, smoothWidthU), luma);
+    Node current = renderTexture(mix(vec4({float_(0)}), input, alpha), resolutionScale);
+    std::vector<Node> mips;
+    const int kernels[5] = {6, 10, 14, 18, 22};
+    for (int mip = 0; mip < 5; ++mip) {
+        const int kernel = kernels[mip];
+        const double sigma = kernel / 3.0;
+        std::vector<double> coefficients(kernel);
+        for (int i = 0; i < kernel; ++i)
+            coefficients[i] = (0.39894 * std::exp((-0.5 * i * i) / (sigma * sigma))) / sigma;
+        for (const auto& direction : {vec2({float_(1), float_(0)}), vec2({float_(0), float_(1)})}) {
+            const Node source = current;
+            const Node invSize = div(vec2({float_(1)}), uniform("postTargetSize", Type::vec(2), {1, 1}));
+            Block block;
+            const Var sum = block.var(mul(swizzle(sampleAt(source, uv()), "xyz"), float_(coefficients[0])));
+            for (int i = 1; i < kernel; ++i) {
+                const Node offset = mul(mul(direction, invSize), float_(i));
+                const Node pair = add(swizzle(sampleAt(source, add(uv(), offset)), "xyz"),
+                                      swizzle(sampleAt(source, sub(uv(), offset)), "xyz"));
+                block.assign(sum, add(sum.read(), mul(pair, float_(coefficients[i]))));
+            }
+            current = renderTexture(functionCall(block, vec4({sum.read(), float_(1)})), resolutionScale / std::pow(2, mip));
+        }
+        mips.push_back(current);
+    }
+    Node sum = vec4({float_(0)});
+    for (int i = 0; i < 5; ++i) {
+        const Node factor = float_(1 - i * 0.2);
+        sum = add(sum, mul(mul(mips[i], mix(factor, sub(float_(1.2), factor), radiusU)),
+                           vec4({vec3({float_(1)}), float_(1)})));
+    }
+    return renderTexture(mul(sum, strengthU), resolutionScale);
+}
+
 } // namespace tn::engine::shader::graph

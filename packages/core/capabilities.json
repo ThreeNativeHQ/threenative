@@ -7509,6 +7509,11 @@
         "source": "three"
       },
       {
+        "symbol": "AnimationActionLoopStyles",
+        "kind": "enum",
+        "source": "three"
+      },
+      {
         "symbol": "AnimationClip",
         "kind": "class",
         "source": "three"
@@ -7587,6 +7592,11 @@
         "symbol": "DirectionalLight",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "DirectionalLightShadow",
+        "kind": "class",
+        "source": "three"
       },
       {
         "symbol": "DoubleSide",
@@ -7804,6 +7814,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "PointLightShadow",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Quaternion",
         "kind": "class",
         "source": "three"
@@ -7827,6 +7842,11 @@
         "symbol": "RingGeometry",
         "kind": "class",
         "source": "three"
+      },
+      {
+        "symbol": "RoundedBoxGeometry",
+        "kind": "class",
+        "source": "three/addons/geometries/RoundedBoxGeometry.js"
       },
       {
         "symbol": "Scene",
@@ -7854,6 +7874,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "Source",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Sphere",
         "kind": "class",
         "source": "three"
@@ -7865,6 +7890,11 @@
       },
       {
         "symbol": "SpotLight",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "SpotLightShadow",
         "kind": "class",
         "source": "three"
       },

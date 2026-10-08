@@ -24,7 +24,7 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NoBlending", "NormalBlending", "AdditiveBlending"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
+  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
   "ExtrudeGeometry", ...constants];
 const panel = (T) => {
@@ -43,9 +43,12 @@ await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
 const THREE = { ${names.join(", ")} };
-import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3 } from "three/webgpu";
+import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, NodeUpdateType } from "three/webgpu";
+import { screenCoordinate, positionGeometry, normalGeometry, tangentGeometry, positionViewDirection } from "three/tsl";
 import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { Material } from "three";
 import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
@@ -110,7 +113,6 @@ check(panels[0] instanceof THREE.BufferGeometry && answers(panels) === ${JSON.st
 const refuses = (make, pattern) => { try { make(); return false; } catch (error) { return pattern.test(String(error.message)); } };
 check(refuses(() => new THREE.ExtrudeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)]),
   { extrudePath: curve }), /extrudePath is not supported/), "extrudePath refused");
-check(refuses(() => new THREE.MeshBasicMaterial({ color: 0xff0000 }), /parameters object is not supported/), "material parameters still refused");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
 check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");
@@ -143,6 +145,38 @@ basic.colorNode = color(0.1, 0.2, 0.3);
 basic.colorNode = reflect(vec3(1, -1, 0), vec3(0, 1, 0));
 basic.colorNode = textureLoad(source, ivec2(0, 0)).rgb;
 check(cameraViewMatrix !== undefined, "camera view uniform");
+check(NodeUpdateType.FRAME === "frame" && NodeUpdateType.RENDER === "render", "NodeUpdateType");
+basic.colorNode = vec3(screenCoordinate.mul(0.001), positionViewDirection.z);
+basic.positionNode = positionGeometry.add(normalGeometry.mul(tangentGeometry.w.mul(0)));
+check(basic.colorNode !== null && basic.positionNode !== null, "screen coordinate, geometry attributes, view direction");
+const hex = new THREE.Color(0xff0000);
+check(hex.isColor && hex.r === 1 && hex.g === 0 && hex.b === 0, "Color(hex)");
+check(new THREE.Color("#00ff00").g === 1 && new THREE.Color(hex).r === 1, "Color(style), Color(color)");
+check(hex.set(0x0000ff).b === 1 && hex.set("red").r === 1 && hex.set(0.5, 0.25, 0).g === 0.25, "Color.set");
+const parameters = new THREE.MeshStandardMaterial({ color: 0x00ff00, roughness: 0.25, transparent: true, map: null });
+check(parameters.color.r === 0 && parameters.color.g === 1 && parameters.roughness === 0.25 && parameters.transparent, "material parameters");
+let unboundParameter = false;
+try { new THREE.MeshBasicMaterial({ notAMaterialProperty: 1 }); }
+catch (error) { unboundParameter = /TN_NATIVE_MATERIAL_PARAMETER: MeshBasicMaterial\.notAMaterialProperty/.test(error.message); }
+check(unboundParameter, "an unbound material parameter refuses by name");
+const sun = new THREE.DirectionalLight();
+sun.shadow.mapSize.set(1024, 2048); sun.shadow.camera.near = 2; sun.shadow.bias = -0.5; sun.shadow.radius = 3;
+check(sun.shadow === sun.shadow && sun.shadow.mapSize.y === 2048 && sun.shadow.camera.near === 2 &&
+  sun.shadow.camera instanceof THREE.OrthographicCamera && sun.shadow.bias === -0.5 && sun.shadow.radius === 3, "light shadow");
+const rounded = new RoundedBoxGeometry(2, 1, 1, 2, 0.1);
+check(rounded instanceof THREE.BufferGeometry && rounded.index === null && rounded.type === "RoundedBoxGeometry", "RoundedBoxGeometry");
+check(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0).length() > 0.5, "fromBufferAttribute");
+const grid = new THREE.DataTexture(new Uint8Array([1, 2, 3, 4]), 1, 1);
+const version = grid.source.version;
+grid.generateMipmaps = true; grid.anisotropy = 16; grid.needsUpdate = true;
+check(grid.generateMipmaps && grid.anisotropy === 16 && grid.source === grid.source && grid.source.version === grid.version && grid.version > version, "texture sampling fields and source");
+const lit = new THREE.MeshStandardMaterial({ normalMap: grid, normalScale: new THREE.Vector2(0.5, 0.25) });
+check(lit.normalMap === grid && lit.normalScale.y === 0.25 && lit.normalScale === lit.normalScale, "normalMap and normalScale");
+const before = grid.version; grid.needsUpdate = true;
+check(grid.version === before + 1 && !Object.hasOwn(grid, "needsUpdate"), "needsUpdate reaches the engine");
+check(lit instanceof Material && lit.onBeforeCompile === Material.prototype.onBeforeCompile && lit.isMaterial, "Material base");
+const vertex = new THREE.Vector3();
+check(new THREE.Mesh(rounded, lit).getVertexPosition(0, vertex) === vertex && vertex.equals(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0)), "getVertexPosition");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
@@ -242,7 +276,11 @@ import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { createAssetLoader } from ${JSON.stringify(resolve(native, "src/engine/player/core-assets.mjs"))};
 import { Scene, PerspectiveCamera, Mesh, BoxGeometry, MeshBasicMaterial } from "three";
 import { WebGPURenderer, RenderPipeline } from "three/webgpu";
-import { vec4, convertToTexture, screenUV } from "three/tsl";
+import { vec4, convertToTexture, screenUV, pass, mrt, output, normalView, metalness, roughness } from "three/tsl";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { installThreePlaytestBridge } from "@threenative/playtest/three";
 function check(value, name) { if (!value) throw Error("SERVICE_CHECK: " + name); }
 const host = globalThis.__THREENATIVE_NATIVE__.physics;
@@ -260,12 +298,43 @@ const scene = new Scene(); const camera = new PerspectiveCamera(); camera.positi
 const player = new Mesh(new BoxGeometry(), new MeshBasicMaterial()); scene.add(player);
 scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
 const renderer = new WebGPURenderer({ canvas: { width: 1280, height: 720 } });
+check(renderer.toneMapping === 0 && renderer.outputColorSpace === "srgb" && !renderer.shadowMap.enabled, "renderer defaults");
+renderer.toneMapping = 4; renderer.toneMappingExposure = 0.62; renderer.shadowMap.enabled = true; renderer.shadowMap.type = 2;
 renderer.render(scene, camera);
+renderer.toneMapping = 5;
+let customRefused = false;
+try { renderer.render(scene, camera); } catch (error) { customRefused = /TN_NATIVE_RENDERER_STATE: toneMapping 5/.test(error.message); }
+check(customRefused, "an unimplemented tone mapping refuses");
+check(renderer.info.render.drawCalls === 0 && renderer.info.render.triangles === 0 && renderer.info.render.calls === 0,
+  "renderer.info counts the last drawn frame (none in a check)");
+renderer.toneMapping = 4;
 const pipeline = new RenderPipeline(renderer); pipeline.outputNode = vec4(0.2, 0.3, 0.4, 1);
 pipeline.render();
 const target = convertToTexture(vec4(0.2, 0.3, 0.4, 1)).setResolutionScale(0.5);
 pipeline.outputNode = target.sample(screenUV); pipeline.render();
 check(convertToTexture(target) !== undefined, "native post RTT graph");
+// The minimal template's live post chain (PRD-531 slice 4): pass, MRT normals and the four addons.
+const scenePass = pass(scene, camera);
+let refusedNormal = false;
+try { scenePass.getTextureNode("normal"); } catch (error) { refusedNormal = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+check(refusedNormal, "normals need the MRT that asks for them");
+scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
+const sceneDepth = scenePass.getTextureNode("depth"), sceneNormal = scenePass.getTextureNode("normal");
+let refusedMetal = false;
+try { scenePass.getTextureNode("metalness"); } catch (error) { refusedMetal = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+check(refusedMetal && scenePass.isPassNode && scenePass.scene === scene, "the native scene pass has colour, depth and normals only");
+const contact = ao(sceneDepth, sceneNormal, camera);
+contact.radius.value = 0.35; contact.resolutionScale = 0.5;
+check(contact.radius.value === Math.fround(0.35) && contact.resolutionScale === 0.5 && contact.getTextureNode() === contact, "GTAO uniforms");
+const occlusion = denoise(contact.getTextureNode(), sceneDepth, sceneNormal, camera);
+let composed = scenePass.getTextureNode().mul(occlusion.r);
+composed = composed.add(bloom(convertToTexture(composed), 0.22, 0.6, 1));
+const fall = screenUV.sub(0.5).length().oneMinus();
+pipeline.outputNode = smaa(composed.mul(fall));
+pipeline.render(); pipeline.render();
+let refusedSlot = false;
+try { mrt({ normal: metalness }); } catch (error) { refusedSlot = /TN_NATIVE_MRT_UNSUPPORTED/.test(error.message); }
+check(refusedSlot, "an MRT slot under another name refuses");
 globalThis.tn.setPostGraph(JSON.stringify({ version: 1, root: 0, nodes: [
   { kind: "ConstNode", type: "vec4", value: [1, 0.5, 0.25, 1], args: [], dependencies: [] }] }));
 let refused = false;

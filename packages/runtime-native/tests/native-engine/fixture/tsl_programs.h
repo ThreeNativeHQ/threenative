@@ -12,6 +12,7 @@
 #include "engine/scene/camera.h"
 #include "engine/scene/lights.h"
 #include "engine/shader/tsl/tsl.h"
+#include "engine/shader/graph/post_effects.h"
 #include "engine/world/particles/gpu_particles.h"
 #include "engine/world/fluids/fluid_particles.h"
 #include "engine/scene/nodes.h"
@@ -180,6 +181,57 @@ inline void postChromatic(engine::Renderer& renderer) {
         }}));
 }
 
+/**
+ * PRD-531 slice 4: three r185's post addons built live (the graph a game's `ao()`, `denoise()`, `bloom()`
+ * and `smaa()` make on V8), over the scene pass's colour, depth and normal. `post-template-high` is
+ * the minimal template's high-tier chain, stage for stage: exposure, GTAO with its denoise, bloom,
+ * vignette, then SMAA under the reversible Karis squeeze.
+ */
+inline std::string postAddons(const std::string& program, engine::Renderer& renderer) {
+    namespace g = engine::shader::graph;
+    const auto colour = g::texture("scene", g::uv()), depth = g::texture("depth", g::uv()),
+               normal = g::texture("normal", g::uv());
+    const auto rgbMax = [](const g::Node& c) {
+        return g::max(g::swizzle(c, "x"), g::max(g::swizzle(c, "y"), g::swizzle(c, "z")));
+    };
+    const auto occlusion = [&](const g::Node& input) {
+        auto contact = g::gtaoEffect(depth, normal);
+        contact->parameters["radius"] = {0.35f};
+        const auto denoised = g::effectNode(g::denoiseEffect(g::effectNode(contact), depth, normal, 1));
+        return g::mul(input, g::swizzle(denoised, "x"));
+    };
+    const auto antialias = [&](const g::Node& input) {
+        const auto squeezed = g::div(input, g::add(rgbMax(input), g::float_(1)));
+        const auto filtered = g::effectNode(g::smaaEffect(squeezed));
+        return g::div(filtered, g::max(g::sub(g::float_(1), rgbMax(filtered)), g::float_(1e-4)));
+    };
+    const auto rtt = [](const g::Node& source) {
+        auto target = std::make_shared<g::NodeData>();
+        target->kind = g::Kind::RenderTexture; target->name = "fixture_rtt_" + std::to_string(reinterpret_cast<uintptr_t>(source.get()));
+        target->type = engine::shader::Type::vec(4); target->args = {source, g::uv()};
+        return g::Node(target);
+    };
+    g::Node root;
+    if (program == "post-ao") root = occlusion(colour);
+    else if (program == "post-ao-raw") {
+        auto contact = g::gtaoEffect(depth, normal);
+        contact->parameters["radius"] = {0.35f};
+        root = g::mul(colour, g::swizzle(g::effectNode(contact), "x"));
+    }
+    else if (program == "post-bloom") root = g::add(colour, g::bloom(colour, 0.7, 0.5, 0.2));
+    else if (program == "post-smaa") root = antialias(colour);
+    else if (program == "post-template-high") {
+        auto input = occlusion(g::mul(colour, g::float_(0.62)));
+        input = g::add(input, g::bloom(rtt(input), 0.22, 0.6, 1));
+        const auto radius = g::mul(g::length(g::mul(g::sub(g::uv(), g::vec2({g::float_(0.5), g::float_(0.5)})),
+                                                    g::vec2({g::float_(1.78), g::float_(1)}))), g::float_(1.04));
+        const auto fall = g::mul(g::smoothstep(g::float_(0.55), g::float_(1.02), radius), g::float_(0.22));
+        root = antialias(g::mul(input, g::sub(g::float_(1), fall)));
+    } else return "TN_FIXTURE_POST_UNKNOWN: " + program;
+    renderer.setPostGraph(root);
+    return "";
+}
+
 }  // namespace tsl_detail
 
 /**
@@ -275,6 +327,8 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         }
         return "";
     }
+    if (program == "post-ao" || program == "post-ao-raw" || program == "post-bloom" || program == "post-smaa" || program == "post-template-high")
+        return tsl_detail::postAddons(program, renderer);
     if (program == "post-chromatic") {
         tsl_detail::postChromatic(renderer);
         return "";
