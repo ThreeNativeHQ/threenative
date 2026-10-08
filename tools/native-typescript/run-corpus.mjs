@@ -4,6 +4,9 @@
 //   --reference               run each case with tsx, compare stdout and exit to <case>.expected
 //   --native --target <triple> compile each case with the pinned Perry to an
 //                              executable and compare stdout and exit to <case>.expected
+//   --packaged                with --adb and --case, run the case inside the corpus-player app's
+//                              activity (android/corpus-player, built with the host's Gradle wrapper)
+//                              instead of through the standalone loader
 //   --build-only              link every case and run none of them
 //   --adb <serial>            with a cross target, push each linked library to that device and run it
 //                              there through tn_so_runner, comparing stdout and exit code to the same
@@ -63,6 +66,7 @@ import {
   resolveNdk,
 } from "./android.mjs";
 import { checkDevice, isAarch64Elf, pushRunner, runLibrary } from "./device.mjs";
+import { runPackaged } from "./packaged.mjs";
 import { compareRedToDeclared, loadLedger } from "./patches.mjs";
 import { provision } from "./provision.mjs";
 import { ENGINE_LIBS, bridgeFor, buildEngineBridge } from "./three-bridge.mjs";
@@ -513,7 +517,14 @@ async function runNative(name, info, target, plan = {}) {
 
   if (plan.render) await fsp.rm(env.TN_TSL_FRAME, { force: true });
   const measured = plan.device
-    ? await runLibrary(plan.device.adb, plan.device.serial, artifact)
+    ? plan.device.packaged
+      ? await runPackaged({
+          adb: plan.device.adb,
+          serial: plan.device.serial,
+          name,
+          library: artifact,
+        })
+      : await runLibrary(plan.device.adb, plan.device.serial, artifact)
     : name === "alloc-loop"
       ? await runMeasured(exe, env)
       : { ...(await runExecutable(exe, env)), peakRssBytes: 0 };
@@ -660,7 +671,7 @@ function printTable(rows) {
  * archives exist for no Android build tree in every lane this runner can rely on, and Perry's
  * Android target links its own runtime rather than objects the runner emits.
  */
-async function crossPlan(targetFile, outDir, serial) {
+async function crossPlan(targetFile, outDir, serial, packaged) {
   const ndk = resolveNdk(targetFile);
   const runtime = await ensureAndroidRuntime(targetFile, { ndk, log: () => {} });
   const dir = path.join(outDir, targetFile.outDir);
@@ -671,7 +682,7 @@ async function crossPlan(targetFile, outDir, serial) {
   let device;
   if (serial !== undefined) {
     const adb = resolveAdb();
-    device = { adb, serial, ...(await checkDevice(adb, serial, targetFile)) };
+    device = { adb, serial, packaged, ...(await checkDevice(adb, serial, targetFile)) };
     await pushRunner(adb, serial, buildSoRunner(targetFile, ndk, helpers));
   }
   const engineBuild = path.join(
@@ -704,7 +715,7 @@ async function crossPlan(targetFile, outDir, serial) {
     summary: (rows) => {
       const ok = rows.filter((row) => row.native === "PASS").length;
       const where = device
-        ? `, run on ${device.model} ${device.serial} (${device.abi}, Android ${device.release}${device.emulator ? ", emulator" : ", physical"})`
+        ? `, run${device.packaged ? " packaged in an activity" : ""} on ${device.model} ${device.serial} (${device.abi}, Android ${device.release}${device.emulator ? ", emulator" : ", physical"})`
         : "";
       return `${targetFile.triple}: Perry ${perryTarget(targetFile.triple)}, NDK ${ndk.version}, ${targetFile.maxPageSize}-byte pages${where} — ${ok}/${rows.length} cases ok`;
     },
@@ -721,10 +732,12 @@ async function main() {
   let target;
   let filter;
   let serial;
+  let packaged = false;
   let outDir = DEFAULT_OUT;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--target") target = args[++i];
     else if (args[i] === "--adb") serial = args[++i];
+    else if (args[i] === "--packaged") packaged = true;
     else if (args[i] === "--case") {
       i += 1;
       filter = args[i];
@@ -783,10 +796,15 @@ async function main() {
       "TN_NATIVE_TS_USAGE",
       "a cross target runs on a device: pass --adb <serial> or --build-only",
     );
+  if (packaged && (serial === undefined || filter === undefined))
+    throw named(
+      "TN_NATIVE_TS_USAGE",
+      "--packaged runs one case on a device: add --adb <serial> --case <name>",
+    );
   if (serial !== undefined && buildOnly)
     throw named("TN_NATIVE_TS_USAGE", "--adb runs the cases; drop --build-only");
   const plan = cross
-    ? { ...(await crossPlan(targetFile.target, outDir, serial)), buildOnly }
+    ? { ...(await crossPlan(targetFile.target, outDir, serial, packaged)), buildOnly }
     : { buildOnly, render, outDir };
   const rows = [];
   let failed = false;

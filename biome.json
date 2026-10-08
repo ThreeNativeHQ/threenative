@@ -30,6 +30,7 @@
       "packages/runtime-native/build/**",
       "packages/runtime-native/**/build/**",
       "packages/runtime-native/third_party/**",
+      "tools/native-typescript/android/corpus-player/**/.cxx/**",
       "packages/runtime-native/native/css-ui/vendor/**",
       "examples/native-css-hud/corpus/out/**",
       "examples/native-css-hud/corpus/out-interaction/**",
