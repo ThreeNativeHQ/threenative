@@ -35,6 +35,7 @@ import {
   mix,
   nodeObject,
   property,
+  renderGroup,
   vec3,
   vec4,
 } from "three/tsl";
@@ -192,6 +193,7 @@ function levelDebugGraph(
   uv = [0.25, 0.75],
   options = {},
   reversedDepthBuffer = false,
+  capture?: (built: Set<Node>) => void,
 ) {
   vi.stubGlobal("location", { search });
   const { light } = world();
@@ -230,11 +232,34 @@ function levelDebugGraph(
     "vec4",
   );
   node.dispose();
+  capture?.((graphBuilder as unknown as { nodes: Set<Node> }).nodes);
   return {
     code: flow.code.replace(/virtualShadowReceiverSlope\d+/gu, "virtualShadowReceiverSlope"),
     nodes: (graphBuilder as unknown as { nodes: Set<Node> }).nodes.size,
   };
 }
+
+it("keeps every receiver uniform in the render group, where a settled static receiver still reads it", () => {
+  // The patched renderer skips object-group uploads for a settled static object, so a window
+  // centre, mapped flag or offset in that group froze at the value the receiver settled with.
+  let built = new Set<Node>();
+  levelDebugGraph("", undefined, undefined, undefined, (nodes) => {
+    built = nodes;
+  });
+  // Scalar and vector values the node writes from the CPU. Matrices are three's per-object inputs,
+  // which belong to the object and stay right when it settles.
+  const uniforms = [...built].filter((n) => {
+    const value = (n as { value?: unknown }).value;
+    return (
+      (n as { isUniformNode?: boolean }).isUniformNode === true &&
+      (typeof value === "number" ||
+        (value as { isVector2?: boolean } | null)?.isVector2 === true ||
+        (value as { isVector3?: boolean } | null)?.isVector3 === true)
+    );
+  });
+  expect(uniforms.length).toBeGreaterThan(0);
+  for (const node of uniforms) expect((node as { groupNode?: Node }).groupNode).toBe(renderGroup);
+});
 
 it("blends the fine shadow contribution continuously before its guard edge", () => {
   const flow = levelDebugGraph("").code;

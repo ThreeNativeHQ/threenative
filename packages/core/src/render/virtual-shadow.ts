@@ -31,6 +31,7 @@ import {
   positionWorld,
   property,
   reference,
+  renderGroup,
   shadow,
   shadowPositionWorld,
   smoothstep,
@@ -679,6 +680,15 @@ interface IStockShadowTarget {
 }
 
 /**
+ * Move a receiver input into the render group. The patched renderer skips object-group uploads for
+ * a settled static object, so a value in that group freezes at whatever the receiver settled with.
+ */
+function rendered<T>(node: T): T {
+  // quality-allow: three's ReferenceNode has setGroup at runtime; its declaration omits it
+  return (node as unknown as { setGroup(group: typeof renderGroup): T }).setGroup(renderGroup);
+}
+
+/**
  * Register a stock shadow node's render target with the renderer the moment the node creates it,
  * inside the material build and before any bind group can sample its depth texture.
  *
@@ -783,12 +793,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #casters = new Map<string, Object3D>();
   #casterChildren = new Map<string, Set<Object3D>>();
   #moverLayerStates = new Map<Object3D, { originallyEnabled: boolean; references: number }>();
-  #centerU: UniformNode<"float", number> = uniform(0);
-  #centerV: UniformNode<"float", number> = uniform(0);
-  #moversActive: UniformNode<"float", number> = uniform(0);
-  #basisU: UniformNode<"vec3", Vector3> = uniform(new Vector3(1, 0, 0));
-  #basisV: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 0, 1));
-  #basisW: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 1, 0));
+  #centerU: UniformNode<"float", number> = uniform(0).setGroup(renderGroup);
+  #centerV: UniformNode<"float", number> = uniform(0).setGroup(renderGroup);
+  #moversActive: UniformNode<"float", number> = uniform(0).setGroup(renderGroup);
+  #basisU: UniformNode<"vec3", Vector3> = uniform(new Vector3(1, 0, 0)).setGroup(renderGroup);
+  #basisV: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 0, 1)).setGroup(renderGroup);
+  #basisW: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 1, 0)).setGroup(renderGroup);
   #receiverSlope = property("float", `virtualShadowReceiverSlope${String(this.id)}`);
   #frame = 0;
   /** 1 while this node is inside `#updateFrame`; a level render re-enters `updateBefore`. */
@@ -1966,14 +1976,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
               type === PCFSoftShadowMap
                 ? float(2)
                 : type === PCFShadowMap
-                  ? max(reference("radius", "float", entry.map), 0).add(1)
+                  ? max(rendered(reference("radius", "float", entry.map)), 0).add(1)
                   : float(0.5);
-            const span = reference("far", "float", entry.map.camera).sub(
-              reference("near", "float", entry.map.camera),
+            const span = rendered(reference("far", "float", entry.map.camera)).sub(
+              rendered(reference("near", "float", entry.map.camera)),
             );
             const bias = this.#receiverSlope
               .mul(2 * extent)
-              .div(reference("mapSize", "vec2", entry.map).x)
+              .div(rendered(reference("mapSize", "vec2", entry.map)).x)
               .div(span)
               .mul(footprint);
             const coord = inputs.shadowCoord;
@@ -2038,20 +2048,20 @@ export class VirtualShadowNode extends ShadowBaseNode {
         dirty: false,
         eye: this.options.lightDistance,
         extent,
-        extentUniform: uniform(extent),
+        extentUniform: uniform(extent).setGroup(renderGroup),
         lastRender: Number.NEGATIVE_INFINITY,
         lastRefreshNote: Number.NEGATIVE_INFINITY,
         light,
-        mapped: uniform(0),
+        mapped: uniform(0).setGroup(renderGroup),
         minX: Number.NaN,
         minY: Number.NaN,
         centerW: Number.NaN,
         pending: REASON_NONE,
-        offsetU: uniform(0),
-        offsetV: uniform(0),
+        offsetU: uniform(0).setGroup(renderGroup),
+        offsetV: uniform(0).setGroup(renderGroup),
         guardUniform: uniform(
           this.options.selectionGuard[index] ?? this.options.selectionGuard.at(-1) ?? 0,
-        ),
+        ).setGroup(renderGroup),
         moverShadow,
         // One placeholder light serves both maps: the stock node reads only its placement.
         moverNode,
