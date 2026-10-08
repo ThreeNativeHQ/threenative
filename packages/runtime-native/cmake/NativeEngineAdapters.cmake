@@ -123,6 +123,12 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
         set_tests_properties(native_engine_host_identity_accept PROPERTIES LABELS "native-engine" PASS_REGULAR_EXPRESSION "\"draws\": 3,[\r\n ]+\"triangles\": 99,")
         set_tests_properties(native_engine_host_identity_refuse PROPERTIES LABELS "native-engine"
             PASS_REGULAR_EXPRESSION "TN_ARTIFACT_VERSION_MISMATCH: TN_DIAG_ENGINE_ABI_MISMATCH[^\n]*\nexit=3")
+        # CP1's Android lane: an unreadable `--v8-snapshot` is refused before V8 starts. The accepted
+        # path needs the platform's own blob, so it is proven on the Pixel lane, not here.
+        add_test(NAME native_engine_host_snapshot_refuse
+            COMMAND sh -c "$<TARGET_FILE:tn-native-engine-host> ${TN_L4_SCRIPT} --v8-snapshot ${CMAKE_CURRENT_BINARY_DIR}/no-such-snapshot.bin --frames 1 2>&1; echo exit=$?")
+        set_tests_properties(native_engine_host_snapshot_refuse PROPERTIES LABELS "native-engine"
+            PASS_REGULAR_EXPRESSION "TN_HOST_SCRIPT: cannot read the V8 snapshot [^\n]*no-such-snapshot.bin\n.*exit=1")
     endif()
 
     # The differential fixtures through V8 (PRD-531 phase 2): the same corpus and goldens as the C++
