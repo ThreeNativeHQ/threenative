@@ -140,6 +140,31 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return g::uv();
     }
+    // r185's camera accessors (accessors/Camera.js) for a single camera: render-group uniforms by
+    // their upstream names, which the renderer fills per draw (kSlotNames).
+    if (name == "cameraPosition" || name == "cameraProjectionMatrix" || name == "cameraWorldMatrix") {
+        arity(0);
+        return g::uniform(name, name == "cameraPosition" ? Type::vec(3) : Type::mat(4, 4));
+    }
+    // positionGeometry = attribute('position', 'vec3'): the geometry's position before positionNode.
+    if (name == "positionGeometry") {
+        arity(0);
+        return g::attribute("position", Type::vec(3));
+    }
+    // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix):
+    // normalize((vec4(normalView, 0) * viewMatrix).xyz), normalView the interpolated geometry normal.
+    // ponytail: the geometry normal only; a normalNode, normal map or back-face flip is not applied.
+    if (name == "normalWorld") {
+        arity(0);
+        const auto normalView = g::normalize(g::varying("normalView", Type::vec(3)));
+        return g::normalize(g::swizzle(g::mul(g::vec4({normalView, g::float_(0)}),
+                                              g::uniform("viewMatrix", Type::mat(4, 4))), "xyz"));
+    }
+    // varying(node, name?): `node` computed in the vertex stage and interpolated to the fragment.
+    if (name == "varying") {
+        if (args.empty() || args.size() > 2) throw std::runtime_error("expected a node and an optional name");
+        return g::varying(arg(0), args.size() == 2 ? text(args[1]) : "nodeVarying" + std::to_string(++serial));
+    }
     if (name == "convertToTexture") {
         arity(1);
         const auto source = arg(0);

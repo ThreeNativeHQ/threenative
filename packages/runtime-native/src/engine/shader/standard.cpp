@@ -10,7 +10,9 @@
 #include <algorithm>
 #include "engine/shader/tsl/tsl.h"
 
+#include <functional>
 #include <numbers>
+#include <unordered_set>
 
 namespace tn::engine::shader {
 
@@ -504,13 +506,31 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     for (const auto& node : variant.nodes.graphs()) hasNodes |= bool(node);
     if (!hasNodes) return;
     Program& v = out.vertex;
+    // varying(node): the vertex stage computes each node the fragment reads by its varying name.
+    std::unordered_map<std::string, graph::Node> carried;
+    std::unordered_set<const graph::NodeData*> seen;
+    const std::function<void(const graph::Node&)> collect = [&](const graph::Node& n) {
+        if (!n || !seen.insert(n.get()).second) return;
+        if (n->kind == graph::Kind::Varying && !n->args.empty()) carried.emplace(n->name, n);
+        for (const auto* list : {&n->args, &n->body, &n->otherwise})
+            for (const auto& child : *list) collect(child);
+    };
+    for (const auto& node : variant.nodes.graphs()) collect(node);
     for (const auto& [name, type] : out.fragment.varyings()) {
-        if (name == "normalView" || name == "positionView" ||
+        // A material without a lit normal (basic) has no normalView output for normalWorld to read.
+        if ((name == "normalView" && local.normal != kInvalid) || name == "positionView" ||
             (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap))) continue;
         ExprId value;
-        if (name == "positionWorld")
+        if (const auto found = carried.find(name); found != carried.end()) {
+            tsl::Build build(v);
+            value = graph::lower(found->second->args[0], v, {{"positionLocal", v.swizzle(local.position, "xyz")}});
+        } else if (name == "normalView")
+            // ponytail: the unskinned, unmorphed geometry normal; localVertex skips the normal for basic.
+            value = v.call("normalize", {v.mul(v.uniform("normalMatrix", Type::mat(3, 3)), v.attribute("normal", Type::vec(3)))});
+        else if (name == "positionWorld")
             value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position), "xyz");
         else if (name == "positionLocal") value = v.swizzle(local.position, "xyz");
+        else if (name == "positionGeometry") value = v.attribute("position", type);
         else value = v.attribute(name, type);
         v.output(name, value);
     }

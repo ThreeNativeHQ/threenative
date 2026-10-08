@@ -392,7 +392,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "equal",      "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
-                             "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture"})
+                             "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture", "varying"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     module->Set(context, str(isolate_, "positionLocal"), wrap(g::positionLocal())).Check();
@@ -400,6 +400,9 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     module->Set(context, str(isolate_, "normalViewGeometry"), wrap(g::varying("normalViewGeometry", Type::vec(3)))).Check();
     module->Set(context, str(isolate_, "cameraViewMatrix"), wrap(g::uniform("viewMatrix", Type::mat(4, 4)))).Check();
     module->Set(context, str(isolate_, "instanceIndex"), wrap(g::instanceIndex())).Check();
+    // TSL's node constants, built by the shared table as the Wasm back end builds them.
+    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "positionGeometry", "normalWorld"})
+        module->Set(context, str(isolate_, name), wrap(abi::tslCall(name, nullptr, {}, nextScope_))).Check();
     module->Set(context, str(isolate_, "screenUV"), wrap(g::uv())).Check();
     module->Set(context, str(isolate_, "materialColor"), wrap(g::uniform("diffuse", Type::vec(4)))).Check();
     module->Set(context, str(isolate_, "materialEmissive"), wrap(g::uniform("emissive", Type::vec(3)))).Check();

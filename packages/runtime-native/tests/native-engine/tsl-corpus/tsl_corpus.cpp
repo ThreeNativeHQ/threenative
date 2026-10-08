@@ -79,6 +79,19 @@ int main() {
           [] { return vec4({positionLocal().add(vec3({float_(instanceIndex()), 0, 0})), 1}); });
     graph("time-wave", "position",
           [] { return vec4({positionLocal().add(vec3({0, sin(time().add(positionLocal().x())), 0})), 1}); });
+    graph("camera-position", "color", [] { return vec4({uniform("cameraPosition", Type::vec(3)), 1}); });
+    graph("camera-projection", "position", [] {
+        return uniform("cameraProjectionMatrix", Type::mat(4, 4)).mul(vec4({attribute("position", Type::vec(3)), 1}));
+    });
+    graph("camera-world-matrix", "color",
+          [] { return uniform("cameraWorldMatrix", Type::mat(4, 4)).mul(vec4({1, 0, 0, 0})); });
+    graph("position-geometry", "position", [] { return vec4({attribute("position", Type::vec(3)).xy(), 0, 1}); });
+    graph("normal-world", "color", [] {
+        const Node normalView = normalize(program().varying("normalView", Type::vec(3)));
+        return vec4({normalize(vec4({normalView, 0}).mul(uniform("viewMatrix", Type::mat(4, 4))).xyz()), 1});
+    });
+    graph("varying-fragment", "color", [] { return vec4({program().varying("scaled", Type::vec(3)), 1}); });
+    graph("varying-vertex", "position", [] { return vec4({attribute("position", Type::vec(3)).mul(u()), 1}); });
 
     compute("fn-if-store", [](Storage positions) {
         const Var acc = toVar(float_(0));

@@ -107,6 +107,30 @@ int main() {
                                vec3({float_(0), sin(add(time(), swizzle(positionLocal(), "x"))), float_(0)})),
                            float_(1)});
           });
+    shaderGraph("camera-position", "color",
+          [] { return vec4({uniform("cameraPosition", Type::vec(3)), float_(1)}); });
+    shaderGraph("camera-projection", "position",
+          [] {
+              return mul(uniform("cameraProjectionMatrix", Type::mat(4, 4)),
+                         vec4({attribute("position", Type::vec(3)), float_(1)}));
+          });
+    shaderGraph("camera-world-matrix", "color",
+          [] {
+              return mul(uniform("cameraWorldMatrix", Type::mat(4, 4)),
+                         vec4({float_(1), float_(0), float_(0), float_(0)}));
+          });
+    shaderGraph("position-geometry", "position",
+          [] { return vec4({swizzle(attribute("position", Type::vec(3)), "xy"), float_(0), float_(1)}); });
+    shaderGraph("normal-world", "color",
+          [] {
+              return vec4({normalize(swizzle(mul(vec4({normalize(varying("normalView", Type::vec(3))), float_(0)}),
+                                                 uniform("viewMatrix", Type::mat(4, 4))), "xyz")),
+                           float_(1)});
+          });
+    shaderGraph("varying-fragment", "color",
+          [] { return vec4({varying(mul(attribute("position", Type::vec(3)), u()), "scaled"), float_(1)}); });
+    shaderGraph("varying-vertex", "position",
+          [] { return vec4({varying(mul(attribute("position", Type::vec(3)), u()), "scaled"), float_(1)}); });
 
     compute("fn-if-store", [](Block& b, Storage positions) {
         const Var acc = b.var(float_(0));

@@ -9,13 +9,16 @@
  * construct. Any upstream node it has no rule for is printed as `UNMAPPED:<type>`, which never
  * equals a native dump.
  */
-import { Texture } from "three";
+import { FrontSide, PerspectiveCamera, Texture } from "three";
 import {
   Fn,
   If,
   Loop,
   abs,
   attribute,
+  cameraPosition,
+  cameraProjectionMatrix,
+  cameraWorldMatrix,
   clamp,
   cos,
   cross,
@@ -33,7 +36,9 @@ import {
   max,
   min,
   mix,
+  normalWorld,
   normalize,
+  positionGeometry,
   positionLocal,
   pow,
   select,
@@ -46,6 +51,7 @@ import {
   uint,
   uniform,
   uv,
+  varying,
   vec2,
   vec3,
   vec4,
@@ -59,11 +65,13 @@ type TslNode = {
   [key: string]: unknown;
 };
 
-const builder = new (NodeBuilder as unknown as new (...args: unknown[]) => unknown)(
+const builder = new (NodeBuilder as unknown as new (...args: unknown[]) => { camera: unknown })(
   null,
   null,
   null,
 );
+// The camera accessors type themselves through the uniform their camera selects.
+builder.camera = new PerspectiveCamera();
 
 const TYPES: Record<string, string> = {
   float: "f32",
@@ -130,6 +138,26 @@ function storageName(element: TslNode): string {
   return (buffer.name as string | undefined) ?? "UNNAMED";
 }
 
+/**
+ * What an `Fn(...)()` accessor (cameraPosition, normalView, ...) is called with: one perspective
+ * camera, a front-sided smooth-shaded material, and the NORMAL sub-build, where normalView is the
+ * interpolated geometry normal (no normalNode or normal map).
+ */
+const accessorBuilder = {
+  camera: new PerspectiveCamera(),
+  subBuildFn: "NORMAL",
+  isFlatShading: () => false,
+  material: { side: FrontSide },
+  context: {},
+};
+
+/** Upstream names the native renderer binds under its own: the view matrix and the normal varying. */
+const RENAMES: Record<string, string> = {
+  cameraViewMatrix: "viewMatrix",
+  v_normalViewGeometry: "normalView",
+};
+const renamed = (name: string) => RENAMES[name] ?? name;
+
 const OPERATORS: Record<string, string> = {
   "+": "add",
   "-": "sub",
@@ -140,12 +168,17 @@ const OPERATORS: Record<string, string> = {
 };
 
 function canon(node: TslNode, fragment: boolean): string {
+  if (node.isShaderCallNodeInternal === true) {
+    const fn = (node.shaderNode as { jsFunc: (...args: unknown[]) => TslNode }).jsFunc;
+    const inputs = node.rawInputs as unknown[] | undefined;
+    return canon(inputs?.length ? fn(inputs, accessorBuilder) : fn(accessorBuilder), fragment);
+  }
   const kind = node.constructor.type ?? node.constructor.name;
   const child = (key: string) => canon(node[key] as TslNode, fragment);
   switch (kind) {
     case "VaryingNode":
       // A fragment stage reads it as the varying; a vertex stage computes what it carries.
-      if (fragment) return `varying:${node.name as string}:${typeOf(node)}`;
+      if (fragment) return `varying:${renamed(node.name as string)}:${typeOf(node)}`;
       return child("node");
     case "VarNode": {
       const declared = scope.vars.get(node);
@@ -169,7 +202,7 @@ function canon(node: TslNode, fragment: boolean): string {
         .join(", ")}):${type}`;
     }
     case "UniformNode":
-      return `uniform:${node.name as string}:${typeOf(node)}`;
+      return `uniform:${renamed(node.name as string)}:${typeOf(node)}`;
     case "AttributeNode":
       if (fragment)
         return `varying:${(node as unknown as { _attributeName: string })._attributeName}:${typeOf(node)}`;
@@ -200,6 +233,8 @@ function canon(node: TslNode, fragment: boolean): string {
     }
     case "ConvertNode": {
       const type = typeOf(node);
+      // NodeBuilder.format returns a snippet already of the target type unchanged.
+      if (typeOf(node.node as TslNode) === type) return child("node");
       return `construct<${type}>(${child("node")}):${type}`;
     }
     case "ConditionalNode":
@@ -246,6 +281,13 @@ export const CORPUS: [string, string, unknown][] = [
   ["vec2-swizzle", "color", vec4(vec2(u, time).yx, 0, 1)],
   ["instance-offset", "position", vec4(positionLocal.add(vec3(float(instanceIndex), 0, 0)), 1)],
   ["time-wave", "position", vec4(positionLocal.add(vec3(0, sin(time.add(positionLocal.x)), 0)), 1)],
+  ["camera-position", "color", vec4(cameraPosition, 1)],
+  ["camera-projection", "position", cameraProjectionMatrix.mul(vec4(positionGeometry, 1))],
+  ["camera-world-matrix", "color", cameraWorldMatrix.mul(vec4(1, 0, 0, 0))],
+  ["position-geometry", "position", vec4(positionGeometry.xy, 0, 1)],
+  ["normal-world", "color", vec4(normalWorld, 1)],
+  ["varying-fragment", "color", vec4(varying(positionGeometry.mul(u), "scaled"), 1)],
+  ["varying-vertex", "position", vec4(varying(positionGeometry.mul(u), "scaled"), 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

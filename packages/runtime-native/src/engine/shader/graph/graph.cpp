@@ -152,8 +152,23 @@ ExprId Lowerer::emit(Node node) {
             if (d.type.scalar == Type::Scalar::Bool) return program_.constant(d.bits != 0);
             return kInvalid;
         case Kind::Uniform: return program_.uniform(d.name, d.type);
-        case Kind::Attribute: return tsl::attribute(d.name, d.type).id;
-        case Kind::Varying: return program_.varying(d.name, d.type);
+        case Kind::Attribute:
+            // The fragment's `position` would collide with the clip-position output's name.
+            if (d.name == "position" && program_.stage() == Stage::Fragment)
+                return program_.varying("positionGeometry", d.type);
+            return tsl::attribute(d.name, d.type).id;
+        case Kind::Varying:
+            // varying(node): a vertex stage computes what it carries; a fragment stage reads it.
+            if (!d.args.empty() && program_.stage() != Stage::Fragment) return expression(d.args[0]);
+            if (!d.args.empty() && d.type == Type{}) {
+                // A graph node's type is known once lowered: type the varying by a vertex lowering.
+                Program vertex(Stage::Vertex);
+                tsl::Build build(vertex);
+                const ExprId carried = lower(d.args[0], vertex);
+                if (carried == kInvalid) return kInvalid;
+                return program_.varying(d.name, vertex.expr(carried).type);
+            }
+            return program_.varying(d.name, d.type);
         case Kind::Builtin:
             return d.name == "instanceIndex" ? tsl::instanceIndex().id : program_.builtin(d.name);
         case Kind::PositionLocal: return tsl::positionLocal().id;
@@ -399,6 +414,12 @@ Node uniform(std::string_view name, Type type, std::vector<float> values) {
 Node attribute(std::string_view name, Type type) {
     auto data = makeNode(Kind::Attribute, type);
     data->name = std::string(name);
+    return data;
+}
+Node varying(Node value, std::string_view name) {
+    auto data = makeNode(Kind::Varying, value->type);
+    data->name = std::string(name);
+    data->args = {std::move(value)};
     return data;
 }
 Node varying(std::string_view name, Type type) {
