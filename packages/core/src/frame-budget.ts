@@ -321,6 +321,14 @@ export interface IFrameBudgetWindow {
   readonly targetFps?: number;
   readonly targetSource?: TargetFpsSource;
   /**
+   * Frames in this window that ran past the target frame (`1000 / targetFps`, the target this
+   * window started with): `render` over every counted frame's render phase, `gpu` over the frames
+   * with a resolved GPU sample. A pooled p95 is under the target exactly when at most 5 % of the
+   * pooled frames are, which window quantiles can only bound (PRD-478). Absent until a target is
+   * known.
+   */
+  readonly overTarget?: { readonly frameMs: number; readonly gpu: number; readonly render: number };
+  /**
    * GPU milliseconds per resolved frame in this window, from `timestamp-query`, summarised like a
    * phase — mean/p50/p95/p99/max over the frames the device actually reported.
    *
@@ -624,6 +632,10 @@ export class FrameBudget {
   #lastFrameEnd: number | undefined;
   #framesInWindow = 0;
   #hitchesInWindow = 0;
+  /** The target frame this window counts against, and its two counts; see `overTarget`. */
+  #targetFrameMs: number | undefined;
+  #renderOverTarget = 0;
+  #gpuOverTarget = 0;
   #windowIndex = 0;
   #readPresentCount: (() => number | undefined) | undefined;
   #lastPresentCount: number | undefined;
@@ -959,11 +971,17 @@ export class FrameBudget {
     if (this.#hostGap > 0) this.#phaseRings.hostGap.push(this.#hostGap);
     this.#phaseRings.update.push(update);
     this.#phaseRings.render.push(this.#renderMs);
+    if (this.#targetFrameMs !== undefined && this.#renderMs > this.#targetFrameMs)
+      this.#renderOverTarget += 1;
     this.#lastRenderMs = this.#renderMs;
     this.#phaseRings.overlay.push(this.#overlayMs);
     this.#phaseRings.residual.push(residual);
     this.#phaseRings.ui.push(this.#uiMs);
-    if (this.#gpuThisFrame !== undefined) this.#gpu.push(this.#gpuThisFrame);
+    if (this.#gpuThisFrame !== undefined) {
+      this.#gpu.push(this.#gpuThisFrame);
+      if (this.#targetFrameMs !== undefined && this.#gpuThisFrame > this.#targetFrameMs)
+        this.#gpuOverTarget += 1;
+    }
     for (const bucket of FRAME_GPU_BUCKETS) {
       const ms = this.#gpuBucketThisFrame[bucket];
       if (ms !== undefined) this.#gpuBucketRings[bucket].push(ms);
@@ -1088,6 +1106,19 @@ export class FrameBudget {
     const gpuPyramid = this.#gpuPyramid.summarize(this.#scratch);
     const target = this.#readTarget === undefined ? undefined : (this.#readTarget() ?? undefined);
     const resolvedTarget = target === undefined ? undefined : requireTarget(target);
+    const overTarget =
+      this.#targetFrameMs === undefined
+        ? undefined
+        : {
+            frameMs: round(this.#targetFrameMs),
+            gpu: this.#gpuOverTarget,
+            render: this.#renderOverTarget,
+          };
+    // The next window counts against the target this one reports.
+    this.#targetFrameMs =
+      resolvedTarget !== undefined && resolvedTarget.targetFps > 0
+        ? 1_000 / resolvedTarget.targetFps
+        : undefined;
     return {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
@@ -1123,6 +1154,7 @@ export class FrameBudget {
       ...(resolvedTarget === undefined
         ? {}
         : { targetFps: resolvedTarget.targetFps, targetSource: resolvedTarget.source }),
+      ...(overTarget === undefined ? {} : { overTarget }),
       ...(surface === undefined ? {} : { surface }),
       ...(counters === undefined ? {} : { counters }),
       window: this.#windowIndex + 1,
@@ -1209,6 +1241,8 @@ export class FrameBudget {
     for (const source of MAIN_DRAW_SOURCES) this.#passDrawSourceRings[source].reset();
     this.#framesInWindow = 0;
     this.#hitchesInWindow = 0;
+    this.#renderOverTarget = 0;
+    this.#gpuOverTarget = 0;
     this.#presentsInWindow = 0;
     this.#firstFrameStart = undefined;
     // After the reset, so a consumer that changes the scene from this callback changes it for the
