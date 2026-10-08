@@ -152,6 +152,7 @@
         "@threenative/core#measureThreePose": "export function measureThreePose( object: Object3D, options: IMeasureThreePoseOptions = { … }",
         "@threenative/core#mergeByMaterial": "export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }",
         "@threenative/core#mergeParts": "export function mergeParts( parts: Iterable<IMergePart>, options: IMergePartsOptions, ): BufferGeometry { … }",
+        "@threenative/core#mrtVelocity": "export function mrtVelocity(): IVelocityProvision { … }",
         "@threenative/core#normaliseToMetres": "export function normaliseToMetres(object: Object3D, options: INormaliseToMetresOptions): number { … }",
         "@threenative/core#onLaunchFailure": "export function onLaunchFailure(listener: (failure: ILaunchFailure) => void): () => void { … }",
         "@threenative/core#parseReplayRecording": "export function parseReplayRecording(value: unknown): IReplayRecording { … }",

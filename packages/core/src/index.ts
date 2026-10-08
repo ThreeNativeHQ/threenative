@@ -818,13 +818,14 @@ export {
   VELOCITY_PREVIOUS_WORLD_MATRIX,
   VelocityTracker,
   ensureVelocityOutput,
+  mrtVelocity,
   readVelocityPreviousBoneMatrices,
   readVelocityPreviousMatrices,
   readVelocityPreviousWorldMatrix,
   velocityTexture,
   withVelocityContext,
 } from "./render/velocity.js";
-export type { IVelocityRenderPass } from "./render/velocity.js";
+export type { IVelocityProvision, IVelocityRenderPass } from "./render/velocity.js";
 /**
  * One directional shadow for a whole open world: camera-centred clip levels, each snapped to its
  * own texel grid and re-rendered only when its window moves. Tracked casters draw into a

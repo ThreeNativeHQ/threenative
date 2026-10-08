@@ -1657,6 +1657,27 @@ const banner = mergeParts([{ color: 0x8b2f1a, geometry: cloth, matrix: placement
 const hull = mergeParts(hullParts, { label: "hull", preserve: ["uv", "normal"] });
 ```
 
+### `mrtVelocity`
+
+`function` — Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.
+
+```ts
+export function mrtVelocity(): IVelocityProvision { … }
+```
+
+- **Use when:** keep a skinned character or instanced crowd stable in a temporal stage · add the velocity output to a Three.js scene pass · give a temporal stage such as TRAA its velocity from the scene pass
+- **Constraints:** call `VelocityTracker.update()` before the render and `commit()` after it · a pass is only given a velocity target when a temporal stage consumes it · a render chain given a velocity `pass` without it drops each temporal stage as `velocity:provision-missing`
+
+```ts
+const scenePass = pass(scene, camera);
+ensureVelocityOutput(scenePass);
+renderer.setOutputNode(scenePass);
+const tracker = new VelocityTracker();
+tracker.update(scene);
+renderer.render(scene, camera);
+tracker.commit(scene);
+```
+
 ### `normaliseToMetres`
 
 `function` — Scale an asset to a real-world measurement and return the applied factor.

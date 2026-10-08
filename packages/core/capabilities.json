@@ -2181,6 +2181,28 @@
     {
       "aliases": [],
       "constraints": [
+        "call `VelocityTracker.update()` before the render and `commit()` after it",
+        "a pass is only given a velocity target when a temporal stage consumes it",
+        "a render chain given a velocity `pass` without it drops each temporal stage as `velocity:provision-missing`"
+      ],
+      "example": "const scenePass = pass(scene, camera);\nensureVelocityOutput(scenePass);\nrenderer.setOutputNode(scenePass);\nconst tracker = new VelocityTracker();\ntracker.update(scene);\nrenderer.render(scene, camera);\ntracker.commit(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function mrtVelocity(): IVelocityProvision { … }",
+      "situations": [
+        "keep a skinned character or instanced crowd stable in a temporal stage",
+        "add the velocity output to a Three.js scene pass",
+        "give a temporal stage such as TRAA its velocity from the scene pass"
+      ],
+      "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
+      "supersedes": [],
+      "symbol": "mrtVelocity"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "skinned height uses a crown bone; game-specific asset expectations stay in render code"
       ],
       "example": "normaliseToMetres(character, { metres: 1.8, axis: \"height\" });",

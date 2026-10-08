@@ -2,8 +2,7 @@ import type { MRTNode, Node } from "three/webgpu";
 
 import type { IFrameBudgetWindow } from "../frame-budget.js";
 import type { IRenderOutputInstallation, RenderOutputSetter, RendererKind } from "../renderer.js";
-import { velocityTexture, withVelocityContext } from "./velocity.js";
-import type { IVelocityRenderPass } from "./velocity.js";
+import type { IVelocityProvision, IVelocityRenderPass } from "./velocity.js";
 
 /** The marker shared by render-chain logs, playtests, and native diagnostics. */
 export const RENDER_CHAIN_MARKER = "TN_RENDER_CHAIN";
@@ -90,8 +89,13 @@ const VELOCITY_STAGES = new Set<RenderChainStageName>([
 ]);
 
 export interface IRenderChainVelocityRequest {
-  /** The scene pass that owns the shared velocity output. */
+  /** The scene pass that owns the shared velocity output. Requires `provision`. */
   pass?: IVelocityRenderPass;
+  /**
+   * Builds the velocity output on `pass` for a temporal stage: core's `mrtVelocity()`. Passed in
+   * rather than imported, so a game that runs no temporal stage never bundles the velocity graph.
+   */
+  provision?: IVelocityProvision;
   /** Treat the renderer's MRT velocity output as provisioned. */
   mrt?: boolean;
   /** Treat objects carrying `userData.useVelocity === true` as provisioned. */
@@ -342,6 +346,7 @@ export class RenderChain {
       requiredVelocity,
     );
     let velocityNode: Node | undefined;
+    let attachVelocity: IVelocityProvision["attach"] | undefined;
     const originalMrt = this.#requestVelocity.pass?.getMRT();
     this.#lastMeasurementFrame = undefined;
     this.#reportedMeasurement = false;
@@ -387,14 +392,18 @@ export class RenderChain {
         dropped.push({ name, reason: availability });
         continue;
       }
+      const provision = this.#requestVelocity.provision;
+      const pass = this.#requestVelocity.pass;
+      const ownsVelocity =
+        requiresVelocity && velocityNode === undefined && velocity.source === "mrt";
+      if (ownsVelocity && pass !== undefined && provision === undefined) {
+        dropped.push({ name, reason: "velocity:provision-missing" });
+        continue;
+      }
       try {
-        if (
-          requiresVelocity &&
-          velocityNode === undefined &&
-          velocity.source === "mrt" &&
-          this.#requestVelocity.pass !== undefined
-        ) {
-          velocityNode = velocityTexture(this.#requestVelocity.pass);
+        if (ownsVelocity && pass !== undefined && provision !== undefined) {
+          velocityNode = provision.texture(pass);
+          attachVelocity = provision.attach;
           this.#ownedVelocityPass = this.#requestVelocity.pass;
           this.#ownedVelocityMrt = originalMrt;
         }
@@ -418,8 +427,8 @@ export class RenderChain {
     const hasActiveVelocityStage = stages.some((name) =>
       requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
-    if (velocityNode !== undefined && hasActiveVelocityStage)
-      node = withVelocityContext(node, velocityNode);
+    if (velocityNode !== undefined && attachVelocity !== undefined && hasActiveVelocityStage)
+      node = attachVelocity(node, velocityNode);
 
     if (stages.length > 0) {
       try {

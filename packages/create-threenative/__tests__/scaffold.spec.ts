@@ -180,8 +180,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Tier-scoped post imports (lane ne-tier-imports): all 13 trees move. Every kit's
 // worldEnvironment.ts imports no post node and builds stages from `effects`; each quality.ts
 // imports the nodes its tiers turn on (snow none); rain's presets carry `stormPost`; each
-// AGENTS.md/CLAUDE.md pair names `effects` once; the regenerated capability manifest and
-// reference name the `effects` rule. Those are the only changed repo files a scaffold copies.
+// AGENTS.md/CLAUDE.md pair names `effects` once. Those are the only changed files a scaffold
+// copies; the capability manifest and reference are read from the installed package.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PR388 re-measured on top of develop: only package.json patch declarations and the copied
   // Vite/Tailwind patch bytes differ. Base: PR440 merged with develop 45565868:

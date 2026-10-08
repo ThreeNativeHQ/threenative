@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 import { type IRenderChainRenderer, RenderChain } from "../src/render/chain.js";
 import {
   VelocityTracker,
+  mrtVelocity,
   readVelocityPreviousBoneMatrices,
   readVelocityPreviousMatrices,
   readVelocityPreviousWorldMatrix,
@@ -411,7 +412,7 @@ describe("velocity provisioning on the shipped path", () => {
     const chain = new RenderChain({
       renderer,
       input: scenePass.getTextureNode("output"),
-      request: { stages: ["traa"], velocity: { pass: scenePass } },
+      request: { stages: ["traa"], velocity: { provision: mrtVelocity(), pass: scenePass } },
       stages: [
         {
           build: (input, context) => {
@@ -432,6 +433,23 @@ describe("velocity provisioning on the shipped path", () => {
     expect(renderer.velocityEnabled).toBe(true);
   });
 
+  // The chain imports no velocity graph: a game that runs a temporal stage passes `mrtVelocity`,
+  // so one that runs none never bundles `velocity`, `mrt` or `context` for it.
+  it("drops a temporal stage whose pass arrives without a velocity provision", () => {
+    const scenePass = pass(new Scene(), new PerspectiveCamera());
+    const chain = new RenderChain({
+      renderer: stubRenderer(),
+      input: scenePass.getTextureNode("output"),
+      request: { stages: ["traa"], velocity: { pass: scenePass } },
+      stages: [{ name: "traa", build: (input) => input ?? {} }],
+      report: () => undefined,
+    });
+
+    expect(chain.applied.stages).toEqual([]);
+    expect(chain.applied.dropped).toEqual([{ name: "traa", reason: "velocity:provision-missing" }]);
+    expect(textureNames(scenePass)).not.toContain("velocity");
+  });
+
   it("does not allocate velocity for temporal stages dropped by tier or provider checks", () => {
     const tierOffPass = pass(new Scene(), new PerspectiveCamera());
     const tierOffChain = new RenderChain({
@@ -440,7 +458,7 @@ describe("velocity provisioning on the shipped path", () => {
       request: {
         stages: ["traa"],
         tier: "off",
-        velocity: { pass: tierOffPass },
+        velocity: { provision: mrtVelocity(), pass: tierOffPass },
       },
       stages: [{ name: "traa", build: (input) => input ?? {} }],
     });
@@ -456,7 +474,7 @@ describe("velocity provisioning on the shipped path", () => {
       input: missingProviderPass.getTextureNode("output"),
       request: {
         stages: ["traa"],
-        velocity: { pass: missingProviderPass },
+        velocity: { provision: mrtVelocity(), pass: missingProviderPass },
       },
       stages: [],
     });
@@ -473,7 +491,10 @@ describe("velocity provisioning on the shipped path", () => {
     const chain = new RenderChain({
       renderer,
       input: fixture.scenePass.getTextureNode("output"),
-      request: { stages: ["traa"], velocity: { pass: fixture.scenePass } },
+      request: {
+        stages: ["traa"],
+        velocity: { provision: mrtVelocity(), pass: fixture.scenePass },
+      },
       stages: [
         {
           name: "traa",
@@ -571,7 +592,10 @@ describe("velocity provisioning on the shipped path", () => {
     const chain = new RenderChain({
       renderer,
       input: fixture.scenePass.getTextureNode("output"),
-      request: { stages: ["traa"], velocity: { pass: fixture.scenePass } },
+      request: {
+        stages: ["traa"],
+        velocity: { provision: mrtVelocity(), pass: fixture.scenePass },
+      },
       stages: [
         {
           name: "traa",
