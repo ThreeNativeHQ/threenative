@@ -861,6 +861,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // A removed caster's world matrix is the one it last drew with — the one the stale maps hold —
     // so it is read as it stands. An added one has not been composed into its parent yet.
     if (event.type !== "childremoved") child.updateWorldMatrix(true, false);
+    // A mesh that casts nothing cannot change a map by arriving or leaving, and terrain's swap twin
+    // (`tnShadowSwap`) only replaces ground already drawn. A streamed world adds and removes both on
+    // every rebuild: on one walk they were most of the region invalidations that redrew the level
+    // four times a second. A later `castShadow` flip is still the poll's to see.
+    const mesh = child as {
+      isMesh?: boolean;
+      castShadow?: boolean;
+      userData?: { tnShadowSwap?: unknown };
+    };
+    if (mesh.isMesh === true && (mesh.castShadow !== true || mesh.userData?.tnShadowSwap === true))
+      return;
     this.#askAboutCaster(child);
   };
   /** Casters the current level's size gate hid, restored the moment that render is over. */

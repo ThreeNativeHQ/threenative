@@ -1991,6 +1991,32 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     expect(invalidatedBy(false)).toBe(3);
   });
 
+  it("should not redraw cached maps for an arriving mesh that casts nothing or is a swap twin", () => {
+    const invalidatedByArrival = (castShadow: boolean, swap: boolean): number => {
+      const { camera, light, scene, tall } = shadowWorld();
+      const node = setupNode(light, {
+        clipExtents: [24, 96, 320],
+        invalidationDelay: 0,
+        mapSize: 64,
+      });
+      settle(node, camera);
+      const arrival = new Mesh(tall.geometry, tall.material as MeshStandardMaterial);
+      arrival.position.copy(tall.position);
+      arrival.castShadow = castShadow;
+      arrival.userData.tnShadowSwap = swap;
+      scene.add(arrival);
+      node.updateBefore(frameFor(camera));
+      const { invalidated } = node.stats;
+      node.dispose();
+      return invalidated;
+    };
+    // A streamed caster is a change every level covering it must draw; a mesh that casts nothing,
+    // or terrain's swap twin over the same ground, is not.
+    expect(invalidatedByArrival(true, false)).toBe(3);
+    expect(invalidatedByArrival(false, false)).toBe(0);
+    expect(invalidatedByArrival(true, true)).toBe(0);
+  });
+
   it("should drop a caster the main pass cannot draw, and leave every other draw alone", () => {
     const { camera, light, scene, tall } = shadowWorld();
     /**
