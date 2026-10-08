@@ -95,12 +95,14 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     set(TN_L4_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/engine-load-test/native-engine/l4-workload.ts)
     set(TN_L4_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/l4-workload.js)
     if(EXISTS ${TN_ESBUILD})
+        # The 64-object workload batches into one instanced draw (plus output); 771 triangles = 64 x 12 + 3
+        # keeps proving every object drew.
         add_test(NAME native_engine_host_v8
             COMMAND sh -c "${TN_ESBUILD} ${TN_L4_SOURCE} --bundle --format=iife --platform=neutral --log-level=error --outfile=${TN_L4_SCRIPT} && $<TARGET_FILE:tn-native-engine-host> ${TN_L4_SCRIPT} --objects 64 --frames 10 --warmup 2 2>/dev/null")
         add_test(NAME native_engine_host_cpp
             COMMAND sh -c "$<TARGET_FILE:tn-native-engine-host> --cpp --objects 64 --frames 10 --warmup 2 2>/dev/null")
         set_tests_properties(native_engine_host_v8 native_engine_host_cpp PROPERTIES
-            LABELS "native-engine" PASS_REGULAR_EXPRESSION "\"draws\": 66,")
+            LABELS "native-engine" PASS_REGULAR_EXPRESSION "\"draws\": 3,[\r\n ]+\"triangles\": 771,")
         # PRD-530: startup checks the artifact identity manifest; a matching one runs, one built
         # against another engine ABI is refused before any engine or game code.
         set(TN_IDENTITY ${CMAKE_CURRENT_BINARY_DIR}/identity.txt)
@@ -108,7 +110,7 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
             COMMAND sh -c "$<TARGET_FILE:tn-native-engine-identity> --write ${TN_IDENTITY} --backend dawn && $<TARGET_FILE:tn-native-engine-host> --cpp --objects 8 --frames 2 --warmup 1 --identity ${TN_IDENTITY} 2>&1")
         add_test(NAME native_engine_host_identity_refuse
             COMMAND sh -c "$<TARGET_FILE:tn-native-engine-identity> --write ${TN_IDENTITY}.bad --backend dawn && sed -i 's/^engine-abi .*/engine-abi 999/' ${TN_IDENTITY}.bad && $<TARGET_FILE:tn-native-engine-host> --cpp --objects 8 --frames 2 --warmup 1 --identity ${TN_IDENTITY}.bad 2>&1; echo exit=$?")
-        set_tests_properties(native_engine_host_identity_accept PROPERTIES LABELS "native-engine" PASS_REGULAR_EXPRESSION "\"draws\": 10,")
+        set_tests_properties(native_engine_host_identity_accept PROPERTIES LABELS "native-engine" PASS_REGULAR_EXPRESSION "\"draws\": 3,[\r\n ]+\"triangles\": 99,")
         set_tests_properties(native_engine_host_identity_refuse PROPERTIES LABELS "native-engine"
             PASS_REGULAR_EXPRESSION "TN_ARTIFACT_VERSION_MISMATCH: TN_DIAG_ENGINE_ABI_MISMATCH[^\n]*\nexit=3")
     endif()

@@ -302,6 +302,31 @@ bool Endpoint::input(const std::string& method, const Value* argument, std::stri
         input_.push_back(e);
         return true;
     }
+    if (method == "input.wheel") {
+        const Value *x = argument->find("x"), *y = argument->find("y"), *dx = argument->find("deltaX"),
+                    *dy = argument->find("deltaY");
+        for (const Value* v : {x, y, dx, dy})
+            if (!v || !v->isNumber() || !std::isfinite(v->number()))
+                return invalid("Device input.wheel requires finite x, y, deltaX and deltaY.");
+        InputEvent e{"wheel"};
+        e.x = x->number();
+        e.y = y->number();
+        e.deltaX = dx->number();
+        e.deltaY = dy->number();
+        e.injectedTick = forTick;
+        input_.push_back(e);
+        return true;
+    }
+    if (method == "input.media") {
+        // Media emulation reaches a native-css UI; the native-engine player has none, so it refuses
+        // by name, as device.ts does for a host with no UI attached.
+        const Value *dark = argument->find("dark"), *reduced = argument->find("reducedMotion");
+        for (const Value* v : {dark, reduced})
+            if (!v || !v->isNumber() || (v->number() != -1 && v->number() != 0 && v->number() != 1))
+                return invalid("Device input.media requires dark and reducedMotion as -1, 0 or 1.");
+        return fail(error, "TN_INSPECT_UNSUPPORTED: Native playtest media emulation is unavailable: the host has no "
+                           "native-css UI attached to take it.");
+    }
     if (method == "input.pointers") {
         const Value* list = argument->find("pointers");
         if (!list || !list->isArray())

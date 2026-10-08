@@ -106,7 +106,14 @@ void protocol() {
          true},
         {"input.pointers", "{\"pointers\":[{\"id\":1,\"x\":5,\"y\":6},{\"id\":1,\"x\":7,\"y\":8}]}", false},
         {"input.pointers", "{\"pointers\":[{\"id\":0,\"x\":5,\"y\":6}]}", false},
+        {"input.wheel", "{\"x\":10,\"y\":20,\"deltaX\":0,\"deltaY\":120}", true},
+        {"input.wheel", "{\"x\":10,\"y\":20,\"deltaY\":120}", false},
+        {"input.media", "{\"dark\":1,\"reducedMotion\":0}", false},
+        {"input.media", "{\"dark\":2,\"reducedMotion\":0}", false},
     };
+    // A message type the native-engine player refuses by design, by name: media emulation needs a
+    // native-css UI it does not have (device.ts refuses the same way for a host with no UI).
+    const std::set<std::string> refusedByDesign{"input.media"};
     std::set<std::string> covered;
     std::size_t bad = 0, n = 0;
     for (const Case& c : cases) {
@@ -126,7 +133,7 @@ void protocol() {
     }
     // Every message type device.ts knows was answered with a result at least once.
     for (const char* method : kMethods) {
-        if (!covered.count(method)) {
+        if (!covered.count(method) && !refusedByDesign.count(method)) {
             ++bad;
             std::fprintf(stderr, "no answered case for %s\n", method);
         }

@@ -656,6 +656,9 @@ function runCoverageTargets({ buildDirectory, cmake, ctest, inventory, registrat
     try {
       run(ctest, ["--test-dir", buildDirectory, "--output-on-failure", "-R", `^${name}$`], {
         env: { ...process.env, TN_NATIVE_ENGINE_BUILD: buildDirectory,
+          // Instrumented timing cannot judge the 18x scaling ratio: run its update path at one
+          // size here. The ratio gate itself runs uninstrumented in test-native.
+          TN_UPDATE_OBJECTS: "65536",
           [coverageProfileEnvironmentVariable]: join(profileDirectory, `${prefix}%p.profraw`) },
         timeout: 180_000,
       });

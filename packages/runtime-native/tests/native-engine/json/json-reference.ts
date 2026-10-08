@@ -149,7 +149,9 @@ const walk = Array.from({ length: 120 }, () => {
   seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
   const mantissa = seed / 2 ** 32;
   seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-  return (mantissa - 0.5) * 10 ** ((seed % 60) - 30);
+  // `10 ** k` is not correctly rounded and differs across V8 versions; parsing `1e<k>` is, so the
+  // fixture does not depend on which Node regenerates or checks it.
+  return (mantissa - 0.5) * Number(`1e${(seed % 60) - 30}`);
 });
 const NUMBERS = [
   0,

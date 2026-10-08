@@ -779,6 +779,7 @@ void instanced() {
         meshes.push_back(one);
     }
     RenderDatabase dbB;
+    dbB.batching = false; // the reference is nine separate draws, not the engine's own instancing
     dbB.render(renderer, separate, camera);
     const auto statsB = renderer.lastFrame();
     const std::vector<uint8_t> b = read(renderer, events);

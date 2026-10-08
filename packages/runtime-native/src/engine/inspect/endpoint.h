@@ -14,10 +14,11 @@ namespace tn::engine::inspect {
 
 /** One keyboard or pointer event the runner injected, as three/device.ts hands it to the host. */
 struct InputEvent {
-    std::string type; // keydown, keyup, pointerdown, pointermove, pointerup
+    std::string type; // keydown, keyup, pointerdown, pointermove, pointerup, wheel
     std::string key, code;
     double x = 0, y = 0;
     double buttons = 0;
+    double deltaX = 0, deltaY = 0; // wheel
     int pointerId = 1;
     std::string pointerType = "mouse";
     bool isPrimary = true;

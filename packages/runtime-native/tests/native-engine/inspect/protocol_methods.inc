@@ -8,8 +8,10 @@ static const char* const kMethods[] = {
     "focus",
     "input.keyDown",
     "input.keyUp",
+    "input.media",
     "input.pointer",
     "input.pointers",
+    "input.wheel",
     "ready",
     "sample",
 };
