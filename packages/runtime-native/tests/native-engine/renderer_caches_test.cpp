@@ -147,6 +147,34 @@ void pipelines() {
         CHECK(p != nullptr && p != first && p != blend && cache.get(vs, &fs, t) == p);
     }
     CHECK(cache.size() == 9);
+
+    // A forgotten id reset: text edited after emit but still carrying the old id is a new key.
+    shader::StageModule stale = vs;
+    stale.wgsl.code += "\n// stale id\n";
+    CHECK(stale.wgsl.id == vs.wgsl.id);
+    WGPURenderPipeline staleP = cache.get(stale, &fs, color);
+    CHECK(staleP != nullptr && staleP != first && staleP != other && cache.get(stale, &fs, color) == staleP);
+
+    // The depth format and the pipeline layout are part of the key too.
+    PipelineTarget depth24 = color;
+    depth24.depth = WGPUTextureFormat_Depth24Plus;
+    WGPURenderPipeline d24 = cache.get(vs, &fs, depth24);
+    CHECK(d24 != nullptr && d24 != first && d24 != blend && cache.get(vs, &fs, depth24) == d24);
+    WGPUBindGroupLayout groups[2] = {wgpuRenderPipelineGetBindGroupLayout(first, 0), wgpuRenderPipelineGetBindGroupLayout(first, 1)};
+    WGPUPipelineLayoutDescriptor layoutDesc = {};
+    layoutDesc.bindGroupLayoutCount = 2;
+    layoutDesc.bindGroupLayouts = groups;
+    WGPUPipelineLayout layoutA = wgpuDeviceCreatePipelineLayout(d.context.getDevice(), &layoutDesc);
+    WGPUPipelineLayout layoutB = wgpuDeviceCreatePipelineLayout(d.context.getDevice(), &layoutDesc);
+    PipelineTarget withA = color, withB = color;
+    withA.layout = layoutA;
+    withB.layout = layoutB;
+    WGPURenderPipeline pa = cache.get(vs, &fs, withA), pb = cache.get(vs, &fs, withB);
+    CHECK(pa != nullptr && pb != nullptr && pa != pb && pa != first && cache.get(vs, &fs, withA) == pa && cache.get(vs, &fs, withB) == pb);
+    wgpuPipelineLayoutRelease(layoutA);
+    wgpuPipelineLayoutRelease(layoutB);
+    wgpuBindGroupLayoutRelease(groups[0]);
+    wgpuBindGroupLayoutRelease(groups[1]);
 }
 
 }  // namespace

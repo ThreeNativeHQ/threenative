@@ -158,6 +158,22 @@ void bits() {
         checkV8("medium sin", sin(x), row.sin);
         checkV8("medium cos", cos(x), row.cos);
     }
+    // The specials, as node 20's Math.sin/Math.cos answer them: signed zeros keep their sign in sine
+    // and give exactly 1 in cosine, infinities and NaNs give NaN in both.
+    {
+        double s, c;
+        tn::engine::ieee754::sincos(0.0, s, c);
+        checkV8("sincos(+0) sin", s, 0x0000000000000000ULL);
+        checkV8("sincos(+0) cos", c, 0x3ff0000000000000ULL);
+        tn::engine::ieee754::sincos(-0.0, s, c);
+        checkV8("sincos(-0) sin", s, 0x8000000000000000ULL);
+        checkV8("sincos(-0) cos", c, 0x3ff0000000000000ULL);
+        for (const std::uint64_t word : {0x7ff0000000000000ULL, 0xfff0000000000000ULL, 0x7ff8000000000000ULL,
+                                         0xfff8000000000000ULL, 0x7ff0000000000001ULL}) {
+            tn::engine::ieee754::sincos(std::bit_cast<double>(word), s, c);
+            CHECK(s != s && c != c);
+        }
+    }
     // |x| below pi/4 reaches the polynomial kernels; beyond it, argument reduction.
     checkV8("cos(0.1)", cos(0.1), 0x3fefd712f9a817c0ULL);
     checkV8("cos(-0.1)", cos(-0.1), 0x3fefd712f9a817c0ULL);

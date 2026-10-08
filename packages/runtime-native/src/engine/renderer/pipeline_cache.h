@@ -49,6 +49,7 @@ private:
     /** The same pipeline by the ids of its stages' texts: a lookup that copies and hashes no WGSL. */
     struct IdKey {
         uint64_t vertex, fragment;
+        size_t vertexSize, fragmentSize;  // an edit that changes the length also changes the key
         PipelineTarget target;
         bool operator==(const IdKey& o) const;
     };

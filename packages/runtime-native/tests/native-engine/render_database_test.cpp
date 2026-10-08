@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <cstdlib>
@@ -139,23 +140,37 @@ void uniformBatchPreparation() {
             }
         }
     }
-    // Depths that round to one float32 (1 + k * 2^-30, scrambled) keep their exact double order, and
-    // equal depths keep id order.
+    // Depths that round together as float32 keep their exact double order, and equal depths keep id
+    // order: positive, negative, straddling zero (with both zeros), and beyond float32's range.
     depthCamera.projectionMatrix.identity();
-    std::vector<std::pair<double, const Mesh*>> rounded;
-    for (std::size_t i = 0; i < meshes.size(); ++i) {
-        meshes[i]->material->roughness = 1;
-        meshes[i]->position.z = 1 + std::ldexp(double((i * 2654435761u) % 211), -30);
-        rounded.emplace_back(meshes[i]->position.z, meshes[i].get());
-    }
-    std::sort(rounded.begin(), rounded.end(), [](const auto& a, const auto& b) {
-        return a.first != b.first ? a.first < b.first : a.second->id() < b.second->id();
-    });
-    items = database.prepare(scene, depthCamera, lights);
-    CHECK(items.size() == 1 && items[0].instanceCount == rounded.size() && items[0].instanceColors);
-    if (items.size() == 1 && items[0].instanceColors) {
-        colors = reinterpret_cast<const float*>(items[0].instanceColors->data());
-        for (std::size_t i = 0; i < rounded.size(); ++i) CHECK(colors[i * 3] == float(rounded[i].second->material->color.r));
+    const auto scrambled = [](std::size_t i, unsigned modulus) { return double((i * 2654435761u) % modulus); };
+    const std::vector<std::function<double(std::size_t)>> roundedDepths = {
+        [&](std::size_t i) { return 1 + std::ldexp(scrambled(i, 211), -30); },
+        [&](std::size_t i) { return -1 - std::ldexp(scrambled(i, 211), -30); },
+        [&](std::size_t i) {
+            if (i % 97 == 0) return i % 2 ? -0.0 : 0.0;
+            return std::ldexp(scrambled(i, 211) - 105, -60);
+        },
+        [&](std::size_t i) { return i % 50 == 0 ? double(int(i % 7)) : 1e39 * (1 + std::ldexp(scrambled(i, 211), -40)); },
+        [&](std::size_t i) { return -1e39 * (1 + std::ldexp(scrambled(i, 211), -40)); },
+    };
+    for (const auto& depthOf : roundedDepths) {
+        std::vector<std::pair<double, const Mesh*>> rounded;
+        for (std::size_t i = 0; i < meshes.size(); ++i) {
+            meshes[i]->material->roughness = 1;
+            meshes[i]->position.z = depthOf(i);
+            rounded.emplace_back(meshes[i]->position.z, meshes[i].get());
+        }
+        std::sort(rounded.begin(), rounded.end(), [](const auto& a, const auto& b) {
+            return a.first != b.first ? a.first < b.first : a.second->id() < b.second->id();
+        });
+        items = database.prepare(scene, depthCamera, lights);
+        CHECK(items.size() == 1 && items[0].instanceCount == rounded.size() && items[0].instanceColors);
+        if (items.size() == 1 && items[0].instanceColors) {
+            colors = reinterpret_cast<const float*>(items[0].instanceColors->data());
+            for (std::size_t i = 0; i < rounded.size(); ++i)
+                CHECK(colors[i * 3] == float(rounded[i].second->material->color.r));
+        }
     }
     for (std::size_t i = 0; i < meshes.size(); ++i) {
         meshes[i]->position.z = double(i / 64);
@@ -477,6 +492,150 @@ void presentDirect() {
         wgpuTextureViewRelease(directView);
         renderer.gpu().destroy(copied);
         renderer.gpu().destroy(direct);
+    }
+    // A frame that fails between arming and render() must not leave its borrowed view armed: the
+    // next, ordinary frame may not draw into a view the caller has since released.
+    const Handle stale = renderer.gpu().createTexture(160, 120, WGPUTextureFormat_RGBA8Unorm,
+                                                      WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+    WGPUTextureView staleView = wgpuTextureCreateView(renderer.gpu().texture(stale), nullptr);
+    auto sky = std::make_shared<DataTexture>();
+    sky->mapping = 300;  // prepare() refuses anything but equirectangular reflection mapping
+    s.scene.backgroundTexture = sky;
+    bool threw = false;
+    try {
+        Renderer::PresentScope armed(renderer, staleView, WGPUTextureFormat_RGBA8Unorm);
+        database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    CHECK(threw);
+    s.scene.backgroundTexture.reset();
+    database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+    const std::vector<uint8_t> untouched = readTexture(renderer, events, stale);
+    CHECK(untouched.size() == 160 * 120 * 4 &&
+          std::all_of(untouched.begin(), untouched.end(), [](uint8_t b) { return b == 0; }));
+    wgpuTextureViewRelease(staleView);
+    renderer.gpu().destroy(stale);
+}
+
+// The instance storage keeps its elements between frames: N instances, then fewer, then more, must
+// each draw exactly what a renderer that never saw another count draws.
+void instanceCounts() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer reused(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    const auto configure = [](Renderer& r) {
+        r.setSize(96, 72);
+        r.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    };
+    configure(reused);
+    Scene scene;
+    PerspectiveCamera camera(50, 96.0 / 72, 0.1, 100);
+    camera.position.set(0, 0, 22);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto geometry = makeBoxGeometry();
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 100; ++i) {
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color.setRGB(double(i) / 100, 0.3, 1 - double(i) / 100);
+        material->roughness = i % 2 ? 0.3 : 0.8;  // two uniform groups: two instanced draws, the second at a base
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set((i % 10 - 4.5) * 1.6, (i / 10 - 4.5) * 1.6, 0);
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    DirectionalLight light{Color().setHex(0xffffff), 3};
+    light.position.set(3, 5, 8);
+    scene.add(light);
+    RenderDatabase reusedDb;
+    for (const int count : {60, 20, 90, 100, 12, 12, 55}) {
+        for (int i = 0; i < 100; ++i) meshes[i]->setVisible(i < count);
+        reusedDb.render(reused, scene, camera, {0.05, 0.06, 0.08, 1});
+        Renderer fresh(context.getInstance(), context.getDevice(), context.getQueue(), events);  // never saw another count
+        configure(fresh);
+        RenderDatabase freshDb;
+        freshDb.render(fresh, scene, camera, {0.05, 0.06, 0.08, 1});
+        const std::vector<uint8_t> a = read(reused, events), b = read(fresh, events);
+        CHECK(a.size() == 96 * 72 * 4 && a == b);
+        CHECK(reusedDb.lastBatches().second == static_cast<std::size_t>(count) && reusedDb.lastBatches().first == 2);
+    }
+}
+
+// The flat lane's compact fast path (RenderDatabase::projectCompact) must decide exactly what the
+// general project() decides. The same population, flat and then made non-flat by one parented
+// object, must give the same draws: hidden, other-layer, transparent, mirrored, callback and
+// ordinary batching meshes alike.
+bool sameFloats(const void* a, const void* b, std::size_t bytes) {
+    const auto* x = static_cast<const float*>(a);
+    const auto* y = static_cast<const float*>(b);
+    for (std::size_t i = 0; i < bytes / sizeof(float); ++i)
+        if (x[i] != y[i]) return false;  // numeric: the two lanes may differ in the sign of a zero
+    return true;
+}
+
+void flatLaneEquivalence() {
+    struct Population {
+        Scene scene;
+        Object3D parent, child;  // only the non-flat variant attaches them
+        std::vector<std::shared_ptr<Mesh>> meshes;
+        std::shared_ptr<BufferGeometry> geometry = makeBoxGeometry();
+        explicit Population(bool flat) {
+            for (int i = 0; i < 96; ++i) {
+                auto material = std::make_shared<Material>(MaterialType::Standard);
+                material->color.setRGB(double(i) / 96, 0.4, 0.2);
+                material->roughness = i % 5 == 0 ? 0.5 : 0.75;  // two uniform groups
+                material->transparent = i % 9 == 0;
+                auto mesh = std::make_shared<Mesh>(geometry, material);
+                mesh->position.set((i % 12 - 5.5) * 1.7, (i / 12 - 3.5) * 1.7, -double(i % 7));
+                if (i % 10 == 0) mesh->scale.x = -1;  // mirrored: negative determinant
+                if (i % 11 == 0) mesh->setLayerMask(2);  // not on the camera's layer
+                if (i % 8 == 1) mesh->setVisible(false);
+                if (i % 13 == 2)
+                    mesh->onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+                        [](const RenderCallbackArgs&, std::string&) { return true; });
+                scene.add(*mesh);
+                meshes.push_back(mesh);
+            }
+            if (!flat) {
+                parent.add(child);
+                scene.add(parent);
+            }
+        }
+    };
+    PerspectiveCamera camera(50, 4.0 / 3, 0.1, 100);
+    camera.position.set(0, 0, 24);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Population flatScene(true), generalScene(false);
+    RenderDatabase flatDb, generalDb;
+    for (int frame = 0; frame < 3; ++frame) {
+        for (auto* population : {&flatScene, &generalScene})
+            for (std::size_t i = 0; i < population->meshes.size(); ++i)
+                population->meshes[i]->position.y += 0.05 * double(i % 4);  // they move, records stay
+        LightState flatLights, generalLights;
+        const auto flatItems = flatDb.prepare(flatScene.scene, camera, flatLights);
+        auto generalItems = generalDb.prepare(generalScene.scene, camera, generalLights);
+        CHECK(flatDb.diagnostics().empty() && generalDb.diagnostics().empty());
+        CHECK(flatItems.size() == generalItems.size() && flatItems.size() > 3);
+        CHECK(flatDb.lastBatches() == generalDb.lastBatches());
+        CHECK(flatDb.rebuilds() == generalDb.rebuilds());
+        for (std::size_t i = 0; i < std::min(flatItems.size(), generalItems.size()); ++i) {
+            const DrawItem &a = flatItems[i], &b = generalItems[i];
+            CHECK(a.instanceCount == b.instanceCount && a.transparent == b.transparent && a.matrixWorld == b.matrixWorld);
+            CHECK(a.material->roughness == b.material->roughness && a.material->color == b.material->color);
+            CHECK((a.instanceMatrices == nullptr) == (b.instanceMatrices == nullptr));
+            if (a.instanceMatrices && b.instanceMatrices) {
+                CHECK(a.instanceMatrices->byteLength() == b.instanceMatrices->byteLength());
+                CHECK(sameFloats(a.instanceMatrices->data(), b.instanceMatrices->data(), a.instanceMatrices->byteLength()));
+            }
+            CHECK((a.instanceColors == nullptr) == (b.instanceColors == nullptr));
+            if (a.instanceColors && b.instanceColors) {
+                CHECK(a.instanceColors->byteLength() == b.instanceColors->byteLength());
+                CHECK(sameFloats(a.instanceColors->data(), b.instanceColors->data(), a.instanceColors->byteLength()));
+            }
+        }
     }
 }
 
@@ -1184,7 +1343,7 @@ void convertedCopiesAreSwept() {
 
 }  // namespace
 
-TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept})

@@ -13,7 +13,9 @@ struct WgslModule {
     std::string code;
     /**
      * Names `code`: emit() gives every text it produces a fresh non-zero id, and copies share it.
-     * Whoever edits `code` afterwards sets this to 0, which means unnamed (keyed by its text).
+     * Whoever edits `code` afterwards sets this to 0, which means unnamed (keyed by its text); the
+     * pipeline cache also keys on the length, so a forgotten reset still catches any edit that
+     * changes it (an in-place edit of equal length is the one thing it cannot see).
      */
     uint64_t id = 0;
     std::string entryPoint = "main";

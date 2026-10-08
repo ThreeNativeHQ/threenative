@@ -211,6 +211,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_uniform_batch_preparation=uniform_batch_preparation
         native_engine_renderer_scene_lit=lit_scene
         native_engine_renderer_present_direct=present_direct
+        native_engine_renderer_instance_counts=instance_counts
+        native_engine_renderer_flat_lane_equivalence=flat_lane_equivalence
         native_engine_directional_target=directional_target
         native_engine_renderer_invalidation=invalidation
         native_engine_renderer_scene_alpha=alpha_scene

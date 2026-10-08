@@ -91,7 +91,9 @@ void tick() {
     wgpuSurfaceGetCurrentTexture(surface, &frame);
     if (frame.texture == nullptr) return static_cast<void>(fail("TN_WASM_SURFACE: no canvas texture"));
     WGPUTextureView view = wgpuTextureCreateView(frame.texture, nullptr);
-    if (!reading) renderer->presentNext(view, surfaceFormat);
+    // Disarmed on every exit between here and render(): the view is released below.
+    std::optional<Renderer::PresentScope> present;
+    if (!reading) present.emplace(*renderer, view, surfaceFormat);
     database.render(*renderer, *scene, *camera, {0.02, 0.03, 0.04, 1}, measuring ? &benchCpu : nullptr);
     const bool diagnosed = !database.diagnostics().empty();
     const bool presented = diagnosed || !reading || renderer->blitTo(queue, view, surfaceFormat);

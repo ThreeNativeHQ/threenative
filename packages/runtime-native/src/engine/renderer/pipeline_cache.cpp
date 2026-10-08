@@ -33,7 +33,8 @@ PipelineCache::~PipelineCache() {
 }
 
 bool PipelineCache::IdKey::operator==(const IdKey& o) const {
-    return vertex == o.vertex && fragment == o.fragment && target.color == o.target.color &&
+    return vertex == o.vertex && fragment == o.fragment && vertexSize == o.vertexSize &&
+           fragmentSize == o.fragmentSize && target.color == o.target.color &&
            target.depth == o.target.depth && target.cull == o.target.cull && target.blend == o.target.blend &&
            target.depthWrite == o.target.depthWrite && target.layout == o.target.layout &&
            target.skinIndex == o.target.skinIndex && target.frontFace == o.target.frontFace &&
@@ -45,6 +46,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     const auto mix = [&](uint64_t v) { h = (h ^ v) * 0x9e3779b97f4a7c15ull; h ^= h >> 29; };
     mix(key.vertex);
     mix(key.fragment);
+    mix(key.vertexSize ^ key.fragmentSize << 32);
     mix(uint64_t(key.target.color) | uint64_t(key.target.depth) << 32);
     mix(uint64_t(key.target.cull) | uint64_t(key.target.frontFace) << 8 | uint64_t(key.target.depthCompare) << 16 |
         uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 57);
@@ -57,7 +59,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     // Emitted stages carry an id for their text; two ids and the target name a pipeline already
     // compiled without touching the text. An unnamed stage (id 0) falls back to the text itself.
     const bool named = vertex.wgsl.id != 0 && (!fragment || fragment->wgsl.id != 0);
-    const IdKey idKey{vertex.wgsl.id, fragment ? fragment->wgsl.id : 0, target};
+    const IdKey idKey{vertex.wgsl.id, fragment ? fragment->wgsl.id : 0, vertex.wgsl.code.size(),
+                      fragment ? fragment->wgsl.code.size() : 0, target};
     if (named)
         if (const auto found = byId_.find(idKey); found != byId_.end()) return found->second;
     ++textLookups_;

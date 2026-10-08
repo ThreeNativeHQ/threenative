@@ -237,6 +237,24 @@ public:
         presentTarget_ = target;
         presentFormat_ = format;
     }
+    /** Disarms presentNext(); a no-op once render() has taken the view. */
+    void cancelPresent() { presentTarget_ = nullptr; }
+    /**
+     * presentNext() for the lifetime of a scope: whatever happens between arming and render() (a
+     * throw while the scene is prepared, an early return), the borrowed view is disarmed on exit,
+     * so no later frame draws into a view its owner has released.
+     */
+    class PresentScope {
+    public:
+        PresentScope(Renderer& renderer, WGPUTextureView target, WGPUTextureFormat format) : renderer_(renderer) {
+            renderer_.presentNext(target, format);
+        }
+        ~PresentScope() { renderer_.cancelPresent(); }
+        PresentScope(const PresentScope&) = delete;
+        PresentScope& operator=(const PresentScope&) = delete;
+    private:
+        Renderer& renderer_;
+    };
     /** The last frame's pixels, RGBA8 rows tightly packed, delivered from poll(). */
     GpuStatus readPixels(ReadbackCallback done);
     void poll() { gpu_.poll(); }
