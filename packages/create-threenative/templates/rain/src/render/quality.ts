@@ -1,3 +1,4 @@
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or rewrite
 // it freely — the tiers below are a starting point, not a framework look.
 //
@@ -15,7 +16,7 @@
 //   march. The drawing buffer itself is the engine's adaptive resolution (`resolutionScale: "auto"`
 //   in `threenative.config.ts`), which measures the frame instead of trusting a fixed table.
 import type { QualityName } from "../state.js";
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import type { IWorldEnvironmentEffects, IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
  * The engine chain's three tier names. `low` is what a phone gets and `high` what a desktop gets;
@@ -62,10 +63,20 @@ export function resolveQualityTier(
 }
 
 /**
+ * The post nodes the tiers below can turn on, and only those. A node no tier enables is never
+ * imported, so it never reaches the bundle; turning a stage on without its node here throws at
+ * `apply` naming the import to add (`WorldEnvironment.requiredEffects`).
+ */
+const effects: IWorldEnvironmentEffects = { smaa };
+
+/**
  * What a desktop gets from the engine chain: no built-in stage, so there is no cost to record beside
  * one; the storm's own post pass is costed in `STUDY_TIERS` below.
  */
 const high: IWorldEnvironmentOptions = {
+  effects,
+  // The storm's own post pass, run by the engine chain; `postprocessing.ts` builds it.
+  authoredStageNames: ["stormPost"],
   bloomEnabled: false,
   denoiseEnabled: false,
   // The post pass applies the weather's exposure itself, after its own bloom add.

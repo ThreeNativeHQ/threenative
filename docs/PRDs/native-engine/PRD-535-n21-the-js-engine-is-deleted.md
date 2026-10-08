@@ -36,6 +36,7 @@ Owner decisions 4 and 10 ([PRD-497](../done/native-engine/PRD-497-n00-architectu
 - [ ] No module classed `native-engine` remains in `packages/core/src`. proof: `pnpm tsx scripts/native-engine-inventory.ts --check --deleted`
 - [ ] A built web game bundle contains no upstream Three.js renderer or scene code. proof: `pnpm exec vitest run scripts/__tests__/bundle-has-no-upstream-three.spec.ts`
 - [ ] A desktop artifact carries no engine JS bundle. proof: `node packages/runtime-native/scripts/inspect-js-free.mjs --binary <desktop artifact> --engine-only`
+- [ ] The native-stub ledger (`packages/three-native/api/native-stubs.json`) is empty: no shipped engine symbol is a stub or mock. A non-empty ledger blocks this deletion. proof: `pnpm tsx packages/three-native/scripts/native-stubs.ts --gate` (exits 1 and names each entry while any remains)
 
 #### Phase 3: Every template on the one engine
 **Status:** NOT STARTED

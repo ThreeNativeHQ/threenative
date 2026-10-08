@@ -100,6 +100,25 @@ export function withVelocityContext<T>(node: T, source: Node): T {
   return context(node, { velocity: source }) as T;
 }
 
+/** How the render chain provisions the MRT velocity a temporal stage reads. */
+export interface IVelocityProvision {
+  /** Ensures `pass` writes velocity and returns its texture node. */
+  texture(pass: IVelocityRenderPass): Node;
+  /** Hands the velocity source through the composed graph. */
+  attach<T>(node: T, source: Node): T;
+}
+
+/**
+ * The MRT velocity provision: pass `mrtVelocity()` as `request.velocity.provision` beside `pass`
+ * when the chain runs a temporal stage. The chain never imports it, so a game without one never
+ * bundles the velocity graph.
+ * @situation give a temporal stage such as TRAA its velocity from the scene pass
+ * @constraint a render chain given a velocity `pass` without it drops each temporal stage as `velocity:provision-missing`
+ */
+export function mrtVelocity(): IVelocityProvision {
+  return { texture: velocityTexture, attach: withVelocityContext };
+}
+
 /**
  * Captures instance matrices at the framework's pre-render boundary and enables previous data on
  * every renderable in the graph. The previous snapshot is never the array the game writes next.

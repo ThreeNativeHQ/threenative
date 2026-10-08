@@ -1,3 +1,5 @@
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or rewrite
 // it freely — the tiers below are a starting point, not a framework look.
 //
@@ -20,7 +22,9 @@
 // This level is bright: a photograph sky at full range, ~2,300 small meshes, one sun and no
 // screen-space colour work. `playtests/performance.playtest.json` is the proof of the numbers
 // below — read `TN_FRAME_BUDGET` back after you change a tier rather than trusting these.
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
+import type { IWorldEnvironmentEffects, IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 export type QualityTier = "low" | "medium" | "high";
 
@@ -63,11 +67,19 @@ export function resolveQualityTier(
 }
 
 /**
+ * The post nodes the tiers below can turn on, and only those. A node no tier enables is never
+ * imported, so it never reaches the bundle; turning a stage on without its node here throws at
+ * `apply` naming the import to add (`WorldEnvironment.requiredEffects`).
+ */
+const effects: IWorldEnvironmentEffects = { ao, bloom, denoise, smaa };
+
+/**
  * The look every tier shares: a narrow bloom on what is genuinely brighter than white — the gold
  * coins, the goal star — rather than a haze over the frame, a filmic curve so the photographed
  * sky's own highlights stay highlights, and a corner falloff that frames the route.
  */
 const shared: IWorldEnvironmentOptions = {
+  effects,
   // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there. The
   // threshold sits at 1 so only the gold and the specular hit it, never the pale stone.
   bloomEnabled: true,

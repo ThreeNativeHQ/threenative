@@ -133,7 +133,6 @@ export function setupPost(
   let disposed = false;
   const world = new WorldEnvironment({
     ...qualityPreset(tier),
-    authoredStageNames: ["stormPost"],
     authoredStages: () => [stormStage()],
   });
   applied = world.apply(renderer, scene, camera);

@@ -1,8 +1,10 @@
 import { PerspectiveCamera, Scene, Texture } from "three";
-import BloomNode from "three/addons/tsl/display/BloomNode.js";
+import BloomNode, { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { rtt, texture, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { expect, it, vi } from "vitest";
+import * as autoExposure from "../template-assets/autoExposure.js";
 import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
 
 it("releases the bloom effect and its materialized input when its chain is replaced", () => {
@@ -30,7 +32,7 @@ it("releases the bloom effect and its materialized input when its chain is repla
       };
     },
   };
-  const applied = new WorldEnvironment({ bloomEnabled: true }).apply(
+  const applied = new WorldEnvironment({ bloomEnabled: true, effects: { bloom, smaa } }).apply(
     renderer,
     new Scene(),
     new PerspectiveCamera(),
@@ -59,11 +61,11 @@ it("keeps default exposure direct and installs the authored opt-in on its existi
   expect(direct.exposure).toBeUndefined();
   expect(renderer.raw).toMatchObject({ toneMappingExposure: 0.62 });
 
-  const installed = new WorldEnvironment({ autoExposureEnabled: true, bloomEnabled: false }).apply(
-    renderer,
-    scene,
-    camera,
-  );
+  const installed = new WorldEnvironment({
+    autoExposureEnabled: true,
+    bloomEnabled: false,
+    effects: { autoExposure },
+  }).apply(renderer, scene, camera);
   expect(output).toHaveBeenCalledTimes(1);
   const worldPass = output.mock.calls[0]?.[1] as { dispose(): void };
   expect(worldPass).toBeDefined();
@@ -82,12 +84,30 @@ it("keeps default exposure direct and installs the authored opt-in on its existi
 
 it("rejects authored auto-exposure on an unsupported renderer rather than silently omitting it", () => {
   expect(() =>
-    new WorldEnvironment({ autoExposureEnabled: true }).apply(
+    new WorldEnvironment({
+      autoExposureEnabled: true,
+      effects: { autoExposure, bloom, smaa },
+    }).apply(
       { kind: "webgl", raw: {}, setOutputNode: vi.fn() },
       new Scene(),
       new PerspectiveCamera(),
     ),
   ).toThrow(/requires WebGPU/);
+});
+
+it("refuses a stage whose post node is not in effects, naming the import to add", () => {
+  const build = vi.fn();
+  const renderer: OutputRenderer = { kind: "webgpu", raw: {}, createRenderChain: build };
+  const apply = (effects: object) => () =>
+    new WorldEnvironment({ bloomEnabled: true, gtaoEnabled: true, effects }).apply(
+      renderer,
+      new Scene(),
+      new PerspectiveCamera(),
+    );
+  expect(apply({ bloom, smaa })).toThrow(
+    /TN_WORLD_ENVIRONMENT_EFFECT_MISSING: .*need ao, denoise\..*GTAONode\.js.*DenoiseNode\.js/,
+  );
+  expect(build).not.toHaveBeenCalled();
 });
 
 it("requires actual consumer installation evidence, rejecting missing wiring", async () => {

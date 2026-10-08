@@ -1,3 +1,5 @@
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or rewrite
 // it freely — the tiers below are a starting point, not a framework look.
 //
@@ -17,7 +19,9 @@
 // One cost that is **not** a stage here and outweighs most of them: the prefiltered reflection
 // probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
 // in `sky.ts`, not in this file.
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
+import type { IWorldEnvironmentEffects, IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
  * The three names this game's look comes in.
@@ -67,12 +71,20 @@ export function resolveQualityTier(
 }
 
 /**
+ * The post nodes the tiers below can turn on, and only those. A node no tier enables is never
+ * imported, so it never reaches the bundle; turning a stage on without its node here throws at
+ * `apply` naming the import to add (`WorldEnvironment.requiredEffects`).
+ */
+const effects: IWorldEnvironmentEffects = { ao, bloom, denoise, smaa };
+
+/**
  * The look every tier shares: a wide, faint glow on what is genuinely brighter than white rather
  * than a haze over the frame (a threshold under 1 blooms lit grey surfaces and flattens
  * contrast), a corner falloff, and the tone curve. Antialiasing (SMAA) is on in every tier that
  * installs a chain.
  */
 const shared: IWorldEnvironmentOptions = {
+  effects,
   // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
   bloomRadius: 0.6,

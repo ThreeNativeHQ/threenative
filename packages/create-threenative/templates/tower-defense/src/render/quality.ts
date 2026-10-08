@@ -1,3 +1,5 @@
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or rewrite
 // it freely — the tiers below are a starting point, not a framework look.
 //
@@ -24,7 +26,9 @@
 // frame. With the gather on, `playtests/play.playtest.json` measured **34.2 ms p95 against the
 // 33 ms ceiling**; without it the same scenario passes. Turn it on when you replace the
 // atmosphere with a flat sky, and read the p95 back out of `TN_FRAME_BUDGET`.
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
+import type { IWorldEnvironmentEffects, IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
  * The three names this game's look comes in.
@@ -75,6 +79,13 @@ export function resolveQualityTier(
 }
 
 /**
+ * The post nodes the tiers below can turn on, and only those. A node no tier enables is never
+ * imported, so it never reaches the bundle; turning a stage on without its node here throws at
+ * `apply` naming the import to add (`WorldEnvironment.requiredEffects`).
+ */
+const effects: IWorldEnvironmentEffects = { ao, bloom, denoise, smaa };
+
+/**
  * The look every tier shares: a wide, faint glow on what is genuinely brighter than white — the sun
  * disk, the visor — rather than a haze over the frame (a threshold under 1 blooms lit grey walls and
  * flattens contrast), and a corner falloff. Antialiasing is on in every tier that installs a chain;
@@ -82,9 +93,11 @@ export function resolveQualityTier(
  *
  * No screen-space reflections and no sharpen here, on purpose. Every surface already reflects the
  * captured sky (`sky.ts`), and SSR on rough floors traced speckle into the grid; RCAS then rang the
- * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
+ * smooth sky gradient into visible bands. Each is its flag plus its node in `effects` to turn back on
+ * for a glossy scene.
  */
 const shared: IWorldEnvironmentOptions = {
+  effects,
   autoExposureEnabled: false,
   // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,

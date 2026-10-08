@@ -52,7 +52,7 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
     kind: "function",
     signature: "godrays(textureNode, light, shadowMap, params)",
     summary:
-      "Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.",
+      "Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` and add `godrays` to `effects` in src/render/quality.ts.",
     situations: [
       "draw a visible shaft of light through a window or a hole in a roof",
       "god rays, sun shafts, light beams, crepuscular rays",
@@ -73,7 +73,7 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
     kind: "function",
     signature: "ao(scene, camera, resolution, radius, intensity)",
     summary:
-      "Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.",
+      "Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled` and add `ao` to `effects` in src/render/quality.ts.",
     situations: [
       "darken the contact where an object meets the floor",
       "stop props looking like they float",
@@ -86,7 +86,8 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
     importPath: "three/addons/tsl/display/BloomNode.js",
     kind: "function",
     signature: "bloom(node, strength, radius, threshold)",
-    summary: "Glow around bright pixels. Already wired as the `bloom` stage.",
+    summary:
+      "Glow around bright pixels. Already wired as the `bloom` stage; `bloom` must be in `effects` in src/render/quality.ts.",
     situations: ["make a bright opening or a lamp glow", "bloom, glare, light spill"],
     constraints: [
       "Strength above ~0.3 on an interior washes the mid-tones; the reference-matching band is lower than it looks.",
@@ -107,6 +108,7 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
       "Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped.",
       "A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it.",
       "Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.",
+      "It imports no post node: each stage builds from `effects`, which src/render/quality.ts fills with the nodes its tiers turn on. A stage turned on without its node throws TN_WORLD_ENVIRONMENT_EFFECT_MISSING naming the import to add.",
     ],
   }),
   // The `rain` template's generated source. Same reason as the stages above: these are functions in

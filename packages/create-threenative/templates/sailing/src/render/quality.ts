@@ -24,7 +24,9 @@
 // over moving water reads as smear. That is a template decision recorded here, not an omission:
 // the two most expensive stages in the reference ablation are off on a desktop as well as on a
 // phone, which is also why the rung between the tiers is bloom strength and nothing else.
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
+import type { IWorldEnvironmentEffects, IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
  * The three names this game's look comes in.
@@ -75,9 +77,17 @@ export function resolveQualityTier(
 }
 
 /**
+ * The post nodes the tiers below can turn on, and only those. A node no tier enables is never
+ * imported, so it never reaches the bundle; turning a stage on without its node here throws at
+ * `apply` naming the import to add (`WorldEnvironment.requiredEffects`).
+ */
+const effects: IWorldEnvironmentEffects = { bloom, smaa };
+
+/**
  * What a desktop gets: this template's shipped desktop look, unchanged.
  */
 const high: IWorldEnvironmentOptions = {
+  effects,
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.
@@ -101,6 +111,7 @@ const high: IWorldEnvironmentOptions = {
  * the water material is where the frame actually goes.
  */
 const medium: IWorldEnvironmentOptions = {
+  effects,
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.
@@ -120,6 +131,7 @@ const medium: IWorldEnvironmentOptions = {
  * What a phone gets: this template's shipped mobile look, unchanged.
  */
 const low: IWorldEnvironmentOptions = {
+  effects,
   // The chain's own quality tier, separate from which stages this preset enables: without it
   // the renderer keeps its `high` default at every tier, so a CPU adapter's low preset still
   // paid for the high chain's denoise and slice counts.

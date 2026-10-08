@@ -1,4 +1,5 @@
-import { type GPUSceneBVH, type ICtx, Scene, type SceneFrame, defineGame } from "@threenative/core";
+import { type ICtx, Scene, type SceneFrame, defineGame } from "@threenative/core";
+import type { GPUSceneBVH } from "@threenative/core/gpu-scene-bvh";
 import { playtest } from "@threenative/core/playtest";
 import {
   Bone,

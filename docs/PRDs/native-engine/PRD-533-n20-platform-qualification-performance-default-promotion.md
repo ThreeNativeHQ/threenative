@@ -135,6 +135,7 @@ in-flight, missing `tests/native-engine/world/world_cells_test.cpp`; that lane w
 - [ ] Every template's frames on the Wasm engine pass its existing visual baseline. proof: `pnpm visuals` (web arm, Wasm engine)
 - [ ] A paired blind before/after bundle (legacy engine before, Wasm engine after, same templates) finds no template scoring worse beyond the bundle's measured resolution; the before/after captures go on the PR. proof: `pnpm visuals:ab`
 - [ ] Switching a project back to legacy restores the previous behaviour with no other edit. proof: `pnpm exec vitest run packages/create-threenative/__tests__/native-profile.spec.ts`
+- [ ] The native-stub ledger (`packages/three-native/api/native-stubs.json`) is empty: no shipped engine symbol is a stub or mock. A non-empty ledger blocks promotion. proof: `pnpm tsx packages/three-native/scripts/native-stubs.ts --gate` (exits 1 and names each entry while any remains)
 
 2026-10-08 Wasm template evidence (lane `ne-wasm-templates`, no default changed): boxes 2-4 cannot run yet, because no template can boot on the Wasm engine. No opt-in exists, and none was added: a switch would route every template to a guaranteed boot failure. Three facts block it:
 

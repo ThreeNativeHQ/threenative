@@ -999,26 +999,6 @@
     {
       "aliases": [],
       "constraints": [
-        "call rebuild() after a scene transform or geometry change; the snapshot is static by default",
-        "rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray"
-      ],
-      "example": "const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));",
-      "importPath": "@threenative/core",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/core",
-      "signature": "bvhIntersectFirstHit = upstream.bvhIntersectFirstHit",
-      "situations": [
-        "trace thousands of scene rays inside a TSL kernel",
-        "build a contact-occlusion or visibility query over loaded meshes"
-      ],
-      "summary": "Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.",
-      "supersedes": [],
-      "symbol": "bvhIntersectFirstHit"
-    },
-    {
-      "aliases": [],
-      "constraints": [
         "amplitude, rotationAmplitude, frequency, decay, and curve are required game choices",
         "update returns an offset and never writes to a camera"
       ],
@@ -1791,26 +1771,6 @@
     {
       "aliases": [],
       "constraints": [
-        "call rebuild() after a scene transform or geometry change; the snapshot is static by default",
-        "rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray"
-      ],
-      "example": "const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));",
-      "importPath": "@threenative/core",
-      "kind": "class",
-      "overrides": [],
-      "package": "@threenative/core",
-      "signature": "export class GPUSceneBVH extends Group implements IComputeDriven { … }",
-      "situations": [
-        "trace thousands of scene rays inside a TSL kernel",
-        "build a contact-occlusion or visibility query over loaded meshes"
-      ],
-      "summary": "Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.",
-      "supersedes": [],
-      "symbol": "GPUSceneBVH"
-    },
-    {
-      "aliases": [],
-      "constraints": [
         "import from `@threenative/core`; this moves the rendered model, not its physics collider"
       ],
       "example": "import { GroundSnap } from \"@threenative/core\";\nconst snap = new GroundSnap(character, { enabled: true });",
@@ -2177,6 +2137,28 @@
       "summary": "Merge pieces a game authored out of primitives into one buffer, keeping each piece's own look. `InstancedBatch` collapses many copies of one shape; this collapses many *different* shapes that never move relative to each other — a building, a ship, a character built from boxes, or the static parts of an imported glTF model. Two things go wrong every time and neither is about how any of it looks. `mergeGeometries` hands back `null` on mismatched inputs instead of throwing, and the usual mismatch is invisible: one `ExtrudeGeometry` is non-indexed while every other primitive is indexed, so the merge fails at the first piece and the scene never loads. And a merged buffer draws with one surface, so per-piece colour is gone unless every piece carries a flat `color` attribute written before the merge. Both are mechanical. By default every part is stripped to position and the normals are recomputed from the merged buffer; pass `preserve` to keep authored normals and texture UVs while baking each part's object transform. Geometry, placement, colour and the surface it draws with all stay the game's.",
       "supersedes": [],
       "symbol": "mergeParts"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "call `VelocityTracker.update()` before the render and `commit()` after it",
+        "a pass is only given a velocity target when a temporal stage consumes it",
+        "a render chain given a velocity `pass` without it drops each temporal stage as `velocity:provision-missing`"
+      ],
+      "example": "const scenePass = pass(scene, camera);\nensureVelocityOutput(scenePass);\nrenderer.setOutputNode(scenePass);\nconst tracker = new VelocityTracker();\ntracker.update(scene);\nrenderer.render(scene, camera);\ntracker.commit(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function mrtVelocity(): IVelocityProvision { … }",
+      "situations": [
+        "keep a skinned character or instanced crowd stable in a temporal stage",
+        "add the velocity output to a Three.js scene pass",
+        "give a temporal stage such as TRAA its velocity from the scene pass"
+      ],
+      "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
+      "supersedes": [],
+      "symbol": "mrtVelocity"
     },
     {
       "aliases": [],
@@ -3424,6 +3406,40 @@
       "summary": "Return direct vertical transmittance for the supplied atmosphere.",
       "supersedes": [],
       "symbol": "zenithTransmittance"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const trace = wgslFn(`fn hit(i: ptr<storage, array<vec3u>, read>, p: ptr<storage, array<vec3f>, read>, n: ptr<storage, array<BVHNode>, read>, r: Ray) -> bool { return bvhIntersectFirstHit(i, p, n, r).didHit; }`, [bvhIntersectFirstHit]);",
+      "importPath": "@threenative/core/gpu-scene-bvh",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "bvhIntersectFirstHit = upstream.bvhIntersectFirstHit",
+      "situations": ["trace a ray against a GPUSceneBVH inside a TSL kernel"],
+      "summary": "Upstream three-mesh-bvh's TSL first-hit ray query, unrenamed, for a `GPUSceneBVH` snapshot.",
+      "supersedes": [],
+      "symbol": "bvhIntersectFirstHit"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "call rebuild() after a scene transform or geometry change; the snapshot is static by default",
+        "rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray"
+      ],
+      "example": "import { GPUSceneBVH } from \"@threenative/core/gpu-scene-bvh\"; const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));",
+      "importPath": "@threenative/core/gpu-scene-bvh",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class GPUSceneBVH extends Group implements IComputeDriven { … }",
+      "situations": [
+        "trace thousands of scene rays inside a TSL kernel",
+        "build a contact-occlusion or visibility query over loaded meshes"
+      ],
+      "summary": "Snapshot selected scene meshes into world-space storage buffers for an upstream TSL BVH query. This class owns packing, residency, and release. It deliberately does not own the ray query or a rendered effect: a game imports the exact upstream `bvhIntersectFirstHit` and `rayStruct` exports through `@threenative/core/gpu-scene-bvh` and uses these four named nodes in its own `src/render/` kernel. The snapshot is static until `rebuild()`. It is a subpath, not the main entry, because `three-mesh-bvh/webgpu` subclasses TSL nodes at import time: a game that never traces a scene BVH must not load it.",
+      "supersedes": [],
+      "symbol": "GPUSceneBVH"
     },
     {
       "aliases": [],
@@ -7135,7 +7151,8 @@
       "constraints": [
         "Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped.",
         "A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it.",
-        "Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks."
+        "Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.",
+        "It imports no post node: each stage builds from `effects`, which src/render/quality.ts fills with the nodes its tiers turn on. A stage turned on without its node throws TN_WORLD_ENVIRONMENT_EFFECT_MISSING naming the import to add."
       ],
       "overrides": [],
       "supersedes": [],
@@ -7147,7 +7164,7 @@
       "importPath": "three/addons/tsl/display/BloomNode.js",
       "kind": "function",
       "signature": "bloom(node, strength, radius, threshold)",
-      "summary": "Glow around bright pixels. Already wired as the `bloom` stage.",
+      "summary": "Glow around bright pixels. Already wired as the `bloom` stage; `bloom` must be in `effects` in src/render/quality.ts.",
       "situations": ["make a bright opening or a lamp glow", "bloom, glare, light spill"],
       "example": "src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment",
       "constraints": [
@@ -7179,7 +7196,7 @@
       "importPath": "three/addons/tsl/display/GodraysNode.js",
       "kind": "function",
       "signature": "godrays(textureNode, light, shadowMap, params)",
-      "summary": "Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` in src/render/postprocessing.ts.",
+      "summary": "Raymarched shafts of light. Already wired as the `godRays` stage of the render chain; turn it on with `godraysEnabled` and add `godrays` to `effects` in src/render/quality.ts.",
       "situations": [
         "draw a visible shaft of light through a window or a hole in a roof",
         "god rays, sun shafts, light beams, crepuscular rays",
@@ -7204,7 +7221,7 @@
       "importPath": "three/addons/tsl/display/GTAONode.js",
       "kind": "function",
       "signature": "ao(scene, camera, resolution, radius, intensity)",
-      "summary": "Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled`.",
+      "summary": "Ground-truth ambient occlusion. Already wired as the `ambientOcclusion` stage; turn it on with `gtaoEnabled` and add `ao` to `effects` in src/render/quality.ts.",
       "situations": [
         "darken the contact where an object meets the floor",
         "stop props looking like they float",
