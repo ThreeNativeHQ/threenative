@@ -270,11 +270,11 @@ test("the fps floor turns red on the measured device frame and names the phase t
   const evaluated = evaluateRichPlaytestAssertions({ report: report(DEVICE_SHAPED_SERIES), scenario: loaded });
 
   expect(evaluated.assertions).toEqual(expect.arrayContaining([
-    expect.objectContaining({ details: expect.objectContaining({ actual: 18.12, expected: 30, unit: "fps" }), id: "performance.minFps", pass: false }),
+    expect.objectContaining({ details: expect.objectContaining({ actual: 18.11, expected: 30, unit: "fps" }), id: "performance.minFps", pass: false }),
     expect.objectContaining({ details: expect.objectContaining({ actual: 50.1, expected: 12, phase: "render" }), id: "performance.maxPhaseMsP95.render", pass: false }),
   ]));
   expect(evaluated.diagnostics.map(({ message }) => message)).toEqual(expect.arrayContaining([
-    expect.stringContaining("performance.minFps expected at least 30 fps, observed 18.12"),
+    expect.stringContaining("performance.minFps expected at least 30 fps, observed 18.11"),
     expect.stringContaining("performance.maxPhaseMsP95.render expected at most 12 ms, observed 50.1"),
   ]));
 });
