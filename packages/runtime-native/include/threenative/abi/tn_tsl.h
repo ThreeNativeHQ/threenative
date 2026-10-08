@@ -1,5 +1,6 @@
 #pragma once
 #include "threenative/abi/tn_abi.h"
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -12,6 +13,33 @@ TN_EXPORT tn_status_t tn_tsl_build(tn_context_t *context, const char *operation,
 TN_EXPORT tn_status_t tn_tsl_release(tn_context_t *context, uint64_t node, tn_diagnostic_t *diagnostic);
 TN_EXPORT tn_status_t tn_tsl_set(tn_context_t *context, tn_handle_t material, const char *path,
                                  uint64_t node, tn_diagnostic_t *diagnostic);
+/* PRD-540: TSL authoring by name, over the table the V8 back end calls too (engine/abi/tsl_call.cpp).
+ * One argument of a call: a node of this context, a number, a string, a named texture (`text` is its
+ * name) or RGB components. Strings are NUL-terminated and borrowed for the call. */
+#define TN_TSL_ARG_NODE 0u
+#define TN_TSL_ARG_NUMBER 1u
+#define TN_TSL_ARG_STRING 2u
+#define TN_TSL_ARG_NAMED 3u
+#define TN_TSL_ARG_RGB 4u
+typedef struct tn_tsl_arg {
+  uint32_t kind;
+  uint32_t reserved;
+  uint64_t node;
+  double number;
+  const char *text;
+  double rgb[3];
+} tn_tsl_arg_t;
+/* Same offsets on wasm32 and 64-bit hosts: the pointer sits in an 8-byte slot. */
+TN_STATIC_ASSERT(offsetof(tn_tsl_arg_t, node) == 8 && offsetof(tn_tsl_arg_t, number) == 16 &&
+                     offsetof(tn_tsl_arg_t, text) == 24 && offsetof(tn_tsl_arg_t, rgb) == 32 &&
+                     sizeof(tn_tsl_arg_t) == 56,
+                 "tn_tsl_arg_t layout");
+/* `name` as TSL names it (`uniform`, `mul`, `swizzle:xy`); `receiver` points at the node a method
+ * is called on, or is null for a module function. The new node's id lands in `out_node`. A name the
+ * table lacks fails with TN_TSL_DYNAMIC_UNSUPPORTED. */
+TN_EXPORT tn_status_t tn_tsl_call(tn_context_t *context, const char *name, const uint64_t *receiver,
+                                  const tn_tsl_arg_t *args, uint32_t arg_count, uint64_t *out_node,
+                                  tn_diagnostic_t *diagnostic);
 /* CPU compilation of the material's actual vertex/fragment graphs, optionally dumping WGSL. */
 TN_EXPORT tn_status_t tn_tsl_compile(tn_handle_t material, const char *wgsl_path, tn_diagnostic_t *diagnostic);
 

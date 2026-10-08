@@ -1,5 +1,6 @@
 /* PRD-500: the ABI header compiles as C11 and links from a C program. */
 #include "threenative/abi/tn_abi.h"
+#include "threenative/abi/tn_tsl.h" /* PRD-540: tn_tsl_arg_t compiles as C11 too */
 
 #include <stdio.h>
 

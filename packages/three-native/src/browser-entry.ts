@@ -16,6 +16,7 @@ import {
   defineBrowserClasses,
 } from "./browser-backend.js";
 import { defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
+import { defineTsl } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
@@ -78,14 +79,17 @@ export async function bindWebEngine(
   names: readonly string[],
 ): Promise<Record<string, unknown>> {
   const module = await createModule();
+  const runtime = createWasmRuntime(module);
   const { classes } = defineBrowserClasses(
     registry as IRegistryDump,
-    createWasmRuntime(module),
+    runtime,
     catalogJson as unknown as ICatalog,
   );
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   const bound: Record<string, unknown> = { ...classes };
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never);
+  // TSL through the engine's shared name table (tn_tsl_call), when the module carries it.
+  if (runtime.tsl) Object.assign(bound, defineTsl(runtime.tsl));
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
