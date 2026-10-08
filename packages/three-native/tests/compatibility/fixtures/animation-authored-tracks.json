@@ -12,28 +12,11 @@
       "args": [
         "hip.quaternion",
         {
-          "array": [
-            0,
-            0.5,
-            1
-          ],
+          "array": [0, 0.5, 1],
           "type": "Float32Array"
         },
         {
-          "array": [
-            0,
-            0,
-            0,
-            1,
-            0,
-            0.38268343,
-            0,
-            0.92387953,
-            0,
-            0.70710678,
-            0,
-            0.70710678
-          ],
+          "array": [0, 0, 0, 1, 0, 0.38268343, 0, 0.92387953, 0, 0.70710678, 0, 0.70710678],
           "type": "Float32Array"
         }
       ]
@@ -45,21 +28,11 @@
       "args": [
         "hip.position",
         {
-          "array": [
-            0,
-            1
-          ],
+          "array": [0, 1],
           "type": "Float32Array"
         },
         {
-          "array": [
-            0,
-            0,
-            0,
-            1,
-            2,
-            3
-          ],
+          "array": [0, 0, 0, 1, 2, 3],
           "type": "Float32Array"
         }
       ]
@@ -71,17 +44,11 @@
       "args": [
         "hip.scale[x]",
         {
-          "array": [
-            0,
-            1
-          ],
+          "array": [0, 1],
           "type": "Float32Array"
         },
         {
-          "array": [
-            1,
-            2
-          ],
+          "array": [1, 2],
           "type": "Float32Array"
         },
         2300
@@ -102,10 +69,7 @@
         "grip",
         -1,
         {
-          "refs": [
-            "qc",
-            "v"
-          ]
+          "refs": ["qc", "v"]
         }
       ]
     },
@@ -168,17 +132,13 @@
       "op": "call",
       "id": "mixer",
       "method": "update",
-      "args": [
-        0.3
-      ]
+      "args": [0.3]
     },
     {
       "op": "call",
       "id": "root",
       "method": "updateMatrixWorld",
-      "args": [
-        true
-      ]
+      "args": [true]
     },
     {
       "op": "new",
