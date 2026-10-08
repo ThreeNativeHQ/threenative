@@ -118,6 +118,13 @@ describe("createWebEnginePlugin", () => {
     );
   });
 
+  it("resolves three's HDRLoader addon to the engine's own loader, never upstream", () => {
+    const resolved = createWebEnginePlugin("/game").resolveId("three/addons/loaders/HDRLoader.js");
+    expect(resolved).toMatch(
+      /(?:three-native\/src\/addons\/hdr-loader\.ts|web-engine-hdr-loader\.js)$/u,
+    );
+  });
+
   it("fails the build when the Wasm engine is not installed", async () => {
     const root = await project(false);
     await expect(createWebEnginePlugin(root).load(WEB_ENGINE_ID)).rejects.toThrow(
