@@ -161,7 +161,8 @@ metadata plumbing (EDIT), spec/scenario (NEW).
 - [ ] Playtest scenario (`--target android`): launch → observe ticks → KEYCODE_SLEEP → 10 s →
       assert zero new `TN_PRESENTS_TICK`; wake → `resumed` marker + bounded catch-up. At HEAD this
       scenario fails exactly as bug 9 documents (60 s of ticks) — paste that red first.
-- [ ] Desktop arm: minimize step asserts same pause semantics.
+- [x] Desktop arm: minimize step asserts same pause semantics. proof: Xvfb + `kwin_x11` minimize rung,
+      `docs/verification/prd-210-2026-08-23.md` § Closing run — presents 600 → 660 paused, 600 → 1200 under `continue`.
 - [x] Assert `FixedStepLoop` clamp by unit test naming `loop.ts:111,121` (mutation: remove the
       clamp → red). proof: `pnpm exec vitest run packages/core/__tests__/loop.spec.ts` — 18/18, mutation red
       (`docs/verification/prd-210-2026-08-23.md`).
