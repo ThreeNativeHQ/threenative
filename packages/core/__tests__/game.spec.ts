@@ -1554,6 +1554,52 @@ describe("IGame", () => {
     expect(game.ctx).toBeUndefined();
   });
 
+  it("releases plugins, setup hooks and renderer when scene exit throws", async () => {
+    const events: string[] = [];
+    const original = new Error("scene exit exploded");
+    const canvas = testCanvas();
+    class ThrowingExit extends Scene {
+      static override readonly initialState = {};
+      override exit(): void {
+        events.push("exit");
+        throw original;
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => () => {
+            events.push("restore hooks");
+          },
+          dispose: () => {
+            events.push("plugin dispose");
+            throw new Error("later disposal");
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+          dispose: () => {
+            events.push("renderer dispose");
+          },
+        }),
+      },
+      scenes: { test: ThrowingExit },
+      start: "test",
+    });
+    await game.start();
+    expect(() => game.stop()).toThrow(original);
+    expect(events).toEqual(["exit", "plugin dispose", "restore hooks", "renderer dispose"]);
+    expect(game.ctx).toBeUndefined();
+    expect(() => game.stop()).not.toThrow();
+    expect(events).toHaveLength(4);
+  });
+
   it("should run every cleanup when an earlier cleanup throws", async () => {
     const events: string[] = [];
     let disposed = 0;
