@@ -48,6 +48,7 @@ import {
 } from "three/webgpu";
 import { lodChainOf } from "../model-lod.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
+import { type ITextureManager, settleShadowTarget } from "./shadow-target-settle.js";
 import {
   DirectionalClipmap,
   type IBoundsLike,
@@ -2143,9 +2144,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * created once, at the settled size, and the bind groups that follow are built against it.
    */
   #settleTargets(renderer: unknown): void {
-    const manager = renderer as
-      | { _textures?: { updateRenderTarget?: (target: RenderTarget) => void } }
-      | undefined;
+    const manager = renderer as { _textures?: ITextureManager } | undefined;
     const textures = manager?._textures;
     // A renderer that does not expose the manager (a test double, the native host) settles itself.
     if (typeof textures?.updateRenderTarget !== "function") return;
@@ -2154,7 +2153,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       ...this.#levels.map((level) => level.moverNode),
     ]) {
       const target = (node as { shadowMap?: RenderTarget | null }).shadowMap;
-      if (target) textures.updateRenderTarget(target);
+      if (target) settleShadowTarget(textures, target);
     }
   }
 
