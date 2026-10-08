@@ -12,6 +12,8 @@
  * collected wrapper releases its object.
  */
 
+import type { ITslRuntime } from "./browser-tsl.js";
+
 export interface IRegistryClass {
   readonly constructor: boolean;
   readonly methods: readonly string[];
@@ -56,7 +58,12 @@ export interface IBrowserRuntime {
     name: string,
     handler: ((args: readonly EngineValue[]) => void) | null,
   ): void;
+  /** TSL by name (PRD-540), when the module carries `tn_tsl_call`. */
+  readonly tsl?: ITslRuntime;
 }
+
+/** The engine node id a TSL wrapper (`browser-tsl.ts`) carries. */
+export const TSL_NODE = Symbol("tn.tslNode");
 
 /** The defined classes and the callback safe point the host runs between frames. */
 export interface IBrowserEngine {
@@ -209,10 +216,12 @@ export function defineBrowserClasses(
   // object finds it. ponytail: an entry outlives an attached object's wrapper by design, and goes
   // when a detached one is released.
   const userData = new Map<string, unknown>();
+  const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
       wrappers.delete(ref.key);
       if (userData.has(ref.key) && runtime.get(ref, "parent") === null) userData.delete(ref.key);
+      shaderNodes.delete(ref.key); // the engine material keeps its graph; the JS nodes may go
       for (const name of callbackNames.get(ref.key) ?? []) runtime.setCallback(ref, name, null);
       callbackNames.delete(ref.key);
       runtime.release(ref);
@@ -305,8 +314,36 @@ export function defineBrowserClasses(
       });
     }
     const setters = new Set(binding.setters);
+    // A node material's TSL slots (`colorNode`) take an engine graph node, which no ABI value
+    // carries: the graph goes in through the TSL runtime, and reading the slot answers the node set.
+    for (const property of binding.setters.filter((key) => /^[a-z]+Node$/u.test(key))) {
+      Object.defineProperty(prototype, property, {
+        configurable: true,
+        get(this: object) {
+          return shaderNodes.get(refOf(this).key)?.get(property) ?? null;
+        },
+        set(this: object, value: unknown) {
+          const ref = refOf(this);
+          if (value === null) {
+            runtime.set(ref, property, null);
+            shaderNodes.get(ref.key)?.delete(property);
+            return;
+          }
+          if (typeof value !== "object" || !(TSL_NODE in value) || !runtime.tsl)
+            throw new TypeError(`TN_BROWSER_SHADER_NODE: ${name}.${property} takes a TSL node`);
+          runtime.tsl.set(ref, property, (value as Record<symbol, number>)[TSL_NODE] as number);
+          const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
+          shaderNodes.set(ref.key, slots.set(property, value));
+        },
+      });
+    }
     for (const property of [...binding.getters, ...binding.members]) {
-      if (property.includes(".") || binding.methods.includes(property)) continue;
+      if (
+        property.includes(".") ||
+        binding.methods.includes(property) ||
+        Object.hasOwn(prototype, property)
+      )
+        continue;
       Object.defineProperty(prototype, property, {
         configurable: true,
         get(this: object) {
@@ -459,6 +496,81 @@ const KIND = {
   record: 7,
   undefined: 8,
 } as const;
+
+// wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, node 8 (u64), number 16, text 24, rgb 32; 56 bytes.
+const TSL_ARG = 56;
+const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4 } as const;
+type TslCall = "_tn_tsl_call" | "_tn_tsl_release" | "_tn_tsl_set";
+
+interface IAbiHelpers {
+  scoped<T>(work: () => T): T;
+  alloc(size: number): number;
+  string(text: string): { pointer: number; bytes: number };
+  diagnostic(): number;
+  check(status: number, diag: number, what: string): void;
+  handleOf(ref: IEngineRef): number;
+  view(): DataView;
+}
+
+/** TSL by name over `tn_tsl_call`, when the module exports it (the product web host does). */
+function tslOf(
+  abi: TnAbiModule,
+  context: number,
+  h: IAbiHelpers,
+): { tsl: ITslRuntime } | undefined {
+  // Node ids are u64 in the C ABI; Emscripten passes a 64-bit parameter as a BigInt.
+  const calls = abi as unknown as Partial<
+    Record<TslCall, (...args: (number | bigint)[]) => number>
+  >;
+  const { _tn_tsl_call: call, _tn_tsl_release: release, _tn_tsl_set: set } = calls;
+  if (call === undefined || release === undefined || set === undefined) return undefined;
+  return {
+    tsl: {
+      call: (name, receiver, args) =>
+        h.scoped(() => {
+          const pointer = h.alloc(Math.max(TSL_ARG, args.length * TSL_ARG));
+          args.forEach((arg, i) => {
+            const at = pointer + i * TSL_ARG;
+            // Text is allocated before the view is taken: an allocation can grow the memory.
+            const text =
+              arg.kind === "string" || arg.kind === "named" ? h.string(arg.text).pointer : 0;
+            const v = h.view();
+            v.setUint32(at, TSL_KIND[arg.kind], true);
+            if (arg.kind === "node") v.setBigUint64(at + 8, BigInt(arg.node), true);
+            else if (arg.kind === "number") v.setFloat64(at + 16, arg.number, true);
+            else if (arg.kind === "rgb")
+              arg.rgb.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
+            else v.setUint32(at + 24, text, true);
+          });
+          const self = receiver === null ? 0 : h.alloc(8);
+          if (receiver !== null) h.view().setBigUint64(self, BigInt(receiver), true);
+          const out = h.alloc(8);
+          const diag = h.diagnostic();
+          h.check(
+            call(context, h.string(name).pointer, self, pointer, args.length, out, diag),
+            diag,
+            `TSL ${name}`,
+          );
+          return Number(h.view().getBigUint64(out, true));
+        }),
+      release: (node) =>
+        h.scoped(() => {
+          const diag = h.diagnostic();
+          release(context, BigInt(node), diag);
+          abi._tn_diagnostic_release(diag);
+        }),
+      set: (material, path, node) =>
+        h.scoped(() => {
+          const diag = h.diagnostic();
+          h.check(
+            set(context, h.handleOf(material), h.string(path).pointer, BigInt(node), diag),
+            diag,
+            `set ${path}`,
+          );
+        }),
+    },
+  };
+}
 
 /** The runtime over a loaded ABI module: one engine context, every call checked. */
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
@@ -649,6 +761,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   });
 
   return {
+    ...(tslOf(abi, context, { scoped, alloc, string, diagnostic, check, handleOf, view }) ?? {}),
     typeId: (className) => scoped(() => abi._tn_type_id(string(className).pointer)),
     construct: (className, args) =>
       scoped(() => {

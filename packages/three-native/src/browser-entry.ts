@@ -18,6 +18,7 @@ import {
   defineBrowserClasses,
 } from "./browser-backend.js";
 import { defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
+import { defineTsl } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -91,6 +92,8 @@ export async function bindWebEngine(
   const bound: Record<string, unknown> = withTextureSources(classes, runtime);
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never);
+  // TSL through the engine's shared name table (tn_tsl_call), when the module carries it.
+  if (runtime.tsl) Object.assign(bound, defineTsl(runtime.tsl));
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
 

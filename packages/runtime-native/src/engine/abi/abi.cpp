@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "engine/abi/abi_internal.h"
+#include "engine/abi/tsl_call.h"
 #include "engine/scene/material.h"
 #include "engine/abi/bindings.h"
 #include "engine/foundation/handles.h"
@@ -36,6 +37,7 @@ struct tn_context : tn::binding::Store {
     tn::engine::HandleTable objects;
     std::unordered_map<uint64_t, tn::engine::shader::graph::Node> tslNodes;
     uint64_t nextTslNode = 0;
+    uint64_t tslSerial = 0;  // names the uniforms and render textures tn_tsl_call makes
     std::vector<tn::binding::Object> values;  // by handle index
     // (address, class) -> the one handle naming it: member aliases and shared objects. The class is
     // part of the key because a first member shares its owner's address (Box3::min).
@@ -672,6 +674,42 @@ extern "C" tn_status_t tn_tsl_build(tn_context_t* context, const char* operation
         else if (op == "vec3") result = g::vec3({node(a), node(b), node(c)});
         else return report(diagnostic, TN_ERROR_UNSUPPORTED, 0,
                            ("TN_TSL_DYNAMIC_UNSUPPORTED " + std::string(op)).c_str());
+        const uint64_t id = ++context->nextTslNode;
+        context->tslNodes.emplace(id, std::move(result));
+        *out_node = id;
+        return ok(diagnostic);
+    });
+}
+
+extern "C" tn_status_t tn_tsl_call(tn_context_t* context, const char* name, const uint64_t* receiver,
+                                    const tn_tsl_arg_t* args, uint32_t arg_count, uint64_t* out_node,
+                                    tn_diagnostic_t* diagnostic) {
+    if (!context || !name || !out_node || (arg_count && !args))
+        return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT");
+    *out_node = 0;
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        const auto node = [&](uint64_t id) {
+            const auto it = context->tslNodes.find(id);
+            if (it == context->tslNodes.end()) throw std::runtime_error("TN_TSL_NODE_INVALID");
+            return it->second;
+        };
+        std::vector<tn::abi::TslArg> converted;
+        converted.reserve(arg_count);
+        for (uint32_t i = 0; i < arg_count; ++i) {
+            const tn_tsl_arg_t& a = args[i];
+            switch (a.kind) {
+                case TN_TSL_ARG_NODE: converted.push_back(tn::abi::TslArg::of(node(a.node))); break;
+                case TN_TSL_ARG_NUMBER: converted.push_back(tn::abi::TslArg::of(a.number)); break;
+                case TN_TSL_ARG_STRING: converted.push_back(tn::abi::TslArg::of(std::string(a.text ? a.text : ""))); break;
+                case TN_TSL_ARG_NAMED: converted.push_back(tn::abi::TslArg::named(a.text ? a.text : "")); break;
+                case TN_TSL_ARG_RGB: converted.push_back(tn::abi::TslArg::rgbOf(a.rgb[0], a.rgb[1], a.rgb[2])); break;
+                default: return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, "TN_TSL_ARGUMENT kind");
+            }
+        }
+        const tn::abi::TslArg self = receiver ? tn::abi::TslArg::of(node(*receiver)) : tn::abi::TslArg{};
+        auto result = tn::abi::tslCall(name, receiver ? &self : nullptr, converted, context->tslSerial);
+        if (!result)
+            return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_TSL_DYNAMIC_UNSUPPORTED " + std::string(name)).c_str());
         const uint64_t id = ++context->nextTslNode;
         context->tslNodes.emplace(id, std::move(result));
         *out_node = id;

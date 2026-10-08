@@ -54,13 +54,16 @@ engine or LLVM. Packaging today is `packages/runtime-native/scripts/package-desk
 **Status:** IN PROGRESS — the owner chose Midway Open Pacific (2026-10-08). It is a sandbox game in its
 own repository, so its source is never copied here.
 **Files:** `packages/runtime-native/scripts/package-strict.mjs`, `packages/runtime-native/src/engine/`
-- 2026-10-08 measurement, unchanged game: the V8 bundler refuses 50 symbols, 46 after LatheGeometry,
-  CatmullRomCurve3, TubeGeometry and the side constants (`849a99960`, `9c1dc81c9`, `40ed2679a`).
-  `package-strict.mjs` cannot build any game that imports `@threenative/core`. It stages only the
-  entry and its flattened sibling modules, so the link fails with `defineGame` undefined. Core itself
-  imports `three/webgpu`, `three/tsl`, the loaders, `three-mesh-bvh` and `zustand`, and it reads
-  `document` and `window`; Perry refuses or warns on each one. A runtime property gap that the bundler
-  cannot see: the V8 adapter has no `geometry.attributes` object (Midway reads it 25 times).
+- 2026-10-08 measurement, unchanged game: the V8 bundler refused 50 symbols. Closed on
+  `lane/ne-530`, each red-green against three: LatheGeometry, CatmullRomCurve3, TubeGeometry, the side
+  and usage constants, authored keyframe tracks and AnimationClip, No/Normal/AdditiveBlending in the
+  renderer, Path/Shape/ShapeGeometry/ExtrudeGeometry (earcut 3.0.2), half-float DataTextures and
+  DataUtils. Two gaps the bundler cannot see are also closed: `geometry.attributes` and `geometry.groups`
+  in V8. 36 remain: 27 TSL nodes (13 of them post-chain), mergeGeometries, PCFShadowMap (the V8
+  renderer facade has no `shadowMap`), CanvasTexture, ImageBitmapLoader, HDRLoader, MeshBVH and three
+  audio classes. `package-strict.mjs` cannot build any game that imports `@threenative/core`: it stages
+  only the entry and its flattened sibling modules, and Perry refuses core's `three/webgpu`, `three/tsl`,
+  loader, `three-mesh-bvh` and `zustand` imports and its `document`/`window` reads.
 - [ ] The representative TS game's strict Linux artifact passes JS-free inspection: no VM, no WebView, no embedded script. proof: `node packages/runtime-native/scripts/inspect-js-free.mjs --binary <strict linux artifact>`
 - [ ] That inspected artifact runs its playtest journey end to end on desktop. proof: `node packages/playtest/dist/runner/cli.js <game>.playtest.json --target desktop`
 - [ ] The same game's strict Android artifact passes its journey on the emulator. proof: `node packages/playtest/dist/runner/cli.js <game>.playtest.json --target android`

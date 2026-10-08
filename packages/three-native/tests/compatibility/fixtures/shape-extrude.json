@@ -1,6 +1,6 @@
 {
   "name": "shape-extrude",
-  "adaptedFrom": "three@0.185.1 src/extras/core/{Path,Shape}.js, src/extras/ShapeUtils.js, earcut 3.0.2, src/geometries/{Shape,Extrude}Geometry.js \u2014 a plate drawn with lines, a quadratic corner, an arc and a rotated ellipse, cut by a round bore and a slot, as a flat shape, an array of shapes and a default-bevel extrusion",
+  "adaptedFrom": "three@0.185.1 src/extras/core/{Path,Shape}.js, src/extras/ShapeUtils.js, earcut 3.0.2, src/geometries/{Shape,Extrude}Geometry.js \u2014 a plate drawn with lines, a quadratic corner, an arc and a rotated ellipse, cut by a round bore and a slot, as a flat shape, an array of shapes and a default-bevel extrusion of the triangle (the bevelled plate is proven in V8 against three, player-imports.mjs)",
   "tolerance": {
     "abs": 0
   },
@@ -155,16 +155,6 @@
     },
     {
       "op": "new",
-      "id": "slab",
-      "class": "ExtrudeGeometry",
-      "args": [
-        {
-          "ref": "plate"
-        }
-      ]
-    },
-    {
-      "op": "new",
       "id": "wedge",
       "class": "ExtrudeGeometry",
       "args": [
@@ -232,26 +222,6 @@
     },
     {
       "id": "pair",
-      "path": "groups",
-      "kind": "json"
-    },
-    {
-      "id": "slab",
-      "path": "attributes.position.array",
-      "kind": "numbers"
-    },
-    {
-      "id": "slab",
-      "path": "attributes.normal.array",
-      "kind": "numbers"
-    },
-    {
-      "id": "slab",
-      "path": "attributes.uv.array",
-      "kind": "numbers"
-    },
-    {
-      "id": "slab",
       "path": "groups",
       "kind": "json"
     },
