@@ -3961,8 +3961,9 @@ timer yield there costs one frame per slice. **Fixed** in `a88753500`: `yieldToH
 Core suite: 2794 passed, 1 failed (`constraints.spec.ts` on `animation-blend.ts` from #447, not this
 diff). Web A/B at host load 17: textures plus grounding 39 s → 14 s, and the loading screen kept
 10–13 fps (the Xvfb present cap), so rendering is not starved. `worldReady` came 46 s after the
-first scene log. The web `terrain.playtest.json` was not rerun after the fix, so its 60 s step is
-**unverified**.
+first scene log. The web `terrain.playtest.json` rerun on `a88753500` (host load 18) is still **RED**
+at its first step: `worldReady` timed out after 60,166 ms. Spawn admission after attach (about
+16 s) and page boot are what remain inside that window.
 
 Native licensed models. The PR's native capture (`native-ground-staged-meadow.jpg`) shows the
 procedural fallback trees, because `stage-native-assets.mjs` stages only the public CC0 set. With
