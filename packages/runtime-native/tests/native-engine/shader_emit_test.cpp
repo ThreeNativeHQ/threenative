@@ -88,6 +88,20 @@ void stable() {
     CHECK(!bad.errors.empty() && bad.errors[0].rfind("TN_SHADER_PACKAGE_INVALID", 0) == 0);
 }
 
+// Two pipelines that share a vertex module (a depth-Equal normal pass after the colour pass) are only
+// guaranteed the same clip position when the position output is invariant.
+void positionInvariant() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    Program vertex(Stage::Vertex);
+    vertex.output("position", vertex.construct(Type::vec(4), {vertex.constant(0.0f), vertex.constant(0.0f),
+                                                              vertex.constant(0.0f), vertex.constant(1.0f)}));
+    const WgslModule module = WgslEmitter::emit(vertex);
+    CHECK(module.ok());
+    CHECK(module.code.find("@invariant @builtin(position) position: vec4<f32>") != std::string::npos);
+    CHECK(validate(context, module.code).empty());  // Tint on Dawn, naga on wgpu-native accept it
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"validates", validates}, {"stable", stable})
+TN_TEST_MAIN({"validates", validates}, {"stable", stable}, {"position_invariant", positionInvariant})

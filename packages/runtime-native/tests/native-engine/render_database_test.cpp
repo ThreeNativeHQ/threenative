@@ -983,8 +983,11 @@ void skinnedNormalizedWeights() {
 }
 
 // PRD-526: a tangent-space normalMap bends the lit normal along the uv axes (three's perturbNormal2Arb).
-// A plane facing the camera, lit from +x: a map tilting every normal toward +x brightens it, one tilting
-// away darkens it, and no map sits between. The native renderer ignored normalMap before this.
+// A plane facing the camera: lit from +x, a map tilting every normal toward +x (red high) brightens it,
+// one tilting away darkens it, and no map sits between; lit from +y the same holds for green, whose
+// direction is where dFdy's sign shows. The same maps as a loaded `Texture` (mipmapped) must agree
+// with the DataTexture (one level). Each arm's textures are destroyed before the next arm builds its
+// own: the renderer's texture cache must not serve a dead texture's image to one built at its address.
 void normalMapTilt() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -992,10 +995,8 @@ void normalMapTilt() {
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
     renderer.setSize(160, 120);
     renderer.setOutput(OutputState{std::nullopt, 1, true});
-    // The renderer caches a material's GPU texture by the Texture's address and version, so the three
-    // maps stay alive together: a freed one's address can come back with the same version.
-    std::vector<std::shared_ptr<DataTexture>> maps;
-    auto brightness = [&](int redTexel) {
+    struct Tilt { int red, green; bool loaded; };  // red < 0: no map
+    auto brightness = [&](Tilt tilt, std::array<double, 3> lightAt) {
         Scene scene;
         PerspectiveCamera camera;
         camera.fov = 40; camera.aspect = 4.0 / 3; camera.near = 0.1; camera.far = 50;
@@ -1004,18 +1005,26 @@ void normalMapTilt() {
         camera.updateProjectionMatrix();
         auto material = std::make_shared<Material>(MaterialType::Standard);
         material->roughness = 1;
-        if (redTexel >= 0) {
-            auto map = std::make_shared<DataTexture>();
+        if (tilt.red >= 0) {
             std::vector<double> texels;
-            for (int i = 0; i < 4; ++i) texels.insert(texels.end(), {double(redTexel), 128, 220, 255});
-            map->setImage(texels, "Uint8Array", 2, 2, kTextureRGBAFormat, kTextureUnsignedByteType);
-            map->needsUpdate();
-            maps.push_back(map);
-            material->maps["normalMap"] = map;
+            for (int i = 0; i < 4; ++i) texels.insert(texels.end(), {double(tilt.red), double(tilt.green), 220, 255});
+            if (tilt.loaded) {
+                auto map = std::make_shared<Texture>();  // what the glTF loader makes: mipmapped, not a DataTexture
+                map->width = map->height = 2;
+                map->flipY = false;
+                for (double v : texels) map->data.push_back(static_cast<uint8_t>(v));
+                map->needsUpdate();
+                material->maps["normalMap"] = map;
+            } else {
+                auto map = std::make_shared<DataTexture>();
+                map->setImage(texels, "Uint8Array", 2, 2, kTextureRGBAFormat, kTextureUnsignedByteType);
+                map->needsUpdate();
+                material->maps["normalMap"] = map;
+            }
         }
         Mesh plane(makePlaneGeometry(3, 3), material);
         DirectionalLight light{Color().setHex(0xffffff), 3};
-        light.position.set(4, 0, 2);
+        light.position.set(lightAt[0], lightAt[1], lightAt[2]);
         scene.add(plane);
         scene.add(light);
         scene.updateMatrixWorld(true);
@@ -1029,9 +1038,77 @@ void normalMapTilt() {
             for (int x = 60; x < 100; ++x) sum += px[(size_t(y) * 160 + x) * 4 + 1];
         return sum / (40 * 40);
     };
-    const double none = brightness(-1), toward = brightness(191), away = brightness(64);
-    std::printf("normal map tilt: toward %.1f, none %.1f, away %.1f\n", toward, none, away);
+    const std::array<double, 3> fromRight{4, 0, 2}, fromAbove{0, 4, 2};
+    const double none = brightness({-1, 128, false}, fromRight);
+    const double toward = brightness({191, 128, false}, fromRight), away = brightness({64, 128, false}, fromRight);
+    const double noneUp = brightness({-1, 128, false}, fromAbove);
+    const double up = brightness({128, 191, false}, fromAbove), down = brightness({128, 64, false}, fromAbove);
+    const double loadedToward = brightness({191, 128, true}, fromRight);
+    const double loadedUp = brightness({128, 191, true}, fromAbove);
+    std::printf("normal map tilt: x %.1f/%.1f/%.1f, y %.1f/%.1f/%.1f, loaded %.1f/%.1f\n", toward, none, away, up, noneUp, down,
+                loadedToward, loadedUp);
     CHECK(toward > none + 8 && none > away + 8);
+    CHECK(up > noneUp + 8 && noneUp > down + 8);  // green: the dFdy sign
+    CHECK(std::abs(loadedToward - toward) < 2 && std::abs(loadedUp - up) < 2);
+    brightness({-1, 128, false}, fromRight);  // the next frame sweeps the last arm's dead texture too
+    CHECK(renderer.materialTextureCount() == 0);  // no dead texture's GPU copy is kept
+}
+
+// PRD-526 review: a decoded map the standard program does not read is refused by name, never drawn without it.
+void unsupportedMapSlot() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    LitScene s;
+    auto rough = std::make_shared<Material>(MaterialType::Standard);
+    auto map = std::make_shared<DataTexture>();
+    map->setImage({255, 255, 255, 255}, "Uint8Array", 1, 1, kTextureRGBAFormat, kTextureUnsignedByteType);
+    rough->maps["roughnessMap"] = map;
+    Mesh refused{s.geometry, rough};
+    refused.position.x = 1;
+    s.scene.add(refused);
+    RenderDatabase database;
+    database.render(renderer, s.scene, s.camera);
+    bool named = false;
+    for (const std::string& d : database.diagnostics())
+        named = named || (d.rfind("TN_NATIVE_MATERIAL_UNSUPPORTED", 0) == 0 && d.find("roughnessMap") != std::string::npos);
+    CHECK(named);
+    CHECK(database.diagnostics().size() == 1);  // the plain mesh beside it is not refused
+}
+
+// PRD-526 review: the float32 copies of quantized attributes follow their sources. A scene that loads and
+// unloads quantized geometry must not keep one copy per geometry it ever saw.
+void convertedCopiesAreSwept() {
+    RenderDatabase database;
+    PerspectiveCamera camera;
+    camera.updateProjectionMatrix();
+    // Each round's attribute stays allocated (a distinct key) while its store is replaced, so the old
+    // source is gone but its table entry is not overwritten by an address reuse.
+    std::vector<std::shared_ptr<BufferAttribute>> retained;
+    for (int round = 0; round < 300; ++round) {
+        Scene scene;
+        auto geometry = makeBoxGeometry(1, 1, 1);
+        const auto normals = geometry->attributes.at("normal");
+        std::vector<double> quantized;
+        for (uint64_t i = 0; i < normals->count(); ++i)
+            for (int c = 0; c < 3; ++c) quantized.push_back(std::round(normals->getComponent(i, c) * 127));
+        auto attribute = BufferAttribute::fromDoubles(Scalar::I8, quantized, 3, true);
+        geometry->setAttribute("normal", attribute);
+        retained.push_back(attribute);
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        Mesh mesh(geometry, material);
+        scene.add(mesh);
+        scene.updateMatrixWorld(true);
+        LightState lights;
+        const auto items = database.prepare(scene, camera, lights);
+        CHECK(items.size() == 1 && items[0].normals != nullptr);
+        CHECK(items[0].normals->scalar() == Scalar::F32);  // the renderer is handed floats
+        attribute->store = std::make_shared<BufferStore>(Scalar::I8, 3);  // the source dies
+    }
+    std::printf("converted copies held after 300 geometries: %zu\n", database.convertedCount());
+    CHECK(database.convertedCount() <= 130);
 }
 
 }  // namespace
@@ -1039,4 +1116,4 @@ void normalMapTilt() {
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept})

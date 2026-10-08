@@ -21,11 +21,12 @@ ImageFormat imageFormat(const uint8_t* bytes, std::size_t size) {
 
 bool decodeImage(const uint8_t* bytes, std::size_t size, uint32_t& width, uint32_t& height,
                  std::vector<uint8_t>& rgba) {
-    // 8192 x 8192 is the largest texture a WebGPU device guarantees; refuse before allocating more.
+    // 8192 is the largest texture dimension a WebGPU device guarantees; refuse before allocating more.
+    constexpr int kMaxDimension = 8192;
     constexpr int kMaxPixels = 1 << 26;
     int w = 0, h = 0, channels = 0;
     if (size > 0x7fffffff || !stbi_info_from_memory(bytes, int(size), &w, &h, &channels)) return false;
-    if (w < 1 || h < 1 || int64_t(w) * h > kMaxPixels) return false;
+    if (w < 1 || h < 1 || w > kMaxDimension || h > kMaxDimension || int64_t(w) * h > kMaxPixels) return false;
     uint8_t* pixels = stbi_load_from_memory(bytes, int(size), &w, &h, &channels, 4);
     if (!pixels) return false;
     width = uint32_t(w);

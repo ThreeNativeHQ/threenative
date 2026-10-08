@@ -148,10 +148,16 @@ WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
 // light and re-encodes, so the average is taken on decoded values.
 std::vector<uint8_t> nextMipLevel(const std::vector<uint8_t>& src, uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh,
                                   bool srgb) {
-    auto decode = [srgb](uint8_t byte) {
-        const float v = byte / 255.0f;
-        return srgb ? (v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f)) : v;
-    };
+    // Four taps per texel decode the same 256 bytes again and again: one table, built once.
+    static const std::array<float, 256> kDecode = [] {
+        std::array<float, 256> table{};
+        for (int byte = 0; byte < 256; ++byte) {
+            const float v = byte / 255.0f;
+            table[size_t(byte)] = v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
+        }
+        return table;
+    }();
+    auto decode = [](uint8_t byte) { return kDecode[byte]; };
     auto encode = [srgb](float v) {
         v = std::clamp(v, 0.0f, 1.0f);
         if (srgb) v = v <= 0.0031308f ? v * 12.92f : 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f;
@@ -677,8 +683,9 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
 }
 
 const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
-    MaterialTexture& record = materialTextures_[&texture];
+    MaterialTexture& record = materialTextures_[texture.ident.value()];
     if (record.view != nullptr && record.version == texture.version()) return &record;
+    if (record.view) dropMapGroups();  // its old view's address may be reused by the new one
     if (record.view) wgpuTextureViewRelease(record.view);
     if (record.sampler) wgpuSamplerRelease(record.sampler);
     if (record.gpu.type != 0) gpu_.destroy(record.gpu);
@@ -772,7 +779,7 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
         (texture.type != kTextureFloatType && texture.type != kTextureUnsignedByteType) ||
         uint64_t(texture.width) * texture.height * (texture.isFloat() ? 16u : 4u) != texture.data.size())
         throw std::runtime_error("TN_NATIVE_BACKGROUND_INVALID: decoded RGBA equirectangular pixels required");
-    auto& cube = backgroundCubes_[&texture];
+    auto& cube = backgroundCubes_[texture.ident.value()];
     if (cube.view && cube.version == texture.version()) return cube;
     if (cube.view) wgpuTextureViewRelease(cube.view);
     if (cube.texture) wgpuTextureRelease(cube.texture);
@@ -854,6 +861,47 @@ void Renderer::releaseMaterialTextures() {
     for (auto& [key, group] : mapGroups_)
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+}
+
+void Renderer::dropMapGroups() {
+    // A bind group is cached by the address of the views it binds; a view released here can come back
+    // at the same address.
+    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
+    mainBundle_ = nullptr;
+    for (auto& [key, group] : mapGroups_)
+        if (group) wgpuBindGroupRelease(group);
+    mapGroups_.clear();
+}
+
+void Renderer::sweepTextures() {
+    const auto retired = TextureId::takeRetired();
+    if (retired.empty()) return;
+    dropMapGroups();
+    for (const uint64_t id : retired) {
+        if (const auto cube = backgroundCubes_.find(id); cube != backgroundCubes_.end()) {
+            if (cube->second.view) wgpuTextureViewRelease(cube->second.view);
+            if (cube->second.texture) wgpuTextureRelease(cube->second.texture);
+            if (cube->second.sampler) wgpuSamplerRelease(cube->second.sampler);
+            backgroundCubes_.erase(cube);
+        }
+        if (const auto env = environments_.find(id); env != environments_.end()) {
+            EnvironmentGpu& e = env->second;
+            if (e.view) wgpuTextureViewRelease(e.view);
+            if (e.pingView) wgpuTextureViewRelease(e.pingView);
+            if (e.texture) wgpuTextureRelease(e.texture);
+            if (e.pingpong) wgpuTextureRelease(e.pingpong);
+            if (e.sampler) wgpuSamplerRelease(e.sampler);
+            environments_.erase(env);
+        }
+        if (const auto record = materialTextures_.find(id); record != materialTextures_.end()) {
+            MaterialTexture& m = record->second;
+            if (m.view) wgpuTextureViewRelease(m.view);
+            if (m.sampler) wgpuSamplerRelease(m.sampler);
+            if (m.gpu.type != 0) gpu_.destroy(m.gpu);
+            if (m.mipped) wgpuTextureRelease(m.mipped);
+            materialTextures_.erase(record);
+        }
+    }
 }
 
 void Renderer::releaseEnvironments() {
@@ -955,7 +1003,7 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
         (equirect.type != kTextureFloatType && equirect.type != kTextureUnsignedByteType) ||
         uint64_t(equirect.width) * equirect.height * (equirect.isFloat() ? 16u : 4u) != equirect.data.size())
         throw std::runtime_error("TN_NATIVE_ENVIRONMENT_INVALID: requires decoded RGBA equirectangular pixels, width >= 64");
-    EnvironmentGpu& env = environments_[&equirect];
+    EnvironmentGpu& env = environments_[equirect.ident.value()];
     if (env.view != nullptr && env.version == equirect.version()) return env;
     if (env.view) wgpuTextureViewRelease(env.view);
     if (env.pingView) wgpuTextureViewRelease(env.pingView);
@@ -1287,6 +1335,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     if (traa_) camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse);
     const Matrix& view = camera.matrixWorldInverse;
     geometry_.sweep();  // GPU copies of attributes released since the last frame
+    sweepTextures();    // ...and of textures that no longer exist
+    diagnostics_.clear();
 
     WGPUCommandEncoderDescriptor encoderDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
@@ -1813,8 +1863,19 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             const DrawItem& item = *draw.item;
             // The sky and unlit materials write no view-space normal (their programs have no normalView).
             if (item.background || item.kind == MaterialKind::Basic) continue;
-            if (item.transparent || item.sprite || item.material->alphaTest > 0 || item.nodes.normalNode)
-                throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: transparent/sprite/alpha-tested/normalNode draw");
+            // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
+            // frame, not thrown: a transparent particle must not cost the frame.
+            if (item.transparent || item.sprite || item.material->alphaTest > 0) {
+                const std::string reason = item.transparent ? "transparent" : item.sprite ? "sprite" : "alpha-tested";
+                const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
+                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                continue;
+            }
+            if (item.nodes.normalNode)
+                throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
+            // The normal fragment reads `normalView` at location 0, which the program's vertex stage must write there.
+            if (draw.program->vertex.wgsl.code.find("@location(0) o_normalView") == std::string::npos)
+                throw std::runtime_error("TN_POST_NORMAL_LAYOUT: normalView is not the vertex stage's first varying");
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             target.layout = draw.program->pipelineLayout; target.depthWrite = false;
@@ -1830,7 +1891,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             WGPUTextureDescriptor desc = {};
             desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
             desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
-            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
             normalTexture_ = wgpuDeviceCreateTexture(device_, &desc);
             normalView_ = view2d(normalTexture_, WGPUTextureFormat_RGBA16Float);
         }
@@ -2104,14 +2165,18 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed) {
     wgpuRenderPassEncoderRelease(pass);
 }
 
-GpuStatus Renderer::readProbePixels(ReadbackCallback done) {
+GpuStatus Renderer::readProbePixels(ReadbackCallback done) { return readRgba16(sceneColor_, std::move(done)); }
+
+GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }
+
+GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done) {
     if (!done) return GpuStatus::OutOfRange;
-    if (!sceneColor_) return GpuStatus::InvalidHandle;
+    if (!texture) return GpuStatus::InvalidHandle;
     const uint32_t width = width_, height = height_, row = width * 8, pitch = (row + 255u) & ~255u;
     const Handle staging = gpu_.createBuffer(uint64_t(pitch) * height, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
     WGPUCommandEncoderDescriptor descriptor{};
     auto encoder = wgpuDeviceCreateCommandEncoder(device_, &descriptor);
-    WGPUTexelCopyTextureInfo source{}; source.texture = sceneColor_; source.aspect = WGPUTextureAspect_All;
+    WGPUTexelCopyTextureInfo source{}; source.texture = texture; source.aspect = WGPUTextureAspect_All;
     WGPUTexelCopyBufferInfo destination{}; destination.buffer = gpu_.buffer(staging);
     destination.layout.bytesPerRow = pitch; destination.layout.rowsPerImage = height;
     const WGPUExtent3D extent{width, height, 1};

@@ -183,6 +183,12 @@ public:
     void setProbeVolume(const std::string& name, const probes::ProbeVolume& volume, bool capture = false);
     /** Linear HDR capture before post/tone mapping; tightly packed RGBA16Float bytes. */
     GpuStatus readProbePixels(ReadbackCallback done);
+    /** The post normal target (RGBA16Float, packed rows); InvalidHandle until a post pass has read "normal". */
+    GpuStatus readNormalPixels(ReadbackCallback done);
+    /** Textures the renderer holds GPU copies of (a destroyed Texture's are released at the next frame). */
+    std::size_t materialTextureCount() const { return materialTextures_.size(); }
+    /** What the last frame refused or skipped by name; cleared at the start of each frame. */
+    const std::vector<std::string>& diagnostics() const { return diagnostics_; }
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
@@ -300,8 +306,11 @@ private:
         uint32_t version = 0;
     };
     BackgroundCube& backgroundCube(const Texture& texture);
-    std::map<const Texture*, BackgroundCube> backgroundCubes_;
+    std::map<uint64_t, BackgroundCube> backgroundCubes_;  // by Texture::ident
     void releaseMaterialTextures();
+    /** Releases what the caches built for textures that no longer exist. */
+    void sweepTextures();
+    void dropMapGroups();
     /**
      * The PMREM cubeUV form of an equirectangular (or PMREM) environment, built on first use and
      * rebuilt when the source texture's version moves (three's PMREMGenerator.fromEquirectangular).
@@ -323,6 +332,7 @@ private:
     void releaseEnvironments();
     void rebuildGroups();
     void releaseTargets();
+    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done);
     void releaseOutputGroup();
     void outputPass(WGPUCommandEncoder encoder, bool timed);
 
@@ -372,6 +382,7 @@ private:
     WGPUTexture normalTexture_ = nullptr;
     WGPUTextureView normalView_ = nullptr;
     shader::StageModule normalFragment_;
+    std::vector<std::string> diagnostics_;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
     std::unique_ptr<TraaPass> traa_;
@@ -427,11 +438,11 @@ private:
     std::map<std::string, std::pair<Handle, uint64_t>> externalStorage_;  // setStorage, by name
     // A material's diffuse map: its GPU texture/sampler, and, per (program, texture), the bind group
     // that binds it alongside the frame's uniforms. Cleared when the uniform buffer is rebuilt.
-    std::unordered_map<const Texture*, MaterialTexture> materialTextures_;
+    std::unordered_map<uint64_t, MaterialTexture> materialTextures_;  // by Texture::ident, never an address
     std::map<std::string, WGPUBindGroup> mapGroups_;
     // PMREM (three's PMREMGenerator.fromEquirectangular): the cubeUV tiles and the pipelines that
     // fill them, keyed by the equirect source texture.
-    std::map<const Texture*, EnvironmentGpu> environments_;
+    std::map<uint64_t, EnvironmentGpu> environments_;  // by Texture::ident
     WGPUBindGroupLayout envLayout_ = nullptr;
     WGPUPipelineLayout envPipelineLayout_ = nullptr;
     WGPURenderPipeline envEquirectPipeline_ = nullptr;

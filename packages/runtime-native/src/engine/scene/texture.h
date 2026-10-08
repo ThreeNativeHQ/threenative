@@ -6,9 +6,12 @@
 // is the fixture-built one; Texture is the empty base a loader fills. Header-only: the class carries
 // no engine algorithm a binding cannot inline.
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "engine/foundation/math/Vector.h"
@@ -24,6 +27,42 @@ inline constexpr uint16_t kTextureUnsignedByteType = 1009;  // three's UnsignedB
 inline constexpr uint16_t kTextureFloatType = 1015;         // three's FloatType
 inline constexpr uint16_t kTextureRGBAFormat = 1023;        // three's RGBAFormat
 
+/**
+ * A texture's identity for GPU caches: unique for the process lifetime, never reused (an address is),
+ * new for a copy, and retired when its Texture dies so a cache can release what it built for it.
+ */
+class TextureId {
+  public:
+    TextureId() : value_(next()) {}
+    TextureId(const TextureId&) : value_(next()) {}
+    TextureId& operator=(const TextureId&) { return *this; }
+    ~TextureId() {
+        std::lock_guard<std::mutex> lock(mutex());
+        retired().push_back(value_);
+    }
+    [[nodiscard]] uint64_t value() const { return value_; }
+    /** The ids retired since the last call, for the renderer's cache sweep. */
+    static std::vector<uint64_t> takeRetired() {
+        std::lock_guard<std::mutex> lock(mutex());
+        return std::exchange(retired(), {});
+    }
+
+  private:
+    static uint64_t next() {
+        static std::atomic<uint64_t> counter{1};
+        return counter.fetch_add(1, std::memory_order_relaxed);
+    }
+    static std::mutex& mutex() {
+        static std::mutex m;
+        return m;
+    }
+    static std::vector<uint64_t>& retired() {
+        static std::vector<uint64_t> ids;
+        return ids;
+    }
+    uint64_t value_;
+};
+
 /** three's ColorSpace: NoColorSpace (empty string) or an sRGB-encoded texture. */
 enum class TextureColorSpace : uint8_t { None, SRGB };
 
@@ -31,6 +70,7 @@ class Texture {
 public:
     virtual ~Texture() = default;
 
+    TextureId ident;  // identity for GPU caches; see TextureId
     std::string name;
     int source = -1;  // the glTF image index a loaded texture records before its bytes are decoded
     // three's Texture defaults (DataTexture overrides magFilter/minFilter to Nearest).

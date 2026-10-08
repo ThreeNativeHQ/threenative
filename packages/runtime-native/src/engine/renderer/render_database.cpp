@@ -151,8 +151,16 @@ BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* nam
     if (it == g.attributes.end() || !it->second) return nullptr;
     const BufferAttribute& attribute = *it->second;
     if (attribute.store->scalar() == Scalar::F32) return attribute.store.get();
+    // Entries whose source is gone are dropped once the table doubles, so a scene that loads and
+    // unloads geometry does not keep their copies.
+    if (converted_.size() >= convertedSweepAt_) {
+        for (auto entry = converted_.begin(); entry != converted_.end();)
+            entry = entry->second.source.expired() ? converted_.erase(entry) : std::next(entry);
+        convertedSweepAt_ = std::max<std::size_t>(64, converted_.size() * 2);
+    }
     Converted& copy = converted_[&attribute];
-    if (!copy.store || copy.version != attribute.version() || copy.source != attribute.store.get()) {
+    const auto source = copy.source.lock();
+    if (!copy.store || copy.version != attribute.version() || source != attribute.store) {
         const uint64_t items = attribute.count() * static_cast<uint64_t>(attribute.itemSize);
         std::vector<float> values;
         values.reserve(items);
@@ -162,7 +170,7 @@ BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* nam
         copy.store = std::make_shared<BufferStore>(Scalar::F32, items);
         copy.store->write(0, values.data(), values.size() * sizeof(float));
         copy.version = attribute.version();
-        copy.source = attribute.store.get();
+        copy.source = attribute.store;
     }
     return copy.store.get();
 }
@@ -193,6 +201,20 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
                 diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " +
                                        u);
             return r;
+        }
+        // A decoded map the standard program does not read is refused by name, never drawn without it.
+        // (A placeholder with no image was already refused where models load.)
+        for (const auto& [slot, texture] : material->maps) {
+            if (!texture || !texture->hasImage() || slot == "map" || slot == "normalMap") continue;
+            diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
+                                   " is not read by the native standard program");
+            return r;
+        }
+        if (const auto normal = material->maps.find("normalMap");
+            normal != material->maps.end() && normal->second && normal->second->hasImage() &&
+            !store(*mesh.geometry, "uv")) {
+            diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) +
+                                   ": normalMap needs a uv attribute (drawn without it)");
         }
         r.buffers = {floatStore(*mesh.geometry, "position"), floatStore(*mesh.geometry, "normal"),
                      floatStore(*mesh.geometry, "uv"), mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};

@@ -637,7 +637,7 @@ class Builder {
     void decodeImage(Texture& texture) {
         if (texture.source < 0 || static_cast<std::size_t>(texture.source) >= data_.images_count) return;
         const cgltf_image& image = data_.images[texture.source];
-        std::vector<uint8_t> owned;
+        void* freeAfter = nullptr;  // a base64 image's decoded copy, read in place
         const uint8_t* bytes = nullptr;
         std::size_t size = 0;
         if (image.buffer_view) {
@@ -655,16 +655,16 @@ class Builder {
                 refuse("TN_NATIVE_GLTF_IMAGE_INVALID image " + std::to_string(texture.source) + " base64");
                 return;
             }
-            owned.assign(static_cast<uint8_t*>(decoded), static_cast<uint8_t*>(decoded) + decodedSize);
-            std::free(decoded);
-            bytes = owned.data();
-            size = owned.size();
+            bytes = static_cast<const uint8_t*>(decoded);
+            size = decodedSize;
+            freeAfter = decoded;
         }
-        if (!bytes || imageFormat(bytes, size) == ImageFormat::Unknown) return;
-        if (!gltf::decodeImage(bytes, size, texture.width, texture.height, texture.data)) {
+        if (bytes && imageFormat(bytes, size) != ImageFormat::Unknown &&
+            !gltf::decodeImage(bytes, size, texture.width, texture.height, texture.data)) {
             texture.width = texture.height = 0;
             refuse("TN_NATIVE_GLTF_IMAGE_INVALID image " + std::to_string(texture.source));
         }
+        std::free(freeAfter);
     }
 
     // SkinnedMesh.normalizeSkinWeights: each vertex's weights over their sum; all zero becomes (1,0,0,0).
