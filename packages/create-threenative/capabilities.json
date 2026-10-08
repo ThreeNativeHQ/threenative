@@ -7514,6 +7514,11 @@
         "source": "three"
       },
       {
+        "symbol": "BackSide",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Bone",
         "kind": "class",
         "source": "three/webgpu"
@@ -7574,6 +7579,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "DoubleSide",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Euler",
         "kind": "class",
         "source": "three"
@@ -7596,6 +7606,11 @@
       {
         "symbol": "FogExp2",
         "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "FrontSide",
+        "kind": "constant",
         "source": "three"
       },
       {

@@ -10,6 +10,7 @@
 #include "engine/abi/bindings.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/foundation/ThreeConstants.h"
+#include "engine/scene/material.h"
 #include "engine/scene/texture.h"
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/animation/property_binding.h"
@@ -925,6 +926,9 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         {"RGBAFormat", tn::engine::kTextureRGBAFormat},
         {"EquirectangularReflectionMapping", 303},
         {"NoToneMapping", 0}, {"LoopOnce", 2200}, {"LoopRepeat", 2201},
+        {"FrontSide", static_cast<double>(tn::engine::Side::Front)},
+        {"BackSide", static_cast<double>(tn::engine::Side::Back)},
+        {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},
     }) target->Set(context, str(isolate_, name), v8::Number::New(isolate_, value)).Check();
     const auto animation = [&](int operation) {
         auto data = v8::Array::New(isolate_, 2);

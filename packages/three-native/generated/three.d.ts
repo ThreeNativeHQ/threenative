@@ -76,7 +76,7 @@ export declare const AttributeGPUType = {
 } as const;
 export type AttributeGPUType = (typeof AttributeGPUType)[keyof typeof AttributeGPUType];
 
-/** Catalog partial (native-not-implemented): three/BackSide. */
+/** Catalog supported: three/BackSide. */
 export declare const BackSide: 1;
 
 /** Catalog partial (native-not-implemented): three/BaseEvent. */
@@ -577,7 +577,7 @@ color: Color;
 target: Object3D;
 }
 
-/** Catalog partial (native-not-implemented): three/DoubleSide. */
+/** Catalog supported: three/DoubleSide. */
 export declare const DoubleSide: 2;
 
 /** Catalog partial (native-not-implemented): three/DstAlphaFactor. */
@@ -696,7 +696,7 @@ density: number;
   clone(): FogExp2;
 }
 
-/** Catalog partial (native-not-implemented): three/FrontSide. */
+/** Catalog supported: three/FrontSide. */
 export declare const FrontSide: 0;
 
 /** Catalog supported: three/webgpu/Frustum. */

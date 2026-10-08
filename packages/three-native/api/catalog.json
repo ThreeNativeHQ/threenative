@@ -390,8 +390,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1"
@@ -4778,8 +4777,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "2"
@@ -5633,8 +5631,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "0"

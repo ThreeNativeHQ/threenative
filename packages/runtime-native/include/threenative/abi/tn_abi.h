@@ -43,8 +43,8 @@ extern "C" {
  * of the catalog entries with status `supported`, sorted by code unit and joined with a single
  * newline, with no trailing newline. A module built against a different published surface hashes
  * differently, which is what TN_DIAG_CAPABILITY_MISMATCH reports. */
-#define TN_CAPABILITY_DIGEST 0xe51d6c561e3882b0ull
-#define TN_CAPABILITY_COUNT 71u
+#define TN_CAPABILITY_DIGEST 0x2684a8dcad91cc2aull
+#define TN_CAPABILITY_COUNT 74u
 
 typedef uint32_t tn_status_t;
 

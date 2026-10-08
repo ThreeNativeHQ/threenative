@@ -19,10 +19,11 @@ const three = createRequire(resolve(native, "package.json"))("three");
 const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMapping", "PCFSoftShadowMap",
   "NoColorSpace", "LinearSRGBColorSpace", "SRGBColorSpace", "RepeatWrapping", "ClampToEdgeWrapping",
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
-  "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode"];
+  "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
+  "FrontSide", "BackSide", "DoubleSide"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", ...constants];
+  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "LatheGeometry", "Vector2", ...constants];
 await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
@@ -38,6 +39,12 @@ const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshStandar
 check(mesh instanceof THREE.Object3D && mesh.isMesh && mesh.isObject3D, "mesh identity");
 check(new THREE.SkinnedMesh() instanceof THREE.Mesh, "skinned inheritance");
 check(new THREE.CylinderGeometry() instanceof THREE.BufferGeometry, "geometry inheritance");
+const profile = [[0.055, 0], [0.098, 0], [0.103, 0.025], [0.091, 0.18]];
+const lathe = new THREE.LatheGeometry(profile.map(([x, y]) => new THREE.Vector2(x, y)), 6);
+check(lathe instanceof THREE.BufferGeometry && JSON.stringify(Array.from(lathe.getAttribute("position").array)) ===
+  ${JSON.stringify(JSON.stringify(Array.from(new three.LatheGeometry([[0.055, 0], [0.098, 0], [0.103, 0.025], [0.091, 0.18]].map(([x, y]) => new three.Vector2(x, y)), 6).attributes.position.array)))}, "lathe geometry");
+const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
+check(new THREE.Mesh(lathe, sided).material.side === THREE.DoubleSide, "double-sided material");
 check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAttribute, "attribute inheritance");
 check(new THREE.DataTexture(new Uint8Array([255, 0, 0, 255]), 1, 1) instanceof THREE.Texture, "texture inheritance");
 check(Vector3 === THREE.Vector3, "cross-entry identity");
