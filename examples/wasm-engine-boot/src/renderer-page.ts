@@ -10,6 +10,7 @@ import {
   MeshStandardMaterial,
   PerspectiveCamera,
   Scene,
+  SphereGeometry,
 } from "three";
 import { uniform, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
@@ -85,7 +86,13 @@ try {
   tinted.colorNode = vec4(tint.mul(0.2), tint, tint.mul(1.6), 1);
   const tile = new Mesh(new BoxGeometry(1, 1, 1), tinted);
   tile.position.x = 1.2;
-  scene.add(box, tile);
+  // A smooth sphere: its shading gradient keeps every capture far from a flat, near-blank frame.
+  const ball = new Mesh(
+    new SphereGeometry(0.45, 32, 16),
+    new MeshStandardMaterial({ color: 0xf0e0c0 }),
+  );
+  ball.position.set(0.15, -0.9, 0.6);
+  scene.add(box, tile, ball);
   const sun = new DirectionalLight(0xffffff, 3);
   sun.position.set(3, 5, 4);
   scene.add(sun, new AmbientLight(0xffffff, 0.4));
