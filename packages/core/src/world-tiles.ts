@@ -522,6 +522,9 @@ function fieldStep(field: Heightfield, resolution: number): number {
  */
 function terrainMesh(mesh: Mesh): Mesh {
   mesh.userData.tnDrawSource = "terrain";
+  // Visibility only swaps this mesh with a twin over the same ground (its merged block, or the
+  // neighbouring LOD level), so a cached shadow map need not redraw for it; see `casterFlag`.
+  mesh.userData.tnShadowSwap = true;
   return mesh;
 }
 

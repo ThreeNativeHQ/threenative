@@ -632,10 +632,15 @@ const COARSEST_SHADOW_LEVEL = 1 << 20;
 function casterFlag(mesh: {
   castShadow?: boolean;
   mainAdmitted?: boolean;
+  userData?: { tnShadowSwap?: unknown };
   visible?: boolean;
 }): number {
+  // A mesh marked tnShadowSwap trades visibility with a twin over the same ground — terrain's
+  // tile and merged block, or one LOD level for the next. That flip is not a change the cached map
+  // must redraw for (it measured ~80 % of a walk's flips); castShadow and mainAdmitted still are,
+  // and the next window move redraws whatever resolution difference a LOD step left behind.
   return (
-    (mesh.visible === true ? 1 : 0) |
+    (mesh.visible === true || mesh.userData?.tnShadowSwap === true ? 1 : 0) |
     (mesh.castShadow === true ? 2 : 0) |
     (mesh.mainAdmitted === false ? 4 : 0)
   );

@@ -1971,6 +1971,26 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     },
   );
 
+  it("should not invalidate cached maps when a tnShadowSwap caster flips visibility", () => {
+    const invalidatedBy = (swap: boolean): number => {
+      const { camera, light, tall } = shadowWorld();
+      tall.userData.tnShadowSwap = swap;
+      const node = setupNode(light, {
+        clipExtents: [24, 96, 320],
+        invalidationDelay: 0,
+        mapSize: 64,
+      });
+      settle(node, camera);
+      tall.visible = false;
+      node.updateBefore(frameFor(camera));
+      const { invalidated } = node.stats;
+      node.dispose();
+      return invalidated;
+    };
+    expect(invalidatedBy(true)).toBe(0);
+    expect(invalidatedBy(false)).toBe(3);
+  });
+
   it("should drop a caster the main pass cannot draw, and leave every other draw alone", () => {
     const { camera, light, scene, tall } = shadowWorld();
     /**

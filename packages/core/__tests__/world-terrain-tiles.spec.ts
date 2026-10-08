@@ -1150,6 +1150,30 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
+  it("tags every tile level as terrain and as a shadow-neutral visibility swap", () => {
+    const tiles = new TerrainTiles({
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 17,
+      tileSize: 16,
+    });
+
+    tiles.follow({ x: 8, z: 8 });
+
+    const key = tiles.residentKeys[0];
+    const tile = key === undefined ? undefined : tiles.getTile(key);
+    if (tile === undefined) throw new Error("Expected the followed tile to be resident.");
+    expect(tile.lod.levels.length).toBeGreaterThan(0);
+    for (const { object } of tile.lod.levels) {
+      expect(object.userData.tnDrawSource).toBe("terrain");
+      expect(object.userData.tnShadowSwap).toBe(true);
+    }
+    tiles.dispose();
+  });
+
   it("publishes the resident field and routed flow for topology evaluation", () => {
     const tiles = new TerrainTiles({
       validate: true,
