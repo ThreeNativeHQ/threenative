@@ -3875,4 +3875,13 @@ preparation."` at 21.7 s on the forest. Native KTX2 therefore needs (1) the tran
 through the same asset root and (2) a native fix in `prepareTextureAsync`; both belong to the native
 lane. The shipped staging stays public-only.
 
+Native upload-loss narrowing (code reading, not yet traced): the native host maps every BC format and
+requests `texture-compression-bc`; V8's `getArrayBufferData` honours a typed array's `byteOffset`; and
+the JS `device.lost` promise is never settled by the native host (`__mystral_device_lost_resolve` has
+no caller), while a real Dawn loss goes to the fatal `reportFatalDeviceLoss`. So the upload's
+`device.lost.then(lost, lost)` should not fire on native; the next step is a traced native run
+(verbose WebGPU logging) to see which call precedes the loss. Separately, the native `writeTexture`
+binding applies `dataLayout.offset` twice (pointer arithmetic and `layout.offset`); the bounded upload
+passes 0, so it is latent, but any non-zero offset reads past the intended bytes.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
