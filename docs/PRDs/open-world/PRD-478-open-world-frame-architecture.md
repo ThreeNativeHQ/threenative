@@ -75,10 +75,10 @@ Change where the frame's work runs, not how much of it a frame skips:
 
 ## Blocked on
 
-- AC-2's early route and AC-3 on that cook: PRD-539 (draft PR 463).
-- AC-1 and AC-2 timing: the RTX 2080 on a quiet desktop. Load stayed at 31–112 on 2026-10-07; on 2026-10-08 a gated loop got 3 runs under load 10 in 5 tries. The laptop's Intel GPU cannot stand in for NVIDIA numbers.
+- AC-1 and AC-2 timing on the current candidate (`52d5e6cac`: PRD-539 absorbed, cast clamp, target-frame LOD budget): the RTX 2080 on a quiet desktop. On 2026-10-08 load stayed at 20–90 from 11:30 on; a gated loop (start, end and 10 s peak load under 10) is waiting. The last quiet run, before the clamp and the budget fix, passed AC-2 (2.3 % of walking frames over 8.3 ms) and failed AC-1 (22.7 %). The laptop's Intel GPU cannot stand in for NVIDIA numbers.
+- AC-3's start-of-walk clause: the distant forest arrives in intervals 00–02 after the loading overlay drops, in every build including develop. A diagnosis of what the overlay gate misses is running; the fix lands here once it is known.
 - Phase 1's coverage box: the owner's side-by-side review of the camp and highway aerials against `?refShadow=1`.
-- AC-3's "no late objects" clause: develop fails it too (far forest blocks stream in late at 150–300 m); PRD-537 (draft PR 459) plans the whole-map far impostors that should fix it.
+- Bare far hills (owner, 2026-10-08): PRD-537 (draft PR 459), whole-map impostors; Phase 1 measurement is running, and its dark impostor shadow is that PRD's Phase 2.
 
 ## Iteration method
 
