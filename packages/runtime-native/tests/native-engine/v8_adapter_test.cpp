@@ -115,12 +115,29 @@ void fastPaths() {
         }
         const mine = a.position; mine.set(4, 5, 6);
         const heir = Object.create(a);
-        let inherited = 1;
-        try { heir.position; } catch (e) { inherited = 1; }
-        [ok, b.position.x === 0, a.position.x === 4 && a.position === mine, inherited].map(Number).join("")
+        const inherited = heir.position === undefined;   // a plain object inheriting a wrapper has no engine object
+        // A getter borrowed onto another class's object never answers from that object's slots: it
+        // returns the right member for the name (a fixed member is one wrapper) or something that is
+        // none of the cached members of that object under a different name.
+        let borrowed = 1;
+        const bodies = [new Mesh(), new DirectionalLight(), new PerspectiveCamera(), new Scene()];
+        for (const from of bodies) for (const to of bodies) {
+            const proto = Object.getPrototypeOf(from);
+            const cachedOfTo = names.filter((m) => m in to).map((m) => [m, to[m]]);
+            for (const n of Object.getOwnPropertyNames(proto)) {
+                const d = Object.getOwnPropertyDescriptor(proto, n);
+                if (!d || !d.get) continue;
+                let got, threw = false;
+                try { got = d.get.call(to); } catch (e) { threw = true; }
+                if (threw || got === undefined || typeof got !== "object" || got === null) continue;
+                for (const [m, member] of cachedOfTo) if (got === member && m !== n) borrowed = 0;
+                if (names.includes(n) && n in to && got !== to[n]) borrowed = 0;
+            }
+        }
+        [ok, b.position.x === 0, a.position.x === 4 && a.position === mine, inherited, borrowed].map(Number).join("")
     )JS");
-    CHECK(members == "1111");
-    if (members != "1111") std::fprintf(stderr, "members %s\n", members.c_str());
+    CHECK(members == "11111");
+    if (members != "11111") std::fprintf(stderr, "members %s\n", members.c_str());
     // Non-numeric arguments still take the general converter: a handle, a string, an array, a boolean.
     const uint64_t general = adapter.genericArguments();
     const std::string mixed = run(rt, adapter, (std::string(setup) + R"JS(

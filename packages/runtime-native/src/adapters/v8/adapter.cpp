@@ -203,6 +203,7 @@ struct MethodData {
     v8::Global<v8::Private> cache;
     bool intersections = false;  // intersectObject(s): the only methods whose third argument is a target array
     int slot = 0;                // a fixed member's internal-field cache slot; 0: none left, use the private key
+    uint16_t type = 0;           // the catalog type whose wrappers own that slot: a getter borrowed by another class must not read it
 };
 
 }  // namespace
@@ -718,7 +719,13 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         for (const auto& [path, member] : binding.members) {
             properties.push_back({path, binding.setters.count(path) > 0, binding.fixedMembers.count(path) > 0});
         }
-        int nextSlot = 1;  // internal-field slots for this class's fixed members
+        // Internal-field slots for this class's fixed members: the hot ones every setter chain reads
+        // first, then the rest in registry order, while slots last.
+        std::map<std::string, int> slots;
+        for (const char* hot : {"position", "rotation", "quaternion", "scale"})
+            if (binding.fixedMembers.count(hot) && int(slots.size()) + 1 < kWrapperFields) slots[hot] = int(slots.size()) + 1;
+        for (const auto& [path, settable, fixed] : properties)
+            if (fixed && !slots.count(path) && int(slots.size()) + 1 < kWrapperFields) slots[path] = int(slots.size()) + 1;
         for (const auto& [path, settable, fixed] : properties) {
             if ((name == "MeshBasicNodeMaterial" || name == "MeshStandardNodeMaterial") && path.ends_with("Node")) {
                 auto* data = new MethodData{this, path, {}};
@@ -754,7 +761,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 continue;
             }
             auto* data = new MethodData{this, path, {}};
-            if (fixed && nextSlot < kWrapperFields) data->slot = nextSlot++;
+            if (fixed && slots.count(path)) { data->slot = slots[path]; data->type = type; }
             else if (fixed) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
             proto->SetAccessorProperty(
                 str(isolate_, path),
@@ -765,7 +772,11 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                         v8::Isolate* isolate = info.GetIsolate();
                         v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
                         v8::Local<v8::Object> self = info.This();
-                        if (d->slot > 0 && self->InternalFieldCount() == kWrapperFields) {
+                        // The slot belongs to this class's wrappers only: a getter borrowed onto another
+                        // class's object (or a plain object inheriting from one) never reads or writes it.
+                        tn_handle_t h{};
+                        const bool owner = d->slot > 0 && d->adapter->unwrap(self, h) && h.type == d->type;
+                        if (owner) {
                             v8::Local<v8::Data> cached = self->GetInternalField(d->slot);
                             if (cached->IsValue() && !cached.As<v8::Value>()->IsUndefined()) {
                                 info.GetReturnValue().Set(cached.As<v8::Value>());
@@ -778,8 +789,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                 return;
                             }
                         }
-                        tn_handle_t h{};
-                        if (!d->adapter->unwrap(info.This(), h)) return;
+                        if (!owner && !d->adapter->unwrap(self, h)) return;
                         tn_value_t result{};
                         tn_diagnostic_t diagnostic{nullptr, 0};
                         if (tn_get(h, d->name.c_str(), &result, &diagnostic) != TN_OK) {
@@ -787,8 +797,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                             return;
                         }
                         v8::Local<v8::Value> value = fromValue(*d->adapter, result);
-                        if (d->slot > 0) self->SetInternalField(d->slot, value);
-                        else if (!d->cache.IsEmpty()) self->SetPrivate(ctx, d->cache.Get(isolate), value).Check();
+                        if (owner) self->SetInternalField(d->slot, value);
+                        else if (d->slot == 0 && !d->cache.IsEmpty()) self->SetPrivate(ctx, d->cache.Get(isolate), value).Check();
                         info.GetReturnValue().Set(value);
                     },
                     v8::External::New(isolate_, data)),
