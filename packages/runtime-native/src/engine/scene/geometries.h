@@ -8,6 +8,7 @@
 #include "engine/scene/geometry.h"
 
 #include <memory>
+#include <vector>
 
 namespace tn::engine {
 
@@ -41,5 +42,10 @@ std::shared_ptr<BufferGeometry> makeRingGeometry(double innerRadius = 0.5, doubl
                                                  double thetaSegments = 32, double phiSegments = 1,
                                                  double thetaStart = 0,
                                                  double thetaLength = 6.283185307179586);
+
+/** `points` is the profile, at least two of them; three's own default profile is the caller's. */
+std::shared_ptr<BufferGeometry> makeLatheGeometry(const std::vector<Vector2>& points, double segments = 12,
+                                                  double phiStart = 0,
+                                                  double phiLength = 6.283185307179586);
 
 }  // namespace tn::engine

@@ -825,6 +825,11 @@ readonly levels: Array<{ object: Object3D; distance: number; hysteresis: number;
   update(camera: Camera): void;
 }
 
+/** Catalog supported: three/LatheGeometry. */
+export declare class LatheGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog supported: three/Layers. */
 export declare class Layers {
 constructor();

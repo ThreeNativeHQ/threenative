@@ -44,7 +44,7 @@ Value numbers(const std::vector<double>& values) { return Value::list(values); }
 BufferGeometry& geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
-        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry"};
+        "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "LatheGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -506,6 +506,20 @@ void registerGeometryGenerators(Registry& classes) {
         return makeRingGeometry(optional(a, 0, 0.5), optional(a, 1, 1), optional(a, 2, 32),
                                 optional(a, 3, 1), optional(a, 4, 0), optional(a, 5, 6.283185307179586));
     });
+    // three's LatheGeometry(points, segments, phiStart, phiLength): points is an array of Vector2. A
+    // one-point profile reads past its end in three, so it is refused rather than guessed.
+    ClassBinding& lathe = classes["LatheGeometry"];
+    registerBufferGeometry(lathe);
+    lathe.ctor = [](const Args& a, Store& store) {
+        std::vector<Vector2> points{{0, -0.5}, {0.5, 0}, {0, 0.5}};
+        if (!a.empty() && a.at(0).kind != Value::Kind::Undefined) {
+            points.clear();
+            for (const Value& ref : refsOf(a.at(0))) points.push_back(store.ref<Vector2>(ref, "Vector2"));
+            if (points.size() == 1) throw Unsupported{"LatheGeometry needs at least two points"};
+        }
+        return std::static_pointer_cast<void>(
+            makeLatheGeometry(points, optional(a, 1, 12), optional(a, 2, 0), optional(a, 3, 6.283185307179586)));
+    };
 }
 
 }  // namespace
