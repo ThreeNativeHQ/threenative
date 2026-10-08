@@ -361,6 +361,12 @@ export function semanticErrors(catalog: ICatalog): readonly string[] {
     }
   }
   for (const entry of catalog.entries) {
+    if (entry.kind !== "constant" || entry.status.kind === "unsupported") continue;
+    // Back ends hand this value to games (PRD-540), so it must parse as the type it declares.
+    if (constantValueError(entry) !== undefined)
+      errors.push(`$.entries[${entry.name}]: ${constantValueError(entry)}`);
+  }
+  for (const entry of catalog.entries) {
     if (entry.kind !== "type" || entry.status.kind === "unsupported") continue;
     for (const name of typeNames(entry.type)) {
       if (TYPESCRIPT_NAMES.has(name) || declared(name) !== undefined) continue;
@@ -370,6 +376,18 @@ export function semanticErrors(catalog: ICatalog): readonly string[] {
     }
   }
   return errors;
+}
+
+function constantValueError(entry: ICatalogConstantEntry): string | undefined {
+  let value: unknown;
+  try {
+    value = typeof entry.value === "string" ? JSON.parse(entry.value) : entry.value;
+  } catch {
+    value = undefined;
+  }
+  return typeof value === entry.type
+    ? undefined
+    : `value ${JSON.stringify(entry.value)} is not a ${entry.type}`;
 }
 
 /**

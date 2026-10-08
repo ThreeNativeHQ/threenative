@@ -1919,10 +1919,10 @@ export declare const RGBFormat: 1022;
 export declare const RGBIntegerFormat: 1032;
 
 /** Catalog partial (native-not-implemented): three/RGB_BPTC_SIGNED_Format. */
-export declare const RGB_BPTC_SIGNED_Format: RGB_BPTC_SIGNED_Format = 36494;
+export declare const RGB_BPTC_SIGNED_Format: 36494;
 
 /** Catalog partial (native-not-implemented): three/RGB_BPTC_UNSIGNED_Format. */
-export declare const RGB_BPTC_UNSIGNED_Format: RGB_BPTC_UNSIGNED_Format = 36495;
+export declare const RGB_BPTC_UNSIGNED_Format: 36495;
 
 /** Catalog partial (native-not-implemented): three/RGB_ETC1_Format. */
 export declare const RGB_ETC1_Format: 36196;

@@ -1,6 +1,6 @@
 # PRD-540 — Web games boot on the Wasm engine
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P1 — no template can boot on the Wasm engine, so PRD-533's web promotion boxes cannot run
 **Complexity:** 7 (HIGH) — 11+ implementation files, a new web back-end module, and the Emscripten build boundary
 **Owner:** João
@@ -60,10 +60,10 @@ reach geometry arrays directly.
 ## Execution Phases
 
 #### Phase 1: The opt-in routes a web build to the Wasm back end
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/src/config.ts`, `packages/create-threenative/src/build.ts`, the back-end entry, `scripts/verify-template-playtests.ts`
 - [ ] `engine: "native"` aliases `three`, `three/webgpu` and `three/tsl` in the generated web build driver; an absent or `"legacy"` setting leaves the driver byte-identical. proof: `pnpm exec vitest run packages/create-threenative/__tests__/web-engine.spec.ts`
-- [ ] Every upstream export the back end does not bind throws its catalog diagnostic on first use, and no export resolves to upstream three. proof: `pnpm exec vitest run packages/three-native/__tests__/browser-entry.spec.ts`
+- [x] Every upstream export the back end does not bind throws its catalog diagnostic on first use, and no export resolves to upstream three. proof: `pnpm exec vitest run packages/three-native/__tests__/browser-entry.spec.ts` — 2026-10-08: 3/3 passed (three-native suite 77/77). `bindUpstreamExports` (`packages/three-native/src/browser-entry.ts`) binds all 1,265 upstream names: the 62 registry classes, catalog constants by value, and a refusal for every other name that throws its catalog diagnostic (`TN_NATIVE_UNSUPPORTED_WEBGPURENDERER`, `TN_NATIVE_UNCATALOGUED_<NAME>`) on any call, construction or property access. No name is identical to an upstream object. The binding found two malformed catalog constants (`RGB_BPTC_*_Format` = `"X = N"`); `semanticErrors` now rejects a published constant whose value is not its type (red on the committed catalog, then fixed).
 - [ ] `TN_TEMPLATE_ENGINE=native` scaffolds templates with `engine: "native"`, and no other value is accepted. proof: `pnpm exec vitest run scripts/__tests__/verify-template-playtests.spec.ts`
 
 #### Phase 2: A core game presents a frame on the Wasm renderer
