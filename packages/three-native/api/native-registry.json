@@ -2681,7 +2681,9 @@
         "specularColor.b",
         "specularColor.g",
         "specularColor.r",
+        "specularColorMap",
         "specularIntensity",
+        "specularIntensityMap",
         "toneMapped",
         "transmission",
         "transparent",
@@ -2694,7 +2696,9 @@
         "map",
         "metalnessMap",
         "roughnessMap",
-        "specularColor"
+        "specularColor",
+        "specularColorMap",
+        "specularIntensityMap"
       ],
       "callbacks": []
     },

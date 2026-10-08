@@ -2985,6 +2985,8 @@ sheen: number;
 specularIntensity: number;
 transmission: number;
 specularColor: Color;
+specularColorMap: Texture | null;
+specularIntensityMap: Texture | null;
 }
 
 /** Catalog supported: three/Ray. */

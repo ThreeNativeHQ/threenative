@@ -59,6 +59,9 @@ struct DrawItem {
     /** Standard/Physical metalnessMap and roughnessMap (decoded, uv present): blue and green scale the uniforms. */
     const Texture* metalnessMap = nullptr;
     const Texture* roughnessMap = nullptr;
+    /** Physical specularIntensityMap (alpha) and specularColorMap (rgb), decoded with uv present. */
+    const Texture* specularIntensityMap = nullptr;
+    const Texture* specularColorMap = nullptr;
     /** The environment (scene.environment or material.envMap): its PMREM is sampled for IBL. */
     const Texture* envMap = nullptr;
     double envMapIntensity = 1;
@@ -307,7 +310,7 @@ private:
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
-        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kMetalnessUvTransform, kRoughnessUvTransform, kSlotCount
+        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kMetalnessUvTransform, kRoughnessUvTransform, kSpecularIntensityUvTransform, kSpecularColorUvTransform, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,

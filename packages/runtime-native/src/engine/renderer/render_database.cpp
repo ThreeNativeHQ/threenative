@@ -30,6 +30,15 @@ void assignDataMaps(const Material& material, DrawItem& d) {
     };
     d.metalnessMap = image("metalnessMap");
     d.roughnessMap = image("roughnessMap");
+    if (material.type != MaterialType::Physical) return;
+    d.specularIntensityMap = image("specularIntensityMap");
+    d.specularColorMap = image("specularColorMap");
+}
+
+/** Physical reads specularIntensityMap and specularColorMap (MaterialNode SPECULAR_INTENSITY/COLOR). */
+bool readsSlot(const Material& material, const std::string& slot) {
+    if (slot == "metalnessMap" || slot == "roughnessMap") return readsDataMaps(material);
+    return (slot == "specularIntensityMap" || slot == "specularColorMap") && material.type == MaterialType::Physical;
 }
 
 Matrix toArray(const Matrix4& m) {
@@ -222,7 +231,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         // (A placeholder with no image was already refused where models load.)
         for (const auto& [slot, texture] : material->maps) {
             if (!texture || !texture->hasImage() || slot == "map" || slot == "normalMap") continue;
-            if ((slot == "metalnessMap" || slot == "roughnessMap") && readsDataMaps(*material)) continue;
+            if (readsSlot(*material, slot)) continue;
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
                                    " is not read by the native standard program");
             return r;
@@ -233,8 +242,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) +
                                    ": normalMap needs a uv attribute (drawn without it)");
         }
-        for (const char* slot : {"metalnessMap", "roughnessMap"})
-            if (const auto map = material->maps.find(slot); readsDataMaps(*material) && map != material->maps.end() &&
+        for (const char* slot : {"metalnessMap", "roughnessMap", "specularIntensityMap", "specularColorMap"})
+            if (const auto map = material->maps.find(slot); readsSlot(*material, slot) && map != material->maps.end() &&
                 map->second && map->second->hasImage() && !store(*mesh.geometry, "uv"))
                 diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
                                        " needs a uv attribute (drawn without it)");
@@ -296,7 +305,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.nodes = r.material->nodes;
     d.map = nullptr;
     d.normalMap = nullptr;
-    d.metalnessMap = d.roughnessMap = nullptr;
+    d.metalnessMap = d.roughnessMap = d.specularIntensityMap = d.specularColorMap = nullptr;
     if (d.uvs) {
         const auto map = r.material->maps.find("map");
         if (map != r.material->maps.end() && map->second && map->second->hasImage())
