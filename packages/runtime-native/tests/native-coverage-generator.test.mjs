@@ -184,6 +184,8 @@ describe("native engine coverage invocations", () => {
       entry("native_engine_registry_snapshot", ["/build/tn-native-engine-registry-dump", "--check"]),
       entry("native_engine_inspect", ["node", "/repo/scripts/inspect-js-free.mjs", "--binary", "/build/fixture"]),
       entry("native_engine_graph", ["cmake", "-DGRAPH=graph.txt", "-P", "CheckGraph.cmake"]),
+      entry("native_engine_methods", ["pnpm", "exec", "tsx", "inspect/protocol-methods.ts", "--check"]),
+      entry("native_engine_aot", ["node", "/repo/tools/native-typescript/run-corpus.mjs", "--native", "--case", "x"]),
       { name: "legacy", command: ["legacy"], properties: [] },
     ];
     expect(nativeEngineCoverageInvocations(inventory)).toEqual([
@@ -193,6 +195,8 @@ describe("native engine coverage invocations", () => {
       { name: "native_engine_registry_snapshot", requiresProfile: true },
       { name: "native_engine_inspect", requiresProfile: false },
       { name: "native_engine_graph", requiresProfile: false },
+      { name: "native_engine_methods", requiresProfile: false },
+      { name: "native_engine_aot", requiresProfile: false },
     ]);
   });
 

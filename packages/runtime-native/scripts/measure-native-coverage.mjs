@@ -348,19 +348,24 @@ function compactFailure(error) {
     .join(" ");
 }
 
-function runForStdout(command, args) {
+function runForStdout(command, args, { timeout = 120_000, maxBuffer = 64 * 1024 * 1024 } = {}) {
   const result = spawnSync(command, args, {
     cwd: runtimeRoot,
     encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: 120_000,
+    maxBuffer,
+    timeout,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(`${command} exited ${result.status}:\n${result.stderr ?? ""}`);
   }
-  if (result.stderr?.trim()) {
-    throw new Error(`${command} emitted a coverage warning:\n${result.stderr.trim()}`);
+  // One merged profile spans every test binary, so a header inline function compiled with different
+  // flags in two binaries carries two hashes; llvm-cov keeps one record. Only that is tolerated.
+  const warnings = (result.stderr ?? "")
+    .split("\n")
+    .filter((line) => line.trim() && !/^warning: \d+ functions have mismatched data$/u.test(line.trim()));
+  if (warnings.length > 0) {
+    throw new Error(`${command} emitted a coverage warning:\n${warnings.join("\n")}`);
   }
   return result.stdout;
 }
@@ -384,17 +389,18 @@ function coverageExports({ buildDirectory, compiledProducts, executedTargets, pr
   const mergedProfile = join(profileDirectory, "all.profdata");
   run("llvm-profdata", ["merge", "-sparse", ...profileNames.map((name) => join(profileDirectory, name)), "-o", mergedProfile]);
   requireCoverageProfile(mergedProfile);
-  for (const { object, source } of compiledProducts.entries) {
-    const report = runForStdout("llvm-cov", [
-      "export",
-      object,
-      `-instr-profile=${mergedProfile}`,
-      ...commonArguments,
-    ]);
-    reports.push(report);
-    const files = instrumentedFilesFromLcov([report]);
-    if (!files.some(({ path }) => path === source)) zeroLineSources.push(source);
-  }
+  // One export over every product object: a call per object re-reads the merged profile each time
+  // and outlasts any sane timeout once the engine has a few hundred objects.
+  const [first, ...rest] = compiledProducts.entries.map(({ object }) => object);
+  const report = runForStdout(
+    "llvm-cov",
+    ["export", first, ...rest.flatMap((object) => ["-object", object]), `-instr-profile=${mergedProfile}`,
+      ...commonArguments],
+    { timeout: 1_800_000, maxBuffer: 1024 * 1024 * 1024 },
+  );
+  reports.push(report);
+  const exported = new Set(instrumentedFilesFromLcov([report]).map(({ path }) => path));
+  for (const source of compiledProducts.sourceFiles) if (!exported.has(source)) zeroLineSources.push(source);
   for (const target of executedTargets) {
     const targetProfiles = profileNames
       .filter((name) => name.startsWith(`${target}-`))
@@ -593,10 +599,11 @@ export function nativeEngineCoverageInvocations(inventory) {
     if (!Array.isArray(command) || command.length === 0) {
       throw new Error(`native-engine coverage executable is unbuilt: ${name}`);
     }
-    // References, source-graph checks and binary inspection execute no instrumented code.
+    // Generated-fixture checks (a TS script run with --check), source-graph checks, binary
+    // inspection and the Perry corpus (its own, uninstrumented binaries) execute no instrumented code.
     const staticCheck = (command.includes("--check") &&
-      command.some((arg) => arg.endsWith("-reference.ts"))) ||
-      command.some((arg) => arg.endsWith("/inspect-js-free.mjs")) ||
+      command.some((arg) => arg.endsWith(".ts"))) ||
+      command.some((arg) => arg.endsWith("/inspect-js-free.mjs") || arg.endsWith("/run-corpus.mjs")) ||
       (command.includes("-P") && command.some((arg) => arg.endsWith(".cmake")));
     return { name, requiresProfile: !staticCheck };
   });
@@ -739,6 +746,8 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   buildNativeTarget(cmake, buildDirectory, "mystral", 1_800_000);
   buildNativeTarget(cmake, buildDirectory, "mystral-tools", 1_800_000);
   buildNativeTarget(cmake, buildDirectory, "tn-native-engine-tests", 1_800_000);
+  // The JS-free player is a shipped product outside the test aggregate; its objects count too.
+  buildNativeTarget(cmake, buildDirectory, "tn-native-engine-player", 1_800_000);
   const inventory = ctestInventory(buildDirectory, ctest);
   const registrations = inventory.map(({ name }) => name);
   for (const target of targets) {
