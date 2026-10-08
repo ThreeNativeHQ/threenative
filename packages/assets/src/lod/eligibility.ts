@@ -99,7 +99,7 @@ const TRIANGLE = 3;
 export interface IEligibilityFlags {
   /** The primitive already carries a `TN_discrete_lod` payload from an earlier cook. */
   readonly alreadyCooked: boolean;
-  /** The asset is an authored chain: this and at least one other mesh carry a level name (`hull_LOD1`). */
+  /** The asset is an authored chain: two or more of its nodes carry a level name (`hull_LOD1`). */
   readonly authoredLod: boolean;
   /** `assets.models.simplify` is declared for this asset. */
   readonly legacySimplify: boolean;
