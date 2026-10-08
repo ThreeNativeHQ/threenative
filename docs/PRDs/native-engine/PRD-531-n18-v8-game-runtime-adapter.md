@@ -264,3 +264,20 @@ request it does not find as that URL. Known divergence, deliberately left: once 
 asset manifest, the web refuses a request the manifest does not list, while native still finds a
 hand-placed `/` file. Native is therefore more permissive than web there; no change until a game
 needs the stricter rule.
+
+Open items from the assets lane (2026-10-08, lane/ne-assets):
+- Fixed: QA's DataTexture/Texture facade subclass refusal on V8. The facades now chain to the engine
+  class for the adapter's prototype walk (`packages/runtime-native/src/engine/player/core-textures.mjs:56`),
+  proved by `tests/native-engine/player-textures.mjs` (b8c0d73df).
+- aoMap and emissiveMap are still refused by name in the native standard program
+  (`packages/runtime-native/src/engine/renderer/render_database.cpp:235`). No Midway GLB uses either.
+- CanvasTexture is a single-mip DataTexture on both back ends (`core-textures.mjs:58`,
+  `packages/three-native/src/texture-sources.ts:126`).
+- The engine MeshBVH tests every triangle in C++ (`packages/three-native/src/addons/mesh-bvh.ts:7`); build
+  a native tree when picking cost shows in a profile.
+- On the Wasm back end, an HDR texture's texels are re-sent once on its first needsUpdate
+  (`packages/three-native/src/addons/hdr-loader.ts:57`, through `texture-sources.ts`'s needsUpdate setter).
+- KHR_materials_ior and KHR_materials_specular landed here (ab2b455dc) before the lane split. lane-physical
+  owns them from now on and decides whether to keep that commit.
+- hornet.glb loads on native; it was not rendered. `native_engine_update_scaling` fails under host load
+  (load 28-42), as recorded above; it is not caused by this lane.
