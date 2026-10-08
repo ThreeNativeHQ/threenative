@@ -1503,24 +1503,35 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     // and target, the normal after the position), and its base influence: 1 for relative targets,
     // else 1 minus the influences' sum, summed in double as JS reduces them.
     for (auto& [name, storage] : storages_)
-        if (name.rfind("probe_", 0) != 0) storage.data.clear();
+        if (name.rfind("probe_", 0) != 0 && name != "instances") storage.data.clear();
     for (const auto& [i, shadow] : virtualShadows_) storages_["vsmTable" + std::to_string(i)].data = shadow.atlas.table();
     std::vector<float>& bones = storages_["boneMatrices"].data;
     std::vector<float>& morphData = storages_["morphData"].data;
     std::vector<float>& morphInfluences = storages_["morphInfluences"].data;
     std::vector<float>& instances = storages_["instances"].data;
     std::unordered_map<const DrawItem*, double> instanceBases;
+    // Twenty floats per instance: its matrix, then its colour and a pad. The storage keeps its
+    // elements between frames, so a steady crowd overwrites memory it owns instead of zero-filling
+    // and appending; it is cut to what this frame wrote after the loop.
+    std::size_t written = 0;
     for (const auto& [depth, drawn] : opaque) {
         if (!drawn->instanceMatrices) continue;
-        instanceBases[drawn] = double(instances.size() / 4);
+        instanceBases[drawn] = double(written / 4);
         const auto* matrices = reinterpret_cast<const float*>(drawn->instanceMatrices->data());
         const auto* colors = drawn->instanceColors ? reinterpret_cast<const float*>(drawn->instanceColors->data()) : nullptr;
-        for (uint32_t i = 0; i < drawn->instanceCount; ++i) {
-            instances.insert(instances.end(), matrices + i * 16, matrices + (i + 1) * 16);
-            instances.insert(instances.end(), {colors ? colors[i * 3] : 1, colors ? colors[i * 3 + 1] : 1,
-                                              colors ? colors[i * 3 + 2] : 1, 0});
+        const std::size_t end = written + std::size_t{drawn->instanceCount} * 20;
+        if (instances.size() < end) instances.resize(end);
+        float* out = instances.data() + written;
+        for (uint32_t i = 0; i < drawn->instanceCount; ++i, out += 20) {
+            std::memcpy(out, matrices + i * 16, 16 * sizeof(float));
+            out[16] = colors ? colors[i * 3] : 1;
+            out[17] = colors ? colors[i * 3 + 1] : 1;
+            out[18] = colors ? colors[i * 3 + 2] : 1;
+            out[19] = 0;
         }
+        written = end;
     }
+    instances.resize(written);
     struct Deform {
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
