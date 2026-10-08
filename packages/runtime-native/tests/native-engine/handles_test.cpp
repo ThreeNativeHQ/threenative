@@ -13,6 +13,7 @@ void generation() {
     CHECK(table.check(first, 7) == HandleError::None);
     CHECK(table.release(first) == HandleError::None);
     CHECK(table.check(first) == HandleError::Stale);
+    CHECK(table.check(first.type, first.context, first.index, first.generation) == HandleError::Stale);  // the scalar form the ABI resolves with
     CHECK(table.release(first) == HandleError::Stale);
 
     // The slot is reused for a new object, and the old handle still does not reach it.

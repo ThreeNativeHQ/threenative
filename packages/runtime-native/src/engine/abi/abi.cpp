@@ -68,8 +68,7 @@ struct tn_context : tn::binding::Store {
         return true;
     }
     tn::binding::Object* object(tn_handle_t h) {
-        const tn::engine::Handle handle{h.type, h.context, h.index, h.generation};
-        if (objects.check(handle) != tn::engine::HandleError::None || h.index >= values.size()) return nullptr;
+        if (objects.check(h.type, h.context, h.index, h.generation) != tn::engine::HandleError::None || h.index >= values.size()) return nullptr;
         tn::binding::Object& o = values[h.index];
         return o.ptr ? &o : nullptr;
     }

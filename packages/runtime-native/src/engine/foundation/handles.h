@@ -34,6 +34,18 @@ public:
     Handle allocate(uint16_t type);
     /** `expectedType` 0 accepts any live type. */
     HandleError check(Handle handle, uint16_t expectedType = 0) const;
+    /** The same check on the fields as scalars: a caller holding them in registers pays no struct copy. */
+    HandleError check(uint16_t type, uint16_t context, uint32_t index, uint32_t generation, uint16_t expectedType = 0) const {
+        if (type == 0 || generation == 0) return HandleError::Invalid;
+        if (context != context_) return HandleError::Context;
+        if (index >= slots_.size()) return HandleError::Invalid;
+        const Slot& slot = slots_[index];
+        if (!slot.live || slot.generation != generation) return HandleError::Stale;
+        // The handle's own type field is caller-supplied; the slot's type is the truth.
+        if (slot.type != type) return HandleError::Type;
+        if (expectedType != 0 && slot.type != expectedType) return HandleError::Type;
+        return HandleError::None;
+    }
     HandleError release(Handle handle);
 
     uint16_t context() const { return context_; }

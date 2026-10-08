@@ -20,15 +20,7 @@ Handle HandleTable::allocate(uint16_t type) {
 }
 
 HandleError HandleTable::check(Handle handle, uint16_t expectedType) const {
-    if (handle.type == 0 || handle.generation == 0) return HandleError::Invalid;
-    if (handle.context != context_) return HandleError::Context;
-    if (handle.index >= slots_.size()) return HandleError::Invalid;
-    const Slot& slot = slots_[handle.index];
-    if (!slot.live || slot.generation != handle.generation) return HandleError::Stale;
-    // The handle's own type field is caller-supplied; the slot's type is the truth.
-    if (slot.type != handle.type) return HandleError::Type;
-    if (expectedType != 0 && slot.type != expectedType) return HandleError::Type;
-    return HandleError::None;
+    return check(handle.type, handle.context, handle.index, handle.generation, expectedType);
 }
 
 HandleError HandleTable::release(Handle handle) {
