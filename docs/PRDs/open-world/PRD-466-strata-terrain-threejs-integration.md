@@ -3937,4 +3937,10 @@ alpha-tested grass never reaches, so its reported gain was run-to-run variance; 
 90 s); and the "29% residual" was measured on tone-mapped values (≈0 in linear light on the near meadow).
 Judged captures before `4ad7d9750` rendered below full resolution (a spectrum fit puts them near 0.85).
 
+Loading budget, tried and reverted: an optional `budgetMs` on `renderer.prepareTextures` (spec
+red → green) with the forest's startup texture stage at 8 ms behind the curtain still left
+`terrain.playtest.json` red at its first step (`worldReady` 60.1 s, host load 11–24). The 2 ms upload
+slice is not what bounds loading now; the loading lane needs a measured breakdown (grounding of all
+218,809 placements, admission, prewarm) before another budget change.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
