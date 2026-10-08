@@ -141,7 +141,7 @@ describe("strict builds are incremental", () => {
 });
 
 describe("a game's source tree is staged with its layout", () => {
-  function tree() {
+  function tree(extra: { stageOnly?: boolean } = {}) {
     const { root, engineBuild, calls } = setup();
     const project = join(root, "project");
     mkdirSync(join(project, "src", "scenes"), { recursive: true });
@@ -158,6 +158,7 @@ describe("a game's source tree is staged with its layout", () => {
         name: "game",
         entry: join(project, "src", "game.ts"),
         sourceRoot: project,
+        ...extra,
         outDir: join(root, "out"),
         engineBuild,
         compiler: { binaryPath: COMPILER, identity: "perry test" },
@@ -182,6 +183,15 @@ describe("a game's source tree is staged with its layout", () => {
     writeFileSync(join(project, "src", "scenes", "Play.ts"), "export const Play = 2;\n");
     expect(build().ran).toEqual(["typescript", "link"]);
     expect(toolsOf(calls)).toEqual(["ar", COMPILER]);
+  });
+
+  it("stops after staging when asked, before Perry runs", () => {
+    const { out, build, calls } = tree({ stageOnly: true });
+    const staged = build();
+    expect(staged.errors).toEqual([]);
+    expect(staged.ran).toEqual(["typescript", "shim", "hooks"]);
+    expect(toolsOf(calls)).not.toContain(COMPILER);
+    expect(existsSync(join(out, "src", "scenes", "Play.ts"))).toBe(true);
   });
 
   it("drops a staged file the game deleted", () => {
