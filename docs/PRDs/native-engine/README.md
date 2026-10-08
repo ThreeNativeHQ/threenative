@@ -47,7 +47,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-523](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | The render graph owns passes and history (N14a) | 7/7 | done |
 | [PRD-524](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 5/5 | done |
 | [PRD-525](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | Probes run native (N14c) | 5/5 | done |
-| [PRD-526](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | Post effects and render chains run native (N14d) | 4/5 | in progress |
+| [PRD-526](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | Post effects and render chains run native (N14d) | 5/5 | done |
 | [PRD-527](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 4/4 | done |
 | [PRD-528](../done/native-engine/PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 7/7 | done |
 | [PRD-529](../done/native-engine/PRD-529-n16-native-playtest-inspection-telemetry.md) | Native playtest, inspection and telemetry (N16) | 6/6 | done |
@@ -122,7 +122,7 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | N14a | ↳ [PRD-523 — The render graph owns passes and history](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | N09 |
 | N14b | ↳ [PRD-524 — Virtual shadows run native](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | N14a, N12 |
 | N14c | ↳ [PRD-525 — Probes run native](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | N14a |
-| N14d | ↳ [PRD-526 — Post effects and render chains run native](N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | N14a |
+| N14d | ↳ [PRD-526 — Post effects and render chains run native](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | N14a |
 | N14e | ↳ [PRD-527 — Particles and fluids run native](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | N14a, N08d |
 | N15 | [PRD-528 — Framework loop, Rapier sync, input and services](../done/native-engine/PRD-528-n15-framework-loop-rapier-sync-input-services.md) | CP1, N06, N11, N02 |
 | N16 | [PRD-529 — Native playtest, inspection and telemetry](../done/native-engine/PRD-529-n16-native-playtest-inspection-telemetry.md) | N02, N03, N06 |
