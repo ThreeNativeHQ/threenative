@@ -203,8 +203,18 @@ struct MethodData {
     v8::Global<v8::Private> cache;
     bool intersections = false;  // intersectObject(s): the only methods whose third argument is a target array
     int slot = 0;                // a fixed member's internal-field cache slot; 0: none left, use the private key
+    bool own = false;            // a read-only fixed member: once read, it becomes an own data property of the wrapper, as three defines it
     uint16_t type = 0;           // the catalog type whose wrappers own that slot: a getter borrowed by another class must not read it
 };
+
+// three defines position, rotation, quaternion and scale as read-only own data properties. Once a
+// wrapper has handed out its fixed member, the member becomes one here too, so later reads are
+// property loads that never enter the accessor.
+void adopt(v8::Isolate* isolate, v8::Local<v8::Context> ctx, v8::Local<v8::Object> self, const std::string& name,
+           v8::Local<v8::Value> value) {
+    if (!value->IsObject()) return;
+    self->DefineOwnProperty(ctx, str(isolate, name), value, v8::ReadOnly).FromMaybe(false);
+}
 
 }  // namespace
 
@@ -761,6 +771,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 continue;
             }
             auto* data = new MethodData{this, path, {}};
+            data->own = fixed && !settable;
             if (fixed && slots.count(path)) { data->slot = slots[path]; data->type = type; }
             else if (fixed) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
             proto->SetAccessorProperty(
@@ -779,6 +790,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                         if (owner) {
                             v8::Local<v8::Data> cached = self->GetInternalField(d->slot);
                             if (cached->IsValue() && !cached.As<v8::Value>()->IsUndefined()) {
+                                if (d->own) adopt(isolate, ctx, self, d->name, cached.As<v8::Value>());
                                 info.GetReturnValue().Set(cached.As<v8::Value>());
                                 return;
                             }
@@ -797,8 +809,10 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                             return;
                         }
                         v8::Local<v8::Value> value = fromValue(*d->adapter, result);
-                        if (owner) self->SetInternalField(d->slot, value);
-                        else if (d->slot == 0 && !d->cache.IsEmpty()) self->SetPrivate(ctx, d->cache.Get(isolate), value).Check();
+                        if (owner) {
+                            self->SetInternalField(d->slot, value);
+                            if (d->own) adopt(isolate, ctx, self, d->name, value);
+                        } else if (d->slot == 0 && !d->cache.IsEmpty()) self->SetPrivate(ctx, d->cache.Get(isolate), value).Check();
                         info.GetReturnValue().Set(value);
                     },
                     v8::External::New(isolate_, data)),

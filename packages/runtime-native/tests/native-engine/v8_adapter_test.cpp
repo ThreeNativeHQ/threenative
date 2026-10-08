@@ -115,7 +115,12 @@ void fastPaths() {
         }
         const mine = a.position; mine.set(4, 5, 6);
         const heir = Object.create(a);
-        const inherited = heir.position === undefined;   // a plain object inheriting a wrapper has no engine object
+        // A read member is an own data property, as three defines it: an object inheriting from the wrapper sees the wrapper's.
+        const inherited = heir.position === a.position;
+        const fresh = Object.create(new Mesh());           // before any read there is no own property, and the accessor finds no engine object
+        const inheritedFresh = fresh.position === undefined;
+        const own = Object.getOwnPropertyDescriptor(a, "position");
+        const readOnly = own !== undefined && own.value === a.position && own.writable === false;
         // A getter borrowed onto another class's object never answers from that object's slots: it
         // returns the right member for the name (a fixed member is one wrapper) or something that is
         // none of the cached members of that object under a different name.
@@ -134,10 +139,10 @@ void fastPaths() {
                 if (names.includes(n) && n in to && got !== to[n]) borrowed = 0;
             }
         }
-        [ok, b.position.x === 0, a.position.x === 4 && a.position === mine, inherited, borrowed].map(Number).join("")
+        [ok, b.position.x === 0, a.position.x === 4 && a.position === mine, inherited && inheritedFresh, borrowed, readOnly].map(Number).join("")
     )JS");
-    CHECK(members == "11111");
-    if (members != "11111") std::fprintf(stderr, "members %s\n", members.c_str());
+    CHECK(members == "111111");
+    if (members != "111111") std::fprintf(stderr, "members %s\n", members.c_str());
     // Non-numeric arguments still take the general converter: a handle, a string, an array, a boolean.
     const uint64_t general = adapter.genericArguments();
     const std::string mixed = run(rt, adapter, (std::string(setup) + R"JS(
