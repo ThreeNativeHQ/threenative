@@ -5,7 +5,7 @@
 // three@0.185.1's Material and the five mesh materials, as the properties the native renderer
 // reads (PRD-514). One class carries every type's fields; `type` says which three class it is, and
 // each constructor sets that class's defaults. Skipped: maps other than `map` (only the diffuse map
-// is sampled so far), blending modes other than NormalBlending, stencil, clipping planes, polygon
+// is sampled so far), blending modes other than No/Normal/AdditiveBlending, stencil, clipping planes, polygon
 // offset, dithering, userData, clone/toJSON. Physical features
 // beyond ior/specular are kept as numbers so the renderer can refuse them by name (TN_MATERIAL_UNSUPPORTED)
 // rather than drop them.
@@ -22,6 +22,8 @@ namespace tn::engine {
 
 enum class MaterialType : uint8_t { Basic, Lambert, Phong, Standard, Physical };
 enum class Side : uint8_t { Front = 0, Back = 1, Double = 2 };  // three's FrontSide/BackSide/DoubleSide
+/** three's NoBlending, NormalBlending and AdditiveBlending, premultipliedAlpha false. */
+enum class Blending : uint8_t { None = 0, Normal = 1, Additive = 2 };
 
 class Material {
 private:
@@ -46,6 +48,7 @@ public:
     bool depthTest = true;
     bool depthWrite = true;
     Side side = Side::Front;
+    Blending blending = Blending::Normal;
     bool visible = true;
     bool toneMapped = true;
     bool fog = true;

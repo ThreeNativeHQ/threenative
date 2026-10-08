@@ -82,7 +82,7 @@ function unboundDiagnostic(specifier, name) {
   else if (/KTX2Loader|DRACOLoader|MeshoptDecoder|meshopt_decoder/.test(specifier))
     reason = "the selected native engine asset path has no bound decoder/transcoder for this loader";
   else if (specifier === "three-mesh-bvh")
-    reason = "native raycasting exists, but MeshBVH construction, queries and serialization are not bound";
+    reason = "the native MeshBVH answers raycastObject3D only; serialization, build strategies and GPU BVH are not bound";
   else if (specifier === "three/webgpu" || name === "RenderTarget")
     reason = "native render targets, fullscreen draws and game-authored node lifecycle lack the required V8 renderer bindings";
   else if (specifier === "three/tsl")
@@ -129,6 +129,8 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
     "three/webgpu": resolve(player, "core-webgpu.mjs"),
     "three/tsl": resolve(player, "core-tsl.mjs"),
     "three/addons/utils/SkeletonUtils.js": resolve(player, "core-three.mjs"),
+    "three/addons/loaders/HDRLoader.js": resolve(player, "core-hdr.mjs"),
+    "three-mesh-bvh": resolve(repo, "packages/three-native/src/addons/mesh-bvh.ts"),
   };
   const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
     const result = await build({ entryPoints: [facade], bundle: true, write: false, format: "esm",

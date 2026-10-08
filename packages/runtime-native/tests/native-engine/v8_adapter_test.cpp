@@ -428,6 +428,9 @@ void catalogCoverage() {
         {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},
         {"StaticDrawUsage", 35044},
         {"DynamicDrawUsage", 35048},
+        {"NoBlending", static_cast<double>(tn::engine::Blending::None)},
+        {"NormalBlending", static_cast<double>(tn::engine::Blending::Normal)},
+        {"AdditiveBlending", static_cast<double>(tn::engine::Blending::Additive)},
     };
     const std::map<std::string, std::string> strings = {
         {"NoColorSpace", tn::engine::NoColorSpace},
@@ -474,7 +477,11 @@ void catalogCoverage() {
         for (const auto& [path, fn] : binding.setters) {
             (void)fn;
             const std::size_t dot = path.find('.');
-            if (dot == std::string::npos) continue;
+            // A write-only setter (`needsUpdate`) is a property of its own, or the write never lands.
+            if (dot == std::string::npos) {
+                expected.insert(path);
+                continue;
+            }
             const std::string head = path.substr(0, dot);
             if (binding.members.count(head) == 0 && binding.getters.count(head) == 0) expected.insert(head);
         }

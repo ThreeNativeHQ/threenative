@@ -18,7 +18,7 @@ export declare const AddOperation: 2;
 /** Catalog partial (native-not-implemented): three/AdditiveAnimationBlendMode. */
 export declare const AdditiveAnimationBlendMode: 2501;
 
-/** Catalog partial (native-not-implemented): three/AdditiveBlending. */
+/** Catalog supported: three/AdditiveBlending. */
 export declare const AdditiveBlending: 2;
 
 /** Catalog supported: three/AgXToneMapping. */
@@ -1322,6 +1322,7 @@ visible: boolean;
 color: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1431,6 +1432,7 @@ emissive: Color;
 envMap: Texture | null;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -1490,7 +1492,7 @@ export declare const NeverDepth: 0;
 /** Catalog partial (native-not-implemented): three/NeverStencilFunc. */
 export declare const NeverStencilFunc: 512;
 
-/** Catalog partial (native-not-implemented): three/NoBlending. */
+/** Catalog supported: three/NoBlending. */
 export declare const NoBlending: 0;
 
 /** Catalog supported: three/NoColorSpace. */
@@ -1515,7 +1517,7 @@ constructor();
 /** Catalog partial (native-not-implemented): three/NormalAnimationBlendMode. */
 export declare const NormalAnimationBlendMode: 2500;
 
-/** Catalog partial (native-not-implemented): three/NormalBlending. */
+/** Catalog supported: three/NormalBlending. */
 export declare const NormalBlending: 1;
 
 /** Catalog partial (native-not-implemented): three/NormalGAPacking. */
@@ -1539,6 +1541,17 @@ export declare const NotEqualDepth: 7;
 
 /** Catalog partial (native-not-implemented): three/NotEqualStencilFunc. */
 export declare const NotEqualStencilFunc: 517;
+
+/** Catalog supported: three/NumberKeyframeTrack. */
+export declare class NumberKeyframeTrack {
+constructor();
+readonly ValueTypeName: string;
+readonly name: string;
+readonly times: Float32Array;
+readonly values: Float32Array;
+
+  clone(): this;
+}
 
 /** Catalog supported: three/Object3D. */
 export declare class Object3D extends EventDispatcher {
@@ -1865,6 +1878,17 @@ readonly isQuaternion: true;
   toArray(array: ArrayLike<number>, offset?: number): ArrayLike<number>;
 
   random(): this;
+}
+
+/** Catalog supported: three/QuaternionKeyframeTrack. */
+export declare class QuaternionKeyframeTrack {
+constructor();
+readonly ValueTypeName: string;
+readonly name: string;
+readonly times: Float32Array;
+readonly values: Float32Array;
+
+  clone(): this;
 }
 
 /** Catalog partial (native-not-implemented): three/QuaternionLike. */
@@ -2217,6 +2241,7 @@ visible: boolean;
 color: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2245,6 +2270,7 @@ visible: boolean;
 color: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -2822,6 +2848,17 @@ export type Vector4Like = { x: number; y: number; z: number; w: number; };
 /** Catalog partial (native-not-implemented): three/Vector4Tuple. */
 export type Vector4Tuple = [ number, number, number, number ];
 
+/** Catalog supported: three/VectorKeyframeTrack. */
+export declare class VectorKeyframeTrack {
+constructor();
+readonly ValueTypeName: string;
+readonly name: string;
+readonly times: Float32Array;
+readonly values: Float32Array;
+
+  clone(): this;
+}
+
 /** Catalog partial (native-not-implemented): three/WebGLCoordinateSystem. */
 export declare const WebGLCoordinateSystem: 2000;
 
@@ -2870,6 +2907,7 @@ color: Color;
 emissive: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -2893,6 +2931,7 @@ emissive: Color;
 specular: Color;
 map: Texture | null;
 fog: boolean;
+blending: Blending;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */
