@@ -25,6 +25,7 @@ import {
 } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IRendererLike } from "../src/renderer.js";
+import { bundleSafeMaterial } from "../src/world-cells.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
 
 /**
@@ -938,5 +939,24 @@ describe("the main pass's draw bundles", () => {
     expect(cells.stats().bundle.children).toBe(bundleGroup(cells)?.children.length ?? 0);
     expect(cells.stats().bundle.records).toBeGreaterThan(settled.records);
     cells.dispose();
+  });
+
+  it("does not enumerate a typed array in bundleSafeMaterial", () => {
+    const material = new MeshBasicMaterial();
+    (material.userData as { pixels?: Float32Array }).pixels = new Float32Array(1_000_000);
+    // Each Object.values entry is one walk step. A typed array has one entry per element.
+    const realValues = Object.values;
+    let enumerated = 0;
+    const spy = vi.spyOn(Object, "values").mockImplementation((target) => {
+      const values = realValues(target);
+      enumerated += values.length;
+      return values;
+    });
+    try {
+      expect(bundleSafeMaterial(material)).toBe(true);
+      expect(enumerated).toBeLessThan(10_000);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

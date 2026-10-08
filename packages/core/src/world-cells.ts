@@ -2981,7 +2981,8 @@ const PER_RENDER_UPDATE = "render";
  * sampler — hence `transmission` is asked of the material itself as well.
  */
 function samplesFramebuffer(node: unknown, seen: Set<unknown>): boolean {
-  if (node === null || typeof node !== "object" || seen.has(node)) return false;
+  if (node === null || typeof node !== "object" || ArrayBuffer.isView(node) || seen.has(node))
+    return false;
   seen.add(node);
   const candidate = node as {
     readonly isNode?: boolean;
@@ -2994,8 +2995,9 @@ function samplesFramebuffer(node: unknown, seen: Set<unknown>): boolean {
     candidate.updateBeforeType === PER_RENDER_UPDATE
   )
     return true;
+  // Array views hold numbers, never nodes. A walk trace measured one step per element of a texture.
   for (const value of Object.values(node)) {
-    if (value === null || typeof value !== "object") continue;
+    if (value === null || typeof value !== "object" || ArrayBuffer.isView(value)) continue;
     if (samplesFramebuffer(value, seen)) return true;
   }
   return false;
@@ -3045,7 +3047,7 @@ function ownHook(mesh: Mesh, name: "onAfterRender" | "onBeforeRender"): boolean 
 }
 
 /** The material half of {@link bundleSafe}: nothing it draws may need a pass it was recorded in. */
-function bundleSafeMaterial(material: Material | undefined): boolean {
+export function bundleSafeMaterial(material: Material | undefined): boolean {
   if (material === undefined) return true;
   if (material.transparent === true) return false;
   // Read structurally: a `MeshPhysicalMaterial` always has the number and nothing else does, and
