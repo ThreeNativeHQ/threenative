@@ -50,15 +50,13 @@ function sceneRuntime(children: Map<string, IEngineRef[]>, visible: Set<string>)
   };
 }
 
-/** The registry with `children` bound on Object3D's subclasses, as the engine binding will add it. */
-function withChildren(dump: IRegistryDump): IRegistryDump {
+/** The registry without `children`, as it was before the engine bound it. */
+function withoutChildren(dump: IRegistryDump): IRegistryDump {
   return {
     classes: Object.fromEntries(
       Object.entries(dump.classes).map(([name, binding]) => [
         name,
-        binding.members.includes("parent")
-          ? { ...binding, members: [...binding.members, "children"] }
-          : binding,
+        { ...binding, members: binding.members.filter((member) => member !== "children") },
       ]),
     ),
   };
@@ -92,7 +90,7 @@ describe("browser back end object surface", () => {
     const children = new Map<string, IEngineRef[]>();
     const visible = new Set<string>();
     const runtime = sceneRuntime(children, visible);
-    const { classes } = defineBrowserClasses(withChildren(registry), runtime, catalog);
+    const { classes } = defineBrowserClasses(registry, runtime, catalog);
     const make = (name: string) => {
       const object = new (classes.Group as Constructor)();
       object.label = name;
@@ -123,8 +121,12 @@ describe("browser back end object surface", () => {
     expect(shown).toEqual(["root", "b"]);
   });
 
-  it("refuses traverse while the engine does not bind children", () => {
-    const { classes } = defineBrowserClasses(registry, sceneRuntime(new Map(), new Set()), catalog);
+  it("refuses traverse on a class whose binding has no children", () => {
+    const { classes } = defineBrowserClasses(
+      withoutChildren(registry),
+      sceneRuntime(new Map(), new Set()),
+      catalog,
+    );
     const group = new (classes.Group as Constructor)();
     expect(() => (group.traverse as (fn: () => void) => void)(() => {})).toThrow(
       "TN_BROWSER_UNBOUND: Group.children",

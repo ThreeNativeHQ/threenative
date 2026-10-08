@@ -7,6 +7,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   type PerspectiveCamera,
+  SphereGeometry,
 } from "three";
 import config from "../threenative.config.js";
 
@@ -29,7 +30,14 @@ class Boot extends Scene<IBootState> {
     );
     const sun = new DirectionalLight(0xffffff, 3);
     sun.position.set(3, 5, 4);
-    ctx.scene.add(this.#box, sun, new AmbientLight(0xffffff, 0.4));
+    // A smooth sphere beside the box: its shading gradient is what tells a frame from a blank one.
+    const ball = new Mesh(
+      new SphereGeometry(0.7, 32, 16),
+      new MeshStandardMaterial({ color: 0x40a0ff }),
+    );
+    ball.position.set(1.6, 0, 0);
+    this.#box.position.set(-0.8, 0, 0);
+    ctx.scene.add(this.#box, ball, sun, new AmbientLight(0xffffff, 0.4));
     return (frameCtx, dt) => {
       if (this.#box !== undefined) this.#box.rotation.y += dt;
       frameCtx.state.set((state) => ({ frames: state.frames + 1 }));

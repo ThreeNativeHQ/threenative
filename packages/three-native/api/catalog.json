@@ -12199,8 +12199,7 @@
           "lifetime": "reference",
           "default": "[]",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {

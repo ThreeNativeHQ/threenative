@@ -264,7 +264,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_material=material
     native_engine_abi_light=light
     native_engine_abi_callbacks=callbacks
-    native_engine_abi_color_set=color_set)
+    native_engine_abi_color_set=color_set
+    native_engine_abi_children=children)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 # PRD-508 phase 3: the geometry edges a JS caller reaches that no fixture states.
