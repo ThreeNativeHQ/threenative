@@ -28,7 +28,7 @@ export function riggingScenario(bytes: Buffer): "correctness" | "lifecycle" | "b
   const hash = sha256(Buffer.from(canonical));
   if (hash === "47533aad23e554a9bf1d863870f0033bf51b96c55e5b34b708bc6508adf3e599")
     return "correctness";
-  if (hash === "3644ac117dd9ac6445b7692477e29ad34ac439c3d18f1ee82aaa79a09b954c25")
+  if (hash === "b83017485a22fa28ddb44dfe3d1cceb270fe9a461cd5cfe28ae1b200d2d3c685")
     return "lifecycle";
   if (hash === "7f478b66735b20cce153b052371b80a87c94e0629be79b36a238eb970bfa081f")
     return "benchmark";
