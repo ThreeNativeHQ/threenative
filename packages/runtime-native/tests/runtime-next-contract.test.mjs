@@ -293,7 +293,10 @@ test('deprecated native GLTF and Draco paths fail closed before compilation', ()
   const runtime = read('src/runtime.cpp');
   assert.doesNotMatch(runtime, /setupGLTF|setupDraco|MYSTRAL_HAS_DRACO|__loadGLTF/u);
   const downloader = read('scripts/download-deps.mjs');
-  assert.doesNotMatch(downloader, /\bcgltf\b|\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
+  assert.doesNotMatch(downloader, /\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
+  // cgltf returned for the JS-free native engine loader (PRD-515); the legacy JS-host glTF path
+  // above stays removed, so it is provisioned as a header only and never compiled by the host.
+  assert.match(downloader, /headers: \['cgltf\.h'\]/u, 'cgltf must stay header-only');
 });
 
 test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap', () => {
@@ -1383,7 +1386,7 @@ test('all three Android engine-default sites agree', () => {
   // The platform block opts out of V8 only when something else was explicitly asked for.
   assert.match(
     cmake,
-    /if\(NOT MYSTRAL_USE_QUICKJS AND NOT MYSTRAL_USE_JSC\)\s*\n\s*set\(MYSTRAL_USE_V8 ON\)/u,
+    /if\(NOT MYSTRAL_USE_QUICKJS AND NOT MYSTRAL_USE_JSC(?: AND NOT TN_ENGINE_ONLY)?\)\s*\n\s*set\(MYSTRAL_USE_V8 ON\)/u,
     'the CMake Android platform block must default to V8',
   );
 
