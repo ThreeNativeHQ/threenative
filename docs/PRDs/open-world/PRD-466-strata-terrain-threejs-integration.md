@@ -3766,4 +3766,10 @@ and a fresh judge scored the ground 3 → 3.5 ("keep; small improvement";
 [capture](../../benchmark/strata-loading-2026-10-06/field-grass-lifted-root.jpg)). The sun/env rebalance is
 the next lever and needs the grass lit by more than the env map first.
 
+Rejected round (not committed as code): forest sun 5.8 → 9.3, non-canopy forest `envMapIntensity`
+0.5, and an upward normal for map-less forest ground cutouts. Meadow p10/p50 54/93 → 38/81 and the
+speckle returned; sun share rose only 22% → 35%. The dense grass cards stay sky-lit even with an
+upward normal, so the next lane should inspect which pack layer draws the meadow (its normal and
+alpha-to-coverage at distance) before another light rebalance.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
