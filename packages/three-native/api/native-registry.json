@@ -117,6 +117,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "color",
         "layers",
         "matrix",
@@ -262,6 +263,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "layers",
         "matrix",
         "matrixWorld",
@@ -599,6 +601,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "layers",
         "matrix",
         "matrixWorld",
@@ -896,6 +899,7 @@
       "setters": [
         "colorSpace",
         "flipY",
+        "image.data",
         "magFilter",
         "mapping",
         "minFilter",
@@ -1060,6 +1064,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "color",
         "layers",
         "matrix",
@@ -1374,6 +1379,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "layers",
         "matrix",
         "matrixWorld",
@@ -1510,6 +1516,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "color",
         "groundColor",
         "layers",
@@ -1815,6 +1822,7 @@
       ],
       "members": [
         "boundingBox",
+        "children",
         "geometry",
         "instanceColor",
         "instanceMatrix",
@@ -1946,6 +1954,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "layers",
         "levels",
         "matrix",
@@ -2369,6 +2378,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "geometry",
         "layers",
         "material",
@@ -2926,6 +2936,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "layers",
         "matrix",
         "matrixWorld",
@@ -3066,6 +3077,7 @@
         "zoom"
       ],
       "members": [
+        "children",
         "layers",
         "matrix",
         "matrixWorld",
@@ -3239,6 +3251,7 @@
         "zoom"
       ],
       "members": [
+        "children",
         "layers",
         "matrix",
         "matrixWorld",
@@ -3489,6 +3502,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "color",
         "layers",
         "matrix",
@@ -3778,6 +3792,7 @@
       "members": [
         "background",
         "backgroundRotation",
+        "children",
         "environment",
         "environmentRotation",
         "fog",
@@ -4140,6 +4155,7 @@
         "bindMatrix",
         "bindMatrixInverse",
         "boundingBox",
+        "children",
         "geometry",
         "layers",
         "material",
@@ -4395,6 +4411,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "color",
         "layers",
         "matrix",
@@ -4654,6 +4671,7 @@
         "visible"
       ],
       "members": [
+        "children",
         "geometry",
         "layers",
         "material",

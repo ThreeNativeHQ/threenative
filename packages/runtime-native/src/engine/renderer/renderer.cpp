@@ -691,27 +691,28 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     if (record.gpu.type != 0) gpu_.destroy(record.gpu);
     if (record.mipped) wgpuTextureRelease(record.mipped);
     record = MaterialTexture{};
-    // Match WebGPUTextureUtils: FloatType stays RGBA32Float; sRGB byte textures decode before
-    // filtering in the GPU, not after filtering in the material/PMREM shader.
+    // Match WebGPUTextureUtils: FloatType stays RGBA32Float, HalfFloatType RGBA16Float; sRGB byte
+    // textures decode before filtering in the GPU, not after filtering in the material/PMREM shader.
     if (texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
         throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: FloatType requires float32-filterable");
     const WGPUTextureFormat format = texture.isFloat() ? WGPUTextureFormat_RGBA32Float
+                                    : texture.isHalfFloat() ? WGPUTextureFormat_RGBA16Float
                                     : texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb
                                                        : WGPUTextureFormat_RGBA8Unorm;
     if (texture.hasImage()) {
         // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
-        const bool mipmaps = texture.generateMipmaps && !texture.isFloat();
+        const bool mipmaps = texture.generateMipmaps && texture.bytesPerTexel() == 4;
         uint32_t levels = 1;
         for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++levels;
         if (levels == 1)
             record.gpu = gpu_.createTexture(texture.width, texture.height, format,
                                             WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
-        const uint64_t expected = uint64_t(texture.width) * texture.height * (texture.isFloat() ? 16u : 4u);
+        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.bytesPerTexel();
         if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
         std::vector<uint8_t> flipped;
         const uint8_t* pixels = texture.data.data();
         if (texture.flipY) {
-            const size_t row = size_t(texture.width) * (texture.isFloat() ? 16 : 4);
+            const size_t row = size_t(texture.width) * texture.bytesPerTexel();
             flipped.resize(texture.data.size());
             for (uint32_t y = 0; y < texture.height; ++y)
                 std::memcpy(flipped.data() + size_t(y) * row, texture.data.data() + size_t(texture.height - 1 - y) * row, row);
@@ -776,8 +777,8 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
 // Background.js's sharp sky (backgroundBlurriness=0); environment lighting uses PMREM separately.
 Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
     if (texture.mapping != 303 || !texture.hasImage() || texture.format != kTextureRGBAFormat ||
-        (texture.type != kTextureFloatType && texture.type != kTextureUnsignedByteType) ||
-        uint64_t(texture.width) * texture.height * (texture.isFloat() ? 16u : 4u) != texture.data.size())
+        (texture.type != kTextureFloatType && texture.type != kTextureHalfFloatType && texture.type != kTextureUnsignedByteType) ||
+        uint64_t(texture.width) * texture.height * texture.bytesPerTexel() != texture.data.size())
         throw std::runtime_error("TN_NATIVE_BACKGROUND_INVALID: decoded RGBA equirectangular pixels required");
     auto& cube = backgroundCubes_[texture.ident.value()];
     if (cube.view && cube.version == texture.version()) return cube;
@@ -787,7 +788,8 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
     cube = {};
     const auto* source = materialTexture(texture);
     if (!source->view) throw std::runtime_error("TN_NATIVE_BACKGROUND_UPLOAD_FAILED");
-    const auto format = texture.isFloat() ? WGPUTextureFormat_RGBA32Float : texture.isSRGB()
+    const auto format = texture.isFloat() ? WGPUTextureFormat_RGBA32Float
+        : texture.isHalfFloat() ? WGPUTextureFormat_RGBA16Float : texture.isSRGB()
         ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm;
     WGPUTextureDescriptor desc{};
     desc.dimension = WGPUTextureDimension_2D; desc.size = {texture.height, texture.height, 6};
@@ -1000,8 +1002,8 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
     if (equirect.mapping != 303)
         throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UNSUPPORTED: requires EquirectangularReflectionMapping");
     if (equirect.width < 64 || !equirect.hasImage() || equirect.format != kTextureRGBAFormat ||
-        (equirect.type != kTextureFloatType && equirect.type != kTextureUnsignedByteType) ||
-        uint64_t(equirect.width) * equirect.height * (equirect.isFloat() ? 16u : 4u) != equirect.data.size())
+        (equirect.type != kTextureFloatType && equirect.type != kTextureHalfFloatType && equirect.type != kTextureUnsignedByteType) ||
+        uint64_t(equirect.width) * equirect.height * equirect.bytesPerTexel() != equirect.data.size())
         throw std::runtime_error("TN_NATIVE_ENVIRONMENT_INVALID: requires decoded RGBA equirectangular pixels, width >= 64");
     EnvironmentGpu& env = environments_[equirect.ident.value()];
     if (env.view != nullptr && env.version == equirect.version()) return env;

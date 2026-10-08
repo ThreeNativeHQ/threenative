@@ -244,6 +244,7 @@ describe("threenative build", () => {
         maxFps: 60,
         orientation: "landscape" as const,
       },
+      engine: "legacy" as const,
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: true },
       ui: { renderer: "native" as const },

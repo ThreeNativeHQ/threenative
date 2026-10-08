@@ -135,7 +135,7 @@ struct tn_context : tn::binding::Store {
         return shared ? valueOf(std::string(object->type()), shared) : tn_value_t{};
     }
     std::vector<double> numbers(const tn::binding::Value& arg) override {
-        return arg.kind == tn::binding::Value::Kind::Numbers ? arg.numbers : std::vector<double>{};
+        return tn::binding::numbersOf(arg);
     }
     // `primary`: the handle names the object itself, not a member alias at the same address.
     bool hold(std::string cls, std::shared_ptr<void> ptr, tn_handle_t& out, bool primary = true) {
@@ -468,6 +468,24 @@ tn_handle_t shareObject(tn_context_t* context, std::string cls, std::shared_ptr<
     tn_handle_t handle{};
     if (!context->decode(value.text, handle)) throw binding::Unsupported{"TN_NATIVE_OBJECT_SHARE_FAILED"};
     return handle;
+}
+
+tn_status_t setNumber(tn_handle_t handle, SetterSlot& slot, const std::string& name, double value, tn_diagnostic_t* diagnostic) {
+    gCrossings.fetch_add(1, std::memory_order_relaxed);
+    tn_context* context = nullptr;
+    tn::binding::Object* object = nullptr;
+    if (const tn_status_t s = selfObject(handle, context, object, diagnostic); s != TN_OK) return s;
+    const auto& binding = bindingOf(*object);
+    if (slot.binding != &binding) {
+        const auto found = binding.setters.find(name);
+        if (found == binding.setters.end())
+            return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + object->cls + "." + name + " is not settable").c_str());
+        slot = {&binding, &found->second};
+    }
+    return guarded(diagnostic, [&]() -> tn_status_t {
+        (*slot.setter)(object->ptr.get(), tn::binding::Value::of(value), *context);
+        return ok(diagnostic);
+    });
 }
 
 engine::shader::graph::Node shaderNode(tn_handle_t handle, const std::string& path) {

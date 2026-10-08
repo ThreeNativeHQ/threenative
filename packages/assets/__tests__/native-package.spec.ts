@@ -192,6 +192,16 @@ describe("writeNativePackage validation", () => {
     expect(message).toMatch(/itself/u);
   });
 
+  it("refuses a GPU buffer (uploadSize above 0) whose length is not a multiple of four", () => {
+    const message = invalid([entry({ data: Uint8Array.from([1, 2, 3]), uploadSize: 3 })]);
+    expect(message).toContain("TN_NATIVE_PACKAGE_INVALID");
+    expect(message).toMatch(/GPU buffer/u);
+    // A CPU buffer (uploadSize 0) is read by a decoder, never uploaded, so it keeps any length.
+    expect(() =>
+      writeNativePackage([entry({ data: Uint8Array.from([1, 2, 3]), uploadSize: 0 })]),
+    ).not.toThrow();
+  });
+
   it("refuses a negative or non-integer uploadSize", () => {
     expect(invalid([entry({ uploadSize: -1 })])).toContain("TN_NATIVE_PACKAGE_INVALID");
     expect(invalid([entry({ uploadSize: 1.5 })])).toContain("TN_NATIVE_PACKAGE_INVALID");
@@ -306,12 +316,69 @@ describe("assets.nativePackage", () => {
     ).toBe(true);
   });
 
+  it("ships audio as a Buffer entry of its encoded bytes, at any length", async () => {
+    const root = await makeTempDir("threenative-native-package-audio-");
+    await mkdir(path.join(root, "assets"));
+    // WebAudio decodes the bytes; no GPU upload, so the buffer alignment rule does not apply.
+    await writeFile(path.join(root, "assets", "beep.ogg"), Buffer.from("OggS!"));
+
+    await compileAssets({
+      config: { audio: "none", models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    const output = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+    const [entry] = readNativePackageManifest(output).entries;
+    expect(entry?.name).toBe("beep.ogg");
+    expect(entry?.kind).toBe(NativeEntryKind.Buffer);
+    expect(entry?.size).toBe(5);
+  });
+
+  it("keeps a CPU-decoded buffer at its exact length and declares no GPU upload", async () => {
+    const root = await makeTempDir("threenative-native-package-cpu-buffer-");
+    await mkdir(path.join(root, "assets"));
+    // An HDRLoader parses the .hdr in JS: 7 bytes is a legal entry, and nothing uploads it.
+    await writeFile(path.join(root, "assets", "sky.hdr"), Buffer.from("#?RGBE\n"));
+
+    await compileAssets({
+      config: { models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    const output = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+    const [entry] = readNativePackageManifest(output).entries;
+    expect(entry?.name).toBe("sky.hdr");
+    expect(entry?.kind).toBe(NativeEntryKind.Buffer);
+    expect(entry?.size).toBe(7);
+    expect(entry?.uploadSize).toBe(0);
+  });
+
+  it("cooks a JPEG into an RGBA8 Texture entry, as it does a PNG", async () => {
+    const root = await makeTempDir("threenative-native-package-jpeg-");
+    await mkdir(path.join(root, "assets"));
+    const { encode } = await import("jpeg-js");
+    const pixels = Buffer.alloc(8 * 4 * 4, 200);
+    await writeFile(
+      path.join(root, "assets", "panel.jpg"),
+      encode({ data: pixels, height: 4, width: 8 }, 90).data,
+    );
+
+    await compileAssets({
+      config: { models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    const output = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+    const [entry] = readNativePackageManifest(output).entries;
+    expect(entry?.name).toBe("panel.jpg");
+    expect(entry?.kind).toBe(NativeEntryKind.Texture);
+    expect(entry?.size).toBe(12 + 8 * 4 * 4);
+    expect(entry?.uploadSize).toBe(8 * 4 * 4);
+  });
+
   it("removes a stale package when a recook has no v1 entry", async () => {
     const root = await makeTempDir("threenative-native-package-empty-");
     await mkdir(path.join(root, "assets"));
-    await writeFile(path.join(root, "assets", "data.bin"), Buffer.from([1, 2, 3]));
+    await writeFile(path.join(root, "assets", "data.bin"), Buffer.alloc(0));
     // The fixed path the bake owns whenever nativePackage is on, left by an earlier run whose
-    // receipt is gone. A 3-byte buffer is not a legal v1 entry, so this run emits none.
+    // receipt is gone. An empty buffer is not a legal v1 entry, so this run emits none.
     const target = path.join(root, "public", "native", "assets.tnpk");
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, Buffer.from("stale package left by an earlier run"));

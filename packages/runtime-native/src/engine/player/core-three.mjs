@@ -1,20 +1,24 @@
 // Identity-preserving imports over the V8 adapter, never upstream Three.js.
+import { audio } from "./core-audio.mjs";
 export const {
   AmbientLight, AnimationAction, AnimationClip, AnimationMixer, Bone, Box3, BoxGeometry,
   BufferAttribute, BufferGeometry, Camera, CatmullRomCurve3, CircleGeometry, Color, ConeGeometry, CylinderGeometry,
-  DataTexture, DirectionalLight, Euler, Float32BufferAttribute, Fog, FogExp2, Frustum, Group,
+  DirectionalLight, Euler, Float32BufferAttribute, Fog, FogExp2, Frustum, Group,
   HemisphereLight, InstancedBufferAttribute, InstancedMesh, LatheGeometry, LOD, Layers, Matrix3, Matrix4, Mesh,
   MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshPhysicalMaterial,
   MeshStandardMaterial, NumberKeyframeTrack, Object3D, OrthographicCamera, Path, PerspectiveCamera, Plane, PlaneGeometry,
   QuaternionKeyframeTrack, VectorKeyframeTrack, Shape, ShapeGeometry, ExtrudeGeometry,
   PointLight, Quaternion, Ray, Raycaster, RingGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
-  SphereGeometry, SpotLight, Sprite, SpriteMaterial, Texture, TorusGeometry, TubeGeometry, Vector2, Vector3,
+  SphereGeometry, SpotLight, Sprite, SpriteMaterial, TorusGeometry, TubeGeometry, Vector2, Vector3,
   Vector4, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, PCFSoftShadowMap,
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
   EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, AttachedBindMode, FrontSide, BackSide, DoubleSide, StaticDrawUsage, DynamicDrawUsage,
   NoBlending, NormalBlending, AdditiveBlending, PropertyBinding, getConsoleFunction, setConsoleFunction,
 } = globalThis;
+// Texture sources (typed array, canvas, ImageBitmap) the engine copies; see core-textures.mjs.
+import { DataTexture, Texture } from "./core-textures.mjs";
+export { CanvasTexture, DataTexture, DataUtils, HalfFloatType, ImageBitmapLoader, Texture } from "./core-textures.mjs";
 
 export const clone = globalThis.__tnCloneSkeleton;
 
@@ -33,7 +37,7 @@ export const LineSegments = unsupported;
 export const Points = unsupported;
 export const WebGLRenderer = unsupported;
 export const TextureLoader = unsupported;
-export const AudioLoader = unsupported;
+export const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
 
 // Native traversal and child enumeration are host callbacks, not a second JS scene graph.
 const bags = new WeakMap();

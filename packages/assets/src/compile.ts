@@ -199,7 +199,8 @@ export interface IAssetSourceConfig {
   /**
    * Also writes the native cooked package (`<output>/native/assets.tnpk`, TNPK v1) beside the
    * existing outputs: one Buffer entry per cooked binary buffer and one Texture entry per cooked
-   * RGBA8 PNG. Mesh, material and scene entries are out of scope until their native loaders land.
+   * PNG or JPEG (decoded to RGBA8). Mesh, material and scene entries are out of scope until their
+   * native loaders land.
    * Absent means off, so a web-only project pays nothing.
    */
   readonly nativePackage?: boolean;
@@ -2220,10 +2221,12 @@ async function writeOutput(
 /**
  * Gathers the native package's entries from the cooked outputs already on disk.
  *
- * One Buffer entry per cooked binary buffer (audio/other) and one Texture entry per cooked RGBA8
- * PNG. A KTX2 texture and a model are not v1 entries: mesh, material and scene entries are out of
- * scope until the native loaders land, and v1 textures are RGBA8 only. A buffer the native loader
- * would refuse (empty, or not a multiple of four) is left out and counted, never silently padded.
+ * One Buffer entry per cooked binary buffer (audio/other), as CPU data at its exact length, and
+ * one Texture entry per cooked PNG or JPEG, decoded to RGBA8. A KTX2 texture and a model are not
+ * v1 entries: mesh, material and scene entries are out of scope until the native loaders land, and
+ * v1 textures are RGBA8 only. An empty buffer is left out and counted, never silently padded.
+ * Audio is exempt from the alignment rule: its encoded bytes go to WebAudio's decoder, never a GPU
+ * buffer, and most encoded files are not a multiple of four.
  */
 async function nativePackageEntries(
   outputRoot: string,
@@ -2236,7 +2239,9 @@ async function nativePackageEntries(
     if (entry === undefined || entry.kind === "model") continue;
     const data = await readFile(path.join(outputRoot, entry.output));
     if (entry.kind === "texture") {
-      if (!entry.output.toLowerCase().endsWith(".png") || parsePng(data) === undefined) {
+      // PNG or JPEG: decoded here to RGBA8. KTX2 and other containers need a runtime transcoder.
+      const jpeg = data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+      if (!jpeg && parsePng(data) === undefined) {
         skipped += 1;
         continue;
       }
@@ -2259,11 +2264,13 @@ async function nativePackageEntries(
       });
       continue;
     }
-    if (data.length === 0 || data.length % 4 !== 0) {
+    if (data.length === 0) {
       skipped += 1;
       continue;
     }
-    specs.push({ data, kind: NativeEntryKind.Buffer, name: logical, uploadSize: data.length });
+    // Every Buffer the cook writes is CPU data a decoder reads (audio, an HDRLoader's .hdr, raw
+    // bytes): uploadSize 0 says so, and it keeps its exact length. Only GPU buffers are aligned.
+    specs.push({ data, kind: NativeEntryKind.Buffer, name: logical, uploadSize: 0 });
   }
   return { entries: specs, skipped };
 }
@@ -3018,7 +3025,7 @@ export async function compileAssets(
       // stale manifest, rather than left to haunt a rebuilt project.
       await rm(path.join(layout.outputRoot, NATIVE_PACKAGE_NAME), { force: true });
       console.log(
-        "TN_ASSETS_NATIVE_PACKAGE_EMPTY: assets.nativePackage is on but no cooked binary buffer or RGBA8 PNG is in scope for a v1 entry.",
+        "TN_ASSETS_NATIVE_PACKAGE_EMPTY: assets.nativePackage is on but no cooked binary buffer, PNG or JPEG is in scope for a v1 entry.",
       );
     } else {
       const nativeBytes = writeNativePackage(native.entries);

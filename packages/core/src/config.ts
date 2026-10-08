@@ -449,6 +449,11 @@ export interface IThreeNativeConfig {
     readonly textures?: "none" | IThreeNativeTexturesConfig;
   };
   readonly bootSplash?: IThreeNativeBootSplash;
+  /**
+   * The engine a web build runs on. `"legacy"` (the default) bundles upstream three; `"native"`
+   * routes `three`, `three/webgpu` and `three/tsl` to the C++ engine compiled to Wasm (PRD-540).
+   */
+  readonly engine?: "legacy" | "native";
   readonly nativeEntry?: string;
   readonly renderer?: {
     readonly preferWebGPU?: boolean;

@@ -817,14 +817,14 @@ export async function buildWeb(
   try {
     await mkdir(path.dirname(staging), { recursive: true });
     await mkdir(path.dirname(driver), { recursive: true });
-    await writeFile(driver, webBuildDriver(cwd, assets));
+    await writeFile(driver, webBuildDriver(cwd, assets, config.engine));
     await run(
       process.execPath,
       [
         path.join(packageRoot(cwd, "vite"), "bin/vite.js"),
         "build",
         ...stagedViteArgs(viteArgs, staging),
-        ...ownConfigArgs(viteArgs, driver, assets === path.resolve(cwd, "public")),
+        ...ownConfigArgs(viteArgs, driver, assets === path.resolve(cwd, "public"), config.engine),
       ],
       cwd,
     );
@@ -867,16 +867,37 @@ export async function buildWeb(
  * in every Vite version: the key is present in its own config (`false` is a choice too). A caller
  * who passed `--config` gets exactly the config they named, for the same reason.
  */
-function webBuildDriver(cwd: string, assets: string): string {
+export function webBuildDriver(
+  cwd: string,
+  assets: string,
+  engine: IResolvedThreeNativeConfig["engine"] = "legacy",
+): string {
   const literal = (value: string): string => JSON.stringify(value);
+  if (engine === "legacy")
+    return `${[
+      'import { defineConfig, loadConfigFromFile, mergeConfig } from "vite";',
+      "",
+      `const root = ${literal(cwd)};`,
+      `const assets = ${literal(assets)};`,
+      "export default defineConfig(async ({ command, mode }) => {",
+      "  const own = (await loadConfigFromFile({ command, mode }, undefined, root))?.config ?? {};",
+      "  return mergeConfig(own, own.publicDir === undefined ? { publicDir: assets } : {});",
+      "});",
+      "",
+    ].join("\n")}\n`;
+  // PRD-540: the project's three imports resolve to the Wasm engine, never to upstream three.
   return `${[
+    'import { createWebEnginePlugin } from "create-threenative";',
     'import { defineConfig, loadConfigFromFile, mergeConfig } from "vite";',
     "",
     `const root = ${literal(cwd)};`,
     `const assets = ${literal(assets)};`,
     "export default defineConfig(async ({ command, mode }) => {",
     "  const own = (await loadConfigFromFile({ command, mode }, undefined, root))?.config ?? {};",
-    "  return mergeConfig(own, own.publicDir === undefined ? { publicDir: assets } : {});",
+    "  return mergeConfig(own, {",
+    "    ...(own.publicDir === undefined ? { publicDir: assets } : {}),",
+    "    plugins: [createWebEnginePlugin(root)],",
+    "  });",
     "});",
     "",
   ].join("\n")}\n`;
@@ -886,13 +907,20 @@ function webBuildDriver(cwd: string, assets: string): string {
  * The generated config, unless the caller named a config of their own or the asset root is
  * Vite's own default `public/`, where there is nothing to tell Vite and the build runs as before.
  */
-function ownConfigArgs(
+export function ownConfigArgs(
   viteArgs: readonly string[],
   driver: string,
   defaultRoot: boolean,
+  engine: IResolvedThreeNativeConfig["engine"] = "legacy",
 ): string[] {
   const named = viteArgs.some((arg) => arg === "--config" || arg.startsWith("--config="));
-  return named || defaultRoot ? [] : ["--config", driver];
+  // The native engine lives in the generated config, so a build that skips it would bundle
+  // upstream three while the project asked for the Wasm engine.
+  if (named && engine === "native")
+    throw new Error(
+      'TN_WEB_ENGINE_CONFIG_NAMED: engine "native" routes three through the generated Vite config; drop --config or add createWebEnginePlugin to your own.',
+    );
+  return named || (defaultRoot && engine === "legacy") ? [] : ["--config", driver];
 }
 
 /**

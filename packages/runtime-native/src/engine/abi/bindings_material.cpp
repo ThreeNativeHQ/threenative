@@ -16,6 +16,7 @@
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
 
+#include <cmath>
 #include <memory>
 #include <string>
 
@@ -417,6 +418,13 @@ void registerTextureFields(ClassBinding& b) {
     };
 }
 
+/** HalfFloatType data is a Uint16Array of binary16 bits: anything else would upload garbage. */
+void checkHalfFloatBits(const std::vector<double>& values) {
+    for (const double v : values)
+        if (!(v >= 0 && v <= 65535) || v != std::floor(v))
+            throw Unsupported{"HalfFloatType DataTexture data must be a Uint16Array of binary16 bits"};
+}
+
 void registerTextureClass(ClassBinding& b, bool data) {
     b.ctor = [data](const Args& a, Store&) -> std::shared_ptr<void> {
         if (!data) return std::static_pointer_cast<void>(std::make_shared<Texture>());
@@ -427,11 +435,27 @@ void registerTextureClass(ClassBinding& b, bool data) {
             const uint16_t format = a.size() > 3 ? static_cast<uint16_t>(number(a[3])) : kTextureRGBAFormat;
             const uint16_t type = a.size() > 4 ? static_cast<uint16_t>(number(a[4])) : kTextureUnsignedByteType;
             if (format != kTextureRGBAFormat) throw Unsupported{"DataTexture format must be RGBAFormat"};
+            if (type != kTextureUnsignedByteType && type != kTextureFloatType && type != kTextureHalfFloatType)
+                throw Unsupported{"DataTexture type must be UnsignedByteType, FloatType or HalfFloatType"};
+            if (type == kTextureHalfFloatType) checkHalfFloatBits(a[0].numbers);
             texture->setImage(a[0].numbers, a[0].text, width, height, format, type);
         }
         return std::static_pointer_cast<void>(texture);
     };
     registerTextureFields(b);
+    if (!data) return;
+    // three's `texture.image.data = array`: new texels of the same size and type, uploaded on the
+    // next needsUpdate. The V8 and browser back ends copy an array when it crosses, so a game that
+    // edits its typed array in place re-sends it this way before it sets needsUpdate.
+    b.setters["image.data"] = [](void* self, const Value& v) {
+        auto* texture = as<DataTexture>(self);
+        const std::size_t texels = std::size_t(texture->width) * texture->height;
+        if (v.kind != Value::Kind::Numbers || texels == 0 || v.numbers.size() != texels * 4)
+            throw Unsupported{"image.data must be a typed array of width * height * 4 values"};
+        if (texture->isHalfFloat()) checkHalfFloatBits(v.numbers);
+        // three moves `version` on needsUpdate only, so the new texels wait for it.
+        texture->setImage(v.numbers, v.text, texture->width, texture->height, texture->format, texture->type, false);
+    };
 }
 
 }  // namespace
