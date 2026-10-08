@@ -32,6 +32,12 @@ Redraw only the pages an invalidation touched. The level window is already a gri
 
 A window move, an invalidation with no region, or more than half the pages dirty still redraws the whole level.
 
+Design notes from reading three r18x (2026-10-08):
+- `Renderer` takes the viewport from `renderTarget.viewport`. It applies `renderTarget.scissor` only while the canvas target has `setScissorTest(true)`, so both must be set and restored around the partial render.
+- A WebGPU clear wipes the whole attachment whatever the viewport. A partial redraw that clears would erase the rest of the map.
+- An admission only adds casters, and an added caster can only bring a texel's depth closer, so an admission-only redraw needs no clear: render the new casters into the dirty rectangle with the existing depth test. An eviction removes casters, which needs the old depth cleared, so evictions keep the full redraw (or a later depth-reset pass). This splits Phase 2 into an admission path that is safe without a clear and an eviction path that stays full.
+- `ShadowNode.renderShadow` calls `shadow.updateMatrices(light)`, which builds the receivers' `shadowMatrix` from the camera's current projection. A `setViewOffset` applied before it would make every receiver sample the sub-rectangle as if it were the whole map. Apply the view offset after `updateMatrices`, or rebuild `shadowMatrix` from the full projection after the render.
+
 Layer: mechanism only, `packages/core/src/render/`. Nothing a game sets changes, and no appearance parameter is involved.
 
 ## Decisions
@@ -57,7 +63,7 @@ Layer: mechanism only, `packages/core/src/render/`. Nothing a game sets changes,
 **Status:** NOT STARTED
 **Files:** `packages/core/src/render/virtual-shadow.ts`
 
-- [ ] A redraw renders only the dirty rectangle through `setViewOffset`, a matching viewport and scissor, a depth reset of that rectangle, and caster culling to the sub-frustum. proof: AC-1's depth-equivalence spec.
+- [ ] An admission-only redraw renders only the dirty rectangle (`setViewOffset` after `updateMatrices`, matching viewport and scissor, no clear, casters culled to the sub-frustum), and eviction or region-less invalidations keep the full redraw. proof: AC-1's depth-equivalence spec, with an admission case and an eviction case.
 - [ ] The native host draws the same rectangle. proof: a native conformance case or a `--target desktop` playtest of a streamed world (repository rule: a web-only path is unfinished).
 
 #### Phase 3: Measure on Machinefall
