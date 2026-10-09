@@ -16,6 +16,7 @@ Depends on PRD-266 (landed as
 [PRD-269](../done/PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch:
 [docs/PRDs/lighting](./README.md).
 
+**Priority:** P2 — Its registry guard and conformance-case chain are unwritten, so PRD-268 and PRD-269 stay ungated.
 **Goal: every lighting stage this batch turns on is proved to execute on native in the commit that
 turns it on.** The root charter's rule — a feature that works on web only is unfinished — is what
 disqualified four of the seven shortlisted repos. It has to bind this batch's own work too, or the
