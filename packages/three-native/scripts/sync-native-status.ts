@@ -608,6 +608,19 @@ function addMissingMembers(dump: IRegistryDump, byName: Map<string, MutableClass
   }
 }
 
+/** A catalog constant is supported exactly when the engine's constant table (the dump) lists it. */
+function syncConstants(catalog: MutableCatalog, dumped: readonly string[]): void {
+  const listed = new Set(dumped);
+  const constants = new Map<string, Writable<CatalogEntry>>();
+  for (const entry of catalog.entries)
+    if (entry.kind === "constant") constants.set(entry.name, entry);
+  for (const name of dumped) if (!constants.has(name)) unknown.push(`constant.${name}`);
+  for (const [name, entry] of constants) {
+    if (listed.has(name)) entry.status = SUPPORTED;
+    else if (entry.status.kind === "supported") entry.status = NOT_IMPLEMENTED;
+  }
+}
+
 function main(): void {
   const dumpIndex = process.argv.indexOf("--dump");
   const dumpPath = dumpIndex === -1 ? undefined : process.argv[dumpIndex + 1];
@@ -619,29 +632,7 @@ function main(): void {
   const byName = new Map<string, MutableClass>();
   for (const entry of catalog.entries) if (entry.kind === "class") byName.set(entry.name, entry);
 
-  if (dump.constants !== undefined) {
-    const dumpConstants = new Set(dump.constants);
-    const catalogConstants = new Map(
-      catalog.entries
-        .filter(
-          (entry): entry is Extract<CatalogEntry, { kind: "constant" }> =>
-            entry.kind === "constant",
-        )
-        .map((entry) => [entry.name, entry]),
-    );
-    for (const name of dump.constants) {
-      if (!catalogConstants.has(name)) {
-        unknown.push(`constant.${name}`);
-      }
-    }
-    for (const [name, entry] of catalogConstants) {
-      if (dumpConstants.has(name)) {
-        entry.status = SUPPORTED;
-      } else if (entry.status?.kind === "supported") {
-        entry.status = NOT_IMPLEMENTED;
-      }
-    }
-  }
+  syncConstants(catalog, dump.constants ?? []);
 
   if (
     dump.classes.MeshBasicNodeMaterial !== undefined ||
