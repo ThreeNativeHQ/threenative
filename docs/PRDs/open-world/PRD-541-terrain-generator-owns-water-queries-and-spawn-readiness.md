@@ -53,10 +53,9 @@ The generator should expose the mechanism once; the density rules and looks stay
 
 ## Blocked on
 
-- Phases 1–2 and the preview half of phase 3: `packages/terrain` and `examples/strata-terrain-preview`
-  exist only on the PRD-466 branch (PR #381), not on `develop`. Unblocked when #381 merges; this
-  branch then rebases onto `develop` and continues. (Checked 2026-10-09: `git ls-tree origin/develop`
-  lists neither.)
+Nothing. `packages/terrain` and `examples/strata-terrain-preview` exist only on the PRD-466 branch
+(PR #381), so this PR is stacked on that branch (base `feat/prd-466-468-strata`) and retargets to
+`develop` when #381 merges.
 
 ## Decisions
 
