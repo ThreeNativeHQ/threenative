@@ -125,6 +125,21 @@ def write_layer_maps(tex, layer):
     )
 
 
+def write_height_map(tex, layer):
+    """The layer's own height, 0.5 being zero: sharp stones with grout, so an edge has relief to follow."""
+    seed = layer["_seed"]
+    write_image(
+        os.path.join(tex, "%s_h.jpg" % layer["id"]),
+        TEXTURE_SIZE,
+        TEXTURE_SIZE,
+        lambda x, y: (lambda v: (v, v, v))(
+            min(1.0, max(0.0, 0.5 + 1.3 * noise(x * 2.1, y * 2.1, seed + 17)))
+        ),
+        file_format="JPEG",
+        quality=90,
+    )
+
+
 def build(out):
     source = os.path.join(out, "dcc")
     tex = os.path.join(source, "tex")
@@ -140,6 +155,8 @@ def build(out):
                 "_hsv": (hue, 0.25 + 0.05 * (index % 4), 0.35 + 0.03 * (index % 5)),
                 "_seed": index + 1,
                 "_weave": index % 3 == 0,
+                # The first masked pair blends by its own height: stone over the base's grass.
+                "height": index in (1, 2),
                 "id": "layer-%02d" % index,
                 "metalness": 0.0 if index % 5 else 0.35,
                 "normal": True,
@@ -152,6 +169,8 @@ def build(out):
 
     for layer in layers:
         write_layer_maps(tex, layer)
+        if layer["height"]:
+            write_height_map(tex, layer)
 
     # Fifteen masked layers over three channels per mask image: five planes, each band a gradient.
     for plane in range(5):
@@ -171,6 +190,8 @@ def build(out):
 
     def table_entry(layer, masked):
         entry = {key: value for key, value in layer.items() if not key.startswith("_")}
+        if not entry.get("height"):
+            entry.pop("height", None)
         if masked:
             entry.update(
                 {
@@ -191,6 +212,7 @@ def build(out):
         "splatSize": SPLAT_SIZE,
         "textures": {
             "diff": "{id}_diff.jpg",
+            "h": "{id}_h.jpg",
             "nrm": "{id}_nrm.jpg",
             "orm": "{id}_orm.jpg",
             "search": ["."],
@@ -255,7 +277,7 @@ def build(out):
     shutil.rmtree(source, ignore_errors=True)
     sys.stdout.write(
         "TN_PRD493_WORLD layers=%d maps=%d splatPlanes=%d out=%s\n"
-        % (LAYER_COUNT, LAYER_COUNT * 3, len(masks), out)
+        % (LAYER_COUNT, LAYER_COUNT * 3 + 2, len(masks), out)
     )
 
 
