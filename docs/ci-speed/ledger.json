@@ -415,6 +415,83 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": 6,
+      "at": "2026-10-09T10:16:15.565Z",
+      "commit": "7789bf328",
+      "label": "hourly refresh",
+      "notes": "One new PR merged since the last tick, 470, after 4 merge-group attempts. Its first failing job was integration / velocity. The window now has 2 merged PRs, 470 and 458. Last push to merge median 475.9 min, p90 477.1 min. First attempt merge 50 percent. 16 merge-group runs, board median 109.9 min, queue wait p90 45 min over 1086 jobs. First failing job in the red groups: integration / velocity 2, test-unit (3/4) 2, integration / capture 1, template-nonvisual platformer 1. PR 476 is still open, so phase 1 is not on develop yet. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 109.9,
+        "queueWaitP90Min": 45
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 16,
+        "mergeGroupRunSuccessPct": 35.7,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 1086
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 2
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 2
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-browser",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
     }
   ]
 }
