@@ -180,7 +180,6 @@ export class WaterSurface3D {
     // mirror renders outside the record, and the record gets its bundle back.
     const mirror = pass.updateBefore.bind(pass);
     pass.updateBefore = (frame: IReflectionFrame): void => {
-      // quality-allow: three 0.185 does not expose the bundle it is recording.
       const host = frame.renderer as { _currentRenderBundle?: unknown };
       const recording = host._currentRenderBundle;
       if (recording !== undefined) host._currentRenderBundle = null;

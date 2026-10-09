@@ -162,6 +162,7 @@ interface IRawNumbers {
 /** The channel a kept attribute reads as, or `undefined` for a type this path cannot read. */
 function channelOf(attribute: BufferAttribute, count: number): IChannel | undefined {
   if (Reflect.get(attribute, "isFloat16BufferAttribute") === true) return undefined;
+  // quality-allow: three types a geometry attribute as BufferAttribute; the flag below tells them apart.
   const interleaved = attribute as unknown as InterleavedBufferAttribute | undefined;
   const data = interleaved?.isInterleavedBufferAttribute === true ? interleaved.data : undefined;
   const array = (data?.array ?? attribute.array) as IRawNumbers;
@@ -592,6 +593,7 @@ function writeChannel(
     writePosition(
       channel,
       indices,
+      // quality-allow: Matrix4.elements is number[] in three's types and always 16 long.
       matrix === undefined ? null : (matrix.elements as unknown as PlacementElements),
       scratchOf(channel.array),
       values,
@@ -605,7 +607,8 @@ function writeChannel(
       indices,
       matrix === undefined
         ? null
-        : (new Matrix3().getNormalMatrix(matrix).elements as unknown as NormalElements),
+        : // quality-allow: Matrix3.elements is number[] in three's types and always 9 long.
+          (new Matrix3().getNormalMatrix(matrix).elements as unknown as NormalElements),
       scratchOf(channel.array),
       values,
       at,

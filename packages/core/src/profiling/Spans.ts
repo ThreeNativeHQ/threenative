@@ -426,6 +426,7 @@ const RECORDER_SLOT = Symbol.for("threenative.frameSpans.recorder");
 type RecorderHost = { [key: symbol]: SpanRecorder | undefined };
 
 function recorderHost(): RecorderHost {
+  // quality-allow: the recorder lives on globalThis under a private symbol, which no lib type names.
   return globalThis as unknown as RecorderHost;
 }
 
