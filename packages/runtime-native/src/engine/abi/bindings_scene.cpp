@@ -142,6 +142,46 @@ Value foundObject(Store& store, Object3D* found) {
     return store.share(std::string(found->type()), std::static_pointer_cast<void>(shared));
 }
 
+/**
+ * three's Object3D.clone(recursive = true): `new this.constructor().copy(this, recursive)`. A mesh
+ * shares its geometry and material and a skinned mesh its skeleton, as three's copy does (a cloned
+ * rig still follows the source's bones; SkeletonUtils.clone is what rebinds them). A type whose own
+ * copy is not ported is refused by name. ponytail: userData lives in the language back end and is
+ * not carried over; the JS side copies it if a game needs it.
+ */
+std::shared_ptr<Object3D> cloneObject(const Object3D& source, bool recursive) {
+    std::shared_ptr<Object3D> copy;
+    if (const auto* skinned = dynamic_cast<const SkinnedMesh*>(&source)) {
+        auto mesh = std::make_shared<SkinnedMesh>();
+        mesh->geometry = skinned->geometry;
+        mesh->material = skinned->material;
+        mesh->morphTargetInfluences = skinned->morphTargetInfluences;
+        mesh->skeleton = skinned->skeleton;
+        mesh->attached = skinned->attached;
+        mesh->bindMatrix.copy(skinned->bindMatrix);
+        mesh->bindMatrixInverse.copy(skinned->bindMatrixInverse);
+        copy = mesh;
+    } else if (dynamic_cast<const InstancedMesh*>(&source) || dynamic_cast<const Sprite*>(&source)) {
+        throw Unsupported{"clone of a " + std::string(source.type()) + " is not ported"};
+    } else if (const auto* mesh = dynamic_cast<const Mesh*>(&source)) {
+        auto made = std::make_shared<Mesh>(mesh->geometry, mesh->material);
+        made->morphTargetInfluences = mesh->morphTargetInfluences;
+        copy = made;
+    } else if (dynamic_cast<const Bone*>(&source)) {
+        copy = std::make_shared<Bone>();
+    } else if (source.type() == "Group") {
+        copy = std::make_shared<Group>();
+    } else if (source.type() == "Object3D") {
+        copy = std::make_shared<Object3D>();
+    } else {
+        throw Unsupported{"clone of a " + std::string(source.type()) + " is not ported"};
+    }
+    copy->copy(source);
+    if (recursive)
+        for (const Object3D* child : source.children) copy->add(*cloneObject(*child, true));
+    return copy;
+}
+
 void registerObject3D(ClassBinding& b) {
     b.members["parent"] = [](void* self, const Args&, Store& store) {
         return foundObject(store, as<Object3D>(self)->parent);
@@ -399,6 +439,11 @@ void registerObject3D(ClassBinding& b) {
     b.methods["copy"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->copy(objectArg(store, a.at(0)));
         return chain();
+    };
+    b.methods["clone"] = [](void* self, const Args& a, Store& store) {
+        const bool recursive = a.empty() || a.at(0).kind == Value::Kind::Undefined || flag(a.at(0));
+        const std::shared_ptr<Object3D> copy = cloneObject(*as<Object3D>(self), recursive);
+        return store.adopt(std::string(copy->type()), std::static_pointer_cast<void>(copy));
     };
 }
 
