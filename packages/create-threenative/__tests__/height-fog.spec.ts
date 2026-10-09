@@ -1,13 +1,16 @@
+import { type FogExp2, Scene, Texture } from "three";
 import { describe, expect, it } from "vitest";
 import {
   HEIGHT_FOG,
   type HeightFogParams,
-  distanceDensity,
   heightFogDepth,
-  heightFogTransmittance,
-} from "../templates/starter/src/render/sky.js";
+} from "../templates/starter/src/render/heightFog.js";
+import { setupSky } from "../templates/starter/src/render/sky.js";
 
 const params: HeightFogParams = { ...HEIGHT_FOG };
+
+const transmittance = (p: HeightFogParams, cameraY: number, fragmentY: number, length: number) =>
+  Math.max(2 ** -heightFogDepth(p, cameraY, fragmentY, length), 1 - p.maxOpacity);
 
 /** Midpoint march of the same density along the ray, base-2 optical depth. */
 function march(p: HeightFogParams, cameraY: number, fragmentY: number, length: number): number {
@@ -45,18 +48,21 @@ describe("height fog", () => {
     const steep = { ...params, heightFalloff: 5 };
     const depth = heightFogDepth(steep, -1000, 1000, 2000);
     expect(Number.isFinite(depth)).toBe(true);
-    expect(heightFogTransmittance(steep, -1000, 1000, 2000)).toBe(0);
+    expect(transmittance(steep, -1000, 1000, 2000)).toBe(0);
   });
 
   it("should fog low ground more than a ridge at the same distance", () => {
-    const low = heightFogTransmittance(params, 2, 2, 400);
-    const ridge = heightFogTransmittance(params, 2, 150, 400);
+    const low = transmittance(params, 2, 2, 400);
+    const ridge = transmittance(params, 2, 150, 400);
     expect(low).toBeLessThan(ridge);
   });
 
   it("should keep the old eye-level haze within 2%", () => {
-    const dist = distanceDensity(params);
-    const total = Math.exp(-((dist * 150) ** 2)) * heightFogTransmittance(params, 2, 2, 150);
+    const scene = new Scene();
+    setupSky(scene, new Texture());
+    const dist = (scene.fog as FogExp2).density;
+    expect(scene.fogNode).toBeTruthy();
+    const total = Math.exp(-((dist * 150) ** 2)) * transmittance(params, 2, 2, 150);
     expect(Math.abs(total - Math.exp(-((0.003 * 150) ** 2)))).toBeLessThan(
       0.02 * Math.exp(-((0.003 * 150) ** 2)),
     );
@@ -70,12 +76,12 @@ describe("height fog", () => {
     };
     for (const cameraY of [0, 500]) {
       const distanceT = 1 - smooth(128, 256, 256);
-      const combined = distanceT * heightFogTransmittance(params, cameraY, cameraY, 256);
+      const combined = distanceT * transmittance(params, cameraY, cameraY, 256);
       expect(combined).toBe(0);
     }
     for (const z of [10, 130, 200]) {
       const distanceT = 1 - smooth(128, 256, z);
-      expect(distanceT * heightFogTransmittance(params, 2, 2, z)).toBeLessThanOrEqual(distanceT);
+      expect(distanceT * transmittance(params, 2, 2, z)).toBeLessThanOrEqual(distanceT);
     }
   });
 });

@@ -101,7 +101,10 @@ export function createVolumetricFog(
       if (graph !== undefined) throw new Error("volumetricFog: compose once per owned graph.");
       if (scenePass.camera !== camera)
         throw new Error("volumetricFog: scene depth must come from this camera.");
-      if (Reflect.get(scenePass.scene, "fog") != null || scenePass.scene.fogNode != null)
+      if (
+        Reflect.get(scenePass.scene, "fog") != null ||
+        Reflect.get(scenePass.scene, "fogNode") != null
+      )
         throw new Error("volumetricFog: scene fog duplicates the same medium.");
       graph = composeFogVolume(camera, options, volumes, scenePass);
       return graph.compose;
