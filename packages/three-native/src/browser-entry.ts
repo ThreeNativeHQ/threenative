@@ -23,6 +23,7 @@ import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-rend
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { Material, defineObjectSurface } from "./object-surface.js";
+import { definePass } from "./pass-node.js";
 import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -153,6 +154,9 @@ export async function bindWebEngine(
     // effects (addons/post-effects-web.ts), and three's RenderPipeline over the web host.
     bound.__tnTsl = tsl.exports;
     bound.RenderPipeline = defineRenderPipeline(runtime.tsl);
+    // three's pass() and mrt() over the engine's scene pass, as on the V8 player; RenderPipeline draws
+    // the renderer's last scene, so the pass's own scene and camera are not followed here.
+    Object.assign(bound, definePass(tsl.exports as never));
   }
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
