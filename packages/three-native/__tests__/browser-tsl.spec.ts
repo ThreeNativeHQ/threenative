@@ -165,6 +165,17 @@ describe("TSL on the browser back end", () => {
     expect(() => (side.onObjectUpdate as Fn)(() => 1)).toThrow(/TN_TSL_UPDATE_UNSUPPORTED/);
   });
 
+  it("answers every swizzle three does: xyzw, rgba and stpq, one to four lanes", () => {
+    const calls: ICall[] = [];
+    const tsl = defineTsl(tslRuntime(calls, [])).exports;
+    const v = (tsl.vec3 as Fn)(1, 2, 3);
+    for (const alias of ["xz", "zxy", "st", "bgr", "xxxx"]) expect(v[alias], alias).toBeDefined();
+    expect(v.xyzwx).toBeUndefined();
+    expect(calls.map((c) => c.name).filter((n) => n.startsWith("swizzle:"))).toEqual([
+      "swizzle:xz", "swizzle:zxy", "swizzle:xy", "swizzle:zyx", "swizzle:xxxx",
+    ]);
+  });
+
   it("runs Fn, If, Else and Loop callbacks inside engine scopes, as V8's adapter does", () => {
     const calls: ICall[] = [];
     const tsl = defineTsl(tslRuntime(calls, [])).exports;

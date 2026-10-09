@@ -251,6 +251,9 @@ const summed = Fn(() => {
   return height.add(uv().x.dFdx().abs()).add(uv().y.dFdy().sign()).add(float(-8).cbrt());
 })();
 check(summed && typeof summed.addAssign === "function" && typeof summed.cbrt === "function", "assign forms, dFdx, sign, cbrt");
+// Every swizzle three answers, as Midway's ocean reads positionWorld.xz.
+const lanes = vec3(1, 2, 3);
+check(lanes.xz && lanes.zxy && lanes.st && lanes.bgr && lanes.xxxx && lanes.xyzwx === undefined, "swizzles");
 basic.alphaTestNode = summed;
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
   check(THREE[name] === expected, name + " differs from pinned Three.js");
