@@ -4109,3 +4109,13 @@ world pass submits 11–18M triangles per nested render and about 36–45M trian
 nested renders, mostly near grass cards. `maxViewGpuMs ≤ 12` on this GPU therefore needs grass LOD or
 density work, a performance project that must keep the judged look (perf wins never cost visuals);
 not started.
+
+Triangle census at `meadow-close` (instances × indexed triangles over every visible prop buffer,
+not frustum-culled): 70.9M, of which spruce about 40M and grass about 24M. Outlier: spruce variant
+2 (`spruce_full_03_low`), whose far level carries 9,495 triangles per tree across 2,163 instances
+(11.4M) while the other variants' far levels carry 2.4–2.8k. Its cooked `2-far.glb` is 541 KB against
+587 KB near. Re-running the prep script's simplification on a scratch copy explains it: meshopt
+`simplify` (ratio 0.14) keeps **92% of variant 2 at every error bound from 0.012 to 0.12**, while
+variant 0 reaches 14%, because variant 2 is disconnected foliage cards that edge collapse cannot merge.
+Next: card decimation or sloppy simplification for that variant in `prep-fab-temperate.mjs`, then a
+recook. The recook needs the imported Fab library (`FAB_TEMPERATE`), which is not on this machine.
