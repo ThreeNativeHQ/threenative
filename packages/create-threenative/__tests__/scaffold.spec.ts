@@ -182,22 +182,25 @@ const BUG_REPORT_SKILL_PATHS = [
 // PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
+// Recomputed 2026-10-08 for the shooter fix. The normal target now uses the material blend mode
+// in every kit's worldEnvironment.ts. The shooter Rifle.ts gained a scope alpha test and a reticle.
+// All thirteen generated trees changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Actual no-install generation of the isolated raw4 candidate at parent4e86/develop29f.
   // The canonical Three patch changes every kit; only starter also changes render source/docs.
-  "action-rpg": "caf3c4f2f63afdf886eb2354d23acd416fff7651c15274a53348d7ade2aaf6fc",
-  minimal: "b6b01a63b921f0b30f0aca3938a656aa2fceb99bb3d7b8ce99c0bfb97359ffb6",
-  platformer: "fe5877b9615cbabe934562643c34de3155460bd34b64ec475b610c62f06f9b11",
-  puzzle: "b2c9e31047a38e651778fe16f74153a7d151089285788576a811d07bc68b0b1e",
-  racing: "1064a22a6a705bdf3f18f8624c76e2c15fdcfb1151c8e13b0bbdad1a897de66a",
-  rain: "ea37bdc0482b09be95a54a7418276b87e4173d472fd6e261879ade1668ff5c54",
-  rts: "7f937142785ca49c931bfd8379b43eece8bb96cd499fadf7bb957275da033bbb",
-  runner: "f0d1d02f927b3449797912a574bf2dfa8ac63a337f4557d4f8620a15a56ad095",
-  sailing: "e8dead635de1cd7bcebb0e6210a90c5ecf49890f8fe8b3f2bd47f9985907b7e7",
-  shooter: "de306f0bfb63c3aa3f9fc77cbd31931327849f412f871a038baff910dba7d5fe",
-  snow: "4f04686e95bc423c20d6edaf88bd89dee0758923bef772cd6df4d4b345afa00b",
-  starter: "62d167652e00369e2e87766f9ae5c807368db7f974af465621c595021aa9db6b",
-  "tower-defense": "6c2f7a2f4e17e1378c8d9be492fa8a8db20a7293141ad775f79e4b66631c687a",
+  "action-rpg": "a396e4fa85c50b81283c44af4d231d23479a87783661e174f3ea220ba6f8178b",
+  minimal: "fe90f52855a88d824c59babefffa255ca742b92f83892c28c25d97ebf303e237",
+  platformer: "10c93422bf3f2ad3253f161c01d3f95c760883b3f7b699a436d4ed17e7230c91",
+  puzzle: "64628346a18ddc9bcb5659b893dd174e1b5d82e16a4015978b4bc5d79ad4c6d1",
+  racing: "a02ce42747e48f15b5ba5a4a7850a658de0ee6985e475e207e702be9c1bdd66b",
+  rain: "e12c2b1e9abc4ec39109f31f111f498c0952c3f48507a44669e3463496b4e407",
+  rts: "2ee62aa3039b41925d0ab3f7fc8281d8bb763c5516443de7c19fa33b6a8f0fa1",
+  runner: "2cd1eae9aa60bba3589a39c0c17b98aaf8e29197e305ccd739fba29a0cc799cb",
+  sailing: "717107b424833fc6d7c0c8e78b5952dcf0b89d8be007c61c33decb92817de7b4",
+  shooter: "d5b94f28534228ef13ff7a8258f612df6bd3a6663f5efd2ee0cedc41395f13af",
+  snow: "4b8ff343a0d92ffe09c09548fa5442e1a8eeb84e5c5b402391d2f70d47550091",
+  starter: "ef640928b516f0c48b27fb9cb77fc28d1c72cf905bab6d296ae355cdadaac78c",
+  "tower-defense": "2bf27076c4f753426813a154a160770d046b6ad91f975dc0630b108d437795e8",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
