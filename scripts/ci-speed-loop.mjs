@@ -246,7 +246,11 @@ export function renderHtml(ledger, now = new Date()) {
       return `<tr${out}><td>#${item.id}</td><td>${esc(item.at.slice(0, 10))}</td><td>${esc(item.commit)}</td><td>${esc(item.label)}${flag}<br><small class="dim">${esc(item.notes)}</small></td><td><span class="pill">${esc(item.decision)}</span></td><td>${esc(item.window.since)}</td>${cells}</tr>`;
     })
     .join("");
-  const prs = (latest?.prs ?? [])
+  // A window that merged no PR keeps the last window that did, so the audit table never goes blank.
+  const prSource = [...live].reverse().find((item) => (item.prs ?? []).length > 0);
+  const prTitle =
+    prSource === undefined ? "Merged PRs" : `Merged PRs, iteration #${String(prSource.id)} window`;
+  const prs = (prSource?.prs ?? [])
     .map(
       (row) =>
         `<tr><td>#${row.number}</td><td>${esc(row.title)}</td><td class="n">${esc(num(row.lastPushToMergeMin, "min"))}</td><td class="n">${esc(num(row.enqueueToMergeMin, "min"))}</td><td class="n">${row.attempts}</td><td>${esc(row.firstAttempt ?? "n/a")}</td><td>${esc(row.firstFailingJob ?? "")}</td></tr>`,
@@ -290,15 +294,15 @@ svg{width:100%;height:auto}
 tr.out td{opacity:.55;text-decoration:line-through}tr.out td small{text-decoration:none}
 </style></head><body><main>
 <h1>CI speed loop</h1>
-<p class="dim">${header} Snapshot ${esc(now.toISOString())}. This page is generated: reload for current data. Goal: a change merges within 30 minutes of its last push (PRD-550).</p>
+<p class="dim">${header} Snapshot ${esc(now.toISOString())}. Regenerate with <code>node scripts/ci-speed-loop.mjs report</code>, then reload; the page is a static render of <code>docs/ci-speed/ledger.json</code>. Goal: a change merges within 30 minutes of its last push (PRD-550).</p>
 <h2>Progress toward the goal</h2>
 <div class="scroll"><table><thead><tr><th>Metric</th><th>Baseline</th><th>Now</th><th>Goal</th><th>Progress</th><th></th></tr></thead><tbody>${strip}</tbody></table></div>
 <h2>Trend per iteration</h2>
 <div class="grid3">${charts}${barChart(latest?.firstFailingJobs ?? [], "First failing job per red merge group, latest iteration")}</div>
 <h2>Iterations</h2>
 <div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Change</th><th>Decision</th><th>Window from</th>${GOALS.map((g) => `<th class="n">${esc(g.short)}</th>`).join("")}</tr></thead><tbody>${history || '<tr><td colspan="12" class="dim">baseline pending</td></tr>'}</tbody></table></div>
-<h2>Merged PRs in the latest window</h2>
-<div class="scroll"><table><thead><tr><th>PR</th><th>Title</th><th class="n">Push to merge</th><th class="n">Enqueue to merge</th><th class="n">Attempts</th><th>First attempt</th><th>First failing job</th></tr></thead><tbody>${prs || '<tr><td colspan="7" class="dim">no PRs</td></tr>'}</tbody></table></div>
+<h2>${prTitle}</h2>
+<div class="scroll"><table><thead><tr><th>PR</th><th>Title</th><th class="n">Push to merge</th><th class="n">Enqueue to merge</th><th class="n">Attempts</th><th>First attempt</th><th>First failing job</th></tr></thead><tbody>${prs || '<tr><td colspan="7" class="dim">no merged PR in this ledger</td></tr>'}</tbody></table></div>
 </main></body></html>
 `;
 }

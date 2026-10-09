@@ -3,6 +3,7 @@
   "goals": [
     {
       "key": "lastPushToMergeMedianMin",
+      "short": "Push→merge p50",
       "label": "Last push to merge, median",
       "unit": "min",
       "goal": 30,
@@ -10,6 +11,7 @@
     },
     {
       "key": "lastPushToMergeP90Min",
+      "short": "Push→merge p90",
       "label": "Last push to merge, p90",
       "unit": "min",
       "goal": 45,
@@ -17,6 +19,7 @@
     },
     {
       "key": "firstAttemptSuccessPct",
+      "short": "First attempt",
       "label": "Merge queue passes on the first attempt",
       "unit": "%",
       "goal": 90,
@@ -24,6 +27,7 @@
     },
     {
       "key": "boardWallMedianMin",
+      "short": "Board wall",
       "label": "Merge-group board wall time, median",
       "unit": "min",
       "goal": 15,
@@ -31,6 +35,7 @@
     },
     {
       "key": "queueWaitP90Min",
+      "short": "Queue wait p90",
       "label": "Runner queue wait, p90",
       "unit": "min",
       "goal": 3,
@@ -226,6 +231,40 @@
         {
           "job": "test-unit (4/4)",
           "count": 1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "at": "2026-10-09T05:47:36.259Z",
+      "commit": "90dee0c83",
+      "label": "no change landed: the queue still runs the exhaustive board",
+      "notes": "Window since 2026-10-09. 0 PRs merged, so push->merge, p90 and first-attempt are n/a; board wall and queue wait measure the exhaustive merge-group board this change removes. Iteration #1 stays the baseline. Re-measure once 5 or more PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": null,
+        "lastPushToMergeP90Min": null,
+        "firstAttemptSuccessPct": null,
+        "boardWallMedianMin": 119.1,
+        "queueWaitP90Min": 50.9
+      },
+      "extra": {
+        "prCount": 0,
+        "mergeGroupRuns": 7,
+        "mergeGroupRunSuccessPct": 50,
+        "enqueueToMergeMedianMin": null,
+        "queueWaitJobs": 462
+      },
+      "prs": [],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 2
         }
       ]
     }

@@ -264,4 +264,20 @@ describe("ci-speed-loop dashboard", () => {
     expect(html).toContain("n/a");
     expect(html).not.toMatch(/Runner queue wait, p90<\/td><td>0 min/u);
   });
+
+  it("keeps the latest window that merged a PR in the PR table", () => {
+    const first = appendIteration(emptyLedger(), { measurement: measurement(), label: "baseline" });
+    const html = renderHtml(
+      appendIteration(first, {
+        measurement: {
+          ...measurement({ lastPushToMergeMedianMin: null }),
+          prs: [],
+          firstFailingJobs: [],
+        },
+        label: "no PR merged",
+      }),
+    );
+    expect(html).toContain("red then green");
+    expect(html).toContain("Merged PRs, iteration #1 window");
+  });
 });
