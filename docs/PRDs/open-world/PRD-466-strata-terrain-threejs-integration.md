@@ -4091,3 +4091,12 @@ Red → green renderer spec; 59 timestamp specs pass. Web `terrain.playtest.json
 8,671 → 3,630 ms with the scatter fix. Still red: `afterFirstFrameTaskMs` 3,630 > 250,
 `timeToReadyMs` 48,031 > 15,000, `maxViewGpuMs` **53.0 > 12** (now a real measured GPU cost, not a
 missing reading), and `props.crags.drawn` at `overview`.
+
+Forest crags. Outcrops required slopes over a fixed 30 degrees, and the rebaked forest's 98th
+percentile slope is 22 degrees (282 of 66,000 cells over 30), so the forest placed none and
+`props.crags.drawn` failed at its overview. **Fixed** in `f149d0853`: the threshold is the terrain's
+own 98th percentile slope, capped at 30. Forest gains 7 outcrops with every other placement
+byte-identical; coastal is fully identical. A fresh judge saw no regression and a negligible visual
+change at the fixed cameras. Web `terrain.playtest.json` (host load 33): **62 assertions, 59 pass**.
+The three left are performance bounds: `afterFirstFrameTaskMs` 1,674 > 250, `timeToReadyMs` 38,192 >
+15,000 and `maxViewGpuMs` 40.0 > 12.
