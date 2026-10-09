@@ -704,22 +704,17 @@ function wrapRenderer(
       // reported absence rather than a frame-time error.
       const resolveTimestampsAsync = raw.resolveTimestampsAsync;
       if (resolveTimestampsAsync === undefined) return;
-      // Three refuses to resolve while the sampling flag is off. Hold it on only for starting
-      // the resolves; restore the cadence before any later pass allocates queries.
-      const backend = raw.backend;
-      const tracking = backend?.trackTimestamp;
-      // The observation batch follows the cadence the frame actually sampled at, not the forced flag.
       const observationBatch =
-        gpuObservation !== undefined && tracking === true ? gpuObservation.capture() : undefined;
-      if (timestampCapable && backend !== undefined) backend.trackTimestamp = true;
-      try {
-        void resolveTimestampsAsync.call(raw)?.catch(() => undefined);
-        gpuObservation?.submitted(observationBatch);
-        // Render and compute own independent pools; both must be drained.
-        void resolveTimestampsAsync.call(raw, "compute")?.catch(() => undefined);
-      } finally {
-        if (backend !== undefined) backend.trackTimestamp = tracking;
-      }
+        gpuObservation !== undefined && raw.backend?.trackTimestamp === true
+          ? gpuObservation.capture()
+          : undefined;
+      void resolveTimestampsAsync.call(raw)?.catch(() => undefined);
+      gpuObservation?.submitted(observationBatch);
+      // Three maintains independent 2,048-query pools for render and compute passes. Resolving
+      // only the default render pool lets GPU simulations exhaust the compute pool even when the
+      // render pool is healthy, after which the adapter can be lost instead of merely reporting
+      // an absent timestamp.
+      void resolveTimestampsAsync.call(raw, "compute")?.catch(() => undefined);
     },
     setResolutionScale: (scale, scaleSource) => {
       if (disposed) return;
@@ -867,6 +862,9 @@ function wrapRenderer(
       if (kind !== "webgpu") throw new Error(`compute is unavailable on the ${kind} renderer.`);
       if (typeof raw.compute !== "function")
         throw new Error("webgpu renderer does not expose compute().");
+      // As a standalone draw: a caller that does not manage frames with beginFrame() gets one
+      // sampler frame per dispatch, which is what the compute timing scope keys its calls by.
+      if (!timestampFramesManaged) setTimestampTracking();
       const backend = raw.backend;
       const before = backend?.timestampQueryPool?.compute?.queryOffsets?.size ?? 0;
       raw.compute(node);
