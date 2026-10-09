@@ -754,7 +754,10 @@ test('the actual packed archive excludes C++ runtime source', async () => {
   const root = makeTempDirSync('threenative-pack-');
   roots.push(root);
   const packed = await packRuntime(root);
-  const files = packed.files.join('\n');
+  // PRD-540 ships the built Wasm web engine, two files under build/web/; nothing else under build/.
+  const files = packed.files
+    .filter((file) => !/^build\/web\/tn-native-engine-web\.(?:mjs|wasm)$/u.test(file))
+    .join('\n');
   assert.doesNotMatch(files, /^(?:src|include|cmake|native|third_party|build)\//mu);
   assert.doesNotMatch(files, /\.(?:c|cc|cpp|cxx|h|hh|hpp|m|mm)$/mu);
 
