@@ -1459,6 +1459,11 @@ test("an empty assertion set remains a failed report", () => {
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_SCENARIO_NO_ASSERTIONS");
 });
 
+test("the evaluator fails an empty assertion set before exitCodeForReport can read it as a pass", () => {
+  // The evaluator appends a failing scenario.assertions result. The exit code is therefore never 0.
+  expect(exitCodeForReport(report(scenario(undefined)))).not.toBe(0);
+});
+
 test("the legacy TypeScript scenario is rejected by the JSON loader", async () => {
   const directory = await makeTempDir("playtest-legacy-scenario-");
   await writeFile(join(directory, "play.playtest.ts"), "export const playScenario = {};\n");

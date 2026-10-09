@@ -293,6 +293,13 @@ async function bakeUv2(
 export function lightmapPass(options: ILightmapPassOptions): IAssetPass {
   const atlasSize = positiveInteger(options.atlasSize, "atlasSize");
   const padding = positiveInteger(options.padding, "padding");
+  // BC7 (and BC1/ETC2) compress in 4x4 blocks: an atlas edge that is not a multiple of four
+  // produces a KTX2 the decoders reject or pad silently. Reject it here rather than shipping it.
+  if (atlasSize % 4 !== 0) {
+    throw new Error(
+      `TN_ASSETS_LIGHTMAP_CONFIG_INVALID: atlasSize must be a multiple of 4; received ${String(atlasSize)}.`,
+    );
+  }
   return {
     appliesTo: ["model"],
     cacheKey: JSON.stringify({ atlasSize, padding }),

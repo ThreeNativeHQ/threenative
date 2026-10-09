@@ -188,6 +188,24 @@ test("standalone args fail with a concrete first command", () => {
   ).toThrow(/threenative-playtest --scenario/);
 });
 
+test.each([
+  ["an unknown target", ["playtests/move.json", "--target", "tvos"], /Unknown target 'tvos'/u],
+  ["a port that conflicts with the URL port", ["playtests/move.json", "--url", "http://127.0.0.1:5173", "--port", "4000"], /conflicts with the port in --url \(5173\)/u],
+  ["an unknown iOS transport", ["playtests/move.json", "--ios-transport", "usb"], /Unknown iOS transport 'usb'/u],
+  ["a browser recipe with a browser arg", ["playtests/move.json", "--browser-recipe", "webgpu", "--browser-arg", "--enable-unsafe-webgpu"], /Choose --browser-recipe or --browser-arg, not both/u],
+  ["a judge marker URL that does not parse", ["playtests/move.json", "--judge-marker-url", "not a url"], /--judge-marker-url must be a canonical/u],
+  ["a judge marker URL with a query", ["playtests/move.json", "--judge-marker-url", "http://127.0.0.1:4000/first-frame?run=1"], /--judge-marker-url must be a canonical/u],
+  ["a browser recipe on a device run", ["playtests/move.json", "--device", "emulator-5554", "--browser-recipe", "webgpu"], /cannot honor --browser-recipe/u],
+  ["a browser arg on a device run", ["playtests/move.json", "--device", "emulator-5554", "--browser-arg", "--enable-unsafe-webgpu"], /cannot honor --browser-arg/u],
+  ["--headed on a device run", ["playtests/move.json", "--device", "emulator-5554", "--headed"], /cannot honor --headed/u],
+  ["a touch rotation outside 0 to 3", ["playtests/move.json", "--touch-rotation", "4"], /TN_PLAYTEST_ANDROID_ROTATION_INVALID/u],
+  ["a build report without an artifact", ["playtests/move.json", "--build-report", "build.json"], /--build-report on the browser target also needs --artifact/u],
+  ["a port outside the TCP range", ["playtests/move.json", "--port", "70000"], /Expected a TCP port from 0 to 65535/u],
+  ["a zero timeout", ["playtests/move.json", "--timeout", "0"], /Expected a positive integer, received '0'/u],
+])("standalone args refuse %s", (_case, argv, message) => {
+  expect(() => parseStandalonePlaytestArgs(argv, "/project")).toThrow(message);
+});
+
 test("init creates only config scenario and adapter examples", async () => {
   const projectPath = await makeTempDir("playtest-init-");
 

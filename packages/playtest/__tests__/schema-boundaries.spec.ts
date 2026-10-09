@@ -273,7 +273,7 @@ describe("scenario schema boundaries", () => {
           {
             entityVisible: { entity: "player", minProjectedPixels: 20, throughoutFrames: true },
             frameDiff: { baselineImage: "artifacts/base.png", maxChangedPixelRatio: 0.9, minChangedPixelRatio: 0.1 },
-            region: { height: 10, maxDarkPixelRatio: 0.8, maxLuminance: 100, minDarkPixelRatio: 0.1, minNonblankPixelRatio: 0.2, width: 10, x: 0, y: 0 },
+            region: { height: 10, maxDarkPixelRatio: 0.8, maxLuminance: 0.9, minDarkPixelRatio: 0.1, minNonblankPixelRatio: 0.2, width: 10, x: 0, y: 0 },
           },
         ],
         world: {
@@ -398,6 +398,68 @@ describe("scenario schema boundaries", () => {
     expect(() => validateStep({ kind: "wait", waitFrames: 1, waitTicks: 1, release: true }, "invalid.json", 0)).toThrow(/choose waitTicks or waitFrames/u);
     expect(() => validateStepLabels([{ label: "same", release: true, waitTicks: 1 }, { label: "same", release: true, waitTicks: 1 }] as never, undefined, "invalid.json")).toThrow(/duplicate label/u);
     expect(() => validateStepLabels([{ label: "start", release: true, waitTicks: 1 }] as never, { signals: [{ atStep: "missing", name: "hit" }] } as never, "invalid.json")).toThrow(/no scenario step defines/u);
+  });
+
+  // PRD-536 A1: the root parser decided each of these by `isRecord(...)` or a
+  // `typeof x === "number" ? { x } : {}` spread, so a wrong-typed root field was
+  // dropped and the scenario ran without it.
+  it("rejects a root field it would otherwise drop", () => {
+    const dropped: [unknown, RegExp][] = [
+      [-1, /warmupFrames/u],
+      ["2", /warmupFrames/u],
+      [[], /setup/u],
+      [5, /subject/u],
+      [{ screenshots: "no" }, /screenshots/u],
+      ["before-after", /parity/u],
+    ];
+    const keys = ["warmupFrames", "warmupFrames", "setup", "subject", "artifacts", "parity"];
+    keys.forEach((key, index) => {
+      const [bad, message] = dropped[index]!;
+      expect(() => validatePlaytestScenario({ ...scenario(undefined), [key]: bad }, "invalid.json")).toThrow(message);
+    });
+    expect(validatePlaytestScenario({ ...scenario(undefined), warmupFrames: 0 }, "valid.json").warmupFrames).toBe(0);
+  });
+
+  // PRD-536 A2: each of these loaded and then bounded nothing, so the run reported
+  // green with the author's check missing. Same rejection shape as notThermallyConfounded:false.
+  it("rejects an assertion that sets no bound", () => {
+    const vacuous: [Record<string, unknown>, RegExp][] = [
+      [{ performance: {} }, /performance/u],
+      [{ visual: [{ frameDiff: {} }] }, /frameDiff/u],
+      [{ resources: [{ atSteps: [{ label: "sample" }], id: "state" }] }, /atSteps\[0\]/u],
+      [{ resources: [{ atSteps: [], id: "state" }] }, /atSteps/u],
+      [{ causedBy: [{ cause: { contact: { entity: "player", with: "crate" } }, effect: { becomes: "won", path: "game.mode" }, neverBefore: false }] }, /neverBefore/u],
+      [{ scene: { cameraClearsScene: false } }, /cameraClearsScene/u],
+      [{ scene: { minVisibleLights: 0 } }, /minVisibleLights/u],
+      [{ sceneNodes: [{ select: { name: "crate" }, texturesLoaded: false }] }, /texturesLoaded/u],
+      [{ movement: { rotationChanged: false } }, /rotationChanged/u],
+    ];
+    for (const [assert, message] of vacuous) {
+      expect(() => validateAssertions(assert, "invalid.json")).toThrow(message);
+    }
+  });
+
+  // PRD-536 A3: the ranges are the runtime units the evaluators compare against —
+  // capture.ts divides luminance by 255, projectedOffscreenRatio returns 0..1.
+  it("rejects an out-of-range or malformed bound", () => {
+    const outOfRange: [Record<string, unknown>, RegExp][] = [
+      [{ visual: [{ region: { element: { id: "hud" }, minNonblankPixelRatio: 1.2 } }] }, /minNonblankPixelRatio/u],
+      [{ visual: [{ region: { element: { id: "hud" }, minDarkPixelRatio: -0.1 } }] }, /minDarkPixelRatio/u],
+      [{ visual: [{ region: { element: { id: "hud" }, maxLuminance: 100 } }] }, /maxLuminance/u],
+      [{ animation: [{ entity: "player", maxFootSlide: -0.5 }] }, /maxFootSlide/u],
+      [{ visibility: [{ entity: "player", maxOffscreenRatio: 1.5 }] }, /maxOffscreenRatio/u],
+      [{ visibility: [{ entity: "player", minProjectedPixels: -1 }] }, /minProjectedPixels/u],
+      [{ visual: [{ entityVisible: { entity: "player", minProjectedPixels: -1 } }] }, /minProjectedPixels/u],
+      [{ movement: { maxDistance: -1 } }, /maxDistance/u],
+      [{ movement: { pathLength: -1 } }, /pathLength/u],
+      [{ movement: { maxDistance: "20" } }, /maxDistance/u],
+      [{ movement: { closesDistanceToPosition: "near" } }, /closesDistanceToPosition/u],
+      [{ movement: { minAxisDelta: [{ axis: "+x", min: 0.2 }] } }, /minAxisDelta/u],
+    ];
+    for (const [assert, message] of outOfRange) {
+      expect(() => validateAssertions(assert, "invalid.json")).toThrow(message);
+    }
+    expect(() => validateStep({ press: "KeyW", release: "no" }, "invalid.json", 0)).toThrow(/release/u);
   });
 
   it("rejects assertion shapes and impossible boundary values", () => {
@@ -534,7 +596,7 @@ describe("scenario schema boundaries", () => {
     expect(() => validateRenderChainAssertion({ velocity: { maxRejectionFraction: 2 } }, "invalid.json", "assert.renderChain")).toThrow(/between 0 and 1/u);
     expect(() => validateRenderChainAssertion({}, "invalid.json", "assert.renderChain")).toThrow(/tier, stages, contributions, or velocity/u);
     expect(() => validateResourcePathAssertion({ anyOf: "not-an-array", id: "state" }, "invalid.json", "assert.resources[0]")).toThrow(/array/u);
-    expect(validateResourcePathAssertion({ atSteps: [{ label: "start" }], id: "state" }, "valid.json", "assert.resources[0]")).toMatchObject({ atSteps: [{ label: "start" }] });
+    expect(validateResourcePathAssertion({ atSteps: [{ equals: 1, label: "start" }], id: "state" }, "valid.json", "assert.resources[0]")).toMatchObject({ atSteps: [{ equals: 1, label: "start" }] });
     expect(() => validateViewport({ width: 1 }, "invalid.json")).toThrow(/height/u);
     expect(() => validateOptionalNumberTuple({ position: [1, 2] }, "position", 3, "invalid.json", 0)).toThrow(/tuple/u);
     expect(validateNumberTuple([1, 2, 3], 3)).toEqual([1, 2, 3]);

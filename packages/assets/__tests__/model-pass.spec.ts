@@ -10,7 +10,12 @@ import {
   buildFixtureDocument,
   buildFixtureGlb,
 } from "../../../test-support/generate-fixture-model.js";
-import { assertNoDrift, modelPass, reachableStats } from "../src/passes/model.js";
+import {
+  assertNoDrift,
+  assertSimplifiedWithinBounds,
+  modelPass,
+  reachableStats,
+} from "../src/passes/model.js";
 
 /** Re-reads pass output exactly as self-verification does: codecs registered. */
 async function readVerified(buffer: Buffer): Promise<ReturnType<Document["getRoot"]>> {
@@ -540,5 +545,84 @@ describe("modelPass", () => {
   it("should regenerate the committed fixture byte-for-byte (staleness guard)", async () => {
     const committed = await readFile(FIXTURE_PATH);
     expect(Buffer.from(await buildFixtureGlb()).equals(committed)).toBe(true);
+  });
+});
+
+describe("assertSimplifiedWithinBounds", () => {
+  type IStats = Parameters<typeof assertSimplifiedWithinBounds>[0];
+  // A 1000-triangle unit cube with one skeleton and one clip; each test moves one thing.
+  const stats = (overrides: Partial<IStats> = {}): IStats => ({
+    boundingBox: { max: [1, 1, 1], min: [0, 0, 0] },
+    clips: 1,
+    joints: 2,
+    triangles: 1000,
+    vertices: 600,
+    ...overrides,
+  });
+
+  it("accepts a reduction that keeps the skeleton, clips and bounds", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(
+        stats(),
+        stats({ triangles: 600, vertices: 400 }),
+        0.5,
+        "tree.glb",
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects a skeleton or animation clip count that changed", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ joints: 1, triangles: 600 }), 0.5, "rig.glb"),
+    ).toThrow("joints 2 -> 1");
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ clips: 0, triangles: 600 }), 0.5, "rig.glb"),
+    ).toThrow("animation clips 1 -> 0");
+  });
+
+  it("rejects a result with more triangles than its source", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ triangles: 1001 }), 0.5, "tree.glb"),
+    ).toThrow("triangles grew 1000 -> 1001");
+  });
+
+  it("rejects a reduction below the floor the requested ratio allows", () => {
+    // The floor is 1000 * 0.5 * 0.5 = 250 triangles.
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ triangles: 249 }), 0.5, "tree.glb"),
+    ).toThrow("below the 250 floor");
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ triangles: 250 }), 0.5, "tree.glb"),
+    ).not.toThrow();
+  });
+
+  it("rejects a result that lost its bounding box", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(
+        stats(),
+        stats({ boundingBox: undefined, triangles: 600 }),
+        0.5,
+        "tree.glb",
+      ),
+    ).toThrow("bounding box lost");
+  });
+
+  it("rejects a bounding box that moved past the tolerance and accepts one inside it", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(
+        stats(),
+        stats({ boundingBox: { max: [1.05, 1, 1], min: [0, 0, 0] }, triangles: 600 }),
+        0.5,
+        "tree.glb",
+      ),
+    ).toThrow("bounding box drifted");
+    expect(() =>
+      assertSimplifiedWithinBounds(
+        stats(),
+        stats({ boundingBox: { max: [1.005, 1, 1], min: [0, 0, 0] }, triangles: 600 }),
+        0.5,
+        "tree.glb",
+      ),
+    ).not.toThrow();
   });
 });
