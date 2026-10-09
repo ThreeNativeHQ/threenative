@@ -1309,6 +1309,36 @@ void instanced() {
     CHECK(lit > 1000 && differ == 0);
     for (const std::string& d : dbA.diagnostics()) std::fprintf(stderr, "%s\n", d.c_str());
     CHECK(dbA.diagnostics().empty());
+
+    // PRD-545: a game assigns its own colour attribute after the mesh has drawn (Midway's tracers set
+    // instanceColor = new InstancedBufferAttribute(...)); the next frame shows the colours.
+    Scene later;
+    const auto keepC = light(later);
+    auto plain = std::make_shared<InstancedMesh>(geometry, material, 9);
+    for (int i = 0; i < 9; ++i) plain->setMatrixAt(i, matrices[i]);
+    later.add(*plain);
+    RenderDatabase dbC;
+    dbC.render(renderer, later, camera);
+    const std::vector<uint8_t> before = read(renderer, events);
+    std::vector<double> rgb;
+    for (const Color& c : colors) rgb.insert(rgb.end(), {c.r, c.g, c.b});
+    plain->instanceColor = BufferAttribute::fromFloats(rgb, 3);
+    dbC.render(renderer, later, camera);
+    const std::vector<uint8_t> after = read(renderer, events);
+    std::size_t stale = 0, changed = 0;
+    for (std::size_t p = 0; p + 3 < after.size() && after.size() == b.size() && before.size() == b.size(); p += 4) {
+        int d = 0, moved = 0;
+        for (int c = 0; c < 3; ++c) {
+            d = std::max(d, std::abs(int(after[p + c]) - int(b[p + c])));
+            moved = std::max(moved, std::abs(int(after[p + c]) - int(before[p + c])));
+        }
+        if (d > 2) ++stale;
+        if (moved > 2) ++changed;
+    }
+    std::printf("instanced colour assigned after a frame: %zu pixels changed, %zu differ from the reference\n", changed,
+                stale);
+    CHECK(after.size() == b.size() && changed > 1000 && stale == 0);
+    CHECK(dbC.diagnostics().empty());
 }
 
 // PRD-519 phase 1: a mixed scene renders the same batched and fully unbatched. Automatic batching
