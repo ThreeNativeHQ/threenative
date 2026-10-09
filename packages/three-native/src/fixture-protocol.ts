@@ -37,7 +37,8 @@ import {
 
 /**
  * Encodes one argument. `r:` is a reference, `n:` the binary64 bits of any number, `a:<type>:` a
- * typed array of such bits, comma-separated, and `R:` a comma-separated list of references.
+ * typed array of such bits, comma-separated, `R:` a comma-separated list of references, and `o:`
+ * an options object: `key=<scalar token>` pairs joined by `;` (a string's token escapes both).
  */
 export function encodeArg(arg: FixtureArg): string {
   if (arg === null) return "null";
@@ -46,6 +47,10 @@ export function encodeArg(arg: FixtureArg): string {
   if (typeof arg === "string") return `s:${encodeURIComponent(arg)}`;
   if ("ref" in arg) return `r:${arg.ref}`;
   if ("refs" in arg) return `R:${arg.refs.join(",")}`;
+  if ("record" in arg)
+    return `o:${Object.entries(arg.record)
+      .map(([key, value]) => `${key}=${encodeArg(value)}`)
+      .join(";")}`;
   if ("array" in arg)
     return `a:${arg.type}:${arg.array.map((value) => numberBits(value)).join(",")}`;
   if (FIXTURE_NUMBER_NAMES.includes(arg.num)) return `n:${numberBits(namedNumber(arg.num))}`;
@@ -85,6 +90,17 @@ export function decodeArg(token: string): FixtureArg {
     };
   }
   if (token.startsWith("s:")) return decodeURIComponent(token.slice(2));
+  if (token.startsWith("o:")) {
+    const fields: Record<string, number | string | boolean | null> = {};
+    for (const pair of token.slice(2) === "" ? [] : token.slice(2).split(";")) {
+      const at = pair.indexOf("=");
+      const value = at > 0 ? decodeArg(pair.slice(at + 1)) : undefined;
+      if (value === undefined || (value !== null && typeof value === "object"))
+        throw new Error(`TN_PROTOCOL_ARG_INVALID: ${token} holds a field that is not a scalar`);
+      fields[pair.slice(0, at)] = value;
+    }
+    return { record: fields };
+  }
   throw new Error(`TN_PROTOCOL_ARG_INVALID: ${token} is not an argument this protocol decodes`);
 }
 

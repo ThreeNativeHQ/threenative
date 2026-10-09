@@ -1,6 +1,7 @@
 #include "engine/shader/graph/graph.h"
 
 #include "engine/shader/tsl/tsl.h"
+#include "engine/shader/cube_uv.h"
 
 #include <bit>
 #include <unordered_map>
@@ -220,6 +221,25 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Convert: return convert(expression(d.args[0]), d.type);
         case Kind::Select:
             return program_.select(expression(d.args[0]), expression(d.args[1]), expression(d.args[2]));
+        case Kind::Reflector:
+            return program_.sample(program_.texture2d("reflector"), expression(d.args[0]));
+        case Kind::ScreenUv: {
+            // ScreenNode.UV: screenCoordinate / screenSize, the render target's size when drawing into one.
+            const auto input = inputs_.find("screenUV");
+            if (input != inputs_.end()) return input->second;
+            return program_.div(program_.swizzle(program_.builtin("position"), "xy"),
+                                program_.uniform("screenSize", Type::vec(2)));
+        }
+        case Kind::Pmrem: {
+            // PMREMNode.setup: a render-target PMREM flips y, then materialEnvRotation turns it.
+            const ExprId direction = expression(d.args[0]), level = expression(d.args[1]);
+            if (direction == kInvalid || level == kInvalid) return kInvalid;
+            const ExprId flipped = program_.construct(Type::vec(3), {program_.swizzle(direction, "x"),
+                program_.neg(program_.swizzle(direction, "y")), program_.swizzle(direction, "z")});
+            const ExprId rotated = program_.swizzle(program_.mul(program_.uniform("pmremRotation", Type::mat(4, 4)),
+                program_.construct(Type::vec(4), {flipped, program_.constant(0.0f)})), "xyz");
+            return pmremSample(program_, program_.texture2d("pmrem"), rotated, level);
+        }
         case Kind::PostEffect: {
             const auto sample = program_.sample(program_.texture2d(d.name), expression(uv()));
             return d.type == Type::f32() ? program_.swizzle(sample,"x") : sample;
@@ -405,6 +425,20 @@ Node texture(std::string_view map, Node uvs) {
     return data;
 }
 
+Node pmremTexture(std::shared_ptr<const void> texture, Node direction, Node level) {
+    auto data = makeNode(Kind::Pmrem, Type::vec(3));
+    data->object = std::move(texture);
+    data->args = {std::move(direction), std::move(level)};
+    return data;
+}
+
+Node reflectorTexture(std::shared_ptr<const void> reflector, Node uvs) {
+    auto data = makeNode(Kind::Reflector, Type::vec(4));
+    data->object = std::move(reflector);
+    data->args = {std::move(uvs)};
+    return data;
+}
+
 Node uniform(std::string_view name, Type type, std::vector<float> values) {
     auto data = makeNode(Kind::Uniform, type);
     data->name = std::string(name);
@@ -443,6 +477,7 @@ Node builtin(std::string_view name) {
 }
 Node positionLocal() { return makeNode(Kind::PositionLocal, Type::vec(3)); }
 Node uv() { return attribute("uv", Type::vec(2)); }
+Node screenUV() { return makeNode(Kind::ScreenUv, Type::vec(2)); }
 Node instanceIndex() { return builtin("instanceIndex"); }
 
 Node vec2(std::initializer_list<Node> parts) { return makeJoin(2, parts); }

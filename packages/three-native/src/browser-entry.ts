@@ -10,6 +10,7 @@
 import catalogJson from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
 import { DataUtils } from "./addons/data-utils.js";
+import { type IAudioEngine, defineAudioClasses } from "./audio.js";
 import {
   type IBrowserRuntime,
   type IRegistryDump,
@@ -22,6 +23,7 @@ import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-rend
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { Material, defineObjectSurface } from "./object-surface.js";
+import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
@@ -102,7 +104,12 @@ export async function bindWebEngine(
   if (classes.BufferGeometry !== undefined)
     defineObjectSurface({
       bufferGeometry: classes.BufferGeometry,
-      geometries: extending("BufferGeometry"),
+      // Every geometry class that binds its own setAttribute, not only BufferGeometry's children.
+      geometries: Object.values(classes).filter(
+        (cls) => cls !== classes.BufferGeometry && Object.hasOwn(cls.prototype, "setAttribute"),
+      ) as (new (
+        ...args: never[]
+      ) => object)[],
       ...(classes.Shape === undefined ? {} : { shape: classes.Shape }),
       materials: extending("Material"),
     });
@@ -113,10 +120,25 @@ export async function bindWebEngine(
     ...tsl?.exports,
   };
   bound.Material = Material;
+  // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
+  // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
+  const audio = defineAudioClasses({
+    ...(classes as unknown as Omit<IAudioEngine, "read">),
+    read: async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`TN_AUDIO_FETCH: ${String(response.status)} ${url}`);
+      return response.arrayBuffer();
+    },
+  });
+  const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
+  Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
-  // Edited Color/VectorN uniform values reach the engine before each frame.
+  // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio.
   if (isWebHostModule(module))
-    bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, tsl?.sync);
+    bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, () => {
+      tsl?.sync();
+      audio.updateAudio();
+    });
   // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
   const { loadGltf } = runtime;
   if (loadGltf !== undefined)
@@ -125,6 +147,8 @@ export async function bindWebEngine(
       return { scene: wrap(loaded.scene), animations: loaded.animations.map(wrap) };
     };
   if (tsl !== undefined && runtime.tsl !== undefined) {
+    const native = tsl.exports.reflector as (...args: unknown[]) => object;
+    bound.reflector = defineReflector(native, classes as never);
     // The engine's TSL functions three does not export by name (ao, bloom, ...), for the shared post
     // effects (addons/post-effects-web.ts), and three's RenderPipeline over the web host.
     bound.__tnTsl = tsl.exports;

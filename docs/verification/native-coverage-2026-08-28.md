@@ -2,33 +2,33 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-320 native contract targets; 3 configured
+340 native contract targets; 3 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
-| `src/adapters/` | 1655 | 1494 | 90.27% |
+| `src/adapters/` | 1848 | 1673 | 90.53% |
 | `src/async/` | 73 | 60 | 82.19% |
-| `src/audio/` | 1471 | 1301 | 88.44% |
+| `src/audio/` | 1471 | 1303 | 88.58% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
 | `src/cli/` | 1653 | 1248 | 75.50% |
-| `src/engine/` | 25731 | 22761 | 88.46% |
+| `src/engine/` | 29241 | 25969 | 88.81% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
 | `src/js/` | 2794 | 2221 | 79.49% |
 | `src/platform/` | 1460 | 1003 | 68.70% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
-| `src/runtime.cpp` | 2412 | 1888 | 78.28% |
+| `src/runtime.cpp` | 2412 | 1890 | 78.36% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9841 | 7615 | 77.38% |
-| `src/webtransport/` | 1391 | 1069 | 76.85% |
+| `src/webgpu/` | 9841 | 7608 | 77.31% |
+| `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 524 | 85.20% |
-| **TOTAL** | **52129** | **43764** | **83.95%** |
+| **TOTAL** | **55832** | **47157** | **84.46%** |
 
-Source digest: `sha256:8656936cd3020c8656ec94e3af8d0e350e733031cdb4705c365334ba7aea0c3d`
+Source digest: `sha256:3d981d84f083ce0fdc04e9d9ce1af098689eb7e07b2ba90170184825cfe89874`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -59,6 +59,7 @@ change requires this opt-in command to refresh the record.
 ## Not compiled in this configuration
 
 - `src/debug/debug_server.cpp`
+- `src/engine/wasm/web_host.cpp`
 - `src/engine/world/physics_sync.cpp`
 - `src/gltf/gltf_loader.cpp`
 - `src/js/jsc_engine.mm`

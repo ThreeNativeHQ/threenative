@@ -99,6 +99,13 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       // three's math classes and cannot load over the engine.
       if (source === "three-mesh-bvh")
         return browserModule("web-engine-mesh-bvh.js", "addons/mesh-bvh.ts");
+      // three's mergeGeometries over the engine's geometries; the upstream addon builds attributes
+      // around arrays it fills afterwards, which an engine attribute has already copied.
+      if (source === "three/addons/utils/BufferGeometryUtils.js")
+        return browserModule(
+          "web-engine-buffer-geometry-utils.js",
+          "addons/buffer-geometry-utils.ts",
+        );
       // Upstream's HDRLoader extends DataTextureLoader, which the engine does not bind; this one
       // decodes with the same RGBE parser into an engine DataTexture.
       if (source === "three/addons/loaders/HDRLoader.js")

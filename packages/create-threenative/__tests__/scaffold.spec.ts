@@ -178,8 +178,12 @@ const BUG_REPORT_SKILL_PATHS = [
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
 // PRD-540: each template's vite.config.ts lists createWebEnginePlugin({ engine: config.engine });
-// with only that file restored, all 13 trees match their previous fingerprints. Tier-scoped imports
-// (lane-tier-imports) then changed every template's render sources, merged with that line.
+// with only that file restored, all 13 trees match their previous fingerprints.
+// Tier-scoped post imports (lane ne-tier-imports): all 13 trees move. Every kit's
+// worldEnvironment.ts imports no post node and builds stages from `effects`; each quality.ts
+// imports the nodes its tiers turn on (snow none); rain's presets carry `stormPost`; each
+// AGENTS.md/CLAUDE.md pair names `effects` once. Those are the only changed files a scaffold
+// copies; the capability manifest and reference are read from the installed package.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PR388 re-measured on top of develop: only package.json patch declarations and the copied
   // Vite/Tailwind patch bytes differ. Base: PR440 merged with develop 45565868:

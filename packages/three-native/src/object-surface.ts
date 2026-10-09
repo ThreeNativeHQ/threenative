@@ -123,7 +123,8 @@ function defineGeometrySurface(
 function defineShapeHoles(Shape: Constructor): void {
   const holeViews = new WeakMap<object, unknown[]>();
   const holes = Object.getOwnPropertyDescriptor(Shape.prototype, "holes");
-  if (holes?.get === undefined || holes.set === undefined) return;
+  if (holes?.get === undefined || holes.set === undefined)
+    throw new TypeError("TN_BROWSER_UNBOUND: Shape.holes needs the engine's getter and setter");
   Object.defineProperty(Shape.prototype, "holes", {
     configurable: true,
     get(this: object) {

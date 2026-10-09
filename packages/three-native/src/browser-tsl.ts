@@ -16,7 +16,8 @@ export type TslArgValue =
   | { readonly kind: "number"; readonly number: number }
   | { readonly kind: "string" | "named"; readonly text: string }
   | { readonly kind: "rgb" | "vector"; readonly numbers: readonly number[] }
-  | { readonly kind: "other" };
+  | { readonly kind: "other" }
+  | { readonly kind: "handle"; readonly ref: IEngineRef };
 
 /** The engine side of TSL: one call by name, node release, and a material's node slot. */
 export interface ITslRuntime {
@@ -86,6 +87,10 @@ const FUNCTIONS = [
   "smaa",
   "bloom",
   "oneMinus",
+  "mx_noise_float",
+  "mx_worley_noise_vec2",
+  "pmremTexture",
+  "reflector",
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
@@ -141,6 +146,10 @@ const METHODS = [
   "sample",
   "oneMinus",
   "dispose",
+  "flipX",
+  "flipY",
+  "flipZ",
+  "flipW",
 ] as const;
 const SWIZZLES: Readonly<Record<string, string>> = {
   x: "x",
@@ -165,6 +174,14 @@ interface ITslNode {
 
 export function isTslNode(value: unknown): value is ITslNode {
   return typeof value === "object" && value !== null && TSL_NODE in value;
+}
+
+/**
+ * Arguments that cross as the engine object itself: pmremTexture prefilters its texture (not a map
+ * the material names), and reflector takes its target and virtual camera.
+ */
+function takesEngineObject(name: string, index: number): boolean {
+  return (index === 0 && name === "pmremTexture") || (index < 2 && name === "reflector");
 }
 
 /**
@@ -194,6 +211,8 @@ export function defineTsl(runtime: ITslRuntime): {
       return { kind: "named", text: String((value as { name?: unknown } | null)?.name ?? "") };
     if (typeof value === "object" && value !== null && engineRef(value) !== undefined) {
       const object = value as Record<string, unknown>;
+      if (takesEngineObject(name, index))
+        return { kind: "handle", ref: engineRef(value) as IEngineRef };
       // TSL's nodeObject turns a three Color or VectorN into its constant: vec3(new Vector3(1, 2, 3)).
       if (object.isColor === true) return { kind: "rgb", numbers: uniformLanes(object) };
       if (object.isVector2 === true || object.isVector3 === true || object.isVector4 === true)

@@ -5,6 +5,7 @@
 #include <deque>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,8 @@
 #include "engine/scene/texture.h"
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/animation/property_binding.h"
+#include "engine/foundation/buffers.h"
+#include "engine/scene/geometry.h"
 
 namespace tn::adapters::v8adapter {
 
@@ -215,6 +218,12 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
             v.kind = TN_VALUE_NUMBERS;
             v.numbers = arrays.back().data();
             v.count = arrays.back().size();
+            // The array's type crosses with it, so `new BufferAttribute(new Uint32Array(...))` keeps
+            // three's storage (a binding that has no use for it ignores it).
+            v.text = array->IsFloat32Array() ? "Float32Array" : array->IsUint16Array() ? "Uint16Array"
+                : array->IsUint32Array() ? "Uint32Array" : array->IsUint8Array() ? "Uint8Array"
+                : array->IsInt8Array() ? "Int8Array" : array->IsInt16Array() ? "Int16Array"
+                : array->IsInt32Array() ? "Int32Array" : array->IsFloat64Array() ? "Float64Array" : nullptr;
         } else if (arg->IsObject() && !arg->IsFunction() && arg.As<v8::Object>()->InternalFieldCount() == 0) {
             // A plain options object (`{ depth, bevelEnabled }`): own enumerable keys whose values are
             // numbers, booleans, strings or native objects. An undefined value is left out, as three
@@ -306,6 +315,7 @@ struct MethodData {
     bool own = false;            // a read-only fixed member: once read, it becomes an own data property of the wrapper, as three defines it
     uint16_t type = 0;           // the catalog type whose wrappers own that slot: a getter borrowed by another class must not read it
     std::string cls;             // the registry class, for a method that reads its binding
+    bool readable = false;       // a holder tail the binding also reads (`morphAttributes.position`)
 };
 
 // three defines position, rotation, quaternion and scale as read-only own data properties. Once a
@@ -315,6 +325,59 @@ void adopt(v8::Isolate* isolate, v8::Local<v8::Context> ctx, v8::Local<v8::Objec
            v8::Local<v8::Value> value) {
     if (!value->IsObject()) return;
     self->DefineOwnProperty(ctx, str(isolate, name), value, v8::ReadOnly).FromMaybe(false);
+}
+
+// three's `attribute.array` is the attribute's own typed array, so `array[i] = v` is a write to the
+// attribute. Here it is a typed array over the engine's storage: the store is leased while the view
+// lives, so it cannot reallocate under it, and the lease is returned at the next safe point, because
+// V8 may run a backing store's deleter on any thread.
+struct ArrayViewHold {
+    std::shared_ptr<engine::BufferStore> store;
+};
+std::mutex& releasedViewsMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+std::vector<ArrayViewHold*>& releasedViews() {
+    static std::vector<ArrayViewHold*> views;
+    return views;
+}
+void releaseArrayView(void*, size_t, void* hold) {
+    std::lock_guard<std::mutex> lock(releasedViewsMutex());
+    releasedViews().push_back(static_cast<ArrayViewHold*>(hold));
+}
+void drainArrayViews() {
+    std::vector<ArrayViewHold*> released;
+    {
+        std::lock_guard<std::mutex> lock(releasedViewsMutex());
+        released.swap(releasedViews());
+    }
+    for (ArrayViewHold* hold : released) {
+        hold->store->releaseLease();
+        delete hold;
+    }
+}
+bool isAttributeClass(const std::string& cls) {
+    return cls == "BufferAttribute" || cls == "Float32BufferAttribute" || cls == "Uint16BufferAttribute" ||
+           cls == "Uint32BufferAttribute" || cls == "InstancedBufferAttribute";
+}
+v8::Local<v8::Value> arrayView(v8::Isolate* isolate, const std::shared_ptr<engine::BufferStore>& store) {
+    store->acquireLease();
+    auto* hold = new ArrayViewHold{store};
+    auto backing = v8::ArrayBuffer::NewBackingStore(store->data(), store->byteLength(), releaseArrayView, hold);
+    v8::Local<v8::ArrayBuffer> buffer = v8::ArrayBuffer::New(isolate, std::move(backing));
+    const size_t n = store->count();
+    switch (store->scalar()) {
+        case engine::Scalar::F32: return v8::Float32Array::New(buffer, 0, n);
+        case engine::Scalar::F64: return v8::Float64Array::New(buffer, 0, n);
+        case engine::Scalar::I8: return v8::Int8Array::New(buffer, 0, n);
+        case engine::Scalar::U8: return v8::Uint8Array::New(buffer, 0, n);
+        case engine::Scalar::I16: return v8::Int16Array::New(buffer, 0, n);
+        case engine::Scalar::U16: return v8::Uint16Array::New(buffer, 0, n);
+        case engine::Scalar::I32: return v8::Int32Array::New(buffer, 0, n);
+        case engine::Scalar::U32: return v8::Uint32Array::New(buffer, 0, n);
+    }
+    return v8::Undefined(isolate);
 }
 
 // `new` on a JS subclass (`class Voice extends Object3D`) constructs its nearest engine ancestor:
@@ -344,6 +407,7 @@ Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : tsl_(std::make_u
     instance->SetInternalFieldCount(kWrapperFields);
     instanceTemplate_.Reset(isolate_, instance);
     isolate_->AddGCPrologueCallback(promote, this);
+    tsl_->engineObject = [this](v8::Local<v8::Value> value, tn_handle_t& handle) { return unwrap(value, handle); };
 }
 
 Adapter::~Adapter() {
@@ -438,6 +502,7 @@ void Adapter::holdIfCallback(tn_handle_t handle) {
 
 // ponytail: both passes visit every wrapper; keep a dirty set if wrapper counts make this show in a profile.
 void Adapter::collect() {
+    drainArrayViews();
     for (auto& [k, w] : wrappers_) {
         if (tn::abi::engineReferences(w->handle) > 0) strong(w);
         else if (w->held) weak(w);
@@ -1118,6 +1183,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             const std::string head = path.substr(0, dot);
             if (binding.members.count(head) > 0 || binding.getters.count(head) > 0) continue;
             holders[head].push_back(new MethodData{this, path, {}});
+            holders[head].back()->readable = binding.getters.count(path) > 0 || binding.members.count(path) > 0;
         }
         for (const auto& [head, paths] : holders) {
             auto* tails = new std::vector<MethodData*>(paths);
@@ -1148,7 +1214,28 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                     tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
                                     throwStatus(isolate, diagnostic);
                             }, v8::External::New(isolate, tail)).ToLocalChecked();
-                        holder->SetAccessorProperty(str(isolate, name), v8::Local<v8::Function>(), set);
+                        // A tail the binding also reads (`morphAttributes.position`) reads back through the
+                        // holder too, so the holder is three's whole plain object.
+                        v8::Local<v8::Function> get;
+                        if (tail->readable)
+                            get = v8::Function::New(ctx,
+                                [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                                    auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
+                                    v8::Isolate* isolate = info.GetIsolate();
+                                    v8::Local<v8::Value> owner;
+                                    tn_handle_t h{};
+                                    if (!info.This()->GetPrivate(isolate->GetCurrentContext(),
+                                            v8::Private::ForApi(isolate, str(isolate, "tn:holder-owner"))).ToLocal(&owner) ||
+                                        !owner->IsObject() || !d->adapter->unwrap(owner.As<v8::Object>(), h)) return;
+                                    tn_value_t result{};
+                                    tn_diagnostic_t diagnostic{nullptr, 0};
+                                    if (tn_get(h, d->name.c_str(), &result, &diagnostic) != TN_OK) {
+                                        throwStatus(isolate, diagnostic);
+                                        return;
+                                    }
+                                    info.GetReturnValue().Set(fromValue(*d->adapter, result));
+                                }, v8::External::New(isolate, tail)).ToLocalChecked();
+                        holder->SetAccessorProperty(str(isolate, name), get, set);
                     }
                     info.GetReturnValue().Set(holder);
                 }, v8::External::New(isolate_, tails)));
@@ -1271,6 +1358,43 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 info.GetIsolate()->ThrowException(v8::Exception::Error(str(info.GetIsolate(), error.what())));
             }
         }, v8::External::New(isolate_, this)).ToLocalChecked()).Check();
+    // Every attribute class answers `array` with its typed array view (see arrayView), one per
+    // attribute while the wrapper lives, so `attribute.array === attribute.array` as in three.
+    for (const auto& [name, binding] : registry()) {
+        if (!isAttributeClass(name)) continue;
+        const auto cls = classes_.find(tn_type_id(name.c_str()));
+        if (cls == classes_.end()) continue;
+        v8::Local<v8::Value> prototype;
+        if (!cls->second.Get(isolate_)->GetFunction(context).ToLocalChecked()->Get(context, str(isolate_, "prototype")).ToLocal(&prototype) ||
+            !prototype->IsObject())
+            continue;
+        prototype.As<v8::Object>()->SetAccessorProperty(str(isolate_, "array"),
+            v8::Function::New(context, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+                v8::Isolate* isolate = info.GetIsolate();
+                Adapter& a = *static_cast<Adapter*>(info.Data().As<v8::External>()->Value());
+                tn_handle_t h{};
+                tn::binding::Object* object = a.unwrap(info.This(), h) ? tn::abi::objectOf(h) : nullptr;
+                if (object == nullptr || !isAttributeClass(object->cls)) {
+                    isolate->ThrowException(v8::Exception::TypeError(str(isolate, "TN_NATIVE_UNSUPPORTED array: not an attribute")));
+                    return;
+                }
+                const auto& store = static_cast<engine::BufferAttribute*>(object->ptr.get())->store;
+                v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+                v8::Local<v8::Private> viewKey = v8::Private::ForApi(isolate, str(isolate, "tn:array-view"));
+                v8::Local<v8::Private> storeKey = v8::Private::ForApi(isolate, str(isolate, "tn:array-store"));
+                v8::Local<v8::Value> cached, cachedStore;
+                if (info.This()->GetPrivate(ctx, viewKey).ToLocal(&cached) && cached->IsTypedArray() &&
+                    info.This()->GetPrivate(ctx, storeKey).ToLocal(&cachedStore) && cachedStore->IsExternal() &&
+                    cachedStore.As<v8::External>()->Value() == store.get()) {
+                    info.GetReturnValue().Set(cached);
+                    return;
+                }
+                v8::Local<v8::Value> view = arrayView(isolate, store);
+                info.This()->SetPrivate(ctx, viewKey, view).Check();
+                info.This()->SetPrivate(ctx, storeKey, v8::External::New(isolate, store.get())).Check();
+                info.GetReturnValue().Set(view);
+            }, v8::External::New(isolate_, this)).ToLocalChecked());
+    }
     target->Set(context, str(isolate_, "AttachedBindMode"), str(isolate_, "attached")).Check();
     target->Set(context, str(isolate_, "SRGBColorSpace"), str(isolate_, "srgb")).Check();
 }

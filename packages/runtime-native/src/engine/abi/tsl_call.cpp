@@ -1,6 +1,7 @@
 // The TSL name table both language back ends call (PRD-540). Moved from the V8 adapter's
 // Tsl::call unchanged: each case builds the graph node the upstream TSL call means.
 #include "engine/abi/tsl_call.h"
+#include "engine/renderer/reflector.h"
 
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/graph/post_effects.h"
@@ -152,6 +153,81 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         node->type = node->args[0]->type;
         return node;
     }
+    // reflector(target, camera, resolutionScale, bounces, generateMipmaps, depth, samples): the
+    // texture node of three's ReflectorNode, sampled at screenUV.flipX(). The language back ends
+    // build target (an Object3D) and the virtual camera (a PerspectiveCamera) and pass them in.
+    // ponytail: bounces is accepted and not modelled; a reflection pass hides every reflecting
+    // surface, where three draws other mirrors into it. Model it if a scene needs mirrors in mirrors.
+    if (!method && name == "reflector") {
+        arity(7);
+        const auto object = [&](size_t i, const char* cls) {
+            if (args[i].kind != TslArg::Kind::Object || args[i].cls != cls || !args[i].object)
+                throw std::runtime_error(std::string("reflector needs an engine ") + cls + " as argument " + std::to_string(i));
+            return args[i].object;
+        };
+        auto state = std::make_shared<engine::Reflector>();
+        state->target = std::static_pointer_cast<engine::Object3D>(object(0, "Object3D"));
+        state->camera = std::static_pointer_cast<engine::PerspectiveCamera>(object(1, "PerspectiveCamera"));
+        state->resolutionScale = number(args[2]);
+        if (!(state->resolutionScale > 0)) throw std::runtime_error("reflector resolutionScale must be positive");
+        (void)number(args[3]);
+        if (number(args[4]) != 0)
+            throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: generateMipmaps");
+        if (number(args[5]) != 0)
+            throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: depth");
+        if (number(args[6]) != 0)
+            throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: samples");
+        const auto screen = g::screenUV();
+        return g::reflectorTexture(state, g::vec2({g::sub(g::float_(1), g::swizzle(screen, "x")), g::swizzle(screen, "y")}));
+    }
+    // FlipNode: node.flipX() is the node with x replaced by 1 - x (likewise y, z, w).
+    if (method && name.size() == 5 && name.rfind("flip", 0) == 0) {
+        arity(0);
+        const auto source = lhs();
+        const auto flipped = std::string("XYZW").find(name[4]);
+        const uint32_t size = source->type.isVector() ? source->type.rows : 0;
+        if (flipped == std::string::npos || flipped >= size || size < 2 || size > 4)
+            throw std::runtime_error(name + " needs a vector with that component");
+        std::vector<g::Node> lanes;
+        for (uint32_t i = 0; i < size; ++i) {
+            const auto lane = g::swizzle(source, std::string(1, "xyzw"[i]));
+            lanes.push_back(i == flipped ? g::sub(g::float_(1), lane) : lane);
+        }
+        if (size == 2) return g::vec2({lanes[0], lanes[1]});
+        if (size == 3) return g::vec3({lanes[0], lanes[1], lanes[2]});
+        return g::vec4({lanes[0], lanes[1], lanes[2], lanes[3]});
+    }
+    if (!method && name == "screenUV") {
+        arity(0);
+        return g::screenUV();
+    }
+    // pmremTexture(texture, direction, level): three's PMREMNode over an equirectangular texture.
+    // Outside an environment there is no context to supply the direction or the level, so both are
+    // required (three reads builder.context.getUV / getTextureLevel, which a material lacks).
+    if (!method && name == "pmremTexture") {
+        arity(3);
+        if (args[0].kind != TslArg::Kind::Object || (args[0].cls != "Texture" && args[0].cls != "DataTexture") || !args[0].object)
+            throw std::runtime_error("pmremTexture needs an engine Texture");
+        return g::pmremTexture(args[0].object, arg(1), arg(2));
+    }
+    // MaterialX noise (three's MaterialXNodes.js over mx_noise.js; the WGSL is materialx_noise.h).
+    // mx_noise_float(texcoord = uv(), amplitude = 1, pivot = 0) is perlin * amplitude + pivot, and
+    // mx_worley_noise_vec2(texcoord = uv(), jitter = 1) uses metric 1, as three's wrapper does.
+    if (!method && (name == "mx_noise_float" || name == "mx_worley_noise_vec2")) {
+        const bool worley = name == "mx_worley_noise_vec2";
+        if (args.size() > (worley ? 2u : 3u)) throw std::runtime_error("too many arguments");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Math;
+        node->name = worley ? "mx_worley_noise_vec2" : "mx_perlin_noise_float";
+        node->args = {args.empty() ? g::uv() : arg(0)};
+        node->type = worley ? Type::vec(2) : Type::f32();
+        if (worley) {
+            node->args.push_back(args.size() > 1 ? g::float_(arg(1)) : g::float_(1));
+            node->args.push_back(g::int_(1));
+            return node;
+        }
+        return g::add(g::mul(node, args.size() > 1 ? arg(1) : g::float_(1)), args.size() > 2 ? arg(2) : g::float_(0));
+    }
     if (name == "textureLoad") {
         if (args.size() < 2 || args.size() > 3) throw std::runtime_error("expected texture, coordinates and optional level");
         std::string label;
@@ -244,7 +320,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "sample") {
         arity(1);
         const auto source = lhs();
-        if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture)
+        if (source->kind != g::Kind::Texture && source->kind != g::Kind::RenderTexture && source->kind != g::Kind::Reflector)
             throw std::runtime_error("sample requires a texture node");
         auto sampled = std::make_shared<g::NodeData>(*source);
         if (source->kind == g::Kind::RenderTexture) sampled->args[1] = arg(0);
@@ -361,7 +437,7 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"normalViewGeometry", g::varying("normalViewGeometry", Type::vec(3))},
             {"cameraViewMatrix", g::uniform("viewMatrix", Type::mat(4, 4))},
             {"instanceIndex", g::instanceIndex()},
-            {"screenUV", g::uv()},
+            {"screenUV", g::screenUV()},
             {"materialColor", g::uniform("diffuse", Type::vec(4))},
             {"materialEmissive", g::uniform("emissive", Type::vec(3))},
             {"materialMetalness", g::uniform("metalness", Type::f32())},

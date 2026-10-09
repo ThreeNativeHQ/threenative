@@ -6,6 +6,7 @@ import {
   ACESFilmicToneMapping,
   AmbientLight,
   BoxGeometry,
+  DataTexture,
   DirectionalLight,
   Mesh,
   MeshStandardMaterial,
@@ -91,9 +92,20 @@ try {
   const tile = new Mesh(new BoxGeometry(1, 1, 1), tinted);
   tile.position.x = 1.2;
   // A smooth sphere: its shading gradient keeps every capture far from a flat, near-blank frame.
+  // Its checker map is a texture upload (queue.writeTexture) out of the engine's Wasm memory.
+  const checker = new DataTexture(
+    new Uint8Array(
+      Array.from({ length: 16 }, (_, i) =>
+        (i + (i >> 2)) % 2 ? [255, 255, 255, 255] : [40, 40, 40, 255],
+      ).flat(),
+    ),
+    4,
+    4,
+  );
+  checker.needsUpdate = true;
   const ball = new Mesh(
     new SphereGeometry(0.45, 32, 16),
-    new MeshStandardMaterial({ color: 0xf0e0c0 }),
+    new MeshStandardMaterial({ color: 0xf0e0c0, map: checker }),
   );
   ball.position.set(0.15, -0.9, 0.6);
   scene.add(box, tile, ball);
