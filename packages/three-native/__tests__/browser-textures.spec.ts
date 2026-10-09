@@ -60,17 +60,14 @@ describe("browser texture sources", () => {
     const DataTexture = bound.DataTexture as Ctor;
     const data = new Uint16Array(2 * 1 * 4);
     const map = new DataTexture(data, 2, 1, 1023, 1016);
-    expect(constructed.at(-1)).toEqual([
-      "DataTexture",
-      [[0, 0, 0, 0, 0, 0, 0, 0], 2, 1, 1023, 1016],
-    ]);
+    expect(constructed.at(-1)).toEqual(["DataTexture", [new Uint16Array(8), 2, 1, 1023, 1016]]);
     expect(map instanceof (bound.Texture as Ctor)).toBe(true);
     expect((map.image as { data: unknown }).data).toBe(data);
     data[0] = (bound.DataUtils as typeof SharedDataUtils).toHalfFloat(1);
     map.needsUpdate = true;
     const key = writes.at(-1)?.[0];
     expect(writes.slice(-2)).toEqual([
-      [key, "image.data", [0x3c00, 0, 0, 0, 0, 0, 0, 0]],
+      [key, "image.data", new Uint16Array([0x3c00, 0, 0, 0, 0, 0, 0, 0])],
       [key, "needsUpdate", true],
     ]);
   });
@@ -91,7 +88,10 @@ describe("browser texture sources", () => {
     const texture = new (bound.CanvasTexture as Ctor)(canvas);
     // The engine's own CanvasTexture: three's Texture defaults (flipped, linear, mipmapped) and the
     // first upload are its constructor's, so nothing more crosses until needsUpdate.
-    expect(constructed.at(-1)).toEqual(["CanvasTexture", [[9, 8, 7, 255], 1, 1]]);
+    expect(constructed.at(-1)).toEqual([
+      "CanvasTexture",
+      [new Uint8ClampedArray([9, 8, 7, 255]), 1, 1],
+    ]);
     expect(texture.isCanvasTexture).toBe(true);
     expect(texture instanceof (bound.Texture as Ctor)).toBe(true);
     expect(texture.image).toBe(canvas);
@@ -99,7 +99,7 @@ describe("browser texture sources", () => {
     texture.needsUpdate = true;
     const key = writes[0]?.[0];
     expect(writes).toEqual([
-      [key, "image.data", [9, 8, 7, 255]],
+      [key, "image.data", new Uint8ClampedArray([9, 8, 7, 255])],
       [key, "needsUpdate", true],
     ]);
     expect(reads).toBe(2);
@@ -111,7 +111,10 @@ describe("browser texture sources", () => {
     new Texture();
     expect(constructed.at(-1)).toEqual(["Texture", []]);
     new Texture({ data: new Uint8ClampedArray([1, 2, 3, 4]), width: 1, height: 1 });
-    expect(constructed.at(-1)).toEqual(["DataTexture", [[1, 2, 3, 4], 1, 1]]);
+    expect(constructed.at(-1)).toEqual([
+      "DataTexture",
+      [new Uint8ClampedArray([1, 2, 3, 4]), 1, 1],
+    ]);
     // A decoded ImageBitmap is drawn once into an OffscreenCanvas and read back.
     vi.stubGlobal(
       "OffscreenCanvas",
@@ -129,7 +132,10 @@ describe("browser texture sources", () => {
       },
     );
     const adopted = new Texture({ width: 1, height: 1, close: () => undefined });
-    expect(constructed.at(-1)).toEqual(["DataTexture", [[5, 6, 7, 8], 1, 1]]);
+    expect(constructed.at(-1)).toEqual([
+      "DataTexture",
+      [new Uint8ClampedArray([5, 6, 7, 8]), 1, 1],
+    ]);
     expect(adopted instanceof Texture).toBe(true);
     vi.unstubAllGlobals();
     expect(() => new Texture(42)).toThrow("TN_BROWSER_TEXTURE_SOURCE");
@@ -180,12 +186,14 @@ describe("browser HDRLoader", () => {
     expect(name).toBe("DataTexture");
     // 128 * 2^(129-128) / 255 and 64 * 2 / 255 as binary16, blue 0, alpha 1.
     expect(args?.slice(1)).toEqual([1, 1, 1023, 1016]);
-    expect(args?.[0]).toEqual([
-      SharedDataUtils.toHalfFloat((128 * 2) / 255),
-      SharedDataUtils.toHalfFloat((64 * 2) / 255),
-      0,
-      0x3c00,
-    ]);
+    expect(args?.[0]).toEqual(
+      new Uint16Array([
+        SharedDataUtils.toHalfFloat((128 * 2) / 255),
+        SharedDataUtils.toHalfFloat((64 * 2) / 255),
+        0,
+        0x3c00,
+      ]),
+    );
     expect(texture).toBeInstanceOf(bound.DataTexture as Ctor);
     const key = writes.at(-1)?.[0];
     expect(

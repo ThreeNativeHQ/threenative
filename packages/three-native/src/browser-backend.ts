@@ -47,6 +47,7 @@ export type EngineValue =
   | boolean
   | string
   | readonly EngineValue[]
+  | TypedArray
   | IEngineRef
   | { readonly [key: string]: EngineValue };
 
@@ -99,7 +100,7 @@ const REF = Symbol("tn.engineRef");
 /** Held wrappers a safe point re-asks about beyond the new ones (`collect()`). */
 const SWEEP = 32;
 
-type TypedArray =
+export type TypedArray =
   | Float32Array
   | Float64Array
   | Int8Array
@@ -107,9 +108,8 @@ type TypedArray =
   | Int16Array
   | Uint16Array
   | Int32Array
-  | Uint32Array;
-/** A number list that came from a typed array names it, so the engine keeps three's storage type. */
-const TYPED = Symbol("tn.typedArray");
+  | Uint32Array
+  | Uint8ClampedArray;
 // The engine's Scalar order: F32, F64, I8, U8, I16, U16, I32, U32.
 const SCALARS = [
   Float32Array,
@@ -379,12 +379,9 @@ export function defineBrowserClasses(
     if (value === null || value === undefined) return null;
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
-    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
-      // quality-allow: ArrayBufferView like Float32Array or Uint8Array cast to ArrayLike<number> for Array.from conversion.
-      const list = Array.from(value as unknown as ArrayLike<number>);
-      Object.defineProperty(list, TYPED, { value: value.constructor.name });
-      return list;
-    }
+    // A typed array crosses as it is: the ABI copies it once and names its type, so the engine keeps
+    // three's storage type. Copying it to a list first cost Midway seconds of texels at load.
+    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) return value as TypedArray;
     if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
     if (typeof value === "object" && REF in value) {
       // A wrapper passed into the engine is held until the next safe point decides (collect()).
@@ -1125,6 +1122,16 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     writeHandle(pointer, ref);
     return pointer;
   };
+  // A number list: f64 values, with the typed array's name (0 for a plain array).
+  const writeNumbers = (pointer: number, list: ArrayLike<number>, name: number) => {
+    const numbers = alloc(Math.max(8, list.length * 8));
+    abi.HEAPF64.set(list, numbers / 8);
+    const w = view();
+    w.setUint32(pointer, KIND.numbers, true);
+    w.setUint32(pointer + 32, name, true);
+    w.setUint32(pointer + 48, numbers, true);
+    w.setBigUint64(pointer + 40, BigInt(list.length), true);
+  };
   const writeValue = (pointer: number, value: EngineValue) => {
     const v = view();
     if (value === null) return v.setUint32(pointer, KIND.null, true);
@@ -1148,6 +1155,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       v.setUint32(pointer, KIND.handle, true);
       return writeHandle(pointer + 16, value);
     }
+    if (ArrayBuffer.isView(value))
+      return writeNumbers(pointer, value, string(value.constructor.name).pointer);
     if (!Array.isArray(value)) {
       // A record: count key/value pairs, each key a string value, as the engine returns one.
       const entries = Object.entries(value as Record<string, EngineValue>);
@@ -1158,15 +1167,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       return w.setBigUint64(pointer + 40, BigInt(entries.length), true);
     }
     if (value.every((item) => typeof item === "number")) {
-      const numbers = alloc(Math.max(8, value.length * 8));
-      abi.HEAPF64.set(value as number[], numbers / 8);
-      const typed = (value as { [TYPED]?: string })[TYPED];
-      const name = typed === undefined ? 0 : string(typed).pointer;
-      const w = view();
-      w.setUint32(pointer, KIND.numbers, true);
-      w.setUint32(pointer + 32, name, true);
-      w.setUint32(pointer + 48, numbers, true);
-      w.setBigUint64(pointer + 40, BigInt(value.length), true);
+      writeNumbers(pointer, value as number[], 0);
     } else {
       const children = values(value);
       const w = view();
