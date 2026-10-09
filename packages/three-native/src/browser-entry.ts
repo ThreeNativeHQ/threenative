@@ -23,6 +23,7 @@ import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-rend
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { Material, defineObjectSurface } from "./object-surface.js";
+import { definePropertyBinding } from "./property-binding.js";
 import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -120,6 +121,15 @@ export async function bindWebEngine(
     ...tsl?.exports,
   };
   bound.Material = Material;
+  // three's PropertyBinding statics and console hook over the engine's binding (property-binding.ts).
+  if (classes.PropertyBinding !== undefined && classes.Object3D !== undefined)
+    Object.assign(
+      bound,
+      definePropertyBinding(
+        classes.PropertyBinding as never,
+        classes.Object3D as unknown as new () => object,
+      ),
+    );
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
   // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
   const audio = defineAudioClasses({

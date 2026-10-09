@@ -74,6 +74,26 @@ Object3D* findNode(Object3D& root, const std::optional<std::string>& nodeName) {
     return searchNodeSubtree(root.children, *nodeName);
 }
 
+std::string parsedPathJson(std::string_view trackName) {
+    const auto quote = [](const std::string& text) {
+        std::string out = "\"";
+        for (const char c : text) {
+            if (c == '"' || c == '\\') out += '\\';
+            out += c;
+        }
+        return out + "\"";
+    };
+    ParsedPath parsed;
+    std::string error;
+    if (!parseTrackName(trackName, parsed, error)) return "{\"error\":" + quote(error) + "}";
+    const auto part = [&](const char* key, const std::optional<std::string>& value) {
+        return std::string("\"") + key + "\":" + (value ? quote(*value) : "null");
+    };
+    return "{" + part("nodeName", parsed.nodeName) + "," + part("objectName", parsed.objectName) + "," +
+           part("objectIndex", parsed.objectIndex) + "," + part("propertyName", parsed.propertyName) + "," +
+           part("propertyIndex", parsed.propertyIndex) + "}";
+}
+
 PropertyBinding::PropertyBinding(const std::shared_ptr<Object3D>& root, std::string trackPath)
     : path(std::move(trackPath)), root_(root) {
     std::string error;

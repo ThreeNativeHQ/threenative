@@ -68,6 +68,8 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
   "SkinnedMesh.boundingBox": "Box3 | null",
   "AnimationClip.tracks":
     "Array<{ name: string; times: number[]; values: number[]; ValueTypeName: string }>",
+  // parseTrackName's record as canonical JSON; the Wasm facade parses it (property-binding.ts).
+  "PropertyBinding.parsedPath": "string",
 };
 
 /** Bound methods whose binding signature differs from three's richer overloads. */
@@ -181,6 +183,8 @@ const UNDECLARED_FIELDS: Record<string, string> = {
   "SpriteNodeMaterial.emissiveNode": "Node | null",
   "SpriteNodeMaterial.roughnessNode": "Node | null",
   "SpriteNodeMaterial.metalnessNode": "Node | null",
+  // three's bind() sets it; @types/three does not declare it. core's clip audit reads it.
+  "PropertyBinding.targetObject": "Object3D | Material | null",
 };
 
 function registryMembers(binding: IRegistryClass): Set<string> {

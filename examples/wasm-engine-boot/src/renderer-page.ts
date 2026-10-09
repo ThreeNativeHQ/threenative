@@ -12,8 +12,10 @@ import {
   MeshStandardMaterial,
   PCFShadowMap,
   PerspectiveCamera,
+  PropertyBinding,
   Scene,
   SphereGeometry,
+  setConsoleFunction,
 } from "three";
 import {
   Fn,
@@ -44,6 +46,8 @@ const probe = {
   refusal: "",
   /** Runs of the tint uniform's onRenderUpdate: once per render, as Midway's ripple texture sync. */
   renderUpdates: 0,
+  /** core's clip audit on the Wasm engine: track paths bound and refused through PropertyBinding. */
+  trackAudit: "",
   ticks: 0,
 };
 const started = performance.now();
@@ -166,6 +170,16 @@ try {
   const pane = new Mesh(new BoxGeometry(0.9, 0.6, 0.02), glass);
   pane.position.set(0.15, -0.75, 1.3);
   scene.add(box, tile, ball, slab, pane);
+  box.name = "box";
+  // What core's clip audit asks before a model's clips play: a track on a named node binds, one on a
+  // missing node is reported through three's console function.
+  const refused: string[] = [];
+  setConsoleFunction((type: string, message: string) => refused.push(`${type}:${message}`));
+  const parsed = PropertyBinding.parseTrackName("box.position");
+  new PropertyBinding(scene, "box.position").bind();
+  new PropertyBinding(scene, "nobody.quaternion").bind();
+  setConsoleFunction(null as never);
+  probe.trackAudit = `${parsed.nodeName}/${parsed.propertyName} ${String(refused.length)} refused`;
   const sun = new DirectionalLight(0xffffff, 3);
   sun.position.set(3, 5, 4);
   scene.add(sun, new AmbientLight(0xffffff, 0.4));

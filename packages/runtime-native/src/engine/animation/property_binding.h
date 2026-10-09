@@ -22,6 +22,10 @@ struct ParsedPath {
 /** three's `parseTrackName`: false, with three's message in `error`, where three throws. */
 bool parseTrackName(std::string_view trackName, ParsedPath& out, std::string& error);
 
+/** parseTrackName's record as canonical JSON (an absent part is null), or {"error": ...} where
+ *  three throws: what a language back end reads as `PropertyBinding.parsedPath`. */
+std::string parsedPathJson(std::string_view trackName);
+
 /**
  * three's `PropertyBinding.findNode`: the root itself for no name, "" or "." or the root's name,
  * else the first descendant with that name in three's depth-first order. The native object has no

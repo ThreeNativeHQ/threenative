@@ -3253,3 +3253,14 @@ radius: number;
 readonly camera: PerspectiveCamera;
 readonly mapSize: Vector2;
 }
+
+/** Catalog supported: three/PropertyBinding. */
+export declare class PropertyBinding {
+constructor();
+readonly parsedPath: string;
+readonly targetObject: Object3D | Material | null;
+
+  bind(): void;
+
+  unbind(): void;
+}

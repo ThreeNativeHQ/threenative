@@ -820,6 +820,8 @@ void Adapter::animationCall(const v8::FunctionCallbackInfo<v8::Value>& info) {
                 }
             }
         } else if (operation == 2) wrapper->binding.unbind();
+        else if (operation == 8) // parsedPath, as the registry answers it
+            info.GetReturnValue().Set(str(isolate, engine::animation::parsedPathJson(wrapper->binding.path)));
         else if (operation == 3) {
             if (auto material = wrapper->binding.targetMaterial()) {
                 const auto cls = std::string(material->typeName());
@@ -1328,6 +1330,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
     property->PrototypeTemplate()->Set(str(isolate_, "bind"), animation(1));
     property->PrototypeTemplate()->Set(str(isolate_, "unbind"), animation(2));
     property->PrototypeTemplate()->SetAccessorProperty(str(isolate_, "targetObject"), animation(3));
+    property->PrototypeTemplate()->SetAccessorProperty(str(isolate_, "parsedPath"), animation(8));
     property->Set(str(isolate_, "parseTrackName"), animation(4));
     property->Set(str(isolate_, "findNode"), animation(5));
     target->Set(context, str(isolate_, "PropertyBinding"), property->GetFunction(context).ToLocalChecked()).Check();

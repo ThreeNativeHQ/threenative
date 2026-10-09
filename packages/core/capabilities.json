@@ -7856,6 +7856,11 @@
         "source": "three"
       },
       {
+        "symbol": "PropertyBinding",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Quaternion",
         "kind": "class",
         "source": "three"

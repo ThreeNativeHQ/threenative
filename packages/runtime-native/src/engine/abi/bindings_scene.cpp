@@ -1206,6 +1206,38 @@ void registerKeyframeTrack(ClassBinding& b, tn::engine::animation::TrackType typ
 // three's AnimationClip(name, duration = -1, tracks, blendMode). The clip holds copies of the
 // tracks it is handed, and `tracks` answers each held track as itself.
 // ponytail: editing a track after it is in a clip does not reach the clip; three's clip shares it.
+// three's PropertyBinding over the engine's (animation/property_binding.h): what an animation audit
+// constructs to ask whether a track path reaches a property. bind() answers the reason it did not
+// (empty when it bound), which the language back end hands to three's console function as three's
+// bind() does; parsedPath is parseTrackName's record as JSON, or {"error": ...} where three throws.
+void registerPropertyBinding(ClassBinding& b) {
+    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
+        if (a.size() != 2 || a.at(1).kind != Value::Kind::String)
+            throw Unsupported{"PropertyBinding needs a root object and a track path"};
+        std::shared_ptr<Object3D> root = objectArg(store, a.at(0)).shared_from_this();
+        return std::make_shared<tn::engine::animation::PropertyBinding>(root, a.at(1).text);
+    };
+    b.methods["bind"] = [](void* self, const Args&, Store&) {
+        auto* binding = as<tn::engine::animation::PropertyBinding>(self);
+        binding->bind();
+        return Value{Value::Kind::String, 0, binding->diagnostic};
+    };
+    b.methods["unbind"] = [](void* self, const Args&, Store&) {
+        as<tn::engine::animation::PropertyBinding>(self)->unbind();
+        return Value{Value::Kind::Undefined};
+    };
+    b.members["targetObject"] = [](void* self, const Args&, Store& store) -> Value {
+        const auto* binding = as<tn::engine::animation::PropertyBinding>(self);
+        if (auto material = binding->targetMaterial()) return store.share(std::string(material->typeName()), material);
+        if (auto node = binding->targetNode()) return store.share(std::string(node->type()), node);
+        return Value{};
+    };
+    b.getters["parsedPath"] = [](void* self) {
+        return Value{Value::Kind::String, 0,
+                     tn::engine::animation::parsedPathJson(as<tn::engine::animation::PropertyBinding>(self)->path)};
+    };
+}
+
 void registerAnimationClip(ClassBinding& b) {
     using namespace tn::engine::animation;
     b.ctor = [](const Args& a, Store& store) {
@@ -1375,6 +1407,7 @@ void registerSceneBindings(Registry& classes) {
     registerAnimationMixer(classes["AnimationMixer"]);
     registerAnimationAction(classes["AnimationAction"]);
     registerAnimationClip(classes["AnimationClip"]);
+    registerPropertyBinding(classes["PropertyBinding"]);
     registerKeyframeTrack(classes["QuaternionKeyframeTrack"], tn::engine::animation::TrackType::Quaternion);
     registerKeyframeTrack(classes["VectorKeyframeTrack"], tn::engine::animation::TrackType::Vector);
     registerKeyframeTrack(classes["NumberKeyframeTrack"], tn::engine::animation::TrackType::Number);

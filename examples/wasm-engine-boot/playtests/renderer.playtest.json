@@ -35,6 +35,13 @@
       {
         "entity": "wasm-renderer",
         "component": "probe",
+        "path": "trackAudit",
+        "equals": "box/position 1 refused",
+        "allowTrivial": "Set once before the first frame: one path binds, the missing node is reported."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
         "path": "draws",
         "gte": 1,
         "allowTrivial": "ready() resolves after the first engine frame, so the draw count holds from the first sample."
