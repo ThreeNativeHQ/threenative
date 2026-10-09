@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import {
   type IGradeSettings,
   type IGradeTable,
@@ -20,7 +20,7 @@ const SHIPPED = path.resolve("packages/create-threenative/templates/starter/publ
 
 /** Run the shipped generator, exactly as the template's `package.json` would. */
 function writeTable(...flags: readonly string[]): string {
-  const out = path.join(mkdtempSync(path.join(tmpdir(), "tn-grade-")), "grade.cube");
+  const out = path.join(makeTempDirSync("tn-grade-"), "grade.cube");
   execFileSync(process.execPath, [GENERATOR, ...flags, "--out", out]);
   return readFileSync(out, "utf8");
 }
