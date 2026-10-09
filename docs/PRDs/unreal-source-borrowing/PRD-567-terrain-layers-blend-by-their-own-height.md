@@ -57,11 +57,11 @@ A height-blend formula is a curve, so it must not go into core. Today a game als
 ## Execution Phases
 
 #### Phase 1: Height set and seam in core
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/world-terrain-splat.ts`, `packages/core/__tests__/world-terrain-splat.spec.ts`, `packages/core/gpl/recipes/export_world.py`, `packages/blender-mcp/gpl/recipes/export_world.py`
 **Verification:** AC-1 closes the default path.
-- [ ] A `height: true` layer requests `<id>_h.jpg`, the set stacks, and the marker counts it. proof: red-green `pnpm exec vitest run packages/core/__tests__/world-terrain-splat.spec.ts`
-- [ ] The recipe writes `<id>_h.jpg` for a height layer and fails closed without a source. proof: red-green `pnpm exec vitest run packages/blender-mcp/__tests__/export-world.spec.ts` (Blender is installed here, so the case runs)
+- [x] A `height: true` layer requests `<id>_h.jpg`, the set stacks, and the marker counts it. proof: `pnpm exec vitest run packages/core/__tests__/world-terrain-splat.spec.ts` 15/15 pass; the stacking case asserts `samplers=5 stacked=4`. Green only — the seam did not exist before, so no earlier red run was possible.
+- [x] The recipe writes `<id>_h.jpg` for a height layer and fails closed without a source. proof: red-green `pnpm exec vitest run packages/blender-mcp/__tests__/export-world.spec.ts -t terrain` — 2 red with the recipe reverted, 3/3 green with it.
 
 #### Phase 2: The game's height blend
 **Status:** NOT STARTED
