@@ -10566,8 +10566,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11066,6 +11065,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "forceSinglePass",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -11515,8 +11523,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12244,6 +12251,15 @@
         {
           "name": "emissiveMap",
           "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "forceSinglePass",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -18793,6 +18809,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "forceSinglePass",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -19031,6 +19056,15 @@
         {
           "name": "blending",
           "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "forceSinglePass",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -25230,6 +25264,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "forceSinglePass",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -25441,6 +25484,15 @@
         {
           "name": "normalScale",
           "type": "Vector2",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "forceSinglePass",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {

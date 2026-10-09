@@ -1067,11 +1067,15 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     }
     // three's Renderer.renderObject: a transparent DoubleSide material (forceSinglePass false) draws
     // twice, its BackSide pass and then its FrontSide pass, so the far half composites under the near.
-    if (std::any_of(items.begin(), items.end(), [](const DrawItem& d) { return d.transparent && d.side == 2; })) {
+    const auto twoPass = [](const DrawItem& d) {
+        const auto* material = static_cast<const Material*>(d.materialKey);
+        return d.transparent && d.side == 2 && !(material && material->forceSinglePass);
+    };
+    if (std::any_of(items.begin(), items.end(), twoPass)) {
         std::vector<DrawItem> passes;
         passes.reserve(items.size() + 8);
         for (DrawItem& item : items) {
-            if (item.transparent && item.side == 2) {
+            if (twoPass(item)) {
                 DrawItem& back = passes.emplace_back(item);
                 back.side = 1;
                 back.key ^= kBackSidePassKey;  // its own GPU record beside the front pass's

@@ -102,7 +102,8 @@ inline double batchFlags(const Mesh& m) {
 inline bool sameUniforms(const Material& a, const Material& b) {
     const auto eq = [](const Color& x, const Color& y) { return (x.r == y.r) & (x.g == y.g) & (x.b == y.b); };
     return a.type == b.type && a.transparent == b.transparent &&
-           a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.side == b.side && a.visible == b.visible &&
+           a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.forceSinglePass == b.forceSinglePass &&
+           a.side == b.side && a.visible == b.visible &&
            a.toneMapped == b.toneMapped && a.fog == b.fog &&
            ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & eq(a.emissive, b.emissive) &
             (a.emissiveIntensity == b.emissiveIntensity) & (a.roughness == b.roughness) &
@@ -129,6 +130,7 @@ inline std::size_t uniformHash(const Material& m) {
                      m.alphaTest,
                      double(m.depthTest),
                      double(m.depthWrite),
+                     double(m.forceSinglePass),
                      double(m.side),
                      double(m.visible),
                      double(m.toneMapped),

@@ -48,6 +48,8 @@ public:
     double alphaTest = 0;
     bool depthTest = true;
     bool depthWrite = true;
+    /** three's forceSinglePass: a transparent DoubleSide material draws both faces in one pass. */
+    bool forceSinglePass = false;
     Side side = Side::Front;
     Blending blending = Blending::Normal;
     bool visible = true;
