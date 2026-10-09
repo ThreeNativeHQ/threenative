@@ -131,6 +131,10 @@ class V8Game {
     std::unique_ptr<tn::adapters::v8adapter::Adapter> adapter_;
     v8::Global<v8::Context> js_;
     v8::Global<v8::Function> update_;
+    // A bridge answer that was a pending promise, and the request it answers: checked again on the
+    // next poll instead of calling the bridge twice (describe() releases a held start once).
+    v8::Global<v8::Promise> settling_;
+    std::string settlingKey_;
     Object3D* scene_ = nullptr;
     Camera* camera_ = nullptr;
     // The host co-owns the world: the JS `tn.scene`/`tn.camera` is garbage after start(), and a
@@ -166,6 +170,8 @@ class V8Game {
         triangles_ = renderer.lastFrame().triangles;
         frameClockMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStartedAt_).count();
     }
+    /** A frame with nothing to draw yet: the game's frame callbacks still run (run.h frameWithoutView). */
+    void frameWithoutView() { presentFrame(); }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
         presentFrame();  // the game's frame callbacks may change the renderer state applied below
         if (outputChanged_) renderer.setOutput(output_);
@@ -541,18 +547,32 @@ bool V8Game::observe(const std::string& method, const json::Value* argument, jso
     if (bridge->IsUndefined()) return false;
     if (!bridge->IsObject()) return fail("installed bridge must be an object");
     v8::Local<v8::Value> fn, input, output;
-    if (!bridge.As<v8::Object>()->Get(ctx, v8str(isolate_, method)).ToLocal(&fn) || !fn->IsFunction())
-        return fail("missing method " + method);
-    if (!v8::JSON::Parse(ctx, v8str(isolate_, argument ? json::stringify(*argument) : method == "sample" ? "{}" : "null")).ToLocal(&input))
-        return fail("invalid request argument");
-    if (!fn.As<v8::Function>()->Call(ctx, bridge, argument || method == "sample" ? 1 : 0, &input).ToLocal(&output)) {
-        v8::String::Utf8Value message(isolate_, caught.Exception());
-        return fail(*message ? *message : "bridge call failed");
+    const std::string key = method + "\n" + (argument ? json::stringify(*argument) : "");
+    if (!settling_.IsEmpty()) {
+        if (key != settlingKey_) return fail(method + " asked while " + settlingKey_.substr(0, settlingKey_.find('\n')) + " is settling");
+        output = settling_.Get(isolate_);
+        settling_.Reset();
+        settlingKey_.clear();
+    } else {
+        if (!bridge.As<v8::Object>()->Get(ctx, v8str(isolate_, method)).ToLocal(&fn) || !fn->IsFunction())
+            return fail("missing method " + method);
+        if (!v8::JSON::Parse(ctx, v8str(isolate_, argument ? json::stringify(*argument) : method == "sample" ? "{}" : "null")).ToLocal(&input))
+            return fail("invalid request argument");
+        if (!fn.As<v8::Function>()->Call(ctx, bridge, argument || method == "sample" ? 1 : 0, &input).ToLocal(&output)) {
+            v8::String::Utf8Value message(isolate_, caught.Exception());
+            return fail(*message ? *message : "bridge call failed");
+        }
     }
     isolate_->PerformMicrotaskCheckpoint();
     if (output->IsPromise()) {
         auto promise = output.As<v8::Promise>();
-        if (promise->State() == v8::Promise::kPending) return fail("observation remains pending");
+        // Settles on a later frame (describe() waits for the scene the game enters): ask again then.
+        if (promise->State() == v8::Promise::kPending) {
+            settling_.Reset(isolate_, promise);
+            settlingKey_ = key;
+            error = inspect::kStillSettling;
+            return false;
+        }
         if (promise->State() == v8::Promise::kRejected) {
             v8::String::Utf8Value reason(isolate_, promise->Result());
             return fail(*reason ? *reason : "observation rejected");
@@ -771,6 +791,9 @@ void V8Game::presentFrame() {
         !host.As<v8::Object>()->Get(ctx, v8str(isolate_, "__frame")).ToLocal(&frame) || !frame->IsFunction())
         return;
     v8::TryCatch tryCatch(isolate_);
+    // Decodes settle on the page's event loop, not on simulation ticks: a game held by a runner
+    // (no ticks yet) still finishes loading its audio, as Midway's boot does before describe().
+    mystral::audio::processAudioEvents();
     frameStartedAt_ = std::chrono::steady_clock::now();
     v8::Local<v8::Value> argument = v8::Number::New(isolate_, frameClockMs_);
     v8::Local<v8::Value> ignored;
@@ -928,6 +951,7 @@ int main(int argc, char** argv) {
     configured.beforeRender = [&game](Renderer& renderer, RenderDatabase& database) { game.beforeRender(renderer, database); };
     configured.clear = [&game] { return game.clearColor(); };
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
+    configured.frameWithoutView = [&game] { game.frameWithoutView(); };
     configured.observe = [&game](const std::string& method, const json::Value* argument,
                                  json::Value& result, std::string& error) {
         return game.observe(method, argument, result, error);

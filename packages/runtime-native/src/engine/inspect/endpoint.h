@@ -30,6 +30,10 @@ struct InputEvent {
     uint64_t injectedTick = 0;
 };
 
+/** A bridge answer that is still a pending promise: the request is answered on a later frame. */
+inline constexpr const char* kStillSettling = "TN_INSPECT_STILL_SETTLING";
+/** handle()'s reply for such a request: empty, so a transport holds the request and asks again. */
+
 /** What the endpoint drives: the scene it samples and the engine's own tick. */
 struct Host {
     Object3D* scene = nullptr;
@@ -41,7 +45,8 @@ struct Host {
     std::string gameRuntime = "cpp";
     /** One JSON-safe registered resource by id, or null for an id this player does not carry. */
     std::function<json::Value(const std::string& id)> resource;
-    /** A game runtime's installed observation bridge. False without an error uses native fallback. */
+    /** A game runtime's installed observation bridge. False without an error uses native fallback;
+     *  false with `kStillSettling` as the error means its answer is a promise not yet settled. */
     std::function<bool(const std::string&, const json::Value*, json::Value&, std::string&)> observe;
 };
 

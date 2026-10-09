@@ -15,6 +15,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/player-async-bridge.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
     "packages/runtime-native/tests/native-engine/player-batched-mesh.mjs",
     "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
   ],

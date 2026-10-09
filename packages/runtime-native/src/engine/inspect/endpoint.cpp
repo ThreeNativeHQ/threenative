@@ -57,6 +57,7 @@ std::string Endpoint::handle(std::string_view frame) {
     Value result;
     std::string error;
     const bool hasResult = dispatch(method->string(), request.find("argument"), result, error);
+    if (error == kStillSettling) return {};
     if (!error.empty())
         return response(id->string(), nullptr, &error);
     if (hasResult && json::stringify(result).size() > kMaxPayloadBytes) {

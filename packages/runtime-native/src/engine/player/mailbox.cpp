@@ -69,14 +69,24 @@ bool Mailbox::announceReady() {
 
 bool Mailbox::poll(inspect::Endpoint& endpoint) {
     std::error_code ignored;
-    if (requestPath_.empty() || !fs::exists(requestPath_, ignored))
+    std::string frame = std::move(deferred_);
+    deferred_.clear();
+    if (frame.empty()) {
+        if (requestPath_.empty() || !fs::exists(requestPath_, ignored))
+            return false;
+        // The request is consumed by deleting it, so the runner's next write is never read twice.
+        frame = readFile(requestPath_, inspect::Endpoint::kMaxPayloadBytes);
+        fs::remove(requestPath_, ignored);
+        if (frame.empty())
+            return false;
+    }
+    // The runner waits for this id's answer before it writes another request, so holding one is safe.
+    const std::string response = endpoint.handle(frame);
+    if (response.empty()) {
+        deferred_ = std::move(frame);
         return false;
-    // The request is consumed by deleting it, so the runner's next write is never read twice.
-    const std::string frame = readFile(requestPath_, inspect::Endpoint::kMaxPayloadBytes);
-    fs::remove(requestPath_, ignored);
-    if (frame.empty())
-        return false;
-    return writeFile(responsePath_, endpoint.handle(frame));
+    }
+    return writeFile(responsePath_, response);
 }
 
 bool Mailbox::screenshotRequested() {

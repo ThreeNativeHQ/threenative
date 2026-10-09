@@ -53,6 +53,8 @@ class Mailbox {
     std::string screenshotPath_;
     bool announced_ = false;
     bool answered_ = true;
+    // A request whose answer is still settling (a bridge promise): asked again every poll until it answers.
+    std::string deferred_;
 };
 
 }  // namespace tn::engine::player

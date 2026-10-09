@@ -41,6 +41,10 @@ struct Game {
     /** Before each frame is drawn: the game applies the renderer settings it changed since the last. */
     std::function<void(Renderer&, RenderDatabase&)> beforeRender;
     std::function<void(Renderer&, const std::vector<std::string>&)> frameComplete;
+    /** Each loop pass before the game publishes its view: its frame callbacks run, as a page's
+     *  requestAnimationFrame fires while nothing is drawn yet (a loader that adds in slices per frame,
+     *  core's describe() waiting for the scene the game enters). */
+    std::function<void()> frameWithoutView;
     /** Releases game-owned GPU resources before the loop destroys its renderer. */
     std::function<void()> shutdown;
     /** One fixed tick; `dt` is the step in seconds. The loop calls it once per `advance` tick. */

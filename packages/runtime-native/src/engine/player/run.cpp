@@ -299,6 +299,7 @@ int run(const Game& game) {
         }
         // Nothing is drawn until the game publishes its view, as a page's canvas stays blank while it loads.
         if (scene == nullptr || camera == nullptr) {
+            if (game.frameWithoutView) game.frameWithoutView();
             renderer.poll();
             events.drain();
             return;
