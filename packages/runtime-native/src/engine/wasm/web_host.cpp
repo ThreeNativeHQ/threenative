@@ -88,6 +88,10 @@ EM_JS(void, tnw_js_release_image, (uint32_t image), {
     if (source && source.close) source.close();
     if (Module.tnImages) Module.tnImages.delete(image);
 });
+// A game's own image: the table forgets it, and the game keeps it open.
+EM_JS(void, tnw_js_forget_image, (uint32_t image), {
+    if (Module.tnImages) Module.tnImages.delete(image);
+});
 
 void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView message, void*, void*) {
     if (status != WGPURequestDeviceStatus_Success) return static_cast<void>(fail("TN_WASM_DEVICE: " + text(message)));
@@ -346,6 +350,29 @@ extern "C" int tnw_web_set_post(tn_context_t* context, const uint64_t* node) {
     current = graph;
     if (state == Ready && renderer) renderer->setPostGraph(graph);
     else pendingPost = graph;
+    return 0;
+}
+
+/**
+ * A page image the game handed three (an ImageBitmap, image or canvas, by id in Module.tnImages) as
+ * `handle`'s pixels: the renderer copies it with copyExternalImageToTexture at each upload, so a
+ * canvas sends what it holds at every needsUpdate, and nothing is read back into Wasm. The table
+ * forgets the image with the texture's last holder; the game still owns it. Returns 0, or 1 when
+ * `handle` is no texture.
+ */
+extern "C" int tnw_web_texture_image(const tn_handle_t* handle, uint32_t image, uint32_t w, uint32_t h) {
+    auto* object = handle == nullptr ? nullptr : tn::abi::objectOf(*handle);
+    if (object == nullptr || !image || !validSize(w, h) ||
+        (object->cls != "Texture" && object->cls != "DataTexture" && object->cls != "CanvasTexture"))
+        return 1;
+    auto* texture = static_cast<Texture*>(object->ptr.get());
+    texture->data.clear();
+    texture->width = w;
+    texture->height = h;
+    texture->format = kTextureRGBAFormat;
+    texture->type = kTextureUnsignedByteType;
+    texture->external = std::make_shared<const ExternalImage>(image, w, h, [](uint32_t id) { tnw_js_forget_image(id); });
+    texture->needsUpdate();
     return 0;
 }
 

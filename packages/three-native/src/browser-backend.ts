@@ -86,6 +86,11 @@ export interface IBrowserRuntime {
    * `images[i]` is glTF image i already decoded by the page (an ImageBitmap), which the engine
    * copies to the GPU instead of decoding it in Wasm; `clips` is the model's animation count.
    */
+  /**
+   * The web host takes `image` (an ImageBitmap, image or canvas) as `texture`'s pixels and copies it
+   * on the GPU at each upload, instead of a readback into bytes. Absent without the web host.
+   */
+  hostImage?(texture: IEngineRef, image: IPageImage): void;
   loadGltf?(
     bytes: Uint8Array,
     images?: readonly (IPageImage | undefined)[],
@@ -980,6 +985,14 @@ interface IAbiHelpers {
 
 let nextImage = 1;
 
+/** The web host's page image table (web_host.cpp tnw_js_copy_image), created on first use. */
+function imageTable(abi: TnAbiModule): Map<number, IPageImage> {
+  // quality-allow: the web host module carries its image table as a property it reads by name.
+  const host = abi as unknown as { tnImages?: Map<number, IPageImage> };
+  host.tnImages ??= new Map();
+  return host.tnImages;
+}
+
 /** three's MathUtils.denormalize and normalize: a normalized integer attribute's stored value and its number. */
 export function denormalize(value: number, array: TypedArray): number {
   if (array instanceof Uint32Array) return value / 4294967295;
@@ -998,6 +1011,34 @@ export function normalize(value: number, array: TypedArray): number {
   if (array instanceof Int16Array) return Math.round(value * 32767);
   if (array instanceof Int8Array) return Math.round(value * 127);
   return value;
+}
+
+/** A game's page image as a texture's pixels over the web host's `tnw_web_texture_image`. */
+function hostImageOf(
+  abi: TnAbiModule,
+  h: Pick<IAbiHelpers, "scoped" | "alloc"> & {
+    writeHandle(pointer: number, ref: IEngineRef): void;
+  },
+): Pick<IBrowserRuntime, "hostImage"> {
+  // quality-allow: TnAbiModule does not declare the optional web host export, cast to access it.
+  const host = abi as unknown as Partial<
+    Record<"_tnw_web_texture_image", (...args: number[]) => number>
+  >;
+  const take = host._tnw_web_texture_image;
+  if (take === undefined) return {};
+  return {
+    hostImage: (texture, image) =>
+      h.scoped(() => {
+        const id = nextImage++;
+        imageTable(abi).set(id, image);
+        const handle = h.alloc(16);
+        h.writeHandle(handle, texture);
+        if (take(handle, id, image.width, image.height) !== 0) {
+          imageTable(abi).delete(id);
+          throw new TypeError("TN_BROWSER_TEXTURE_SOURCE: the web host refused the image");
+        }
+      }),
+  };
 }
 
 /** The engine glTF loader over the product web host's `tnw_web_load_gltf`, when the module has it. */
@@ -1021,9 +1062,7 @@ function gltfOf(
         // The page's images by id in the host's table (web_host.cpp tnw_js_copy_image); the host
         // closes each with the last texture that holds it, or at once when no texture took it.
         // quality-allow: the web host module carries its image table as a property it reads by name.
-        const host = abi as unknown as { tnImages?: Map<number, IPageImage> };
-        host.tnImages ??= new Map();
-        const table = host.tnImages;
+        const table = imageTable(abi);
         const triples = h.alloc(Math.max(4, images.length * 12));
         images.forEach((image, i) => {
           const id = image === undefined ? 0 : nextImage++;
@@ -1459,6 +1498,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       view,
     }) ?? {}),
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
+    ...hostImageOf(abi, { scoped, alloc, writeHandle }),
     typeId: (className) => abi._tn_type_id(name(className)),
     construct: (className, args) =>
       scoped(() => {

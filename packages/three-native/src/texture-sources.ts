@@ -8,6 +8,7 @@
 import {
   type IBrowserRuntime,
   type IEngineRef,
+  type IPageImage,
   type TypedArray,
   engineRef,
 } from "./browser-backend.js";
@@ -75,6 +76,24 @@ export function defineTextureSources(
   const BaseCanvas = classes.CanvasTexture as EngineClass | undefined;
   if (BaseCanvas === undefined) throw new TypeError("TN_BROWSER_UNBOUND: CanvasTexture");
   const sources = new WeakMap<object, unknown>();
+  // Textures whose image the web host copies on the GPU, by the image it holds for each.
+  const hosted = new WeakMap<object, unknown>();
+  /**
+   * The web host takes a drawable (ImageBitmap, image, canvas) as it is and copies it with
+   * copyExternalImageToTexture, as three's WebGPU backend does; pixels in a typed array, and every
+   * image without the web host, cross as bytes.
+   */
+  const hostable = (image: unknown): image is IPageImage =>
+    runtime.hostImage !== undefined &&
+    !isPixels(image) &&
+    typeof (image as Partial<IPageImage> | null)?.width === "number" &&
+    typeof (image as Partial<IPageImage> | null)?.height === "number" &&
+    (image as IPageImage).width > 0 &&
+    (image as IPageImage).height > 0;
+  const host = (texture: object, image: IPageImage): void => {
+    runtime.hostImage?.(engineRef(texture) as IEngineRef, image);
+    hosted.set(texture, image);
+  };
   const prototype = BaseData.prototype as object;
   /** `image` is the JS source; `needsUpdate` re-sends its pixels, as three re-reads `texture.image`. */
   const followSource = (target: object, name: string): void => {
@@ -94,7 +113,16 @@ export function defineTextureSources(
         configurable: true,
         set(this: object, value: unknown) {
           const image = value ? sources.get(this) : undefined;
-          if (image !== undefined)
+          // A hosted image is copied again at the version this moves: only a new image is sent.
+          if (image !== undefined && hosted.has(this)) {
+            if (hosted.get(this) !== image) {
+              if (!hostable(image))
+                throw new TypeError(
+                  "TN_BROWSER_TEXTURE_SOURCE: a hosted texture takes a drawable image",
+                );
+              host(this, image);
+            }
+          } else if (image !== undefined)
             runtime.set(engineRef(this) as IEngineRef, "image.data", pixelsOf(image).data);
           needsUpdate.call(this, value);
         },
@@ -106,6 +134,14 @@ export function defineTextureSources(
 
   /** An engine DataTexture holding `pixels`, re-read from `image` on every needsUpdate. */
   const fromImage = (image: unknown, target: object): object => {
+    if (hostable(image)) {
+      const texture = new BaseData();
+      Object.setPrototypeOf(texture, target);
+      Object.assign(texture, IMAGE_DEFAULTS);
+      host(texture, image);
+      sources.set(texture, image);
+      return texture;
+    }
     const pixels = pixelsOf(image);
     const texture = new BaseData(pixels.data, pixels.width, pixels.height);
     Object.setPrototypeOf(texture, target);
@@ -133,6 +169,16 @@ export function defineTextureSources(
 
   /** three's CanvasTexture: the engine's own class over the canvas's pixels, with a full mip chain. */
   function CanvasTexture(this: unknown, canvas: unknown, ...rest: unknown[]) {
+    if (hostable(canvas)) {
+      const texture = Reflect.construct(
+        BaseCanvas as EngineClass,
+        [null, canvas.width, canvas.height, ...rest],
+        new.target ?? CanvasTexture,
+      ) as object;
+      host(texture, canvas);
+      sources.set(texture, canvas);
+      return texture;
+    }
     const pixels = pixelsOf(canvas);
     const texture = Reflect.construct(
       BaseCanvas as EngineClass,

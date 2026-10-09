@@ -650,13 +650,20 @@ void registerTextureBindings(Registry& classes) {
     ClassBinding& canvas = classes["CanvasTexture"];
     registerTextureClass(canvas, true);
     canvas.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
-        if (a.size() < 3 || a[0].kind != Value::Kind::Numbers)
+        // null pixels: a host that copies the canvas itself on the GPU (the web host) gives it next.
+        const bool hosted = a.size() >= 3 && (a[0].kind == Value::Kind::Null || a[0].kind == Value::Kind::Undefined);
+        if (a.size() < 3 || (!hosted && a[0].kind != Value::Kind::Numbers))
             throw Unsupported{"CanvasTexture takes the canvas's pixels, width and height"};
         const auto width = static_cast<uint32_t>(number(a[1])), height = static_cast<uint32_t>(number(a[2]));
-        if (width == 0 || height == 0 || a[0].numbers.size() != std::size_t(width) * height * 4)
+        if (width == 0 || height == 0 || (!hosted && a[0].numbers.size() != std::size_t(width) * height * 4))
             throw Unsupported{"CanvasTexture pixels must be width * height * 4 bytes"};
         auto texture = std::make_shared<DataTexture>();
-        texture->setImage(a[0].numbers, a[0].text, width, height, kTextureRGBAFormat, kTextureUnsignedByteType);
+        if (hosted) {
+            texture->width = width;
+            texture->height = height;
+        } else {
+            texture->setImage(a[0].numbers, a[0].text, width, height, kTextureRGBAFormat, kTextureUnsignedByteType);
+        }
         texture->flipY = true;
         texture->generateMipmaps = true;
         texture->magFilter = static_cast<uint16_t>(TextureFilter::Linear);

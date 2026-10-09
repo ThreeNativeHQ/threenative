@@ -23,7 +23,7 @@ const registry = JSON.parse(
   readFileSync(path.join(REPO, "packages/three-native/api/native-registry.json"), "utf8"),
 ) as IRegistryDump;
 
-function recording() {
+function recording(hosting = false) {
   const types = new Map<string, number>();
   const typeId = (name: string) =>
     types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0;
@@ -47,7 +47,9 @@ function recording() {
     setCallback: () => undefined,
   };
   const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
-  return { bound: withTextureSources(classes, runtime), constructed, writes };
+  const hostedImages: [string, unknown][] = [];
+  if (hosting) runtime.hostImage = (texture, image) => void hostedImages.push([texture.key, image]);
+  return { bound: withTextureSources(classes, runtime), constructed, writes, hostedImages };
 }
 
 type Ctor = new (...args: unknown[]) => Record<string, unknown>;
@@ -55,6 +57,41 @@ type Ctor = new (...args: unknown[]) => Record<string, unknown>;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser texture sources", () => {
+  it("hands the web host a drawable as it is, and re-hosts only a new image on needsUpdate", () => {
+    const { bound, constructed, writes, hostedImages } = recording(true);
+    let reads = 0;
+    const canvas = {
+      width: 4,
+      height: 2,
+      getContext: () => {
+        reads++;
+        return null;
+      },
+    };
+    const texture = new (bound.CanvasTexture as Ctor)(canvas);
+    expect(constructed.at(-1)).toEqual(["CanvasTexture", [null, 4, 2]]);
+    const key = hostedImages.at(-1)?.[0];
+    expect(hostedImages).toEqual([[key, canvas]]);
+    texture.needsUpdate = true; // the same canvas: the host copies it again at the new version
+    expect(hostedImages.length).toBe(1);
+    expect(writes).toEqual([[key, "needsUpdate", true]]);
+    const bitmap = { width: 8, height: 8, close: () => undefined };
+    texture.image = bitmap;
+    texture.needsUpdate = true;
+    expect(hostedImages.at(-1)).toEqual([key, bitmap]);
+    const adopted = new (bound.Texture as Ctor)(bitmap);
+    expect(constructed.at(-1)).toEqual(["DataTexture", []]);
+    expect(hostedImages.at(-1)?.[1]).toBe(bitmap);
+    expect(adopted.image).toBe(bitmap);
+    expect(reads).toBe(0); // nothing read back
+    // Pixels in a typed array still cross as bytes.
+    new (bound.Texture as Ctor)({ data: new Uint8ClampedArray([1, 2, 3, 4]), width: 1, height: 1 });
+    expect(constructed.at(-1)).toEqual([
+      "DataTexture",
+      [new Uint8ClampedArray([1, 2, 3, 4]), 1, 1],
+    ]);
+  });
+
   it("re-sends a DataTexture's edited typed array on needsUpdate (Midway's ripples)", () => {
     const { bound, constructed, writes } = recording();
     const DataTexture = bound.DataTexture as Ctor;
