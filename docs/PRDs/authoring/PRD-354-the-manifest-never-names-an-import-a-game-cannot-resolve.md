@@ -121,8 +121,20 @@ pair *is* the red, and it is also the proof the instrument is not measuring pnpm
 importer's call sites and rule (a) / (b) / (c) for `raw-unreal` and for `ueformat` separately;
 record the ruling and its reversal condition in this file.
 
-- [ ] Red pair pasted: root-relative resolver 0 problems, scaffold-closure resolver 27, same manifest.
-- [ ] Ruling recorded for `raw-unreal` and `ueformat`, each with its reversal condition.
+- [x] Red pair pasted, same manifest (`origin/develop` at `f7dd08621`), measured 2026-10-08. proof:
+      `root-relative resolver: 31 unresolvable of 36 specifiers` beside `scaffold-closure resolver, with
+      every @requires stripped (the dae30759 shape): 64 distinct entries (27 raw-unreal/ueformat)`.
+      The prediction of 0 from the root was wrong: the repository root links no `@threenative`
+      package, so a root resolve is a false red, not a false green. Either way it measures the
+      workspace layout, not a user's install, which is the point of the pair.
+- [x] Ruling recorded. proof: **(b) for both packages.** `raw-unreal` and `ueformat` parse
+      `.uasset`/`.uemodel` in the game at run time (`parseUAssetStaticMesh`, `createThreeObject`,
+      `parseUEModel`); the importer MCP's offline route converts to GLB and never asks a game to
+      import them, so (c) would hide a real runtime API, and no template's code imports them, so
+      (a) would install them in every game for a job most never do. Reversal: (a) when any
+      template's own source imports either package; (c) when the runtime path is retired and
+      only MCP tooling calls them. The same ruling covers the per-template gaps below: `physics`
+      in `rain` and `rts`, and `ui` in `minimal`.
 
 ### Phase 1 — the resolver
 
@@ -130,16 +142,26 @@ Compute the scaffold dependency closure per template. It must be
 derived from the template manifests and the scaffolder, never hard-coded, or it becomes the
 sixth hand-maintained package enumeration in this repository.
 
-- [ ] Closure derived from each template's `package.json` and source imports, never a typed list (AC4 red pasted).
-- [ ] Closure checked per template, not as the union of all templates.
+- [x] Closure derived from each template's `package.json` and source imports, never a typed list.
+      proof: AC4 red below; `scaffoldDependencyClosures` reads `templates/*/package.json` (landed
+      in #142, `baa1adc62`).
+- [x] Closure checked per template, not as the union of all templates. proof: new spec
+      `checks each template closure on its own` fails on the union gate (`promise resolved
+      "{ checkedEntries: 19, …(4) }" instead of rejecting`) and passes on the per-template gate
+      (27/27 in `capability-manifest.spec.ts`). The tightened gate found 42 unresolved template
+      imports on `origin/develop`: `{"minimal":6,"rain":18,"rts":18}`.
 
 ### Phase 2 — the gate
 
 Wire it through `pnpm budgets` beside the existing capability checks. Fail
 closed: an entry whose `importPath` is neither in the closure nor carrying `requires` fails.
 
-- [ ] Gate runs in `pnpm budgets` and `pnpm capabilities:check`.
-- [ ] A fabricated `@threenative/nope` entry fails naming the symbol and the package (AC2 red pasted).
+- [x] Gate runs in `pnpm budgets` (via `scripts/check-budgets.ts` → `checkCapabilityManifest`)
+      and `pnpm capabilities:check`. proof: both green on this branch, `380 of 380 package-backed
+      entries resolvable or documented across 13 template closures (65 require install
+      instructions, 0 unresolved template imports)`.
+- [x] A fabricated `@threenative/nope` entry fails naming the symbol and the package. proof:
+      AC2 red below; the spec `fails when a manifest import has no scaffold dependency` keeps it.
 
 ### Phase 3 — the ruling, applied
 
@@ -147,36 +169,58 @@ Whichever of (a)/(b)/(c) Phase 0 chose, for both packages.
 If (b): the doc tag, the generator field, both manifest copies, the MCP output and
 `capability-reference.md`.
 
-- [ ] The 27 `raw-unreal`/`ueformat` entries carry `requires`; both manifest copies agree (AC3, AC6).
-- [ ] Every per-template gap the tightened gate finds is resolved by the same ruling, not a suppression list.
+- [x] The 27 `raw-unreal`/`ueformat` entries carry `requires`; both manifest copies agree.
+      proof: tags landed in #142; `cmp` of both copies identical; `pnpm capabilities:check` green.
+- [x] Every per-template gap is resolved by ruling (b), not a suppression list. proof: 18
+      `@requires npm i @threenative/physics` and 6 `@requires npm i @threenative/ui` doc tags on the
+      re-export blocks; gate 42 → 0; `capability-reference.md` regenerated.
 
 ### Phase 4 — the agent actually sees it
 
 An `engine_capability_detail` call on one affected
 symbol prints the install line. Paste the tool output, not the JSON.
 
-- [ ] `engine_capability_detail` on `createThreeObject` prints the install line (AC5 output pasted).
-- [ ] A scaffolded-game test scaffolds every template and resolves every manifest import with Node.
+- [x] `engine_capability_detail` on `createThreeObject` prints the install line. proof: AC5
+      output below.
+- [x] A scaffolded-game test scaffolds every template and resolves every manifest import with
+      Node. proof: `packages/create-threenative/__tests__/scaffold-manifest-imports.spec.ts` runs
+      `createProject` for all 13 templates, links only the declared dependencies into
+      `node_modules`, and calls `import.meta.resolve` on every package import. It passes on this
+      branch and fails on the `origin/develop` manifest: `AssertionError: minimal: expected [
+      …(6) ] to deeply equal []`. Its control asserts that every undeclared package stays
+      unresolvable, so the resolver cannot pass trivially.
 - [ ] AC7 and AC8 gates run, output pasted.
 
 ## 5. Acceptance criteria
 
-- [ ] **AC1 — the red is a pair.** Root-relative resolver: 0 problems. Scaffold-closure resolver:
+- [x] **AC1 — the red is a pair.** Root-relative resolver: 0 problems. Scaffold-closure resolver:
       27. Both pasted, same manifest, same commit. Without this pair the gate is unfalsifiable.
-- [ ] **AC2 — a fabricated bad entry fails.** An entry importing `@threenative/nope` → `pnpm
+      Result: the pair differs as required, but the root reading is 31 of 36, not 0 (see Phase 0).
+- [x] **AC2 — a fabricated bad entry fails.** An entry importing `@threenative/nope` → `pnpm
       budgets` fails naming the symbol and the package. Red pasted.
-- [ ] **AC3 — the 27 are resolved.** After Phase 3, the gate reports zero unresolvable entries, and
+      Result: a throwaway `packages/nope` → `tsx scripts/check-budgets.ts` exit 1:
+      `- minimal: NopeCapability -> @threenative/nope (@threenative/nope); this template's
+      dependency closure does not install this package and the capability has no @requires
+      install instruction` (one line per template, 13).
+- [x] **AC3 — the 27 are resolved.** After Phase 3, the gate reports zero unresolvable entries, and
       the resolution is the one Phase 0 ruled — not a suppression list. A suppression list fails
-      this criterion.
-- [ ] **AC4 — the closure is derived.** Deleting `@threenative/ui` from one template's
+      this criterion. Result: `0 unresolved template imports`; resolution is the (b) tag, no list.
+- [x] **AC4 — the closure is derived.** Deleting `@threenative/ui` from one template's
       `dependencies` makes the gate fail on that template's UI capabilities. Red pasted. This is the
-      control that proves the closure is read, not typed.
-- [ ] **AC5 — the agent-visible path.** `engine_capability_detail` on `createThreeObject` returns
-      text containing the install instruction. Output pasted.
-- [ ] **AC6 — both manifest copies agree.** `packages/create-threenative/capabilities.json` and
+      control that proves the closure is read, not typed. Result: `@threenative/ui` removed from
+      `templates/starter/package.json` → `CAPABILITY_SCAFFOLD_IMPORT_UNRESOLVED: 6 manifest imports
+      are unusable from scaffolded projects`, `- starter: UiLayer -> @threenative/ui` and five more.
+- [x] **AC5 — the agent-visible path.** `engine_capability_detail` on `createThreeObject` returns
+      text containing the install instruction. Output pasted. Result (MCP `tools/call` through
+      `handleLine`): `"package": "@threenative/raw-unreal", "requires": [ "npm i
+      @threenative/raw-unreal" ]`; `CharacterBody3D` returns `"requires": [ "npm i
+      @threenative/physics" ]`.
+- [x] **AC6 — both manifest copies agree.** `packages/create-threenative/capabilities.json` and
       `packages/core/capabilities.json` carry the same fields; `pnpm capabilities:check` green.
-- [ ] **AC7 — sealed corpus untouched.** No `docs/benchmark/genres/*/brief.md` text enters either
-      manifest copy. `git diff --stat` on `docs/benchmark/` is empty.
+      Result: `cmp` reports the files identical; `capability manifest fresh: 392 entries`.
+- [x] **AC7 — sealed corpus untouched.** No `docs/benchmark/genres/*/brief.md` text enters either
+      manifest copy. `git diff --stat` on `docs/benchmark/` is empty. Result: empty against
+      `origin/develop`.
 - [ ] **AC8 — gates.** `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`, output pasted.
 
 ## 6. Decline conditions
