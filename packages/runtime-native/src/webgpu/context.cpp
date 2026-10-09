@@ -356,6 +356,20 @@ static void installDeviceCallbacks(WGPUDeviceDescriptor& deviceDesc, mystral::we
     lostCallbackInfo.userdata1 = context;
     deviceDesc.deviceLostCallbackInfo = lostCallbackInfo;
 #endif
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    // Dawn rounds timestamp queries to a coarse step by default (a browser's fingerprinting guard),
+    // so every pass of a small frame read the same time and the engine's GPU timer measured nothing.
+    // A native host owns its process: timestamps keep their full resolution.
+    static const char* const disabled[] = {"timestamp_quantization"};
+    static WGPUDawnTogglesDescriptor toggles = [] {
+        WGPUDawnTogglesDescriptor descriptor = {};
+        descriptor.chain.sType = WGPUSType_DawnTogglesDescriptor;
+        descriptor.disabledToggleCount = 1;
+        descriptor.disabledToggles = disabled;
+        return descriptor;
+    }();
+    deviceDesc.nextInChain = &toggles.chain;
+#endif
 }
 
 #if defined(MYSTRAL_WEBGPU_WGPU)
