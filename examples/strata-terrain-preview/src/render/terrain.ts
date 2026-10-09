@@ -153,6 +153,8 @@ const WET_SAND = {
  * its normal map and every other surface alone.
  */
 const MEADOW = vec3(0.47, 0.72, 0.4);
+/** Multiplier that turns meadow turf into shaded needle litter under a stand. */
+const FOREST_FLOOR = vec3(0.44, 0.38, 0.3);
 
 /** Continuous stochastic warp: no hard cell boundaries in colour or normals. */
 export function tiledUV(
@@ -437,6 +439,51 @@ function microGrain(): Node<"vec3"> {
   return vec3(dx, 0, dz).div(step).mul(0.06);
 }
 
+/** Crown radius in metres per unit of placement scale, for the trees that drop needle litter. */
+const CANOPY_CROWN: Readonly<Record<string, number>> = { spruce: 7, sapling: 2.5 };
+
+/**
+ * Paint each placed tree's crown into the terrain's `canopy` vertex attribute, so the ground under a
+ * stand reads as forest floor rather than meadow turf. Vertices are row-major Z then X, centred at
+ * zero, at the heightfield's own spacing.
+ */
+export function paintCanopy(
+  mesh: Mesh,
+  data: Pick<IBakedWorld, "size" | "resolution">,
+  placements: readonly {
+    readonly asset: string;
+    readonly position: readonly number[];
+    readonly scale: number;
+  }[],
+): void {
+  const cover = mesh.geometry.getAttribute("canopy");
+  if (!(cover instanceof Float32BufferAttribute) || data.resolution < 2) return;
+  const values = cover.array as Float32Array;
+  const spacing = data.size / (data.resolution - 1);
+  const half = data.size / 2;
+  for (const placement of placements) {
+    const crown = CANOPY_CROWN[placement.asset];
+    if (crown === undefined) continue;
+    const radius = Math.max(spacing, crown * placement.scale);
+    const x = placement.position[0] ?? 0;
+    const z = placement.position[2] ?? 0;
+    const fromColumn = Math.max(0, Math.ceil((x - radius + half) / spacing));
+    const toColumn = Math.min(data.resolution - 1, Math.floor((x + radius + half) / spacing));
+    const fromRow = Math.max(0, Math.ceil((z - radius + half) / spacing));
+    const toRow = Math.min(data.resolution - 1, Math.floor((z + radius + half) / spacing));
+    for (let row = fromRow; row <= toRow; row++)
+      for (let column = fromColumn; column <= toColumn; column++) {
+        const dx = column * spacing - half - x;
+        const dz = row * spacing - half - z;
+        const reach = 1 - (dx * dx + dz * dz) / (radius * radius);
+        if (reach <= 0) continue;
+        const index = row * data.resolution + column;
+        values[index] = Math.max(values[index] as number, reach);
+      }
+  }
+  cover.needsUpdate = true;
+}
+
 /**
  * The ground material: one lit surface whose colour is a blend of six PBR layers, blended in weight
  * order outwards from the base surface.
@@ -528,6 +575,8 @@ export function createGroundMaterial(
   };
 
   if (biome) Object.assign(weights, biomeWeights(biome, steep, hollow, breakUp));
+  // Needle litter and crown shade under the placed stands, as a multiplicative floor tint.
+  let forestFloor: Node<"float"> = float(0);
   // Transport, slope and shelter choose the splat; noise only frays the material's edge.
   weights.rock = max(weights.rock, scour.mul(0.9)).mul(oneMinus(deposits.mul(0.22)));
   if (biome?.world === "alpine") weights.rock = max(weights.rock, smoothstep(0.08, 0.22, slope));
@@ -547,16 +596,15 @@ export function createGroundMaterial(
     if (biome?.world === "forest" || biome === undefined)
       weights.dirt = drainage.mul(0.18).max(sediment.mul(0.5)).mul(sand.oneMinus());
     if (biome?.world === "forest" || biome === undefined) {
-      // The placement field's stand frequencies: litter stays under mature stands, close to the eye.
-      const stand = float(0.52)
-        .add(positionWorld.x.mul(0.035).add(positionWorld.z.mul(0.018)).sin().mul(0.27))
-        .add(positionWorld.z.mul(0.043).sub(positionWorld.x.mul(0.017)).add(1.3).sin().mul(0.24))
-        .add(positionWorld.x.mul(0.071).add(positionWorld.z.mul(0.061)).sin().mul(0.12));
-      const litter = smoothstep(0.58, 0.82, stand)
-        .mul(smoothstep(-0.12, 0.28, mx_noise_float(positionWorld.mul(1.1))))
-        .mul(oneMinus(smoothstep(8, 38, positionView.length())))
-        .mul(0.52);
-      weights.dirt = weights.dirt.max(litter);
+      // Needle litter lies under the trees that were actually placed (`paintCanopy`), frayed by noise
+      // at its edge. The old sine-sum stand mask no longer matched the value-noise scatter, and its
+      // 38 m fade left every stand standing on meadow turf from any height.
+      const litter = smoothstep(0, 0.6, attribute<"float">("canopy", "float"))
+        .mul(mix(0.72, 1, smoothstep(-0.5, 0.5, mx_noise_float(positionWorld.mul(2.2)))))
+        .mul(oneMinus(smoothstep(300, 600, positionView.length())))
+        .mul(0.85);
+      weights.dirt = weights.dirt.max(litter.mul(0.25));
+      forestFloor = litter;
     }
     // Coastal soil patches remain; the forest meadow keeps turf between distant blade clusters.
     if (biome?.world === "coastal") {
@@ -811,7 +859,9 @@ export function createGroundMaterial(
     albedo.rgb.mul(mix(vec3(1), tone, vegetation)),
     otherBiome ? albedo.rgb : mountain,
     continuation,
-  ).mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank));
+  )
+    .mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank))
+    .mul(mix(vec3(1), FOREST_FLOOR, forestFloor));
   material.roughnessNode = mix(
     mix(
       otherBiome ? 0.94 : mix(0.88, 0.98, dryness),
@@ -884,6 +934,11 @@ export function createTerrain(
   if (data.colors.length !== geometry.getAttribute("position").count * 3)
     throw new RangeError("Baked terrain colours do not match the heightfield");
   geometry.setAttribute("color", new Float32BufferAttribute(data.colors, 3));
+  // Crown cover per vertex, painted from the scattered trees by `paintCanopy`; zero until then.
+  geometry.setAttribute(
+    "canopy",
+    new Float32BufferAttribute(new Float32Array(geometry.getAttribute("position").count), 1),
+  );
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   const mesh: Mesh = new Mesh(geometry, material);
   mesh.name = "authored-terrain";
@@ -915,6 +970,10 @@ export function createTerrain(
   }
   mesh.userData.horizonSeamGap = horizonSeamGap;
   mesh.userData.horizonSeamSamples = (data.resolution - 1) * 4;
+  horizonGeometry.setAttribute(
+    "canopy",
+    new Float32BufferAttribute(new Float32Array(edgePositions.count), 1),
+  );
   const horizon: Mesh = new Mesh(horizonGeometry, material);
   horizon.name = "temperate-distant-ridges";
   horizon.layers.enable(REFLECTED_LAYER);

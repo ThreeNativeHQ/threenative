@@ -4051,3 +4051,19 @@ provide (Long Tasks, per-view frame and triangle windows, GPU timestamp windows)
 extra worlds rendering 57–62 frames against a floor of 120. The staging script stays public-only.
 
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
+
+### 2026-10-08 — forest floor under the placed trees
+
+The ground's needle-litter term still used the old sine-sum stand mask that `scatter.ts` had
+replaced with value noise, so the litter fell in stripes unrelated to where trees stand, and its
+8–38 m view fade left every stand on meadow turf from any height. Now `paintCanopy` (`terrain.ts`)
+paints each placed spruce (7 m per unit scale) and sapling (2.5 m) crown into a per-vertex `canopy`
+attribute after the scatter, so no texture sampler is added (the ground holds 15 of 16). The
+material tints the ground by `FOREST_FLOOR` under that cover with gentle high-frequency variation,
+fading only from 300 to 600 m. Three strengths were judged by fresh judges: faint (elevated 5 → 5.5,
+too weak), strong (6.5 from one judge but "mud smears, worm-like noise edges, orange hue" and 5.5 from
+the next), and the shipped soft, cooler tint: **elevated 7 against 6.5 for no floor**, no worm edges
+or mud, no tint in open meadow, meadow view unchanged
+([elevated](../../benchmark/strata-loading-2026-10-06/forest-floor-canopy-player.jpg),
+[meadow](../../benchmark/strata-loading-2026-10-06/forest-floor-canopy-meadow.jpg)). Remaining gaps the
+judges name: no understory at range, the flat yellow-green open ground, and dappled light.

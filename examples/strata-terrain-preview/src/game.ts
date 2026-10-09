@@ -40,7 +40,7 @@ import {
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
-import { type IBakedWorld, createTerrain } from "./render/terrain.js";
+import { type IBakedWorld, createTerrain, paintCanopy } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import { medianOfGrowingSamples as median } from "./viewStatistics.js";
 import baked from "./world/baked.json";
@@ -589,6 +589,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           .filter((pose) => pose.eye < 20)
           .map((pose) => [pose.at[0], pose.at[1], 10] as const),
       );
+      paintCanopy(mesh, data, scatter.placements);
       const fallbackSaplingHeight = world === "alpine" ? 2 : world === "tundra" ? 1.4 : undefined;
       let propParts = buildPropVariants(undefined, fallbackSaplingHeight);
       const flat = flatPropMaterials();
