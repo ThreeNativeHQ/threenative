@@ -375,7 +375,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
-                             "flipX", "flipY", "flipZ", "flipW", "level"})
+                             "flipX", "flipY", "flipZ", "flipW", "level", "dFdx", "dFdy", "lengthSq"})
         node->Set(str(isolate_, name), function(context, name, true));
     // TSL's swizzles: every one- to four-lane pattern over xyzw, and the same over rgba (three's
     // SwizzleNode accepts any of them), each as its xyzw lanes.
@@ -402,6 +402,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
+                             "dFdx", "dFdy", "lengthSq",
                              "ao", "denoise", "smaa", "bloom", "oneMinus", "varying", "setUniform",
                              "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())

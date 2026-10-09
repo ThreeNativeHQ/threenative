@@ -21,7 +21,7 @@ export const {
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
 } = globalThis.tsl;
 export const {
-  oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection,
+  oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection, dFdx, dFdy, lengthSq,
 } = globalThis.tsl;
 
 // MRT slots: the names a scene pass writes beside its colour. They mark an `mrt()` output only;

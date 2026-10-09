@@ -147,6 +147,20 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             : g::vec2({args.size() == 1 ? arg(0) : g::float_(0)})};
         return node;
     }
+    // Screen-space derivatives (r185's dFdx/dFdy, WGSL dpdx/dpdy) keep their operand's type.
+    if (name == "dFdx" || name == "dFdy") {
+        arity(method ? 0 : 1);
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Math; node->name = name; node->args = {lhs()};
+        node->type = node->args[0]->type;
+        return node;
+    }
+    // lengthSq(v) is dot(v, v).
+    if (name == "lengthSq") {
+        arity(method ? 0 : 1);
+        const auto value = lhs();
+        return g::dot(value, value);
+    }
     if (name == "reflect") {
         arity(method ? 1 : 2);
         auto node = std::make_shared<g::NodeData>();

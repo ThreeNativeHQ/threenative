@@ -97,6 +97,8 @@ try {
   tinted.colorNode = Fn(() => {
     const green = tint.mul(0.5).toVar();
     green.addAssign(tint.mul(0.5));
+    // Midway's ocean takes screen-space derivatives; zero-weighted so the colour is unchanged.
+    green.addAssign(uv().dFdx().x.add(uv().dFdy().lengthSq()).mul(0));
     const blue = tint.toVar();
     blue.mulAssign(1.6);
     return vec4(tint.mul(0.2), green, blue, 1);

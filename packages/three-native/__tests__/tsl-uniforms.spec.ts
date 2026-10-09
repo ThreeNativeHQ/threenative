@@ -29,14 +29,12 @@ describe("liveUniforms", () => {
       () => ({}),
       (_node, lanes) => written.push([...lanes]),
     );
-    const ships = [
-      { x: 1, y: 2, z: 3, w: 4 },
-      { x: 5, y: 6, z: 7, w: 8 },
-    ];
+    const wake = { x: 5, y: 6, z: 7, w: 8 };
+    const ships = [{ x: 1, y: 2, z: 3, w: 4 }, wake];
     const array = live.uniformArray(ships);
     const second = array.element(1) as { value: unknown };
-    expect(second.value).toBe(ships[1]);
-    ships[1].x = 50;
+    expect(second.value).toBe(wake);
+    wake.x = 50;
     live.sync();
     expect(written).toContainEqual([50, 6, 7, 8]);
     expect(() => array.element(2)).toThrow("TN_TSL_UNIFORM_ARRAY_INDEX");
