@@ -552,7 +552,7 @@ void registerScene(ClassBinding& b) {
     b.setters["environment"] = [](void* self, const Value& v, Store& store) {
         if (v.kind == Value::Kind::Null) { as<Scene>(self)->environment.reset(); return; }
         Object* texture = store.find(v);
-        if (!texture || (texture->cls != "Texture" && texture->cls != "DataTexture"))
+        if (!texture || !isTextureClass(texture->cls))
             throw Unsupported{"environment must be a Texture or null"};
         as<Scene>(self)->environment = std::static_pointer_cast<Texture>(texture->ptr);
     };
@@ -576,7 +576,7 @@ void registerScene(ClassBinding& b) {
         if (!color) throw Unsupported{"background must be a Color, Texture or null"};
         if (color->cls == "Color") {
             scene->background = std::static_pointer_cast<Color>(color->ptr); scene->backgroundTexture.reset();
-        } else if (color->cls == "Texture" || color->cls == "DataTexture") {
+        } else if (isTextureClass(color->cls)) {
             scene->backgroundTexture = std::static_pointer_cast<Texture>(color->ptr); scene->background.reset();
         } else throw Unsupported{"background must be a Color, Texture or null"};
     };
@@ -1028,6 +1028,92 @@ void registerAnimationMixer(ClassBinding& b) {
     b.setters["timeScale"] = [](void* self, const Value& v) { as<AnimationMixer>(self)->timeScale = number(v); };
 }
 
+/**
+ * three's PropertyBinding over the engine's (engine/animation/property_binding.h), for every back end.
+ * `bind()` answers the reason a path did not bind (empty when it did); the shared facade
+ * (three-native/src/property-binding.ts) routes it to three's console function and returns nothing.
+ * A PropertyBinding built with no arguments is the facade's helper for the static parseTrackName
+ * and findNode.
+ */
+Value textValue(std::string text) { return Value{Value::Kind::String, 0, std::move(text)}; }
+
+struct BoundProperty {
+    std::optional<animation::PropertyBinding> binding;
+};
+
+void registerPropertyBinding(ClassBinding& b) {
+    using animation::ParsedPath;
+    const auto shared = [](Store& store, const Value& arg) {
+        std::shared_ptr<Object3D> root = objectArg(store, arg).weak_from_this().lock();
+        if (!root) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: the root is not shared-owned"};
+        return root;
+    };
+    const auto path = [](const Value& v) {
+        if (v.kind != Value::Kind::String) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: expected a track path string"};
+        return v.text;
+    };
+    const auto node = [](Store& store, Object3D* object) -> Value {
+        if (!object) return Value{};
+        auto owner = object->weak_from_this().lock();
+        if (!owner) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: node has no shared owner"};
+        return store.share(std::string(object->type()), std::move(owner));
+    };
+    b.ctor = [shared, path](const Args& a, Store& store) -> std::shared_ptr<void> {
+        auto bound = std::make_shared<BoundProperty>();
+        if (a.empty()) return bound;
+        if (a.size() != 2) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: construct with root and path"};
+        const std::string track = path(a.at(1));
+        ParsedPath parsed;
+        std::string error;
+        if (!animation::parseTrackName(track, parsed, error)) throw Unsupported{error};
+        bound->binding.emplace(shared(store, a.at(0)), track);
+        return bound;
+    };
+    const auto binding = [](void* self) -> animation::PropertyBinding& {
+        auto& bound = *as<BoundProperty>(self);
+        if (!bound.binding) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: this helper has no root and path"};
+        return *bound.binding;
+    };
+    b.methods["bind"] = [binding](void* self, const Args&, Store&) {
+        auto& property = binding(self);
+        property.bind();
+        return textValue(property.diagnostic);
+    };
+    b.methods["unbind"] = [binding](void* self, const Args&, Store&) {
+        binding(self).unbind();
+        return Value{};
+    };
+    b.getters["path"] = [binding](void* self) { return textValue(binding(self).path); };
+    b.methods["targetObject"] = [binding, node](void* self, const Args&, Store& store) -> Value {
+        auto& property = binding(self);
+        if (auto material = property.targetMaterial()) {
+            std::string cls(material->typeName());  // read before the move: argument order is unspecified
+            return store.share(std::move(cls), std::move(material));
+        }
+        return node(store, property.targetNode().get());
+    };
+    b.methods["parseTrackName"] = [path](void*, const Args& a, Store&) {
+        ParsedPath parsed;
+        std::string error;
+        if (a.size() != 1 || !animation::parseTrackName(path(a.at(0)), parsed, error))
+            throw Unsupported{error.empty() ? "TN_NATIVE_PROPERTY_BINDING: expected one track path" : error};
+        std::vector<std::pair<std::string, Value>> fields;
+        for (const auto& [name, part] : std::vector<std::pair<const char*, std::optional<std::string>>>{
+                 {"nodeName", parsed.nodeName}, {"objectName", parsed.objectName}, {"objectIndex", parsed.objectIndex},
+                 {"propertyName", parsed.propertyName}, {"propertyIndex", parsed.propertyIndex}})
+            fields.emplace_back(name, part ? textValue(*part) : Value::undefined());
+        return Value::record(std::move(fields));
+    };
+    b.methods["findNode"] = [shared, path, node](void*, const Args& a, Store& store) {
+        if (a.empty() || a.size() > 2) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: expected root and node name"};
+        const auto root = shared(store, a.at(0));
+        // An absent name (`undefined`, which a back end may pass as null or leave off) finds the root.
+        const bool named = a.size() == 2 && a.at(1).kind != Value::Kind::Undefined && a.at(1).kind != Value::Kind::Null;
+        const auto name = named ? std::optional<std::string>{path(a.at(1))} : std::optional<std::string>{};
+        return node(store, animation::findNode(*root, name));
+    };
+}
+
 void registerAnimationAction(ClassBinding& b) {
     using namespace tn::engine::animation;
     for (const char* name : {"play", "stop", "reset"}) {
@@ -1358,6 +1444,7 @@ void registerSceneBindings(Registry& classes) {
     registerSkinnedMesh(classes["SkinnedMesh"]);
     registerAnimationMixer(classes["AnimationMixer"]);
     registerAnimationAction(classes["AnimationAction"]);
+    registerPropertyBinding(classes["PropertyBinding"]);
     registerAnimationClip(classes["AnimationClip"]);
     registerKeyframeTrack(classes["QuaternionKeyframeTrack"], tn::engine::animation::TrackType::Quaternion);
     registerKeyframeTrack(classes["VectorKeyframeTrack"], tn::engine::animation::TrackType::Vector);

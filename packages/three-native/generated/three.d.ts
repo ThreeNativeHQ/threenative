@@ -406,6 +406,11 @@ readonly projectionMatrix: Matrix4;
 readonly projectionMatrixInverse: Matrix4;
 }
 
+/** Catalog supported: three/CanvasTexture. */
+export declare class CanvasTexture extends Texture {
+constructor();
+}
+
 /** Catalog supported: three/CapsuleGeometry. */
 export declare class CapsuleGeometry extends BufferGeometry {
 constructor();
@@ -3325,4 +3330,20 @@ normalBias: number;
 radius: number;
 readonly camera: PerspectiveCamera;
 readonly mapSize: Vector2;
+}
+
+/** Catalog supported: three/PropertyBinding. */
+export declare class PropertyBinding {
+constructor();
+readonly path: string;
+
+  bind(): void;
+
+  findNode(root: Object3D, nodeName?: string): Object3D | null;
+
+  parseTrackName(trackName: string): { nodeName: string; objectName: string; objectIndex: string; propertyName: string; propertyIndex: string };
+
+  targetObject(): Object3D | Material | null;
+
+  unbind(): void;
 }

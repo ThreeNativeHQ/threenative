@@ -105,9 +105,11 @@ const canvas = { width: 2, height: 1, getContext: (kind) => kind === "2d" ? {
   getImageData: () => { reads++; return { data: new Uint8ClampedArray(8).fill(200) }; } } : null };
 const drawn = new THREE.CanvasTexture(canvas);
 check(drawn.isCanvasTexture && drawn instanceof THREE.Texture && drawn.flipY === true && drawn.image === canvas, "canvas texture");
+check(reads === 1, "canvas read once when built");
 const drawnVersion = drawn.version;
 drawn.needsUpdate = true;
-check(reads === 3 && drawn.version === drawnVersion + 1, "canvas re-read on needsUpdate");
+check(reads === 2 && drawn.version === drawnVersion + 1, "canvas re-read on needsUpdate");
+check(drawn.generateMipmaps === true && drawn.minFilter === THREE.LinearMipmapLinearFilter, "canvas texture mip chain");
 refuses(() => new THREE.CanvasTexture({ width: 1, height: 1 }), /TN_NATIVE_CANVAS_TEXTURE_SOURCE/, "canvas without 2D context");
 class Label extends THREE.CanvasTexture {}
 const label = new Label(canvas);

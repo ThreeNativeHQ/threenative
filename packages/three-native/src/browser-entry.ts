@@ -24,6 +24,7 @@ import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { Material, defineObjectSurface } from "./object-surface.js";
 import { definePass } from "./pass-node.js";
+import { definePropertyBinding } from "./property-binding.js";
 import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -121,6 +122,9 @@ export async function bindWebEngine(
     ...tsl?.exports,
   };
   bound.Material = Material;
+  // three's PropertyBinding statics and console function over the engine class (shared with V8).
+  if (classes.PropertyBinding !== undefined)
+    Object.assign(bound, definePropertyBinding(classes.PropertyBinding as never));
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
   // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
   const audio = defineAudioClasses({

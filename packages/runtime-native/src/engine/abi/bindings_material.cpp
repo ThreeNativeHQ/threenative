@@ -172,7 +172,7 @@ void materialMapSlot(ClassBinding& b, const std::string& slot = "map") {
             return;
         }
         Object* object = store.find(v);
-        if (object == nullptr || (object->cls != "Texture" && object->cls != "DataTexture"))
+        if (object == nullptr || !isTextureClass(object->cls))
             throw Unsupported{slot + " must be a Texture"};
         material.maps[slot] = std::static_pointer_cast<const Texture>(object->ptr);
         material.needsUpdate();
@@ -583,6 +583,30 @@ void registerTextureBindings(Registry& classes) {
     };
     registerTextureClass(classes["Texture"], false);
     registerTextureClass(classes["DataTexture"], true);
+    // three's CanvasTexture: the canvas's RGBA pixels as a DataTexture with Texture's own defaults
+    // (flipped rows, linear filters, a generated mip chain). Each back end reads the canvas
+    // (getImageData) and passes (pixels, width, height, mapping, wrapS, wrapT, magFilter, minFilter).
+    ClassBinding& canvas = classes["CanvasTexture"];
+    registerTextureClass(canvas, true);
+    canvas.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+        if (a.size() < 3 || a[0].kind != Value::Kind::Numbers)
+            throw Unsupported{"CanvasTexture takes the canvas's pixels, width and height"};
+        const auto width = static_cast<uint32_t>(number(a[1])), height = static_cast<uint32_t>(number(a[2]));
+        if (width == 0 || height == 0 || a[0].numbers.size() != std::size_t(width) * height * 4)
+            throw Unsupported{"CanvasTexture pixels must be width * height * 4 bytes"};
+        auto texture = std::make_shared<DataTexture>();
+        texture->setImage(a[0].numbers, a[0].text, width, height, kTextureRGBAFormat, kTextureUnsignedByteType);
+        texture->flipY = true;
+        texture->generateMipmaps = true;
+        texture->magFilter = static_cast<uint16_t>(TextureFilter::Linear);
+        texture->minFilter = static_cast<uint16_t>(TextureFilter::LinearMipmapLinear);
+        uint16_t* const optional[] = {&texture->mapping, &texture->wrapS, &texture->wrapT, &texture->magFilter,
+                                      &texture->minFilter};
+        for (std::size_t i = 3; i < a.size() && i - 3 < std::size(optional); ++i)
+            if (a[i].kind == Value::Kind::Number) *optional[i - 3] = static_cast<uint16_t>(a[i].number);
+        texture->needsUpdate();  // three's CanvasTexture sets needsUpdate in its constructor
+        return std::static_pointer_cast<void>(texture);
+    };
 }
 
 }  // namespace tn::binding

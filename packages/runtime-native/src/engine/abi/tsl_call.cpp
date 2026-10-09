@@ -207,7 +207,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // required (three reads builder.context.getUV / getTextureLevel, which a material lacks).
     if (!method && name == "pmremTexture") {
         arity(3);
-        if (args[0].kind != TslArg::Kind::Object || (args[0].cls != "Texture" && args[0].cls != "DataTexture") || !args[0].object)
+        if (args[0].kind != TslArg::Kind::Object || (args[0].cls != "Texture" && args[0].cls != "DataTexture" && args[0].cls != "CanvasTexture") || !args[0].object)
             throw std::runtime_error("pmremTexture needs an engine Texture");
         return g::pmremTexture(args[0].object, arg(1), arg(2));
     }

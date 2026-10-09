@@ -689,6 +689,49 @@
       ],
       "callbacks": ["onBeforeRender"]
     },
+    "CanvasTexture": {
+      "constructor": true,
+      "methods": [],
+      "getters": [
+        "anisotropy",
+        "colorSpace",
+        "flipY",
+        "generateMipmaps",
+        "magFilter",
+        "mapping",
+        "minFilter",
+        "name",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "version",
+        "wrapS",
+        "wrapT"
+      ],
+      "setters": [
+        "anisotropy",
+        "colorSpace",
+        "flipY",
+        "generateMipmaps",
+        "image.data",
+        "magFilter",
+        "mapping",
+        "minFilter",
+        "name",
+        "needsUpdate",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "wrapS",
+        "wrapT"
+      ],
+      "members": ["offset", "repeat", "source"],
+      "callbacks": []
+    },
     "CapsuleGeometry": {
       "constructor": true,
       "methods": [
@@ -4596,6 +4639,14 @@
       "getters": ["bias", "intensity", "normalBias", "radius"],
       "setters": ["bias", "intensity", "normalBias", "radius"],
       "members": ["camera", "mapSize"],
+      "callbacks": []
+    },
+    "PropertyBinding": {
+      "constructor": true,
+      "methods": ["bind", "findNode", "parseTrackName", "targetObject", "unbind"],
+      "getters": ["path"],
+      "setters": [],
+      "members": [],
       "callbacks": []
     },
     "Quaternion": {

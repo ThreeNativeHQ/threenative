@@ -138,7 +138,7 @@ describe("createWebEnginePlugin", () => {
     const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
     for (const id of ["three", "three/webgpu", "three/tsl"])
       expect(plugin.resolveId(id)).toBe(WEB_ENGINE_ID);
-    expect(plugin.resolveId("three/addons/geometries/RoundedBoxGeometry.js")).toBeNull();
+    expect(plugin.resolveId("three/addons/controls/OrbitControls.js")).toBeNull();
     expect(() => plugin.resolveId("three/src/nodes/Nodes.js")).toThrow("TN_NATIVE_UPSTREAM_IMPORT");
   });
 
@@ -158,6 +158,20 @@ describe("createWebEnginePlugin", () => {
     expect(resolved).toMatch(
       /(?:three-native\/src\/addons\/buffer-geometry-utils\.ts|web-engine-buffer-geometry-utils\.js)$/u,
     );
+  });
+
+  it("resolves three's RoundedBoxGeometry addon to the engine's own class, never upstream", async () => {
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    const resolved = plugin.resolveId("three/addons/geometries/RoundedBoxGeometry.js");
+    expect(resolved).toBe("\0threenative:web-engine-addon:RoundedBoxGeometry");
+    expect(await plugin.load(resolved as string)).toBe(
+      'export { RoundedBoxGeometry } from "three";\n',
+    );
+    expect(
+      createWebEnginePlugin({ root: "/game" }).resolveId(
+        "three/addons/geometries/RoundedBoxGeometry.js",
+      ),
+    ).toBeNull();
   });
 
   it("resolves three's HDRLoader addon to the engine's own loader, never upstream", () => {

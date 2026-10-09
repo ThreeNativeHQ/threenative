@@ -74,6 +74,11 @@ inline bool isMaterialClass(std::string_view cls) {
            cls == "MeshBasicNodeMaterial" || cls == "MeshStandardNodeMaterial";
 }
 
+/** The engine texture classes a texture argument (a map, a background, a TSL texture) may be. */
+inline bool isTextureClass(std::string_view cls) {
+    return cls == "Texture" || cls == "DataTexture" || cls == "CanvasTexture";
+}
+
 inline bool acceptsClass(std::string_view actual, std::string_view expected) {
     return actual == expected || (expected == "Material" && isMaterialClass(actual));
 }

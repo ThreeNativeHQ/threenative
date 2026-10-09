@@ -7581,6 +7581,11 @@
         "source": "three"
       },
       {
+        "symbol": "CanvasTexture",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "CapsuleGeometry",
         "kind": "class",
         "source": "three"
@@ -7932,6 +7937,11 @@
       },
       {
         "symbol": "PointLightShadow",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "PropertyBinding",
         "kind": "class",
         "source": "three"
       },

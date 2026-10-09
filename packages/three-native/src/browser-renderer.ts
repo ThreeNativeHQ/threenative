@@ -124,6 +124,8 @@ export function defineWebRenderer(
       claimed = true;
       this.domElement =
         (parameters.canvas as HTMLCanvasElement | undefined) ?? document.createElement("canvas");
+      // three's WebGPURenderer marks its canvas `three.js r<rev> webgpu`; tools read the backend there.
+      this.domElement.setAttribute("data-engine", "threenative wasm webgpu");
       this.#width = this.domElement.width || 300;
       this.#height = this.domElement.height || 150;
       const adapter = () => this.#adapter;

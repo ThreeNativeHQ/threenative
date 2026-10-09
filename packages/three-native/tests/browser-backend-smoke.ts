@@ -308,6 +308,42 @@ engine.collect();
   lit.onBeforeCompile = () => {};
   check(lit.onBeforeCompile !== base.onBeforeCompile, "a game's onBeforeCompile is its own");
 }
+// three's CanvasTexture is the engine's own class (PRD-546): three's Texture defaults (flipped, linear,
+// mipmapped) on the canvas's pixels, and a needsUpdate re-reads the canvas.
+{
+  const web = (await bindWebEngine(createTnAbi, ["CanvasTexture", "Texture"])) as Record<
+    string,
+    new (
+      ...args: unknown[]
+    ) => Record<string, unknown>
+  >;
+  let reads = 0;
+  const canvas = {
+    width: 2,
+    height: 1,
+    getContext: () => ({
+      getImageData: () => {
+        reads++;
+        return { data: new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]), width: 2, height: 1 };
+      },
+    }),
+  };
+  const texture = new (web.CanvasTexture as new (...args: unknown[]) => Record<string, unknown>)(
+    canvas,
+  );
+  check(
+    texture.isCanvasTexture === true &&
+      texture instanceof (web.Texture as new () => object) &&
+      texture.generateMipmaps === true &&
+      texture.flipY === true &&
+      texture.magFilter === 1006 &&
+      texture.minFilter === 1008 &&
+      texture.image === canvas,
+    "CanvasTexture carries three's Texture defaults",
+  );
+  texture.needsUpdate = true;
+  check(reads === 2, "CanvasTexture re-reads its canvas on needsUpdate");
+}
 // three's attribute.array is the attribute's own JS typed array (PRD-540): of its scalar type, one
 // per attribute, kept across Wasm memory growth; an element write is what the engine reads back
 // before its next call, BufferAttribute keeps the array it is handed, and needsUpdate sends a write.

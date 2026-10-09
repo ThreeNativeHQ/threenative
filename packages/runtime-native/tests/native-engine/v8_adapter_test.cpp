@@ -1052,21 +1052,21 @@ void skeletal() {
         copyHip.position.x=3; copy.updateMatrixWorld(true); copyMesh.skeleton.update();
         mesh.skeleton.update();
         check(hip.position.x===0 && copyMesh.skeleton.boneMatrices[12]===3 && mesh.skeleton.boneMatrices[12]===0, 'independent palette');
-        check(PropertyBinding.parseTrackName('hip.position[x]').propertyIndex==='x', 'native track parsing');
-        check(PropertyBinding.findNode(root, 'hip')===hip && PropertyBinding.findNode(root, undefined)===root, 'native node search');
-        const previous = getConsoleFunction(); const messages=[];
-        setConsoleFunction((type, message) => messages.push([type, message]));
-        const binding=new PropertyBinding(root, 'hip.position'); binding.bind();
-        check(binding.targetObject===hip && messages.length===0, 'native track target');
-        hip.name='renamed'; binding.bind(); check(binding.targetObject===hip, 'cached target');
-        binding.unbind(); binding.bind();
-        check(binding.targetObject===null && messages.length===1 && messages[0][0]==='error' && messages[0][1].includes('No target node found'), 'native rebind diagnostic');
+        // The engine surface of PropertyBinding; three's statics, targetObject property and console
+        // function are the shared facade's, checked through the player in player-imports.mjs.
+        const helper = new PropertyBinding();
+        check(helper.parseTrackName('hip.position[x]').propertyIndex==='x', 'native track parsing');
+        check(helper.findNode(root, 'hip')===hip && helper.findNode(root, undefined)===root, 'native node search');
+        const binding=new PropertyBinding(root, 'hip.position');
+        check(binding.bind()==='' && binding.targetObject()===hip, 'native track target');
+        hip.name='renamed'; binding.bind(); check(binding.targetObject()===hip, 'cached target');
+        binding.unbind();
+        check(binding.bind().includes('No target node found') && binding.targetObject()===null, 'native rebind diagnostic');
         hip.name='hip';
         const materialBinding=new PropertyBinding(root, 'skin.material.roughness'); materialBinding.bind();
-        check(materialBinding.targetObject===mesh.material, 'native material target');
-        const unsupportedBinding=new PropertyBinding(root, 'hip.noSuchProperty'); unsupportedBinding.bind();
-        check(unsupportedBinding.targetObject===null && messages[1][1].includes('TN_NATIVE_ANIMATION_PATH_UNSUPPORTED'), 'unsupported path diagnostic');
-        setConsoleFunction(previous); check(getConsoleFunction()===previous, 'console hook restoration');
+        check(materialBinding.targetObject()===mesh.material, 'native material target');
+        const unsupportedBinding=new PropertyBinding(root, 'hip.noSuchProperty');
+        check(unsupportedBinding.bind().includes('TN_NATIVE_ANIMATION_PATH_UNSUPPORTED') && unsupportedBinding.targetObject()===null, 'unsupported path diagnostic');
         const external = new Bone(); external.name='external'; mesh.bind(new Skeleton([external]));
         let refused=false; try { __tnCloneSkeleton(root); } catch(e) { refused=e.message.includes('TN_NATIVE_SKELETON_CLONE_EXTERNAL_BONE: external'); }
         check(refused, 'external bone refusal');

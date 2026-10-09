@@ -8,11 +8,9 @@ export const HalfFloatType = 1016;
 
 const NativeTexture = globalThis.Texture;
 const NativeDataTexture = globalThis.DataTexture;
+const NativeCanvasTexture = globalThis.CanvasTexture;
 const sources = new WeakMap();
 const bitmaps = new WeakMap();
-const property = (name) => Object.getOwnPropertyDescriptor(NativeDataTexture.prototype, name);
-const nativeImage = property("image").get;
-const nativeNeedsUpdate = property("needsUpdate").set;
 const nativeFlipY = Object.getOwnPropertyDescriptor(NativeTexture.prototype, "flipY").set;
 
 /** The package entry a URL names: `tnpk:<path>` and `<package>#<path>` from `assets.resolve`, or the path. */
@@ -30,21 +28,26 @@ function canvasPixels(canvas) {
   return pixels;
 }
 
-Object.defineProperties(NativeDataTexture.prototype, {
-  image: {
-    configurable: true,
-    get() { return sources.get(this) ?? nativeImage.call(this); },
-    set(image) { sources.set(this, image); },
-  },
-  needsUpdate: {
-    configurable: true,
-    set(value) {
-      const image = value ? sources.get(this) : undefined;
-      if (image) nativeImage.call(this).data = image.getContext ? canvasPixels(image) : image.data;
-      nativeNeedsUpdate.call(this, value);
+// `image` is the JS source; `needsUpdate` re-sends its texels, as three re-reads `texture.image`.
+for (const Native of [NativeDataTexture, NativeCanvasTexture]) {
+  const nativeImage = Object.getOwnPropertyDescriptor(Native.prototype, "image").get;
+  const nativeNeedsUpdate = Object.getOwnPropertyDescriptor(Native.prototype, "needsUpdate").set;
+  Object.defineProperties(Native.prototype, {
+    image: {
+      configurable: true,
+      get() { return sources.get(this) ?? nativeImage.call(this); },
+      set(image) { sources.set(this, image); },
     },
-  },
-});
+    needsUpdate: {
+      configurable: true,
+      set(value) {
+        const image = value ? sources.get(this) : undefined;
+        if (image) nativeImage.call(this).data = image.getContext ? canvasPixels(image) : image.data;
+        nativeNeedsUpdate.call(this, value);
+      },
+    },
+  });
+}
 
 export function DataTexture(data = null, width = 1, height = 1, ...rest) {
   const texture = Reflect.construct(NativeDataTexture, [data ?? undefined, width, height, ...rest], new.target ?? DataTexture);
@@ -55,25 +58,16 @@ DataTexture.prototype = NativeDataTexture.prototype;
 // The adapter finds the engine class a subclass constructs by walking new.target's prototype chain.
 Object.setPrototypeOf(DataTexture, NativeDataTexture);
 
-// ponytail: a DataTexture underneath, so it is also `instanceof DataTexture` and keeps one mip level;
-// bind a native CanvasTexture when a game needs mipmapped canvas art.
+// three's CanvasTexture: the engine's own class over the canvas's pixels, with a full mip chain.
 export function CanvasTexture(canvas, ...rest) {
-  // The adapter constructs its own classes only, so the prototype is set after construction.
-  const texture = Object.setPrototypeOf(new NativeDataTexture(canvasPixels(canvas), canvas.width, canvas.height),
-    (new.target ?? CanvasTexture).prototype);
+  const texture = Reflect.construct(NativeCanvasTexture, [canvasPixels(canvas), canvas.width, canvas.height, ...rest],
+    new.target ?? CanvasTexture);
   sources.set(texture, canvas);
-  // Texture's defaults, not DataTexture's: a canvas is an image (flipped, linear-filtered).
-  const [mapping, wrapS, wrapT, magFilter = 1006, minFilter = 1008] = rest;
-  Object.assign(texture, { flipY: true, magFilter, minFilter },
-    mapping === undefined ? {} : { mapping }, wrapS === undefined ? {} : { wrapS },
-    wrapT === undefined ? {} : { wrapT });
-  texture.needsUpdate = true;
   return texture;
 }
-CanvasTexture.prototype = Object.create(NativeDataTexture.prototype, {
-  constructor: { value: CanvasTexture, writable: true, configurable: true },
-  isCanvasTexture: { value: true },
-});
+CanvasTexture.prototype = NativeCanvasTexture.prototype;
+Object.setPrototypeOf(CanvasTexture, NativeCanvasTexture);
+if (!Object.hasOwn(CanvasTexture.prototype, "isCanvasTexture")) CanvasTexture.prototype.isCanvasTexture = true;
 
 /** `new Texture(bitmap)` adopts an ImageBitmapLoader result; any other image has no native source. */
 export function Texture(image, ...rest) {

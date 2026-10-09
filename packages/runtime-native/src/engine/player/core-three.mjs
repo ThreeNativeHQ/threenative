@@ -1,6 +1,7 @@
 // Identity-preserving imports over the V8 adapter, never upstream Three.js.
 import { audio } from "./core-audio.mjs";
 import { Material, defineObjectSurface } from "../../../../three-native/src/object-surface.ts";
+import { definePropertyBinding } from "../../../../three-native/src/property-binding.ts";
 export const {
   AmbientLight, AnimationAction, AnimationClip, AnimationMixer, Bone, Box3, BoxGeometry,
   BufferAttribute, BufferGeometry, Camera, CapsuleGeometry, CatmullRomCurve3, CircleGeometry, Color, ConeGeometry, CylinderGeometry,
@@ -15,8 +16,10 @@ export const {
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
   EquirectangularReflectionMapping, NoToneMapping, LoopOnce, LoopRepeat, LoopPingPong, AttachedBindMode, FrontSide, BackSide, DoubleSide, StaticDrawUsage, DynamicDrawUsage,
-  NoBlending, NormalBlending, AdditiveBlending, PCFShadowMap, PropertyBinding, getConsoleFunction, setConsoleFunction,
+  NoBlending, NormalBlending, AdditiveBlending, PCFShadowMap,
 } = globalThis;
+// three's PropertyBinding statics and console function over the engine class (shared with Wasm).
+export const { PropertyBinding, getConsoleFunction, setConsoleFunction } = definePropertyBinding(globalThis.PropertyBinding);
 // Texture sources (typed array, canvas, ImageBitmap) the engine copies; see core-textures.mjs.
 import { DataTexture, Texture } from "./core-textures.mjs";
 export { CanvasTexture, DataTexture, DataUtils, HalfFloatType, ImageBitmapLoader, Texture, TextureLoader } from "./core-textures.mjs";
@@ -62,12 +65,13 @@ const geometries = [BoxGeometry, CircleGeometry, ConeGeometry, CylinderGeometry,
 // Adapt wrapper inheritance only; native classes continue to own every scene operation.
 for (const [base, names] of [
   [Object3D, [Scene, Mesh, Group, Camera, Bone, LOD, Sprite, AmbientLight, DirectionalLight,
-    HemisphereLight, PointLight, SpotLight]],
+    HemisphereLight, PointLight, SpotLight, Line]],
+  [Line, [LineSegments]],
   [Camera, [PerspectiveCamera, OrthographicCamera]],
   [Mesh, [SkinnedMesh, InstancedMesh]],
   [BufferGeometry, geometries],
   [BufferAttribute, [Float32BufferAttribute, InstancedBufferAttribute]],
-  [Texture, [DataTexture]],
+  [Texture, [DataTexture, globalThis.CanvasTexture]],
   [Path, [Shape]],
 ]) {
   for (const derived of names) Object.setPrototypeOf(derived.prototype, base.prototype);
