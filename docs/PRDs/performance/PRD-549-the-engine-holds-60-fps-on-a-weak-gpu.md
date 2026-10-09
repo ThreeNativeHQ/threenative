@@ -21,6 +21,12 @@ Measured on the LAN laptop (Intel Iris Xe, Mesa Vulkan, Chrome WebGPU on its rea
 | One shadow-map redraw (4096², one ±250 m level) | 150–365 ms of GPU each time; each one is a visible hitch |
 | RTX 2080, same build | main 2.8–8.6 ms, shadow redraw 4–6 ms; PRD-478 AC-2 passes |
 
+## Findings
+
+- 2026-10-08, live-clock walk on the laptop (`timing-walk` without screenshots, which the iGPU cannot answer in 30 s): the scale stays 1.0 for the whole walk at 16–57 fps. 11 of 22 windows are skipped as compiling; every other window but one has presented p99 15–63× its p50, and the scaler defers any window at `stallP99Multiple` 10 as "a stall, not a frame rate". The stalls are the shadow redraws, 120–350 ms each, in nearly every window. The rule was written for one-off compile stalls, so a recurring hitch freezes the scaler for good. The median frame is 9–12 ms presented: the laptop is mostly hitching, not uniformly slow.
+- Variant B (`castLevels: 2`, casters at level 1 instead of LOD0): each redraw 63–210 ms against 205–365 ms, main pass unchanged. Coarser casters roughly halve the redraw.
+- Order: Phase 3 (shadow redraw cost) removes the hitches, and with them the stall verdict; Phase 1 then fixes the stall rule so a recurring hitch cannot freeze the scaler again.
+
 ## Solution
 
 Each control loop already measures its own cost; what is missing is the range and speed of its answer.
