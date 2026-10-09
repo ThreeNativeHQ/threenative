@@ -2170,7 +2170,9 @@
         "morphAttributes.position"
       ],
       "callbacks": [],
-      "events": []
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "InstancedMesh": {
       "constructor": true,
