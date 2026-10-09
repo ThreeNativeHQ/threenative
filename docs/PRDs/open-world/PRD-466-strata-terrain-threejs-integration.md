@@ -4100,3 +4100,12 @@ byte-identical; coastal is fully identical. A fresh judge saw no regression and 
 change at the fixed cameras. Web `terrain.playtest.json` (host load 33): **62 assertions, 59 pass**.
 The three left are performance bounds: `afterFirstFrameTaskMs` 1,674 > 250, `timeToReadyMs` 38,192 >
 15,000 and `maxViewGpuMs` 40.0 > 12.
+
+GPU attribution (temporary probe, reverted; GPU shared with other lanes, so single readings are
+noisy). Stage A/B by `?off=` over three forest views varied the auto scale between runs; per
+megapixel, no post stage dominates once the scaler's movement is accounted for (meadow baseline
+11 ms/MP against 14 ms/MP with TRAA off at the 0.61 floor). Per-pass counts at `meadow-close`: the
+world pass submits 11–18M triangles per nested render and about 36–45M triangles per frame across
+nested renders, mostly near grass cards. `maxViewGpuMs ≤ 12` on this GPU therefore needs grass LOD or
+density work, a performance project that must keep the judged look (perf wins never cost visuals);
+not started.
