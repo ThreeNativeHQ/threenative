@@ -24,13 +24,16 @@ Two existing facts keep this small:
 ## Solution
 
 1. **Bake.** Admit skinned and morphed primitives. Pass `WEIGHTS_0` to the simplifier as attributes so collapses respect influence boundaries. Record each level's error as the maximum over poses sampled from the asset's own clips, not the bind pose. A level still shares every vertex attribute and morph target.
-2. **Run.** For a `SkinnedMesh`, `model-lod` reads its posed bounds (`SkinnedMesh.computeBoundingSphere`). The palette draws a crowd at mixed levels as one draw per level per pass.
+2. **Run.** For a `SkinnedMesh`, `model-lod` selects from a posed sphere built from the bones, not the vertices. The sphere covers the world positions of the skeleton's bones, padded by the largest distance from a vertex to its heaviest bone, computed once per level at load from the bind pose. That costs O(bones) per frame. three's `SkinnedMesh.computeBoundingSphere` runs every vertex through the skinning transform on the CPU (`three/src/objects/SkinnedMesh.js:138-160`), about 13,744 vertex transforms per mannequin per call, so it is not called per frame. The palette draws a crowd at mixed levels as one draw per level per pass.
+   Unreal makes the same choice. A visible rig takes its bounds from its physics-asset bodies, which are shapes attached to bones. A rig that is not visible, or that has fixed bounds, takes the asset bounds offset by the root bone. Per-vertex posed bounds come only from the GPU skin cache, and only on higher-end platforms (`UE 5.8.3: Engine/Source/Runtime/Engine/Private/Components/SkinnedMeshComponent.cpp:2225-2295`, `Private/GPUSkinCache.cpp:205-215`).
 3. **Measure.** Add a mannequin crowd to `examples/skinned-crowd`, then decide morph handling from numbers (Decisions).
 
 ## Decisions
 
 - 2026-10-03 (agent, proposed): morph targets stay on every level by default. Index-only levels share LOD0's morph buffers, so keeping them costs no bytes, only vertex work on fewer referenced vertices. They are dropped at far levels only if the Phase 3 morph box shows the far rung's GPU time with 821 live targets is materially above the stripped arm. The result and the threshold used go here.
 - 2026-10-03 (agent, proposed): no bone or skeleton reduction. A far character still runs its full skeleton. That is PRD-448's separate "skeletal/facial/bone reduction" work, and it is not needed for a triangle chain.
+- 2026-10-09 (João, via the Unreal review request): the bone-reduction deferral above stands, and Unreal shows what the later work involves. Each Unreal LOD carries its own `RequiredBones` and `ActiveBoneIndices` lists, so a far level also evaluates fewer bones (`UE 5.8.3: Engine/Source/Runtime/Engine/Private/SkeletalMeshLODRenderData.cpp:560-591`). Unreal also lets a LOD level choose an animation frame-skip (`Classes/Engine/EngineTypes.h:2787-2794`). Evaluation rate by screen size is [PRD-570](../unreal-source-borrowing/PRD-570-a-character-costs-what-the-camera-sees-of-it.md), not this PRD.
+- 2026-10-09 (João, via the Unreal review request): posed bounds are built from bones, not vertices (Solution step 2), following Unreal's physics-asset bounds. The Phase 2 bounds box was re-worded to forbid the per-frame per-vertex walk.
 
 ## Integration Ledger
 
@@ -54,7 +57,7 @@ Two existing facts keep this small:
 #### Phase 2: The runtime selects for rigs
 **Status:** NOT STARTED
 **Files:** `packages/core/src/model-lod.ts`, `packages/core/src/projection-skinned.ts`
-- [ ] [local] A `SkinnedMesh` whose clip carries it 3 m from its bind-pose bounds selects from the posed sphere, not the bind-pose one. proof: red-green case in `pnpm exec vitest run packages/core/__tests__/model-lod-runtime.spec.ts`.
+- [ ] [local] A `SkinnedMesh` whose clip carries it 3 m from its bind-pose bounds selects from the bone-built posed sphere, not the bind-pose one, and the selector never calls `SkinnedMesh.computeBoundingSphere` per frame. proof: red-green case in `pnpm exec vitest run packages/core/__tests__/model-lod-runtime.spec.ts`.
 - [ ] [local] 64 palette rigs split across three levels draw as three instanced draws per pass, each with the right instance count. proof: `pnpm exec vitest run packages/core/__tests__/projection-skinned.spec.ts`.
 
 #### Phase 3: A crowd, measured

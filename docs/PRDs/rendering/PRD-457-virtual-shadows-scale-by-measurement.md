@@ -43,9 +43,39 @@ scalability—without pretending directional clipmaps solve point/spot lights.
   `ShadowInvalidationTracker` and `DirectionalClipmap` are incumbents, not scaffolding to rewrite.
 - **Do not optimize draw calls by multiplying them.** Page rendering must batch/limit work so “24
   tiny pages” is not automatically 24 complete scene traversals.
+- **2026-10-09 (João, via the Unreal review request): overflow degrades resolution before it switches path.** Unreal's answer to page-pool pressure (below) replaces this PRD's plain overflow fallback in Phase 2's first box. No other box changes.
 - **Local lights are a measured follow-on.** This PRD may establish a common budget/update scheduler
   for one spot-light fixture, but does not claim full Unreal-style point/spot shadow virtualization
   unless the acceptance evidence actually covers it.
+
+## What Unreal does (UE 5.8.3, read 2026-10-09; ideas only, no code copied)
+
+Paths are under `Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/`.
+
+- **It also refuses one scene traversal per page.** Non-Nanite instances render into all their
+  pages in one batched pass (`VirtualShadowMapArray.cpp:490-494` and `:637-641`, both on by
+  default). This supports this PRD's "do not multiply draw calls" decision: a page path that
+  cannot batch has already lost.
+- **Pressure lowers resolution before anything breaks.** When page allocation passes 0.85 of the
+  pool, a global resolution LOD bias rises, up to 2 levels (`VirtualShadowMapCacheManager.cpp:155-187`).
+  An experimental mode does the same from a measured shadow-depth time budget, smoothed with a
+  history weight of 0.9 (`VirtualShadowMapArray.cpp:786-807`). The pool defaults to 2048 physical
+  pages (`VirtualShadowMapArray.cpp:173-178`). This is the graceful step that Phase 2's first box
+  now takes before its fallback. The cached-level path has the same idea in
+  [PRD-549](../performance/PRD-549-the-engine-holds-60-fps-on-a-weak-gpu.md) Phase 3: a level whose
+  redraw exceeds its share halves its map.
+- **Residency rules are cheap and already match.** An unrequested page lives at most 1000 frames
+  (`VirtualShadowMapCacheManager.cpp:127-133`), and allocation keeps the most recently requested
+  pages first (`VirtualShadowMapArray.cpp:527-532`). `PhysicalPagePool` already evicts by LRU.
+- **Static and dynamic casters are sorted automatically.** Any invalidation marks an instance
+  dynamic. After 100 frames with no invalidation it returns to the static cache
+  (`VirtualShadowMapCacheManager.cpp:142-147`, `:1767-1800`). Here a game must call `trackCaster`
+  for every mover (`packages/core/src/render/virtual-shadow.ts:707`), a manual call that the
+  auto-by-default rule disfavors. That is a separate change and is not in this PRD: see
+  [PRD-572](../unreal-source-borrowing/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md).
+- **Soft shadows by shadow-map ray marching** (7 rays of 8 samples for a directional light,
+  fewer in fully lit or fully shadowed areas; `VirtualShadowMapArray.cpp:674-678`, `:728-740`)
+  are a desktop look option. They are out of scope here.
 
 ## Integration ledger
 
@@ -56,17 +86,17 @@ scalability—without pretending directional clipmaps solve point/spot lights.
 | `packages/core/__tests__/virtual-shadow*.spec.ts` | Add work-count, invalidation, overflow and mode-selection contracts. |
 | Native conformance | Run the same static/mover scenario and record the actual adapter/backend. |
 
-## Phase 1 — Price the current path and the page demand
+### Phase 1 — Price the current path and the page demand
 
 - [ ] A fixed shadow corpus records current clip-level renders, cached serves, mover-map renders, demanded/dirty page counts, submitted shadow draws and attributable GPU/render time. **proof:** browser WebGPU and desktop-native tables for static city block, moving forest and moving-caster fixtures include all counters from the same camera routes.
 - [ ] The census derives a concrete admission threshold where page work is predicted cheaper than whole-level work, and a control workload where it is predicted worse. **proof:** verification report shows the arithmetic from observed demanded pages/draws/cost rather than a hard-coded “pages are faster” assumption.
 
-## Phase 2 — Admit sparse pages only behind the measured gate
+### Phase 2 — Admit sparse pages only behind the measured gate
 
-- [ ] The admitted path renders only demanded dirty pages into bounded physical storage, reuses clean resident pages, and fails to the current cached-level path on overflow/unsupported cases instead of dropping shadows. **proof:** focused specs exercise demand, LRU eviction, invalidation and overflow; a forced-small pool preserves a valid shadow through fallback.
+- [ ] The admitted path renders only demanded dirty pages into bounded physical storage and reuses clean resident pages. Under pool pressure it first raises a resolution bias, and it falls back to the cached-level path only at the bias cap or on an unsupported case, never dropping shadows. **proof:** focused specs exercise demand, LRU eviction, invalidation, the pressure bias and overflow; a forced-small pool preserves a valid shadow through the bias and then the fallback.
 - [ ] On the Phase-1 winning workload, sparse pages reduce attributable shadow GPU/render p95 without increasing total frame p95 or visible shadow error beyond the pinned threshold. **proof:** paired A/B run on the same adapter records shadow cost, total frame cost, page/level render counts and image delta; if the win gate is missed, sparse mode remains unshipped/disabled.
 
-## Phase 3 — Establish the local-light boundary honestly
+### Phase 3 — Establish the local-light boundary honestly
 
 - [ ] A many-light fixture attributes point/spot shadow cost separately from the directional path and demonstrates whether the same budget/update scheduler can reduce redundant updates for at least one supported local-light type. **proof:** fixture reports lights, faces/maps updated, shadow draws and GPU/render cost before/after scheduler reuse; unsupported light types are named.
 - [ ] The public diagnostics distinguish directional clip/page work from local-light work so future MegaLights/local-shadow work starts from measured data. **proof:** diagnostics/parser test reads one mixed-light frame and reports separate counters whose totals reconcile with the renderer's shadow submissions.
