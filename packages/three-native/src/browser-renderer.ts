@@ -63,7 +63,7 @@ export function defineWebRenderer(
   let claimed = false;
   const string = (text: string): number => {
     const bytes = module.lengthBytesUTF8(text) + 1;
-    const pointer = module._malloc(bytes);
+    const pointer = module._malloc(bytes) >>> 0;
     module.stringToUTF8(text, pointer, bytes);
     return pointer;
   };
@@ -141,7 +141,7 @@ export function defineWebRenderer(
     init(): Promise<this> {
       this.#initialized ??= (async () => {
         module.specialHTMLTargets[CANVAS_TARGET] = this.domElement;
-        handles = module._malloc(24);
+        handles = module._malloc(24) >>> 0;
         const selector = string(CANVAS_TARGET);
         try {
           check(module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight()));
