@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 
 import { type IRenderChainRenderer, RenderChain } from "../src/render/chain.js";
 import {
+  VELOCITY_PREVIOUS_INSTANCE_MATRICES,
   VelocityTracker,
   readVelocityPreviousBoneMatrices,
   readVelocityPreviousMatrices,
@@ -655,5 +656,45 @@ describe("velocity provisioning on the shipped path", () => {
     expect(missingRejection).toBeDefined();
     expect(missingRejection).toBeGreaterThan(correctRejection);
     expect(missingRejection).toBeGreaterThan(pinnedThreshold);
+  });
+});
+
+describe("VelocityTracker instance history", () => {
+  // The Strata forest tracks 218,809 instances; a fresh Float32Array per instanced mesh per frame
+  // was ~14 MB of garbage every frame and produced multi-second collector stalls (PRD-541).
+  it("alternates two history buffers per instanced mesh and keeps the committed matrices", () => {
+    const scene = new Scene();
+    const mesh = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial(), 3);
+    for (let index = 0; index < 3; index += 1)
+      mesh.setMatrixAt(index, new Matrix4().makeTranslation(index, 0, 0));
+    scene.add(mesh);
+    const tracker = new VelocityTracker();
+    const previous = () =>
+      (mesh as unknown as Record<symbol, Float32Array | undefined>)[
+        VELOCITY_PREVIOUS_INSTANCE_MATRICES
+      ];
+
+    tracker.update(scene);
+    tracker.commit(scene);
+    tracker.update(scene);
+    const first = previous();
+    if (first === undefined) throw new Error("no instance history was scheduled");
+    const committed = mesh.instanceMatrix.array.slice();
+    tracker.commit(scene);
+
+    // Two buffers alternate: the one scheduled for the frame that just rendered is never rewritten
+    // by the commit that follows it, and nothing new is allocated after the second frame.
+    mesh.setMatrixAt(0, new Matrix4().makeTranslation(9, 0, 0));
+    tracker.update(scene);
+    const second = previous();
+    expect(second).not.toBe(first);
+    expect(Array.from(second ?? [])).toEqual(Array.from(committed));
+    tracker.commit(scene);
+    tracker.update(scene);
+    expect(previous()).toBe(first);
+    tracker.commit(scene);
+    tracker.update(scene);
+    expect(previous()).toBe(second);
+    tracker.clear();
   });
 });
