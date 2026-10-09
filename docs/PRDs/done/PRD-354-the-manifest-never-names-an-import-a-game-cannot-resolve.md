@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-354 — the manifest never names an import a scaffolded game cannot resolve
 
-**Status: IN PROGRESS, 2026-10-08.** Proposed 2026-09-04. Filed in `agent-leverage/`, measured at `dae30759`.
+**Status: DONE, 2026-10-08.** Proposed 2026-09-04. Filed in `agent-leverage/`, measured at `dae30759`.
 
 **Priority:** P1 — 27 manifest entries still name imports a scaffolded game cannot resolve; resolvers unlanded.
 **Complexity:** +3 for 10+ files (ten templates, the generator, the scaffolder, the reference
@@ -65,11 +65,11 @@ spending it.
 
 **Overlap check.** Every open PRD was surveyed on 2026-09-04.
 
-- **PRD-301** ([`authoring/PRD-301`](PRD-301-manifest-covers-every-shipped-package.md)) — *manifest covers every shipped package*. The exact inverse: 301 adds
+- **PRD-301** ([`authoring/PRD-301`](../authoring/PRD-301-manifest-covers-every-shipped-package.md)) — *manifest covers every shipped package*. The exact inverse: 301 adds
   packages the manifest omits, this adds a resolvability contract to what it already names. **Both
   edit `scripts/build-capability-manifest.ts`; land them in one commit** or the second rebases onto
   a generator that no longer matches its Phase 0 measurement.
-- **PRD-324** ([`authoring/PRD-324`](PRD-324-the-capability-manifest-cannot-forget-an-export.md)) — *the manifest cannot forget an export*. Authoring-side drift,
+- **PRD-324** ([`authoring/PRD-324`](../authoring/PRD-324-the-capability-manifest-cannot-forget-an-export.md)) — *the manifest cannot forget an export*. Authoring-side drift,
   not consumer-side resolvability. Complementary; its gate is the natural host for §2's check.
 - **PRD-297 / PRD-298 / PRD-300** (all in `authoring/`) — recall quality. Orthogonal: all three are about
   whether the right entry is *returned*, this is about whether a returned entry *works*.
@@ -189,9 +189,9 @@ symbol prints the install line. Paste the tool output, not the JSON.
       branch and fails on the `origin/develop` manifest: `AssertionError: minimal: expected [
       …(6) ] to deeply equal []`. Its control asserts that every undeclared package stays
       unresolvable, so the resolver cannot pass trivially.
-- [ ] AC7 and AC8 gates run, output pasted.
+- [x] AC7 and AC8 gates run, output pasted. proof: AC7 and AC8 results below.
 
-## 5. Acceptance criteria
+## Acceptance criteria
 
 - [x] **AC1 — the red is a pair.** Root-relative resolver: 0 problems. Scaffold-closure resolver:
       27. Both pasted, same manifest, same commit. Without this pair the gate is unfalsifiable.
@@ -221,7 +221,17 @@ symbol prints the install line. Paste the tool output, not the JSON.
 - [x] **AC7 — sealed corpus untouched.** No `docs/benchmark/genres/*/brief.md` text enters either
       manifest copy. `git diff --stat` on `docs/benchmark/` is empty. Result: empty against
       `origin/develop`.
-- [ ] **AC8 — gates.** `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`, output pasted.
+- [x] **AC8 — gates.** `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets`, output pasted.
+      Result: local `typecheck=0`, `lint=0`, `budgets=0`. Local `pnpm test` exit 1. Cause 1:
+      `runtime-native` 22 reds, `TN_ADAPTER_POLICY_NO_BINARY: build the desktop host first`, because
+      this fresh worktree has no native build and the diff touches no `runtime-native` file. Cause 2:
+      the root vitest suite at load 33–50 reported 15 reds in 9 files. One was real:
+      `budgets.spec.ts` pinned the union attribution and now expects per-template lines (38/38).
+      Seven files passed in isolation. `generated-shooter-input.spec.ts` stayed red in isolation
+      at load 46 (`playerYaw.atSteps must be evaluated`: the steps never ran). CI run
+      `37871605353` on `88a1009fb` is the authority: `completed success`, 69 jobs passed, 1
+      skipped, including `test`, `test-native`, `test-playtest`, `typecheck` and
+      `golden-path-template (starter)`.
 
 ## 6. Decline conditions
 
