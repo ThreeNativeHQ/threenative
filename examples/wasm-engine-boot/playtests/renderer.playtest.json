@@ -85,6 +85,13 @@
       {
         "entity": "wasm-renderer",
         "component": "probe",
+        "path": "tslTile",
+        "equals": "64,128,64,255|191,128,64,255",
+        "allowTrivial": "PRD-540: a TSL tile's colour (uniform(0.25), 0.5, 0.25) read back, then the same tile after uniform.value = 0.75."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
         "path": "steadyCompiles",
         "equals": 0,
         "allowTrivial": "A steady frame compiles no pipeline; -1 means frame 10 never drew."

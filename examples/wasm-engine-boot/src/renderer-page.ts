@@ -90,6 +90,8 @@ const probe = {
   instanceColorSet: "",
   /** PRD-546: texture3D reads slice 1 of a 4x1x2 Data3DTexture across a 4x1 strip. */
   volumeStrip: "",
+  /** PRD-540: a TSL tile whose red is a uniform, before and after a uniform.value write. */
+  tslTile: "",
 };
 const started = performance.now();
 
@@ -353,6 +355,17 @@ try {
   const volumeScene = new Scene();
   volumeScene.add(volumeQuad);
   probe.volumeStrip = await drawStrip(volumeScene);
+  // A TSL tile: red is uniform(0.25), then 0.75 written through .value, which the next frame shows.
+  const level = uniform(0.25);
+  const tileMaterial = new MeshBasicNodeMaterial();
+  tileMaterial.colorNode = vec4(level, 0.5, 0.25, 1);
+  const tslQuad = new Mesh(new PlaneGeometry(4, 1), tileMaterial);
+  tslQuad.position.set(2, 0.5, 0);
+  const tileScene = new Scene();
+  tileScene.add(tslQuad);
+  const before = (await drawStrip(tileScene)).split(",").slice(0, 4).join(",");
+  level.value = 0.75;
+  probe.tslTile = `${before}|${(await drawStrip(tileScene)).split(",").slice(0, 4).join(",")}`;
   // Midway's renderer settings: they reach the engine before each frame, as on the V8 player.
   renderer.toneMapping = 5;
   try {

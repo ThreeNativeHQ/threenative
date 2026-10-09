@@ -1197,6 +1197,13 @@ if (runtime.tsl !== undefined) {
       refused.includes("TN_TSL_UNIFORM_VALUE") && offset.value === next,
       `a Vector3 written to a vec2 uniform is refused by name and the value stays: ${refused}`,
     );
+    // A three Vector3 inside vec3() crosses as data: one engine node (the call's), no inner one to leak.
+    t.calls.length = 0;
+    t.tsl.vec3(flagged(new Vector3(1, 2, 3), "isVector3"));
+    check(
+      t.calls.length === 1 && t.calls[0]?.args[0]?.kind === "vector",
+      `vec3(new Vector3()) makes one engine node: ${JSON.stringify(t.calls)}`,
+    );
     // r185's ConstNode.value: float(2).value is 2 and vec3(1, 2, 3).value a Vector3.
     const three = t.tsl.vec3(1, 2, 3).value;
     check(
