@@ -58,6 +58,9 @@ public:
     uint64_t id = 0;
 
     [[nodiscard]] uint64_t count() const { return store->count() / static_cast<uint64_t>(itemSize); }
+    /** three's clone(): a new array of the same type holding the same elements, and the settings
+     *  (name, usage, gpuType). */
+    [[nodiscard]] std::shared_ptr<BufferAttribute> clone() const;
     [[nodiscard]] uint32_t version() const { return store->version(); }
     void setNeedsUpdate() { store->needsUpdate(); }
     void addUpdateRange(uint64_t start, uint64_t count) { store->addUpdateRange(start, count); }

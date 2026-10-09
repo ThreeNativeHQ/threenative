@@ -459,21 +459,14 @@ void BufferGeometry::normalizeNormals() {
     }
 }
 
-namespace {
-
-// three's BufferAttribute.clone: a new array of the same type holding the same elements, and the
-// attribute's settings (name, usage, gpuType).
-std::shared_ptr<BufferAttribute> cloneAttribute(const BufferAttribute& source) {
-    auto copy = std::make_shared<BufferAttribute>(source.store->scalar(), source.store->count(), source.itemSize,
-                                                  source.normalized);
-    copy->store->write(0, source.store->data(), source.store->byteLength());
-    copy->name = source.name;
-    copy->usage = source.usage;
-    copy->gpuType = source.gpuType;
+std::shared_ptr<BufferAttribute> BufferAttribute::clone() const {
+    auto copy = std::make_shared<BufferAttribute>(store->scalar(), store->count(), itemSize, normalized);
+    copy->store->write(0, store->data(), store->byteLength());
+    copy->name = name;
+    copy->usage = usage;
+    copy->gpuType = gpuType;
     return copy;
 }
-
-}  // namespace
 
 std::shared_ptr<BufferGeometry> BufferGeometry::clone() const {
     auto geometry = std::make_shared<BufferGeometry>();
@@ -484,13 +477,13 @@ std::shared_ptr<BufferGeometry> BufferGeometry::clone() const {
 }
 
 BufferGeometry& BufferGeometry::copy(const BufferGeometry& source) {
-    index = source.index ? cloneAttribute(*source.index) : nullptr;
+    index = source.index ? source.index->clone() : nullptr;
     attributes.clear();
-    for (const auto& [name, attribute] : source.attributes) setAttribute(name, cloneAttribute(*attribute));
+    for (const auto& [name, attribute] : source.attributes) setAttribute(name, attribute->clone());
     morphPositions.clear();
     morphNormals.clear();
-    for (const auto& target : source.morphPositions) morphPositions.push_back(cloneAttribute(*target));
-    for (const auto& target : source.morphNormals) morphNormals.push_back(cloneAttribute(*target));
+    for (const auto& target : source.morphPositions) morphPositions.push_back(target->clone());
+    for (const auto& target : source.morphNormals) morphNormals.push_back(target->clone());
     morphTargetsRelative = source.morphTargetsRelative;
     groups = source.groups;
     boundingBox = source.boundingBox ? std::make_shared<Box3>(*source.boundingBox) : nullptr;

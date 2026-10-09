@@ -125,7 +125,7 @@ Value attributeArray(const BufferGeometry& geometry, const char* name) {
 
 // ---------------------------------------------------------------- BufferAttribute
 
-void registerBufferAttribute(ClassBinding& b) {
+void registerBufferAttribute(ClassBinding& b, const char* cls) {
     b.ctor = [](const Args& a, Store&) {
         std::vector<double> values;
         if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) values = a.at(0).numbers;
@@ -240,6 +240,10 @@ void registerBufferAttribute(ClassBinding& b) {
         as<BufferAttribute>(self)->setXYZW(jsIndex(a.at(0)), number(a.at(1)),
                                            number(a.at(2)), number(a.at(3)), number(a.at(4)));
         return chain();
+    };
+    // three's clone(): a new attribute of the same class (`new this.constructor(...)`) with a copy of the array.
+    b.methods["clone"] = [cls](void* self, const Args&, Store& store) {
+        return store.adopt(cls, std::static_pointer_cast<void>(as<BufferAttribute>(self)->clone()));
     };
     b.methods["copyAt"] = [](void* self, const Args& a, Store& store) {
         as<BufferAttribute>(self)->copyAt(jsIndex(a.at(0)),
@@ -819,16 +823,16 @@ void registerGeometryBindings(Registry& classes) {
         as<Box3>(self)->setFromBufferAttribute(*sharedAttributeArg(store, a.at(0)));
         return chain();
     };
-    registerBufferAttribute(classes["BufferAttribute"]);
+    registerBufferAttribute(classes["BufferAttribute"], "BufferAttribute");
     // three's InstancedBufferAttribute: a BufferAttribute read once per instance (InstancedMesh's
     // instanceMatrix and instanceColor). meshPerAttribute stays 1, the only value InstancedMesh uses.
     ClassBinding& instanced = classes["InstancedBufferAttribute"];
-    registerBufferAttribute(instanced);
+    registerBufferAttribute(instanced, "InstancedBufferAttribute");
     instanced.getters["meshPerAttribute"] = [](void*) { return Value::of(1.0); };
     // three's Float32BufferAttribute: the same attribute, but its constructor wraps whatever it is
     // given in a Float32Array, so the storage is F32 and each value rounds once to binary32.
     ClassBinding& float32 = classes["Float32BufferAttribute"];
-    registerBufferAttribute(float32);
+    registerBufferAttribute(float32, "Float32BufferAttribute");
     float32.ctor = [](const Args& a, Store&) {
         std::vector<double> values;
         if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) values = a.at(0).numbers;
