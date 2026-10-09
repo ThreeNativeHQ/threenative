@@ -1,6 +1,6 @@
 # PRD-541 — The terrain generator owns water queries and slope thresholds; core owns spawn readiness
 
-**Status:** PARTIAL
+**Status:** DONE
 **Priority:** P1 — every game built on the terrain generator repeats the slow water loops and the playtest spawn deadlock that PRD-466 fixed only in its preview example
 **Depends on:** PRD-466 (the preview fixes this lifts into packages)
 
@@ -67,10 +67,13 @@ green in `render-velocity.spec.ts`; and (2) the preview walking every streamed w
 fixed step for prop counts (`bf3485fc7`, now every 30 steps). Busy stretches over 1.5 s: 50 → 8;
 playtest stalls: 14 (max 11.6 s) → 4 (max 2.6 s).
 
-### Acceptance
+### Acceptance criteria
 
-- [ ] Templates' `AGENTS.md` name the water query and the readiness predicate as conventions.
-  proof: `pnpm sync:agents --check` and the instruction-budget spec
+- [x] Templates' `AGENTS.md` name the water query and the readiness predicate as conventions.
+  proof: `pnpm sync:agents --check` and the instruction-budget spec — PASS: all 13 templates name
+  `createSegmentIndex`/`slopeQuantile` on their terrain line and `ctx.startup.hold(label, () => ready)`
+  in their loading conventions; `pnpm sync:agents` regenerated, instruction-budget and sync specs
+  17/17, scaffold byte-stability hashes refreshed for the AGENTS change, `pnpm check:docs` clean.
 
 ## Blocked on
 
