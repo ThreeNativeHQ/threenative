@@ -44,7 +44,7 @@ A height-blend formula is a curve, so it must not go into core. Today a game als
 
 ## Blocked on
 
-- **Owner reading of PRD-493's "no new curve vocabulary" line.** This PRD keeps the curve in game source and adds only a weight seam. João confirms that a seam is not vocabulary, or moves the seam's shape — unblocked by João.
+- **Owner reading of PRD-493's "no new curve vocabulary" line.** RESOLVED 2026-10-09 by João: the weight seam is not new curve vocabulary. The curve stays in game source and core adds only the seam. Nothing is blocked.
 
 ## Integration Ledger
 
