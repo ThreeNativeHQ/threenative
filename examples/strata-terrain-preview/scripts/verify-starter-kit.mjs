@@ -72,6 +72,15 @@ const KITS = {
     captures: ["boulders", "edge", "ground", "overview"],
     views: ["boulders", "edge", "ground", "overview"],
   },
+  tundra: {
+    scene: "Tundra.ts",
+    playtest: "tundra.playtest.json",
+    generatedStand: false,
+    water: true,
+    cooked: "cookedTundraBytes",
+    captures: ["boulders", "edge", "ground", "overview"],
+    views: ["boulders", "edge", "ground", "overview"],
+  },
 };
 /** The kit this run proves: `forest` by default, or `KIT=alpine`. Any other name fails closed. */
 const KIT = process.env.KIT ?? "forest";
@@ -455,6 +464,9 @@ export const stand = {
       : {
           boulderInstances: value("boulderInstances"),
           closestToBoulder: value("closestToBoulder"),
+          ...(CONFIG.water
+            ? { waterLakes: value("waterLakes"), waterRivers: value("waterRivers") }
+            : {}),
         };
   const views = Object.fromEntries(
     CONFIG.views.map((view) => [
