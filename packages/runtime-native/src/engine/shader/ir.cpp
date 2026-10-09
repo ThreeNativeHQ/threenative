@@ -450,6 +450,10 @@ uint32_t Program::textureCube(std::string_view name) {
 }
 
 uint32_t Program::textureDepth(std::string_view name, bool cube) {
+    // One depth texture is one binding however often it is read (two viewport depth reads share it).
+    const TextureKind kind = cube ? TextureKind::DepthCube : TextureKind::Depth2d;
+    for (std::size_t i = 0; i < textures_.size(); ++i)
+        if (textures_[i] == name && textureKinds_[i] == kind) return static_cast<uint32_t>(i);
     textures_.emplace_back(name);
     textureKinds_.push_back(cube ? TextureKind::DepthCube : TextureKind::Depth2d);
     return static_cast<uint32_t>(textures_.size() - 1);

@@ -300,9 +300,13 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         for (auto& [label, node] : abi::tslConstants())
             if (label == "viewportLinearDepth") linear = node;
         const auto own = abi::tslCall("linearDepth", nullptr, {}, serial);
-        water->material->nodes.colorNode = g::vec4({g::add(g::mul(g::swizzle(behind, "xyz"),
+        const auto offsetDepth = abi::tslCall("viewportDepthTexture", nullptr,
+            {abi::TslArg::of(g::add(g::screenUV(), g::vec2({g::float_(0.02f), g::float_(0)})))}, serial);
+        const auto offsetLinear = abi::tslCall("linearDepth", nullptr, {abi::TslArg::of(offsetDepth)}, serial);
+        water->material->nodes.colorNode = g::vec4({g::add(g::add(g::mul(g::swizzle(behind, "xyz"),
             g::vec3({g::float_(0.5f), g::float_(0.8f), g::float_(1)})),
-            g::vec3({g::float_(0), g::float_(0), g::mul(g::sub(linear, own), g::float_(8))})), g::float_(1)});
+            g::vec3({g::float_(0), g::float_(0), g::mul(g::sub(linear, own), g::float_(8))})),
+            g::vec3({g::mul(offsetLinear, g::float_(0.2f)), g::float_(0), g::float_(0)})), g::float_(1)});
         water->material->needsUpdate();
         return "";
     }

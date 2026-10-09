@@ -49,6 +49,7 @@ import {
   vec2,
   vec3,
   vec4,
+  viewportDepthTexture,
   viewportLinearDepth,
   viewportSharedTexture,
 } from "three/tsl";
@@ -679,7 +680,11 @@ export const programs = {
     const water = target.getObjectByName("water");
     const behind = viewportSharedTexture(screenUV.add(vec2(0.02, 0))).rgb;
     water.material.colorNode = vec4(
-      behind.mul(vec3(0.5, 0.8, 1)).add(vec3(0, 0, viewportLinearDepth.sub(linearDepth()).mul(8))),
+      behind
+        .mul(vec3(0.5, 0.8, 1))
+        .add(vec3(0, 0, viewportLinearDepth.sub(linearDepth()).mul(8)))
+        // A second depth read at an offset, as WaterSurface3D.thicknessAt(offset) takes one.
+        .add(vec3(linearDepth(viewportDepthTexture(screenUV.add(vec2(0.02, 0)))).mul(0.2), 0, 0)),
       1,
     );
   },
