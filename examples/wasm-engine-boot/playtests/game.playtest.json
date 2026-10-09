@@ -31,8 +31,8 @@
       {
         "id": "state",
         "path": "engineCalls",
-        "lte": 37,
-        "allowTrivial": "PRD-553: a drawn frame of this core game makes at most 37 engine calls (2026-10-09); with core's projected-size cull walking the scene in JS instead of one engine call it makes 62."
+        "lte": 33,
+        "allowTrivial": "PRD-553: a drawn frame of this core game makes at most 33 engine calls (2026-10-09). Without Object3D's graph events core walks the scene twice a frame for LOD and clustered meshes and it makes 37; with core's projected-size cull walking the scene in JS instead of one engine call it makes 62."
       }
     ],
     "visual": [

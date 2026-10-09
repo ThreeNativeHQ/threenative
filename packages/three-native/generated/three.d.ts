@@ -1856,6 +1856,14 @@ readonly revision: number;
   clone(recursive?: boolean): this;
 
   copy(object: Object3D, recursive?: boolean): this;
+  /** callback listener: EventListener */
+  addEventListener(type: string, listener: EventListener): void;
+
+  dispatchEvent(event: BaseEvent): void;
+  /** callback listener: EventListener */
+  hasEventListener(type: string, listener: EventListener): boolean;
+  /** callback listener: EventListener */
+  removeEventListener(type: string, listener: EventListener): void;
 }
 
 /** Catalog partial (native-not-implemented): three/ObjectSpaceNormalMap. */

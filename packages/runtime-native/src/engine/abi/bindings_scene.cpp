@@ -154,6 +154,69 @@ ProjectedCull& projectedCullOf(Object3D& root) {
     return entry.second;
 }
 
+// three's graph events (`added`, `removed` on the child; `childadded`, `childremoved` with `child` on
+// the parent), which the engine's own dispatcher fires from add, remove and attach. A language
+// listens per object and type through tn_set_callback, as it does to AnimationMixer's events.
+struct ObjectListeners {
+    Store* store = nullptr;
+    std::map<std::string, EventCallback, std::less<>> byType;
+    // The first listener failure during a graph call; the call throws it once the graph is consistent.
+    static inline std::string error;
+
+    static void dispatch(const tn::engine::Event& event, void* context) {
+        auto& self = *static_cast<ObjectListeners*>(context);
+        const auto found = self.byType.find(event.type);
+        if (found == self.byType.end() || !found->second) return;
+        std::string failure;
+        try {
+            std::vector<std::pair<std::string, Value>> fields{{"type", Value{Value::Kind::String, 0, std::string(event.type)}}};
+            if (event.child != nullptr) fields.emplace_back("child", foundObject(*self.store, event.child));
+            const EventCallback callback = found->second;  // a listener may replace itself
+            (*callback)(Value::record(std::move(fields)), failure);
+        } catch (const Unsupported& refused) {
+            failure = refused.reason;
+        }
+        if (!failure.empty() && error.empty()) error = std::move(failure);
+    }
+};
+
+void registerObject3DEvents(ClassBinding& b) {
+    for (const char* type : {"added", "removed", "childadded", "childremoved"}) {
+        b.events[type] = [type](void* self, EventCallback callback, Store& store) {
+            auto* object = as<Object3D>(self);
+            if (!object->languageListeners) {
+                auto listeners = std::make_shared<ObjectListeners>();
+                listeners->store = &store;
+                object->languageListeners = listeners;
+            }
+            auto* listeners = static_cast<ObjectListeners*>(object->languageListeners.get());
+            const bool listening = listeners->byType.contains(type);
+            if (!callback) {
+                if (listening) object->removeEventListener(type, &ObjectListeners::dispatch, listeners);
+                listeners->byType.erase(type);
+                return;
+            }
+            if (!listening) object->addEventListener(type, &ObjectListeners::dispatch, listeners);
+            listeners->byType[type] = std::move(callback);
+        };
+    }
+    // EventDispatcher's methods keep language functions, so the language adapter implements them over
+    // `events`; called through the ABI they refuse rather than drop a listener.
+    for (const char* name : {"addEventListener", "removeEventListener", "hasEventListener", "dispatchEvent"}) {
+        b.methods[name] = [](void*, const Args&, Store&) -> Value {
+            throw Unsupported{"TN_NATIVE_EVENT_LISTENER: the language adapter keeps EventDispatcher listeners"};
+        };
+    }
+    // A listener that threw during a graph call throws from that call, as three's would.
+    for (const char* name : {"add", "remove", "attach", "clear", "removeFromParent", "copy"}) {
+        b.methods[name] = [inner = b.methods.at(name)](void* self, const Args& a, Store& store) {
+            Value result = inner(self, a, store);
+            if (!ObjectListeners::error.empty()) throw Unsupported{std::exchange(ObjectListeners::error, {})};
+            return result;
+        };
+    }
+}
+
 void registerObject3D(ClassBinding& b) {
     b.members["parent"] = [](void* self, const Args&, Store& store) {
         return foundObject(store, as<Object3D>(self)->parent);
@@ -456,6 +519,7 @@ void registerObject3D(ClassBinding& b) {
         as<Object3D>(self)->copy(objectArg(store, a.at(0)));
         return chain();
     };
+    registerObject3DEvents(b);
 }
 
 // ----------------------------------------------------------------------------- Camera

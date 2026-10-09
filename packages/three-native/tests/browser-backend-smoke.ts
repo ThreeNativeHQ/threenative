@@ -415,6 +415,72 @@ engine.collect();
   mixer.update(1.25);
   check(loops.length === 1 && loops[0] === 1, "loop event");
 }
+// three's graph events on every Object3D: `added`/`removed` on the child, `childadded`/`childremoved`
+// on the parent, from add, remove, attach and clear. Core tracks LOD and clustered meshes through
+// them instead of walking the scene every frame (PRD-553).
+{
+  type Fn = (...args: unknown[]) => unknown;
+  type Node = {
+    add: Fn;
+    remove: Fn;
+    attach: Fn;
+    clear: Fn;
+    addEventListener: Fn;
+    removeEventListener: Fn;
+  };
+  const web = (await bindWebEngine(createTnAbi, ["Object3D", "Group", "Scene"])) as Record<
+    string,
+    new () => Node
+  >;
+  const scene = new (web.Scene as new () => Node)();
+  const group = new (web.Group as new () => Node)();
+  const child = new (web.Object3D as new () => Node)();
+  const seen: string[] = [];
+  const name = (object: unknown) =>
+    object === scene ? "scene" : object === group ? "group" : object === child ? "child" : "?";
+  const log = (event: Record<string, unknown>) =>
+    seen.push(
+      `${event.type}:${name(event.target)}${event.child === undefined ? "" : `>${name(event.child)}`}`,
+    );
+  check(typeof scene.addEventListener === "function", "Object3D has addEventListener");
+  for (const node of [scene, group, child])
+    for (const type of ["added", "removed", "childadded", "childremoved"])
+      node.addEventListener(type, log);
+  scene.add(group);
+  group.add(child);
+  scene.attach(child);
+  scene.remove(child);
+  scene.clear();
+  check(
+    seen.join(" ") ===
+      [
+        "added:group childadded:scene>group",
+        "added:child childadded:group>child",
+        "removed:child childremoved:group>child added:child childadded:scene>child",
+        "removed:child childremoved:scene>child",
+        "removed:group childremoved:scene>group",
+      ].join(" "),
+    `graph events in three's order: ${seen.join(" ")}`,
+  );
+  seen.length = 0;
+  group.removeEventListener("added", log);
+  scene.add(group);
+  check(seen.join(" ") === "childadded:scene>group", `a removed listener stops: ${seen.join(" ")}`);
+  const boom = () => {
+    throw new Error("listener boom");
+  };
+  scene.addEventListener("childremoved", boom);
+  let thrown = "";
+  try {
+    scene.remove(group);
+  } catch (error) {
+    thrown = String(error);
+  }
+  check(
+    thrown.includes("listener boom"),
+    `a throwing listener throws from the graph call: ${thrown}`,
+  );
+}
 // three's MathUtils is a namespace object, not a constructor: its functions are called on the export
 // itself (the minimal template's Player wraps its heading with MathUtils.euclideanModulo).
 {

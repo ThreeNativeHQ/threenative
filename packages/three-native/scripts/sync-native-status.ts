@@ -84,21 +84,25 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
 };
 
 /** Bound methods whose binding signature differs from three's richer overloads. */
-// EventDispatcher's generic event-map overloads, as the native mixer binds them: any event type,
-// one listener function. @types/three spells them over AnimationMixerEventMap, which no catalog
-// entry publishes.
+// EventDispatcher's generic event-map overloads, as the native mixer and Object3D bind them: any
+// event type, one listener function. @types/three spells them over AnimationMixerEventMap and
+// Object3DEventMap, which no catalog entry publishes.
 const LISTENER: ICatalogParameter[] = [
   { name: "type", type: "string", optional: false },
   { name: "listener", type: "EventListener", optional: false, callback: "EventListener" },
 ];
-
-const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns: string }[]> = {
-  "AnimationMixer.addEventListener": [{ parameters: LISTENER, returns: "void" }],
-  "AnimationMixer.removeEventListener": [{ parameters: LISTENER, returns: "void" }],
-  "AnimationMixer.hasEventListener": [{ parameters: LISTENER, returns: "boolean" }],
-  "AnimationMixer.dispatchEvent": [
+const dispatcherMethods = (owner: string) => ({
+  [`${owner}.addEventListener`]: [{ parameters: LISTENER, returns: "void" }],
+  [`${owner}.removeEventListener`]: [{ parameters: LISTENER, returns: "void" }],
+  [`${owner}.hasEventListener`]: [{ parameters: LISTENER, returns: "boolean" }],
+  [`${owner}.dispatchEvent`]: [
     { parameters: [{ name: "event", type: "BaseEvent", optional: false }], returns: "void" },
   ],
+});
+
+const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns: string }[]> = {
+  ...dispatcherMethods("AnimationMixer"),
+  ...dispatcherMethods("Object3D"),
   // three sets `targetObject` when it binds and @types/three does not declare it; the engine answers
   // it as a call, which the shared facade (src/property-binding.ts) publishes as three's property.
   "PropertyBinding.targetObject": [{ parameters: [], returns: "Object3D | Material | null" }],
@@ -614,9 +618,14 @@ function applyMemberStatuses(dump: IRegistryDump, byName: Map<string, MutableCla
 
 /** A registry member the catalog lacks is added, parents first so a derived class inherits. */
 function addMissingMembers(dump: IRegistryDump, byName: Map<string, MutableClass>): void {
-  const order = Object.keys(dump.classes).sort(
-    (left, right) => chain(left).length - chain(right).length,
-  );
+  // Parents first, by the catalog's own chain (the one `effectiveSupported` walks): a member a parent
+  // gains here then covers its subclasses, whose @types file the chain parser may not find.
+  const depth = (name: string): number => {
+    let count = 0;
+    for (let at = byName.get(name); at?.extends; at = byName.get(at.extends)) count++;
+    return count;
+  };
+  const order = Object.keys(dump.classes).sort((left, right) => depth(left) - depth(right));
   for (const name of order) {
     const entry = byName.get(name);
     const binding = dump.classes[name];

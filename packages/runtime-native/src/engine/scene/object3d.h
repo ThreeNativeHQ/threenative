@@ -293,6 +293,8 @@ public:
     bool frustumCulled = true;
     /** core's alwaysRender() marker, mirrored for the engine's projected-size cull (projected_cull.h). */
     bool alwaysRender = false;
+    /** Owned for a language binding that listens to this object's graph events; dies with the object. */
+    std::shared_ptr<void> languageListeners;
 
     /** The renderer's inputs. Each setter bumps `revision()`; a direct field write cannot. */
     [[nodiscard]] bool visible() const { return visible_; }

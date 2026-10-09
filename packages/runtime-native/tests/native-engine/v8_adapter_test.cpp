@@ -1142,6 +1142,13 @@ void skeletal() {
         check(thrown, 'a throwing listener throws from update');
         let custom=null; mixer.addEventListener('custom', (e) => { custom=e.target; }); mixer.dispatchEvent({ type: 'custom' });
         check(custom===mixer, 'dispatchEvent');
+        // three's graph events on Object3D (PRD-553): core tracks LOD and clustered meshes with them.
+        const graph = []; const parentNode = new Object3D(); const childNode = new Object3D();
+        const tag = (o) => o===parentNode ? 'parent' : o===childNode ? 'child' : '?';
+        for (const node of [parentNode, childNode]) for (const type of ['added', 'removed', 'childadded', 'childremoved'])
+            node.addEventListener(type, (e) => graph.push(e.type + ':' + tag(e.target) + (e.child ? '>' + tag(e.child) : '')));
+        parentNode.add(childNode); parentNode.remove(childNode);
+        check(graph.join(' ')==='added:child childadded:parent>child removed:child childremoved:parent>child', 'graph events ' + graph.join(' '));
         // A "finished" listener that uncaches its action runs after the update's loops, so the
         // other active action still advances and the loop never reads past the shrunk list.
         const mixer2 = new AnimationMixer(root);
