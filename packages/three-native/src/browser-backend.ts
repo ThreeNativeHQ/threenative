@@ -941,19 +941,34 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     return dataView;
   };
   // Each call frees what it allocated, and only that: a callback can run a nested call.
+  // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
+  // scope rewinds, a stack as nested calls (a callback inside an invoke) need; a scope that outgrows
+  // it falls back to malloc and frees on exit. Every engine call crosses here, many per frame.
+  const ARENA = 64 * 1024;
+  const arenaBase = abi._malloc(ARENA);
+  let arenaTop = arenaBase;
   const allocations: number[] = [];
   const alloc = (size: number): number => {
-    const pointer = abi._malloc(size);
+    const aligned = (size + 7) & ~7;
+    let pointer: number;
+    if (arenaTop + aligned <= arenaBase + ARENA) {
+      pointer = arenaTop;
+      arenaTop += aligned;
+    } else {
+      pointer = abi._malloc(size);
+      allocations.push(pointer);
+    }
     abi.HEAPU8.fill(0, pointer, pointer + size);
-    allocations.push(pointer);
     return pointer;
   };
   const scoped = <T>(work: () => T): T => {
     const mark = allocations.length;
+    const top = arenaTop;
     try {
       return work();
     } finally {
       for (const pointer of allocations.splice(mark)) abi._free(pointer);
+      arenaTop = top;
     }
   };
   const string = (text: string): { pointer: number; bytes: number } => {
@@ -961,6 +976,18 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     const pointer = alloc(bytes + 1);
     abi.stringToUTF8(text, pointer, bytes + 1);
     return { pointer, bytes };
+  };
+  // Member, method and class names: a bounded set, encoded once and kept for the module's life.
+  const names = new Map<string, number>();
+  const name = (text: string): number => {
+    let pointer = names.get(text);
+    if (pointer === undefined) {
+      const bytes = abi.lengthBytesUTF8(text);
+      pointer = abi._malloc(bytes + 1);
+      abi.stringToUTF8(text, pointer, bytes + 1);
+      names.set(text, pointer);
+    }
+    return pointer;
   };
   const diagnostic = () => alloc(8);
   const check = (status: number, diag: number, what: string) => {
@@ -976,13 +1003,15 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     const key = `${type}:${v.getUint16(pointer + 2, true)}:${v.getUint32(pointer + 4, true)}:${v.getUint32(pointer + 8, true)}`;
     return { key, type };
   };
+  // A ref's handle fields, parsed from its key once.
+  const handles = new WeakMap<IEngineRef, readonly [number, number, number, number]>();
   const writeHandle = (pointer: number, ref: IEngineRef) => {
-    const [type, context, index, generation] = ref.key.split(":").map(Number) as [
-      number,
-      number,
-      number,
-      number,
-    ];
+    let fields = handles.get(ref);
+    if (fields === undefined) {
+      fields = ref.key.split(":").map(Number) as [number, number, number, number];
+      handles.set(ref, fields);
+    }
+    const [type, context, index, generation] = fields;
     const v = view();
     v.setUint16(pointer, type, true);
     v.setUint16(pointer + 2, context, true);
@@ -1169,7 +1198,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       view,
     }) ?? {}),
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
-    typeId: (className) => scoped(() => abi._tn_type_id(string(className).pointer)),
+    typeId: (className) => abi._tn_type_id(name(className)),
     construct: (className, args) =>
       scoped(() => {
         const out = alloc(HANDLE);
@@ -1193,14 +1222,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         const out = alloc(VALUE);
         const diag = diagnostic();
         check(
-          abi._tn_invoke(
-            handleOf(self),
-            string(method).pointer,
-            values(args),
-            args.length,
-            out,
-            diag,
-          ),
+          abi._tn_invoke(handleOf(self), name(method), values(args), args.length, out, diag),
           diag,
           `${method}()`,
         );
@@ -1210,18 +1232,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       scoped(() => {
         const out = alloc(VALUE);
         const diag = diagnostic();
-        check(abi._tn_get(handleOf(self), string(path).pointer, out, diag), diag, `get ${path}`);
+        check(abi._tn_get(handleOf(self), name(path), out, diag), diag, `get ${path}`);
         return readValue(out);
       }),
     set: (self, path, value) =>
       scoped(() => {
         const pointer = values([value]);
         const diag = diagnostic();
-        check(
-          abi._tn_set(handleOf(self), string(path).pointer, pointer, diag),
-          diag,
-          `set ${path}`,
-        );
+        check(abi._tn_set(handleOf(self), name(path), pointer, diag), diag, `set ${path}`);
       }),
     release: (self) =>
       scoped(() => {
