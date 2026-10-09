@@ -740,6 +740,18 @@ export const programs = {
   },
   /** A positionNode reads one texture with no level (the vertex stage samples its level 0, as r185's
    *  TextureNode does there) and another through .level(0). */
+  /** normalWorld reads the material's normal: flipped on a DoubleSide back face, a normalNode, a normal map. */
+  async "tsl-normal-world-doubleside"({ target }) {
+    const shade = normalWorld.mul(0.5).add(0.5);
+    for (const name of ["front", "back"])
+      target.getObjectByName(name).material.colorNode = vec4(shade, 1);
+    const tilted = target.getObjectByName("tilted").material;
+    tilted.normalNode = normalize(vec3(0.6, 0, 0.8));
+    tilted.emissiveNode = shade;
+    const mapped = target.getObjectByName("mapped").material;
+    mapped.normalMap = dataTexture(4, 4, () => [200, 128, 230]);
+    mapped.emissiveNode = shade;
+  },
   async "tsl-stage-vertex-texture-level"({ target }) {
     const ramp = dataTexture(8, 4, (x, y) => [x * 36, y * 80, 200 - x * 20]);
     const bumps = dataTexture(8, 8, (x, y) => [((x + y) % 4) * 80, 0, 0]);

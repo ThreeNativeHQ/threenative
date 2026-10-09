@@ -361,16 +361,16 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         return g::attribute("position", Type::vec(3));
     }
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix):
-    // normalize((vec4(normalView, 0) * viewMatrix).xyz), normalView the interpolated geometry normal.
-    // ponytail: the geometry normal only; a normalNode, normal map or back-face flip is not applied.
+    // normalize((vec4(normalView, 0) * viewMatrix).xyz). In a material slot the material supplies
+    // normalView (standard.cpp nodeValue: back-face flip, normalNode, normal map).
     if (name == "normalWorld") {
         arity(0);
         const auto normalView = g::normalize(g::varying("normalView", Type::vec(3)));
         return g::normalize(g::swizzle(g::mul(g::vec4({normalView, g::float_(0)}),
                                               g::uniform("viewMatrix", Type::mat(4, 4))), "xyz"));
     }
-    // normalView: the interpolated view-space normal the standard vertex stage writes.
-    // ponytail: the geometry normal only, as normalWorld; a normalNode, normal map or face flip is not applied.
+    // normalView: the material's view-space normal in a material slot (standard.cpp nodeValue), else the
+    // interpolated normal the vertex stage writes. ponytail: a vertex-stage read is the unflipped geometry normal.
     if (name == "normalView") {
         arity(0);
         return g::normalize(g::varying("normalView", Type::vec(3)));

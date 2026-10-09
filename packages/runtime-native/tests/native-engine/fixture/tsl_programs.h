@@ -338,6 +338,27 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         scene.backgroundRotation.set(0.1, 0.4, 0); scene.environmentRotation.set(0.1, 0.4, 0);
         return "";
     }
+    if (program == "tsl-normal-world-doubleside") {
+        // normalWorld through the shared TSL table, on the material's normal (r185 NodeMaterial.setupNormal).
+        if (object.cls != "Scene") return "TN_FIXTURE_NORMAL_WORLD_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        namespace g = engine::shader::graph;
+        uint64_t serial = 0;
+        const auto shade = g::add(g::mul(abi::tslCall("normalWorld", nullptr, {}, serial), g::float_(0.5)), g::float_(0.5));
+        const auto material = [&scene](const char* name) {
+            auto* mesh = dynamic_cast<engine::Mesh*>(scene.getObjectByName(name));
+            return mesh ? mesh->material.get() : nullptr;
+        };
+        auto *front = material("front"), *back = material("back"), *tilted = material("tilted"), *mapped = material("mapped");
+        if (!front || !back || !tilted || !mapped) return "TN_FIXTURE_NORMAL_WORLD_INVALID: planes";
+        front->nodes.colorNode = back->nodes.colorNode = g::vec4({shade, g::float_(1)});
+        tilted->nodes.normalNode = g::normalize(g::vec3({g::float_(0.6), g::float_(0), g::float_(0.8)}));
+        tilted->nodes.emissiveNode = mapped->nodes.emissiveNode = shade;
+        using Rgb = std::array<uint8_t, 3>;
+        mapped->maps["normalMap"] = tsl_detail::dataTexture(4, 4, [](uint32_t, uint32_t) { return Rgb{200, 128, 230}; });
+        for (auto* m : {front, back, tilted, mapped}) m->needsUpdate();
+        return "";
+    }
     if (program == "instanced-geometry") {
         if (object.cls != "Scene") return "TN_FIXTURE_INSTANCED_INVALID: requires scene";
         auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
