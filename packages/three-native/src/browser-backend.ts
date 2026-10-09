@@ -733,13 +733,16 @@ export function defineBrowserClasses(
       }
       return entry.array;
     };
-    // itemSize and normalized, read from the engine once and again after either is set.
-    const shapes = new WeakMap<object, { itemSize: number; normalized: boolean }>();
-    const shape = (self: object): { itemSize: number; normalized: boolean } => {
+    // itemSize, normalized and count, read from the engine once per epoch (an engine method that may
+    // write attributes moves it) and again after any of them is set: three keeps them as plain
+    // fields, and a merge loop tests `i < attribute.count` on every iteration.
+    type Shape = { itemSize: number; normalized: boolean; count?: number; epoch: number };
+    const shapes = new WeakMap<object, Shape>();
+    const shape = (self: object): Shape => {
       let found = shapes.get(self);
-      if (found === undefined) {
+      if (found === undefined || found.epoch !== epoch) {
         const attribute = self as { itemSize: number; normalized: boolean };
-        found = { itemSize: attribute.itemSize, normalized: attribute.normalized };
+        found = { itemSize: attribute.itemSize, normalized: attribute.normalized, epoch };
         shapes.set(self, found);
       }
       return found;
@@ -802,7 +805,17 @@ export function defineBrowserClasses(
       if (cls === undefined) continue;
       for (const [method, value] of Object.entries(accessors))
         Object.defineProperty(cls.prototype, method, { configurable: true, writable: true, value });
-      for (const field of ["itemSize", "normalized"]) {
+      const engineCount = Object.getOwnPropertyDescriptor(cls.prototype, "count");
+      if (engineCount?.get !== undefined)
+        Object.defineProperty(cls.prototype, "count", {
+          ...engineCount,
+          get(this: object) {
+            const found = shape(this);
+            found.count ??= engineCount.get?.call(this) as number;
+            return found.count;
+          },
+        });
+      for (const field of ["itemSize", "normalized", "count"]) {
         const own = Object.getOwnPropertyDescriptor(cls.prototype, field);
         if (own?.set !== undefined)
           Object.defineProperty(cls.prototype, field, {

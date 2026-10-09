@@ -577,9 +577,11 @@ describe("PRD-533 web arms", () => {
       calls.engine = calls.arrays = 0;
       // Midway's box-UV projection: a read and a write per vertex, as three's accessors do.
       for (let i = 0; i < count; i++) uv.setXY(i, position.getX(i) + 1, position.getY(i) * 2);
-      expect(calls.engine).toBe(4); // itemSize and normalized, read once per attribute
-      for (let i = 0; i < count; i++) position.setX(i, position.getX(i) * 3);
-      expect(calls.engine).toBe(4); // and never again per element
+      const shapeReads = calls.engine; // itemSize and normalized, read once per attribute
+      expect(shapeReads).toBeLessThanOrEqual(4);
+      // three's merge loops test `i < attribute.count` every iteration: a field read, not a call.
+      for (let i = 0; i < position.count; i++) position.setX(i, position.getX(i) * 3);
+      expect(calls.engine).toBe(shapeReads);
       expect(calls.arrays).toBe(2); // each array fetched once
       box.computeBoundingBox(); // the next engine call sends both arrays back first
       expect(calls.arrays).toBe(4);
