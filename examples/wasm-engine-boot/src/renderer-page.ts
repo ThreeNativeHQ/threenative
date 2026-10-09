@@ -10,6 +10,8 @@ import {
   BoxGeometry,
   DataTexture,
   DirectionalLight,
+  InstancedBufferAttribute,
+  InstancedBufferGeometry,
   LoopOnce,
   MathUtils,
   Mesh,
@@ -17,6 +19,7 @@ import {
   NumberKeyframeTrack,
   PCFShadowMap,
   PerspectiveCamera,
+  PlaneGeometry,
   PropertyBinding,
   Scene,
   SphereGeometry,
@@ -25,8 +28,11 @@ import {
 import {
   Fn,
   If,
+  attribute,
   cameraFar,
   cameraNear,
+  cameraProjectionMatrix,
+  cameraViewMatrix,
   float,
   positionLocal,
   screenUV,
@@ -186,7 +192,29 @@ try {
   );
   const pane = new Mesh(new BoxGeometry(0.9, 0.6, 0.02), glass);
   pane.position.set(0.15, -0.75, 1.3);
-  scene.add(box, tile, ball, slab, pane);
+  // Midway's particle batches: an InstancedBufferGeometry quad, its per-instance offsets read by a
+  // TSL attribute() in a material.vertexNode (clip space). Three of four instances draw.
+  const quad = new PlaneGeometry(1, 1);
+  const sparks = new InstancedBufferGeometry();
+  const quadIndex = quad.getIndex();
+  if (quadIndex === null) throw new Error("PlaneGeometry has an index");
+  sparks.setIndex(quadIndex.clone());
+  sparks.setAttribute("position", quad.getAttribute("position").clone());
+  sparks.setAttribute(
+    "aOffset",
+    new InstancedBufferAttribute(
+      new Float32Array([1.6, 1.1, 0, 2, 1.1, 0, 2.4, 1.1, 0, 0, 0, 0]),
+      3,
+    ),
+  );
+  sparks.instanceCount = 3;
+  const sparkMaterial = new MeshBasicNodeMaterial();
+  sparkMaterial.vertexNode = cameraProjectionMatrix.mul(
+    cameraViewMatrix.mul(vec4(positionLocal.mul(0.25).add(attribute("aOffset", "vec3")), 1)),
+  );
+  sparkMaterial.colorNode = vec4(1, 0.8, 0.2, 1);
+  const sparkMesh = new Mesh(sparks, sparkMaterial);
+  scene.add(box, tile, ball, slab, pane, sparkMesh);
   box.name = "box";
   // What core's clip audit asks before a model's clips play: a track on a named node binds, one on a
   // missing node is reported through three's console function.

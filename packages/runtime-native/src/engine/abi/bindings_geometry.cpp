@@ -45,7 +45,7 @@ BufferGeometry& geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
         "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry", "LatheGeometry",
-        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry"};
+        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry", "InstancedBufferGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -130,7 +130,7 @@ Value attributeArray(const BufferGeometry& geometry, const char* name) {
 // ---------------------------------------------------------------- BufferAttribute
 
 void registerBufferAttribute(ClassBinding& b, const char* cls) {
-    b.ctor = [](const Args& a, Store&) {
+    b.ctor = [cls](const Args& a, Store&) {
         std::vector<double> values;
         if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) values = a.at(0).numbers;
         // BufferAttribute( array, itemSize, normalized = false ); itemSize is a positive integer.
@@ -143,8 +143,9 @@ void registerBufferAttribute(ClassBinding& b, const char* cls) {
                               : array == "Uint16Array" ? Scalar::U16
                               : array == "Uint32Array" ? Scalar::U32
                                                        : Scalar::F32;
-        return std::static_pointer_cast<void>(
-            BufferAttribute::fromDoubles(scalar, values, static_cast<int>(itemSize), normalized));
+        auto attribute = BufferAttribute::fromDoubles(scalar, values, static_cast<int>(itemSize), normalized);
+        attribute->perInstance = std::string_view(cls) == "InstancedBufferAttribute";
+        return std::static_pointer_cast<void>(attribute);
     };
     b.getters["array"] = [](void* self) { return numbers(as<BufferAttribute>(self)->toNumbers()); };
     b.getters["array.length"] = [](void* self) {
@@ -848,6 +849,25 @@ void registerGeometryBindings(Registry& classes) {
             BufferAttribute::fromDoubles(Scalar::F32, values, static_cast<int>(itemSize), normalized));
     };
     registerBufferGeometry(classes["BufferGeometry"]);
+    // three's InstancedBufferGeometry: a BufferGeometry drawn instanceCount times, its
+    // InstancedBufferAttributes read once per instance.
+    ClassBinding& instancedGeometry = classes["InstancedBufferGeometry"];
+    registerBufferGeometry(instancedGeometry);
+    instancedGeometry.ctor = [](const Args&, Store&) {
+        auto geometry = std::make_shared<BufferGeometry>();
+        geometry->type = "InstancedBufferGeometry";
+        geometry->instanced = true;
+        return std::static_pointer_cast<void>(geometry);
+    };
+    instancedGeometry.getters["instanceCount"] = [](void* self) {
+        return Value::of(as<BufferGeometry>(self)->instanceCount);
+    };
+    instancedGeometry.setters["instanceCount"] = [](void* self, const Value& v) {
+        const double count = number(v);
+        if (!(count >= 0) || (count != std::floor(count) && !std::isinf(count)))
+            throw Unsupported{"instanceCount must be a whole number of instances or Infinity"};
+        as<BufferGeometry>(self)->instanceCount = count;
+    };
     registerGeometryGenerators(classes);
     registerCatmullRomCurve3(classes["CatmullRomCurve3"]);
     registerPath<Path>(classes["Path"]);

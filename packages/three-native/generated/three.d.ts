@@ -841,6 +841,12 @@ export declare const IncrementStencilOp: 7682;
 /** Catalog partial (native-not-implemented): three/IncrementWrapStencilOp. */
 export declare const IncrementWrapStencilOp: 34055;
 
+/** Catalog supported: three/InstancedBufferGeometry. */
+export declare class InstancedBufferGeometry extends BufferGeometry {
+constructor();
+instanceCount: number;
+}
+
 /** Catalog supported: three/webgpu/InstancedMesh. */
 export declare class InstancedMesh extends Mesh {
 constructor();
@@ -1362,6 +1368,7 @@ vertexColors: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+vertexNode: Node | null;
 
   clone(): this;
 }
@@ -1493,6 +1500,7 @@ vertexColors: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+vertexNode: Node | null;
 
   clone(): this;
 }
@@ -2396,6 +2404,7 @@ vertexColors: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+vertexNode: Node | null;
 
   clone(): this;
 }

@@ -41,7 +41,7 @@ bool PipelineCache::IdKey::operator==(const IdKey& o) const {
            target.depthWrite == o.target.depthWrite && target.layout == o.target.layout &&
            target.skinIndex == o.target.skinIndex && target.frontFace == o.target.frontFace &&
            target.depthCompare == o.target.depthCompare && target.depthBias == o.target.depthBias &&
-           target.depthBiasSlopeScale == o.target.depthBiasSlopeScale;
+           target.depthBiasSlopeScale == o.target.depthBiasSlopeScale && target.instanceStepMask == o.target.instanceStepMask;
 }
 
 size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
@@ -55,6 +55,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
         uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58);
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
     mix(uint64_t(uint32_t(key.target.depthBias)) | uint64_t(std::bit_cast<uint32_t>(key.target.depthBiasSlopeScale)) << 32);
+    mix(key.target.instanceStepMask);
     return h;
 }
 
@@ -75,7 +76,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
            std::to_string(target.cull) + ':' + std::to_string(target.blend) + ':' + std::to_string(target.depthWrite) +
            ':' + std::to_string(reinterpret_cast<uintptr_t>(target.layout)) + ':' + std::to_string(target.skinIndex) +
            ':' + std::to_string(target.frontFace) + ':' + std::to_string(target.depthCompare) + ':' +
-           std::to_string(target.depthBias) + ':' + std::to_string(std::bit_cast<uint32_t>(target.depthBiasSlopeScale));
+           std::to_string(target.depthBias) + ':' + std::to_string(std::bit_cast<uint32_t>(target.depthBiasSlopeScale)) +
+           ':' + std::to_string(target.instanceStepMask);
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
         if (named) byId_.emplace(idKey, found->second);  // the same text under another id
         return found->second;
@@ -100,7 +102,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
                                                  : target.skinIndex == WGPUVertexFormat_Uint16x4 ? 8
                                                                                                  : 16)
                                               : uint64_t{t.rows} * 4;
-        buffers[i].stepMode = matrixColumn || name == "instanceColor" ? WGPUVertexStepMode_Instance : WGPUVertexStepMode_Vertex;
+        const bool perInstance = matrixColumn || name == "instanceColor" || (i < 64 && (target.instanceStepMask >> i) & 1u);
+        buffers[i].stepMode = perInstance ? WGPUVertexStepMode_Instance : WGPUVertexStepMode_Vertex;
         buffers[i].attributeCount = 1;
         buffers[i].attributes = &attributes[i];
     }

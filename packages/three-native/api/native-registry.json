@@ -1682,6 +1682,79 @@
       "members": [],
       "callbacks": []
     },
+    "InstancedBufferGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "clone",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "dispose",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "instanceCount",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "instanceCount",
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
+      ],
+      "callbacks": []
+    },
     "InstancedMesh": {
       "constructor": true,
       "methods": [
@@ -2597,6 +2670,7 @@
         "transparent",
         "type",
         "vertexColors",
+        "vertexNode",
         "visible"
       ],
       "setters": [
@@ -2628,6 +2702,7 @@
         "toneMapped",
         "transparent",
         "vertexColors",
+        "vertexNode",
         "visible"
       ],
       "members": ["color", "map"],
@@ -3023,6 +3098,7 @@
         "transparent",
         "type",
         "vertexColors",
+        "vertexNode",
         "visible"
       ],
       "setters": [
@@ -3070,6 +3146,7 @@
         "toneMapped",
         "transparent",
         "vertexColors",
+        "vertexNode",
         "visible"
       ],
       "members": [
@@ -5174,6 +5251,7 @@
         "transparent",
         "type",
         "vertexColors",
+        "vertexNode",
         "visible"
       ],
       "setters": [
@@ -5207,6 +5285,7 @@
         "toneMapped",
         "transparent",
         "vertexColors",
+        "vertexNode",
         "visible"
       ],
       "members": ["color", "map"],

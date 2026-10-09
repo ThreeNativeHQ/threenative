@@ -286,6 +286,28 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         scene.backgroundRotation.set(0.1, 0.4, 0); scene.environmentRotation.set(0.1, 0.4, 0);
         return "";
     }
+    if (program == "instanced-geometry") {
+        if (object.cls != "Scene") return "TN_FIXTURE_INSTANCED_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto* quads = dynamic_cast<engine::Mesh*>(scene.getObjectByName("quads"));
+        if (!quads || !quads->material) return "TN_FIXTURE_INSTANCED_INVALID: quads/material";
+        namespace g = engine::shader::graph;
+        // Through the shared TSL table, as V8 and Wasm build it.
+        uint64_t serial = 0;
+        const auto tsl = [&serial](const char* name, std::vector<abi::TslArg> args) {
+            return abi::tslCall(name, nullptr, args, serial);
+        };
+        g::Node view;
+        for (auto& [label, node] : abi::tslConstants())
+            if (label == "cameraViewMatrix") view = node;
+        const auto offset = tsl("attribute", {abi::TslArg::of(std::string("aOffset")), abi::TslArg::of(std::string("vec3"))});
+        const auto tint = tsl("attribute", {abi::TslArg::of(std::string("aTint")), abi::TslArg::of(std::string("vec3"))});
+        const auto local = g::add(g::mul(g::positionLocal(), g::float_(0.4f)), offset);
+        quads->material->nodes.vertexNode = g::mul(tsl("cameraProjectionMatrix", {}), g::mul(view, g::vec4({local, g::float_(1)})));
+        quads->material->nodes.colorNode = g::vec4({tint, g::float_(1)});
+        quads->material->needsUpdate();
+        return "";
+    }
     if (program == "viewport-textures") {
         if (object.cls != "Scene") return "TN_FIXTURE_VIEWPORT_INVALID: requires scene";
         auto& scene = *static_cast<engine::Scene*>(object.ptr.get());

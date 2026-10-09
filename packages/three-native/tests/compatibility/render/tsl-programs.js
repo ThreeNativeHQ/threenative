@@ -17,6 +17,9 @@ import {
 } from "three";
 import {
   Fn,
+  attribute,
+  cameraProjectionMatrix,
+  cameraViewMatrix,
   convertToTexture,
   float,
   instanceIndex,
@@ -687,6 +690,16 @@ export const programs = {
         .add(vec3(linearDepth(viewportDepthTexture(screenUV.add(vec2(0.02, 0)))).mul(0.2), 0, 0)),
       1,
     );
+  },
+  /** Midway's particles: an InstancedBufferGeometry quad whose per-instance InstancedBufferAttributes
+   *  (aOffset, aTint) a TSL attribute() reads, placed by a material.vertexNode in clip space. */
+  async "instanced-geometry"({ target }) {
+    const quads = target.getObjectByName("quads");
+    const offset = attribute("aOffset", "vec3");
+    quads.material.vertexNode = cameraProjectionMatrix.mul(
+      cameraViewMatrix.mul(vec4(positionLocal.mul(0.4).add(offset), 1)),
+    );
+    quads.material.colorNode = vec4(attribute("aTint", "vec3"), 1);
   },
   async "pmrem-texture"({ target }) {
     target.colorNode = vec4(

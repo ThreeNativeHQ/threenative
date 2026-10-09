@@ -271,6 +271,24 @@ void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Materi
     d.colorSize = static_cast<uint8_t>(it->second->itemSize);
 }
 
+// The geometry's attributes beyond the ones the programs name (a TSL attribute() reads them), and an
+// InstancedBufferGeometry's instance count: instanceCount, at most what its per-instance attributes
+// hold, as three's WebGL backend clamps it (_maxInstanceCount).
+void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& d) {
+    d.attributes.clear();
+    uint64_t held = std::numeric_limits<uint64_t>::max();
+    for (const auto& [name, attribute] : geometry.attributes) {
+        if (!attribute || name == "position" || name == "normal" || name == "uv" || name == "color" ||
+            name == "skinIndex" || name == "skinWeight")
+            continue;
+        d.attributes.push_back({name, floatStore(geometry, name.c_str()), attribute->perInstance});
+        if (attribute->perInstance) held = std::min(held, attribute->count());
+    }
+    if (!geometry.instanced) return;
+    const double count = std::min(geometry.instanceCount, held == std::numeric_limits<uint64_t>::max() ? 0.0 : double(held));
+    d.instanceCount = static_cast<uint32_t>(std::min(count, double(std::numeric_limits<uint32_t>::max())));
+}
+
 // three's polygonOffset as WebGPUPipelineUtils sets it: depthBias = units, slope scale = factor.
 void RenderDatabase::depthBiasOf(const Material& material, DrawItem& d) {
     d.depthBias = material.polygonOffset ? static_cast<int32_t>(material.polygonOffsetUnits) : 0;
@@ -363,6 +381,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     if (r.draw) {
         r.draw->item.matrixWorld = toArray(mesh.matrixWorld);
         r.draw->item.renderOrder = mesh.renderOrder();
+        // A game moves an InstancedBufferGeometry's instanceCount every frame (Midway's particles).
+        if (mesh.geometry && mesh.geometry->instanced) geometryInputsOf(*mesh.geometry, r.draw->item);
         return r;
     }
     r.draw = std::make_unique<Record::Draw>();
@@ -389,6 +409,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.normalScaleY = material->normalScale.y;
     vertexColorsOf(*mesh.geometry, *material, d);
     depthBiasOf(*material, d);
+    geometryInputsOf(*mesh.geometry, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
@@ -430,6 +451,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.normalScaleY = r.material->normalScale.y;
     if (mesh.geometry) vertexColorsOf(*mesh.geometry, *r.material, d);
     depthBiasOf(*r.material, d);
+    if (mesh.geometry) geometryInputsOf(*mesh.geometry, d);
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     return d;
@@ -437,7 +459,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
 
 const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material& material) {
     static const GraphSources none;
-    std::array<const void*, 7> roots{};
+    std::array<const void*, 8> roots{};
     const auto graphs = material.nodes.pointers();
     std::copy(graphs.begin(), graphs.end(), roots.begin());
     if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; })) return none;
@@ -467,7 +489,8 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             const auto& mesh = static_cast<const Mesh&>(object);
             const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                  !mesh.material->transparent && !mesh.material->positionNode &&
-                                 !mesh.material->nodes.positionNode &&
+                                 !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
+                                 !mesh.geometry->instanced &&
                                  (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
                                  mesh.matrixWorld.determinant() > 0;
             Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);

@@ -220,6 +220,15 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
 // A TSL texture(textureObject, uv) binding (tsl_call's "tslTex<id>"): the draw's own texture.
 bool graphTextureBinding(std::string_view name) { return name.rfind("t_tslTex", 0) == 0; }
 
+// Bit i set: the vertex stage's attribute i is one of the draw's InstancedBufferAttributes.
+uint64_t instanceStepMask(const shader::StageModule& vertex, const DrawItem& item) {
+    uint64_t mask = 0;
+    for (std::size_t i = 0; i < vertex.attributes.size() && i < 64; ++i)
+        for (const DrawItem::CustomAttribute& custom : item.attributes)
+            if (custom.perInstance && custom.name == vertex.attributes[i].name) mask |= uint64_t(1) << i;
+    return mask;
+}
+
 // A viewport texture binding: the frame's colour or depth as drawn before this draw.
 bool viewportBinding(std::string_view name) {
     return name == "t_viewportColor" || name == "smp_viewportColor" || name == "t_viewportDepth" ||
@@ -1785,6 +1794,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         target.depthBiasSlopeScale = item.depthBiasSlopeScale;
         target.frontFace = item.frontFace();
         target.skinIndex = skinIndexFormat(item);
+        target.instanceStepMask = instanceStepMask(program.vertex, item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
         if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
         const uint64_t v = frameUniforms_.size();
@@ -1933,6 +1943,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.layout = program.pipelineLayout;
             target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
+            target.instanceStepMask = instanceStepMask(program.vertex, item);
             WGPURenderPipeline pipeline = pipelines_.get(program.vertex, nullptr, target);
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
             const uint64_t v = frameUniforms_.size();
@@ -1963,7 +1974,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             // Previous deformed vertex data is not yet retained by these variants. Refuse it;
             // ordinary rigid object/camera motion goes through the real VelocityNode equations.
             if (item.instanceMatrices || item.skinIndices || item.morphGeometry || item.sprite ||
-                item.positionNode || item.nodes.positionNode || item.transparent || item.material->alphaTest > 0)
+                item.positionNode || item.nodes.positionNode || item.nodes.vertexNode || !item.attributes.empty() ||
+                item.transparent || item.material->alphaTest > 0)
                 throw std::runtime_error("TN_TRAA_VELOCITY_UNSUPPORTED: deformed/instanced/sprite/alpha-tested/transparent draw");
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
@@ -2110,6 +2122,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.layout = draw.program->pipelineLayout; target.depthWrite = false;
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
+            target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
             const auto pipeline = pipelines_.get(draw.program->vertex, &normalFragment_, target);
             if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
             Planned normal = draw;
@@ -2156,6 +2169,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                   : a.name == "skinIndex"     ? item.skinIndices
                                   : a.name == "skinWeight"    ? item.skinWeights
                                   : column                   ? item.instanceMatrices : nullptr;
+            // Any other name is one of the geometry's own attributes (TSL attribute(name)).
+            for (const DrawItem::CustomAttribute& custom : item.attributes)
+                if (!source && custom.name == a.name) source = custom.store;
             if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
             BufferStore& store = *source;
             const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;

@@ -465,6 +465,7 @@ std::shared_ptr<BufferAttribute> BufferAttribute::clone() const {
     copy->name = name;
     copy->usage = usage;
     copy->gpuType = gpuType;
+    copy->perInstance = perInstance;
     return copy;
 }
 
@@ -485,6 +486,8 @@ BufferGeometry& BufferGeometry::copy(const BufferGeometry& source) {
     for (const auto& target : source.morphPositions) morphPositions.push_back(target->clone());
     for (const auto& target : source.morphNormals) morphNormals.push_back(target->clone());
     morphTargetsRelative = source.morphTargetsRelative;
+    instanced = source.instanced;
+    instanceCount = source.instanceCount;
     groups = source.groups;
     boundingBox = source.boundingBox ? std::make_shared<Box3>(*source.boundingBox) : nullptr;
     boundingSphere = source.boundingSphere ? std::make_shared<Sphere>(*source.boundingSphere) : nullptr;

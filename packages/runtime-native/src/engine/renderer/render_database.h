@@ -74,7 +74,7 @@ class RenderDatabase {
     // ponytail: entries for released materials stay until the database goes; prune if materials churn.
     struct GraphSources {
         uint32_t version = 0;
-        std::array<const void*, 7> roots{};
+        std::array<const void*, 8> roots{};
         const Texture* texture = nullptr;
         std::shared_ptr<const void> reflector;  // an engine::Reflector
         GraphTextures textures;
@@ -83,6 +83,7 @@ class RenderDatabase {
     const GraphSources& graphSources(const Material& material);
     void vertexColorsOf(const BufferGeometry& geometry, const Material& material, DrawItem& d);
     static void depthBiasOf(const Material& material, DrawItem& d);
+    void geometryInputsOf(const BufferGeometry& geometry, DrawItem& d);
     // One mirrored pass per live reflector: its own targets and its own records, so the pass never
     // resizes the frame or churns the frame's draw records. A pass draws no further reflections.
     struct ReflectionPass {

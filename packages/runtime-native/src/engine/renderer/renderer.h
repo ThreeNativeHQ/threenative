@@ -53,6 +53,14 @@ struct DrawItem {
     /** material.polygonOffset's depth bias (units) and slope scale (factor), zero without it. */
     int32_t depthBias = 0;
     float depthBiasSlopeScale = 0;
+    /** The geometry's other attributes (TSL attribute(name) reads them), float, and whether each is an
+     *  InstancedBufferAttribute read once per instance. */
+    struct CustomAttribute {
+        std::string name;
+        BufferStore* store = nullptr;
+        bool perInstance = false;
+    };
+    std::vector<CustomAttribute> attributes;
     /** material.vertexColors: the geometry's `color` attribute (float) and its 3 or 4 components. */
     BufferStore* colors = nullptr;
     uint8_t colorSize = 0;

@@ -27,6 +27,9 @@ struct PipelineTarget {
     // depthBiasSlopeScale (polygonOffsetFactor); zero without it.
     int32_t depthBias = 0;
     float depthBiasSlopeScale = 0;
+    // Bit i: vertex attribute i (in the stage's attribute order) steps per instance
+    // (an InstancedBufferAttribute), beside instanceMatrix* and instanceColor.
+    uint64_t instanceStepMask = 0;
 };
 
 /**
