@@ -845,7 +845,7 @@ export declare const IncrementWrapStencilOp: 34055;
 export declare class InstancedMesh extends Mesh {
 constructor();
 count: number;
-readonly instanceColor: InstancedBufferAttribute | null;
+instanceColor: InstancedBufferAttribute | null;
 readonly instanceMatrix: InstancedBufferAttribute;
 boundingBox: Box3 | null;
 

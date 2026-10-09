@@ -6582,7 +6582,7 @@
         {
           "name": "instanceColor",
           "type": "InstancedBufferAttribute | null",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"

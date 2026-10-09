@@ -77,6 +77,8 @@ Value component(const BufferAttribute& attribute, uint64_t index, int c) {
     return attribute.element(index, c, at) ? Value::of(attribute.getComponent(index, c)) : Value{};
 }
 
+}  // namespace
+
 /** The caller's attribute itself (not a copy): three stores the reference it is handed. */
 std::shared_ptr<BufferAttribute> sharedAttributeArg(Store& store, const Value& arg) {
     Object* found = store.find(arg);
@@ -88,6 +90,8 @@ std::shared_ptr<BufferAttribute> sharedAttributeArg(Store& store, const Value& a
     }
     throw Unsupported{"argument is not a BufferAttribute, it is a " + found->cls};
 }
+
+namespace {
 
 BufferAttribute& attributeArg(Store& store, const Value& arg) {
     Object* found = store.find(arg);

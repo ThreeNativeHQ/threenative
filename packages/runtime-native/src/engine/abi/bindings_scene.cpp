@@ -1300,6 +1300,18 @@ void registerInstancedMesh(ClassBinding& b) {
         const auto& colors = as<InstancedMesh>(self)->instanceColor;
         return colors ? store.share("InstancedBufferAttribute", colors) : Value{};
     };
+    // three's instanceColor is a plain property: a game assigns its own InstancedBufferAttribute
+    // (three components per instance), or null to drop the colours.
+    b.setters["instanceColor"] = [](void* self, const Value& v, Store& store) {
+        auto& mesh = *as<InstancedMesh>(self);
+        if (v.kind == Value::Kind::Undefined || v.kind == Value::Kind::Null) {
+            mesh.instanceColor = nullptr;
+            return;
+        }
+        std::shared_ptr<BufferAttribute> colors = sharedAttributeArg(store, v);
+        if (colors->itemSize != 3) throw Unsupported{"instanceColor needs 3 components per instance"};
+        mesh.instanceColor = std::move(colors);
+    };
     const auto index = [](const Value& v, const InstancedMesh& mesh) {
         const double i = number(v);
         if (!(i >= 0 && i < double(mesh.instanceMatrix->count())) || i != std::floor(i))
