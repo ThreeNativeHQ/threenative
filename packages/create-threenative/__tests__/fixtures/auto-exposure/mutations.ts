@@ -12,8 +12,8 @@ const replacements: Record<ExposureMutation, readonly [string, string]> = {
     "    if (!this.settings.enabled) return;\n    const renderer = frame.renderer;",
   ],
   meter: [
-    "const luminance = decode(measure.r.div(measure.g.max(1e-20)));",
-    "const luminance = decode(measure.r.div(measure.g.max(1e-20))).mul(2);",
+    "const luminance = decode(measure.x.exp2());",
+    "const luminance = decode(measure.x.exp2()).mul(2);",
   ],
   consumer: ["const exposure = options.autoExposureEnabled", "const exposure = false"],
   clock: [

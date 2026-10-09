@@ -71,13 +71,13 @@ describe("GPU exposure lifecycle", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("reduces the existing colour and retains its 1x1 ping-pong history across resize", () => {
+  it("reduces to 16x16 blocks, bins a 64x1 histogram and retains its 1x1 ping-pong history across resize", () => {
     const { node, frame, targets, resize } = harness();
     node.updateBefore(frame);
     expect(targets.map(({ width, height }) => [width, height])).toEqual([
       [5, 2],
       [2, 1],
-      [1, 1],
+      [64, 1],
       [1, 1],
     ]);
     const firstHistory = targets.at(-1);
@@ -89,6 +89,7 @@ describe("GPU exposure lifecycle", () => {
     expect(targets.map(({ width, height }) => [width, height])).toEqual([
       [2, 1],
       [1, 1],
+      [64, 1],
       [1, 1],
     ]);
     expect(targets.at(-1)).not.toBe(firstHistory);
