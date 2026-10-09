@@ -23,7 +23,10 @@ class NativeBackend {
 }
 
 export class WebGPURenderer {
-  constructor({ canvas }) { this.domElement = canvas; }
+  constructor({ canvas, antialias = false } = {}) {
+    this.domElement = canvas;
+    this.samples = antialias ? 4 : 0;
+  }
   backend = new NativeBackend();
   // three's `renderer.info`, read from the last frame the player drew (one frame behind the
   // simulation, as a GPU-timed reading is). `reset` has nothing to clear: the player counts per frame.

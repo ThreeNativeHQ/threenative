@@ -18,6 +18,7 @@ struct PipelineTarget {
     WGPUCullMode cull = WGPUCullMode_Back;
     uint8_t blend = 0;       // 0 none, three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false; 3 premultiplied "over" (a UI overlay)
     bool depthWrite = true;  // material.depthWrite
+    uint32_t sampleCount = 1;
     WGPUPipelineLayout layout = nullptr;  // explicit layout (dynamic-offset uniforms); null: auto
     // `skinIndex` as the geometry stores it: three's Uint8/16/32 attribute read as vec4<u32>.
     WGPUVertexFormat skinIndex = WGPUVertexFormat_Uint16x4;

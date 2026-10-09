@@ -269,6 +269,8 @@ public:
 
     /** Reallocates the targets; the next render draws at the new extent. Zero sizes clamp to 1. */
     void setSize(uint32_t width, uint32_t height);
+    void setSampleCount(uint32_t samples);
+    uint32_t sampleCount() const { return sampleCount_; }
     uint32_t width() const { return width_; }
     uint32_t height() const { return height_; }
 
@@ -484,6 +486,7 @@ private:
     void releaseEnvironments();
     void rebuildGroups();
     void releaseTargets();
+    void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
     GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done);
     void releaseOutputGroup();
     void outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureView present, WGPUTextureFormat presentFormat);
@@ -556,6 +559,12 @@ private:
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureView sceneView_ = nullptr;
+    uint32_t sampleCount_ = 1;
+    WGPUTexture msaaColor_ = nullptr;
+    WGPUTextureView msaaColorView_ = nullptr;
+    WGPUTexture msaaDepth_ = nullptr;
+    WGPUTextureView msaaDepthView_ = nullptr;
+    WGPURenderPipeline depthResolve_ = nullptr;  // built by the first 4x frame
     // View-space normals for post passes that read "normal" (three's MRT `normal: normalView`),
     // drawn after the main pass; created with the first such frame, released with the targets.
     WGPUTexture normalTexture_ = nullptr;

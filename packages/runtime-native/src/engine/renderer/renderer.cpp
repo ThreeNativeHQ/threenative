@@ -514,6 +514,7 @@ Renderer::~Renderer() {
     }
     releaseTargets();
     releaseOutputGroup();
+    if (depthResolve_) wgpuRenderPipelineRelease(depthResolve_);
     if (overlayView_) wgpuTextureViewRelease(overlayView_);
     if (presentedView_) wgpuTextureViewRelease(presentedView_);
     wgpuSamplerRelease(outputSampler_);
@@ -543,6 +544,10 @@ void Renderer::releaseTargets() {
     }
     if (depthView_) wgpuTextureViewRelease(depthView_);
     if (depth_) wgpuTextureRelease(depth_);
+    if (msaaDepthView_) wgpuTextureViewRelease(msaaDepthView_);
+    if (msaaDepth_) wgpuTextureRelease(msaaDepth_);
+    if (msaaColorView_) wgpuTextureViewRelease(msaaColorView_);
+    if (msaaColor_) wgpuTextureRelease(msaaColor_);
     if (sceneView_) wgpuTextureViewRelease(sceneView_);
     if (sceneColor_) wgpuTextureRelease(sceneColor_);
     if (normalView_) wgpuTextureViewRelease(normalView_);
@@ -551,8 +556,8 @@ void Renderer::releaseTargets() {
     if (viewportColor_) wgpuTextureRelease(viewportColor_);
     if (viewportDepthView_) wgpuTextureViewRelease(viewportDepthView_);
     if (viewportDepth_) wgpuTextureRelease(viewportDepth_);
-    colorView_ = depthView_ = sceneView_ = normalView_ = viewportColorView_ = viewportDepthView_ = nullptr;
-    depth_ = sceneColor_ = normalTexture_ = viewportColor_ = viewportDepth_ = nullptr;
+    colorView_ = depthView_ = msaaColorView_ = msaaDepthView_ = sceneView_ = normalView_ = viewportColorView_ = viewportDepthView_ = nullptr;
+    depth_ = msaaColor_ = msaaDepth_ = sceneColor_ = normalTexture_ = viewportColor_ = viewportDepth_ = nullptr;
     releaseOutputGroup();  // it binds the scene target
 }
 
@@ -655,6 +660,92 @@ void Renderer::setTraa(const TraaOptions& options) {
 
 void Renderer::cutHistory() { if (traa_) traa_->cameraCut(); }
 
+void Renderer::setSampleCount(uint32_t samples) {
+    if (samples != 1 && samples != 4)
+        throw std::runtime_error("TN_NATIVE_SAMPLES_UNSUPPORTED: sampleCount must be 1 or 4");
+    if (samples == sampleCount_) return;
+    sampleCount_ = samples;
+    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
+    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+    mainBundle_ = viewportBundle_ = nullptr;
+    if (width_ && height_) {
+        const uint32_t w = width_, h = height_;
+        width_ = height_ = 0;
+        setSize(w, h);
+    }
+}
+
+// Full-screen triangle, as pageClear builds it. The fragment writes sample 0 of the multisampled depth.
+constexpr const char* kDepthResolveWgsl = R"(
+@group(0) @binding(0) var msaaDepth: texture_depth_multisampled_2d;
+
+@vertex
+fn vs(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
+    let x = select(-1.0, 3.0, index == 1u);
+    let y = select(-1.0, 3.0, index == 0u);
+    return vec4<f32>(x, y, 0.0, 1.0);
+}
+
+@fragment
+fn fs(@builtin(position) position: vec4<f32>) -> @builtin(frag_depth) f32 {
+    return textureLoad(msaaDepth, vec2<i32>(position.xy), 0);
+}
+)";
+
+// ponytail: sample 0 stands in for the pixel depth, so an edge pixel uses one sample's depth.
+// Upgrade: take the min or max of the four samples, if depth-based effects show edge errors.
+// Resolves msaaDepth_ into depth_ with a full-screen pass that writes frag_depth.
+void Renderer::resolveDepth(WGPUCommandEncoder encoder) {
+    if (!depthResolve_) {
+        WGPUShaderModuleWGSLDescriptor_Compat wgsl = {};
+        WGPUShaderModuleDescriptor shaderDesc = {};
+        setupShaderModuleWGSL(&shaderDesc, &wgsl, kDepthResolveWgsl);
+        WGPUShaderModule module = wgpuDeviceCreateShaderModule(device_, &shaderDesc);
+        WGPUFragmentState fragment = {};
+        fragment.module = module;
+        WGPU_SET_ENTRY_POINT(fragment, "fs");
+        WGPUDepthStencilState depth = {};
+        depth.format = WGPUTextureFormat_Depth32Float;
+        depth.depthWriteEnabled = WGPU_OPTIONAL_BOOL_TRUE;
+        depth.depthCompare = WGPUCompareFunction_Always;
+        WGPURenderPipelineDescriptor desc = {};
+        desc.vertex.module = module;
+        WGPU_SET_ENTRY_POINT(desc.vertex, "vs");
+        desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+        desc.multisample.count = 1;
+        desc.multisample.mask = 0xffffffffu;
+        desc.depthStencil = &depth;
+        desc.fragment = &fragment;
+        depthResolve_ = wgpuDeviceCreateRenderPipeline(device_, &desc);
+        wgpuShaderModuleRelease(module);
+        if (!depthResolve_) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: depth resolve");
+    }
+    const WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(depthResolve_, 0);
+    WGPUBindGroupEntry entry = {};
+    entry.binding = 0;
+    entry.textureView = msaaDepthView_;
+    WGPUBindGroupDescriptor groupDesc = {};
+    groupDesc.layout = layout;
+    groupDesc.entryCount = 1;
+    groupDesc.entries = &entry;
+    const WGPUBindGroup group = createBindGroup(device_, &groupDesc);
+    WGPURenderPassDepthStencilAttachment depth = {};
+    depth.view = depthView_;
+    depth.depthLoadOp = WGPULoadOp_Clear;
+    depth.depthStoreOp = WGPUStoreOp_Store;
+    depth.depthClearValue = 1.0f;
+    WGPURenderPassDescriptor passDesc = {};
+    passDesc.depthStencilAttachment = &depth;
+    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+    wgpuRenderPassEncoderSetPipeline(pass, depthResolve_);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+    wgpuRenderPassEncoderEnd(pass);
+    wgpuRenderPassEncoderRelease(pass);
+    wgpuBindGroupRelease(group);
+    wgpuBindGroupLayoutRelease(layout);
+}
+
 void Renderer::setSize(uint32_t width, uint32_t height) {
     width = std::max(width, 1u);
     height = std::max(height, 1u);
@@ -682,6 +773,18 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     sceneView_ = view2d(sceneColor_, WGPUTextureFormat_RGBA16Float);
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);
     depthView_ = view2d(depth_, WGPUTextureFormat_Depth32Float);
+    if (sampleCount_ == 4) {
+        WGPUTextureDescriptor msaaDesc = depthDesc;
+        msaaDesc.sampleCount = 4;
+        // The depth resolve samples msaaDepth_, so that texture also takes TextureBinding.
+        msaaDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+        msaaDepth_ = wgpuDeviceCreateTexture(device_, &msaaDesc);
+        msaaDepthView_ = view2d(msaaDepth_, WGPUTextureFormat_Depth32Float);
+        msaaDesc.format = WGPUTextureFormat_RGBA16Float;
+        msaaDesc.usage = WGPUTextureUsage_RenderAttachment;
+        msaaColor_ = wgpuDeviceCreateTexture(device_, &msaaDesc);
+        msaaColorView_ = view2d(msaaColor_, WGPUTextureFormat_RGBA16Float);
+    }
     WGPUTextureDescriptor viewportDesc = sceneDesc;
     viewportDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
     viewportColor_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
@@ -1539,7 +1642,12 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     WGPUCommandEncoderDescriptor encoderDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
     WGPURenderPassColorAttachment color = {};
-    color.view = sceneView_;
+    if (sampleCount_ == 4) {
+        color.view = msaaColorView_;
+        color.resolveTarget = sceneView_;
+    } else {
+        color.view = sceneView_;
+    }
     color.loadOp = WGPULoadOp_Clear;
     color.storeOp = WGPUStoreOp_Store;
     color.clearValue = {clear[0], clear[1], clear[2], clear[3]};
@@ -1547,7 +1655,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
     WGPURenderPassDepthStencilAttachment depth = {};
-    depth.view = depthView_;
+    depth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_;
     depth.depthLoadOp = WGPULoadOp_Clear;
     depth.depthStoreOp = WGPUStoreOp_Store;
     depth.depthClearValue = 1.0f;
@@ -1848,6 +1956,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
         PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, blend,
                               item.depthWrite};
+        target.sampleCount = sampleCount_;
         target.layout = program.pipelineLayout;
         if (item.background) target.depthCompare = WGPUCompareFunction_Always;
         target.depthBias = item.depthBias;
@@ -2384,7 +2493,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         WGPURenderBundleEncoderDescriptor descriptor{};
         const WGPUTextureFormat color = WGPUTextureFormat_RGBA16Float;
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
-        descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = 1;
+        descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         const auto shadowStats = lastFrame_.shadowSkinned;
         lastFrame_ = FrameStats{};
         const auto record = [&](std::size_t from, std::size_t to) {
@@ -2411,6 +2520,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     wgpuRenderPassEncoderExecuteBundles(pass, 1, &mainBundle_);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
+    // At 4x, the main pass draws depth into msaaDepth_. Resolve it into depth_ for the copy below.
+    if (sampleCount_ == 4) resolveDepth(encoder);
     if (viewportBundle_) {
         WGPUImageCopyTexture_Compat from = {}, to = {};
         const WGPUExtent3D extent{width_, height_, 1};
@@ -2431,6 +2542,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         wgpuRenderPassEncoderExecuteBundles(rest, 1, &viewportBundle_);
         wgpuRenderPassEncoderEnd(rest);
         wgpuRenderPassEncoderRelease(rest);
+        // The rest pass draws more depth. Resolve it again for the normal, motion and post stages.
+        if (sampleCount_ == 4) resolveDepth(encoder);
     }
     if (normalPass) {
         WGPURenderPassColorAttachment normals{};

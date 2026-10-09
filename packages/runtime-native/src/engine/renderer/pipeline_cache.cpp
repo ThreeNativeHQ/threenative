@@ -37,7 +37,8 @@ PipelineCache::~PipelineCache() {
 bool PipelineCache::IdKey::operator==(const IdKey& o) const {
     return vertex == o.vertex && fragment == o.fragment && vertexSize == o.vertexSize &&
            fragmentSize == o.fragmentSize && target.color == o.target.color &&
-           target.depth == o.target.depth && target.cull == o.target.cull && target.blend == o.target.blend &&
+           target.depth == o.target.depth && target.sampleCount == o.target.sampleCount &&
+           target.cull == o.target.cull && target.blend == o.target.blend &&
            target.depthWrite == o.target.depthWrite && target.layout == o.target.layout &&
            target.skinIndex == o.target.skinIndex && target.frontFace == o.target.frontFace &&
            target.depthCompare == o.target.depthCompare && target.depthBias == o.target.depthBias &&
@@ -64,7 +65,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     mix(key.vertex);
     mix(key.fragment);
     mix(uint64_t(key.vertexSize) ^ uint64_t(key.fragmentSize) << 32);
-    mix(uint64_t(key.target.color) | uint64_t(key.target.depth) << 32);
+    mix(uint64_t(key.target.color) | uint64_t(key.target.depth) << 32 ^ uint64_t(key.target.sampleCount) << 48);
     mix(uint64_t(key.target.cull) | uint64_t(key.target.frontFace) << 8 | uint64_t(key.target.depthCompare) << 16 |
         uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58);
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
@@ -87,7 +88,7 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     std::string key = vertex.wgsl.code;
     key += '\x1f';
     if (fragment) key += fragment->wgsl.code;
-    key += '\x1f' + std::to_string(target.color) + ':' + std::to_string(target.depth) + ':' +
+    key += '\x1f' + std::to_string(target.color) + ':' + std::to_string(target.depth) + ':' + std::to_string(target.sampleCount) + ':' +
            std::to_string(target.cull) + ':' + std::to_string(target.blend) + ':' + std::to_string(target.depthWrite) +
            ':' + std::to_string(reinterpret_cast<uintptr_t>(target.layout)) + ':' + std::to_string(target.skinIndex) +
            ':' + std::to_string(target.frontFace) + ':' + std::to_string(target.depthCompare) + ':' +
@@ -135,7 +136,7 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     desc.primitive.stripIndexFormat = target.stripIndexFormat;
     desc.primitive.cullMode = target.cull;
     desc.primitive.frontFace = target.frontFace;
-    desc.multisample.count = 1;
+    desc.multisample.count = target.sampleCount;
     desc.multisample.mask = 0xffffffffu;
     WGPUDepthStencilState depth = {};
     depth.format = target.depth;

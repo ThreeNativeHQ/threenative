@@ -11,6 +11,7 @@ import { ShadowMap } from "./shadow-map.js";
 /** The product host's exports beside the catalog ABI (all numbers: pointers, sizes, status). */
 type HostCall =
   | "_tnw_web_init"
+  | "_tnw_web_set_samples"
   | "_tnw_web_poll"
   | "_tnw_web_error"
   | "_tnw_web_adapter"
@@ -110,7 +111,7 @@ export function defineWebRenderer(
       engine: { compiles: 0, textLookups: 0, bindGroups: 0, graphKeys: 0, programs: 0 },
       reset(): void {},
     };
-    readonly samples = 1;
+    readonly samples: 0 | 4;
     autoClear = true;
     toneMapping = 0;
     toneMappingExposure = 1;
@@ -135,6 +136,7 @@ export function defineWebRenderer(
       claimed = true;
       this.domElement =
         (parameters.canvas as HTMLCanvasElement | undefined) ?? document.createElement("canvas");
+      this.samples = parameters.antialias === true ? 4 : 0;
       // three's WebGPURenderer marks its canvas `three.js r<rev> webgpu`; tools read the backend there.
       this.domElement.setAttribute("data-engine", "threenative wasm webgpu");
       this.#width = this.domElement.width || 300;
@@ -157,6 +159,7 @@ export function defineWebRenderer(
         handles = module._malloc(36) >>> 0;
         const selector = string(CANVAS_TARGET);
         try {
+          module._tnw_web_set_samples?.(this.samples === 4 ? 4 : 1);
           check(module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight()));
         } finally {
           module._free(selector);

@@ -48,6 +48,7 @@ OutputState output{std::nullopt, 1, true};
 bool outputChanged = true;
 bool shadowMap = false;
 int shadowMapType = 1;  // PCFShadowMap
+uint32_t sampleCount = 1;
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -98,6 +99,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     device = result;
     queue = wgpuDeviceGetQueue(device);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
+    renderer->setSampleCount(sampleCount);
     renderer->setExternalImageCopy([](uint32_t image, WGPUTexture texture, bool flipY) {
         return tnw_js_copy_image(image, reinterpret_cast<uintptr_t>(texture), reinterpret_cast<uintptr_t>(queue), flipY) != 0;
     });
@@ -187,6 +189,12 @@ extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h) {
     callback.mode = WGPUCallbackMode_AllowProcessEvents;
     callback.callback = onAdapter;
     wgpuInstanceRequestAdapter(instance, &options, callback);
+    return 0;
+}
+
+extern "C" int tnw_web_set_samples(uint32_t samples) {
+    sampleCount = samples == 4 ? 4 : 1;
+    if (renderer) renderer->setSampleCount(sampleCount);
     return 0;
 }
 

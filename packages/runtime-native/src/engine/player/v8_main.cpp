@@ -203,6 +203,7 @@ class V8Game {
     uint64_t triangles_ = 0;
     bool shadowMap_ = false;  // three's WebGPURenderer defaults: shadowMap off, PCFShadowMap
     int shadowMapType_ = 1;
+    uint32_t samples_ = 1;
     std::array<double, 4> clear_{0, 0, 0, 1};  // three's WebGPURenderer clear colour: black, opaque
     bool outputChanged_ = true;
     static void loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -226,6 +227,7 @@ class V8Game {
         presentFrame();  // the game's frame callbacks may change the renderer state applied below
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
+        renderer.setSampleCount(samples_);
         database.shadowMapEnabled = shadowMap_;
         database.shadowMapType = shadowMapType_;
     }
@@ -390,6 +392,11 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
     }
     game.shadowMap_ = enabled->IsTrue();
     game.shadowMapType_ = static_cast<int>(type.As<v8::Number>()->Value());
+    v8::Local<v8::Value> samples;
+    if (settings->Get(ctx, v8str(isolate, "samples")).ToLocal(&samples) && samples->IsNumber()) {
+        const double s = samples.As<v8::Number>()->Value();
+        game.samples_ = s == 4 ? 4 : 1;
+    }
     // The facade's clear colour and alpha (setClearColor), linear, as `__clearColor: [r, g, b, a]`.
     v8::Local<v8::Value> clear;
     if (settings->Get(ctx, v8str(isolate, "__clearColor")).ToLocal(&clear) && clear->IsArray()) {

@@ -16,6 +16,7 @@
 #include "mystral/webgpu_compat.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <chrono>
 #include <cstring>
@@ -1872,9 +1873,136 @@ void gpuTimerIsOptIn() {
     CHECK(renderer.gpuSamples() > 0 && renderer.lastGpuMs() >= 0);
 }
 
+// Device errors reach stderr only, never the diagnostics. A frame that must draw cleanly runs inside
+// a validation scope, and the scope's verdict is what the frame is checked against.
+struct ScopeVerdict {
+    std::atomic<bool> done{false};
+    WGPUErrorType type = WGPUErrorType_NoError;
+};
+
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+void onScopePopped(WGPUPopErrorScopeStatus, WGPUErrorType type, WGPUStringView, void* verdict, void*) {
+    static_cast<ScopeVerdict*>(verdict)->type = type;
+    static_cast<ScopeVerdict*>(verdict)->done = true;
+}
+#else
+void onScopePopped(WGPUErrorType type, const char*, void* verdict) {
+    static_cast<ScopeVerdict*>(verdict)->type = type;
+    static_cast<ScopeVerdict*>(verdict)->done = true;
+}
+#endif
+
+// Pops the scope pushed before the frame, then polls until its verdict arrives.
+void popScope(WGPUDevice device, Renderer& r, EventQueue& events, ScopeVerdict& verdict) {
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+    WGPUPopErrorScopeCallbackInfo callbackInfo = {};
+    callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+    callbackInfo.callback = onScopePopped;
+    callbackInfo.userdata1 = &verdict;
+    (void)wgpuDevicePopErrorScope(device, callbackInfo);
+#else
+    wgpuDevicePopErrorScope(device, onScopePopped, &verdict);
+#endif
+    for (int i = 0; i < 4000 && !verdict.done; ++i) {
+        r.poll();
+        events.drain();
+        if (!verdict.done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+void msaaEdges() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(32, 32);
+
+    auto geometry = std::make_shared<BufferGeometry>();
+    const std::vector<double> positions = {
+        -1.0, -1.0, 0.0,
+         1.0, -1.0, 0.0,
+         1.0,  1.0, 0.0,
+    };
+    geometry->setAttribute("position", BufferAttribute::fromFloats(positions, 3));
+
+    auto material = std::make_shared<Material>(MaterialType::Basic);
+    material->color.setRGB(1.0, 1.0, 1.0);
+    Scene scene;
+    Mesh mesh(geometry, material);
+    scene.add(mesh);
+
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 2;
+    camera.updateProjectionMatrix();
+    scene.updateMatrixWorld(true);
+
+    RenderDatabase database;
+
+    // 1x sample count
+    renderer.setSampleCount(1);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(database.diagnostics().empty());
+    const auto px1x = read(renderer, events);
+    CHECK(px1x.size() == 32 * 32 * 4);
+    for (size_t i = 0; i < px1x.size(); i += 4) {
+        const uint8_t r = px1x[i];
+        CHECK(r == 0 || r == 255);
+    }
+
+    // 4x sample count
+    renderer.setSampleCount(4);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(database.diagnostics().empty());
+    const auto px4x = read(renderer, events);
+    CHECK(px4x.size() == 32 * 32 * 4);
+    int edgePixels = 0;
+    for (size_t i = 0; i < px4x.size(); i += 4) {
+        const uint8_t r = px4x[i];
+        if (r > 20 && r < 235) {
+            ++edgePixels;
+        }
+    }
+    std::fprintf(stderr, "msaa edges: 4x edge pixel count = %d\n", edgePixels);
+    CHECK(edgePixels >= 8);
+
+    // Pipeline cache never mixes counts: render 1x, then 4x, then 1x again
+    renderer.setSampleCount(1);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(database.diagnostics().empty());
+    CHECK(renderer.diagnostics().empty());
+
+    renderer.setSampleCount(4);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(database.diagnostics().empty());
+    CHECK(renderer.diagnostics().empty());
+
+    renderer.setSampleCount(1);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(database.diagnostics().empty());
+    CHECK(renderer.diagnostics().empty());
+
+    // 4x with TRAA: its velocity pass and resolve read the resolved depth, with no validation error.
+    renderer.setSampleCount(4);
+    renderer.setTraa(TraaOptions{});
+    WGPUDevice device = context.getDevice();
+    wgpuDevicePushErrorScope(device, WGPUErrorFilter_Validation);
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    ScopeVerdict verdict;
+    popScope(device, renderer, events, verdict);
+    CHECK(verdict.done && verdict.type == WGPUErrorType_NoError);
+    CHECK(database.diagnostics().empty());
+    CHECK(renderer.diagnostics().empty());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges})
+
+
+
+
+
+

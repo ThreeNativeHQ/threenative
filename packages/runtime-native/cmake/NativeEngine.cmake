@@ -237,6 +237,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_skinned_normalized_weights=skinned_normalized_weights
         native_engine_normal_map_tilt=normal_map_tilt
         native_engine_renderer_gpu_mipmaps=gpu_mipmaps
+        native_engine_renderer_msaa_edges=msaa_edges
         native_engine_unsupported_map_slot=unsupported_map_slot
         native_engine_converted_copies_swept=converted_copies_swept
         native_engine_gpu_timer_covers_shadows=gpu_timer_covers_shadows
@@ -306,6 +307,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             native_engine_gpu_async_only native_engine_lifetime_deferred_gpu ${tn_shader_validator} native_engine_shader_emit_position_invariant native_engine_shader_layouts
             native_engine_cooked_package_load native_engine_renderer_geometry_cache native_engine_renderer_pipeline_cache native_engine_renderer_scene_lit native_engine_renderer_invalidation native_engine_renderer_scene_alpha native_engine_standard_materials_unsupported native_engine_renderer_shader_invalid native_engine_renderer_time_uniform native_engine_renderer_updates native_engine_renderer_multi_camera_layers native_engine_renderer_callback native_engine_renderer_instanced native_engine_batched_vs_unbatched native_engine_skinned_batched_vs_unbatched native_engine_skinned_normalized_weights native_engine_normal_map_tilt native_engine_renderer_gpu_mipmaps native_engine_unsupported_map_slot native_engine_animation_tick_vs_render native_engine_animation_material_revision native_engine_admission_failure native_engine_admission_cancel native_engine_loop_async_cancel native_engine_loop_render_ids native_engine_compute_readback native_engine_renderer_resize_readback native_engine_renderer_output_ramp native_engine_renderer_lit_reference native_engine_renderer_lambert_reference native_engine_renderer_phong_reference native_engine_renderer_physical_reference native_engine_renderer_alpha_transparency native_engine_renderer_alpha_test native_engine_traa_reset_seed
             native_engine_shader_variants_gpu native_engine_device_loss_recover native_engine_device_stale_handle
+            native_engine_renderer_msaa_edges
             native_engine_device_no_adapter PROPERTIES
             ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
     endif()
