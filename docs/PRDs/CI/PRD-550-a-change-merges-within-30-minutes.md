@@ -136,7 +136,8 @@ qualifying run. A PR can still opt in to qualifying on the merge path with a lab
 - [ ] A red qualifying run on `develop` opens an issue and a revert PR. proof: `ci-janitor.yml` run id on a seeded red branch.
 
 #### Phase 3: Capacity and the latency audit
-**Status:** NOT STARTED
-**Files:** `scripts/ci-merge-latency.mjs` (new), `.github/workflows/ci.yml` `runs-on` expressions, `docs/PRDs/CI/EXECUTION-ORDER.md`.
-**Implementation:** Route gating jobs to `vars.TN_RUNNER` with hosted fallback; route qualifying jobs to hosted. Write the audit script with `gh api` and no new dependency.
+**Status:** IN PROGRESS
+**Files:** `scripts/ci-merge-latency.mjs` (new), `scripts/ci-speed-loop.mjs` (new), `docs/ci-speed/` (ledger and HTML dashboard), `.claude/skills/ci-speed-loop/`, `.github/workflows/ci.yml` `runs-on` expressions, `docs/PRDs/CI/EXECUTION-ORDER.md`.
+**Implementation:** Route gating jobs to `vars.TN_RUNNER` with hosted fallback; route qualifying jobs to hosted. Write the audit script with `gh api` and no new dependency. `scripts/ci-speed-loop.mjs` records each audit window in `docs/ci-speed/ledger.json` and renders `docs/ci-speed/index.html`, a dashboard of every metric against its goal (skill: `ci-speed-loop`).
+- [x] The audit and the dashboard exist, reproduce this PRD's own table, and hold the baseline. proof: `pnpm exec vitest run scripts/__tests__/ci-speed-loop.spec.ts` 14 of 14; `node scripts/ci-merge-latency.mjs --since 2026-10-08` gives #461 104.2, #462 242.9, #457 432.7, #449 593.9, #455 626.9, #456 892.1, #465 131.9 min enqueue → merge (this PRD's table) and 8 `auto-exposure` first failures; ledger iteration #1 = baseline.
 - [ ] Gating jobs in a merge group wait ≤ 3 min p90 for a runner. proof: `node scripts/ci-merge-latency.mjs` queue column.

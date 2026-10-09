@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 1,
+  "goals": [
+    {
+      "key": "lastPushToMergeMedianMin",
+      "label": "Last push to merge, median",
+      "unit": "min",
+      "goal": 30,
+      "better": "lower"
+    },
+    {
+      "key": "lastPushToMergeP90Min",
+      "label": "Last push to merge, p90",
+      "unit": "min",
+      "goal": 45,
+      "better": "lower"
+    },
+    {
+      "key": "firstAttemptSuccessPct",
+      "label": "Merge queue passes on the first attempt",
+      "unit": "%",
+      "goal": 90,
+      "better": "higher"
+    },
+    {
+      "key": "boardWallMedianMin",
+      "label": "Merge-group board wall time, median",
+      "unit": "min",
+      "goal": 15,
+      "better": "lower"
+    },
+    {
+      "key": "queueWaitP90Min",
+      "label": "Runner queue wait, p90",
+      "unit": "min",
+      "goal": 3,
+      "better": "lower"
+    }
+  ],
+  "iterations": [
+    {
+      "id": 1,
+      "at": "2026-10-09T05:09:15.030Z",
+      "commit": "11cafc003",
+      "label": "baseline: exhaustive board on every merge group",
+      "notes": "Before PRD-550. 2026-10-08 to 2026-10-09 window, same period as the PRD Context.",
+      "decision": "baseline",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-08",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 280.4,
+        "lastPushToMergeP90Min": 838.3,
+        "firstAttemptSuccessPct": 33.3,
+        "boardWallMedianMin": 77.8,
+        "queueWaitP90Min": 41.4
+      },
+      "extra": {
+        "prCount": 12,
+        "mergeGroupRuns": 45,
+        "mergeGroupRunSuccessPct": 24.2,
+        "enqueueToMergeMedianMin": 432.7,
+        "queueWaitJobs": 2759
+      },
+      "prs": [
+        {
+          "number": 467,
+          "title": "docs(prds): renumber the low-resolution temporal PRD to 539",
+          "lastPushToMergeMin": 58.7,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 466,
+          "title": "docs(prd): point asset-mcp and sculpt-mcp links at ThreeNativeHQ",
+          "lastPushToMergeMin": 103.9,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 465,
+          "title": "docs(guides): list native-css-support.md in the guides index",
+          "lastPushToMergeMin": 134.5,
+          "enqueueToMergeMin": 131.9,
+          "attempts": 3,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test"
+        },
+        {
+          "number": 464,
+          "title": "docs(prds): file PRD-537 and PRD-538",
+          "lastPushToMergeMin": 7.5,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 462,
+          "title": "PRD-210: Android continue stays desktop-only, PRD done",
+          "lastPushToMergeMin": 307.8,
+          "enqueueToMergeMin": 242.9,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (1/4)"
+        },
+        {
+          "number": 461,
+          "title": "PRD-210: Pixel 8 audio-suspend rung and relaunch cycles pass",
+          "lastPushToMergeMin": 111.4,
+          "enqueueToMergeMin": 104.2,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "build-artifacts"
+        },
+        {
+          "number": 457,
+          "title": "PRD-210: native host survives backgrounding and crashes — device proofs",
+          "lastPushToMergeMin": 436,
+          "enqueueToMergeMin": 432.7,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / auto-exposure"
+        },
+        {
+          "number": 456,
+          "title": "docs(prd-211): Android APK boots from real Ogg assets — close PRD-211",
+          "lastPushToMergeMin": 764.7,
+          "enqueueToMergeMin": 892.1,
+          "attempts": 9,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": "test-native"
+        },
+        {
+          "number": 455,
+          "title": "fix(PRD-196): a clean machine builds Android from npm; hosted clean room proves it",
+          "lastPushToMergeMin": 846.5,
+          "enqueueToMergeMin": 626.9,
+          "attempts": 3,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / auto-exposure"
+        },
+        {
+          "number": 449,
+          "title": "Bake procedural wolves and follow accepted physics",
+          "lastPushToMergeMin": 870.6,
+          "enqueueToMergeMin": 593.9,
+          "attempts": 7,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / Linux native locomotion correctness"
+        },
+        {
+          "number": 448,
+          "title": "feat(avbd): prototype bounded secondary ropes and sails",
+          "lastPushToMergeMin": 349.2,
+          "enqueueToMergeMin": 116.8,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "integration / auto-exposure"
+        },
+        {
+          "number": 398,
+          "title": "feat(render): consolidate motion history and temporal reconstruction (PRDs 269, 455)",
+          "lastPushToMergeMin": 252.9,
+          "enqueueToMergeMin": 545.7,
+          "attempts": 4,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / auto-exposure",
+          "count": 8
+        },
+        {
+          "job": "test",
+          "count": 3
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 2
+        },
+        {
+          "job": "budgets",
+          "count": 1
+        },
+        {
+          "job": "build-artifacts",
+          "count": 1
+        },
+        {
+          "job": "integration / Linux native fluid correctness",
+          "count": 1
+        },
+        {
+          "job": "integration / Linux native locomotion correctness",
+          "count": 1
+        },
+        {
+          "job": "integration / velocity",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "test-native",
+          "count": 1
+        },
+        {
+          "job": "test-unit (4/4)",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}
