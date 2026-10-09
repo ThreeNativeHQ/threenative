@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-572 — Shadow casters sort themselves into static and moving
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P2 — AC-1 is open: a caster that moves without a `trackCaster` call keeps a stale shadow in the cached levels until the camera moves a level window.
 **Complexity:** 3 (LOW) — 1–5 engine files (1): `render/virtual-shadow.ts`; complex state (+2): a per-caster classification that changes over frames. Risk override: none.
 **Owner:** João
@@ -95,13 +95,13 @@ movement `static-transform.ts` already checks once per frame.
 
 #### Phase 1: Classification in the node
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/src/render/virtual-shadow.ts`; `packages/core/__tests__/virtual-shadow.spec.ts`
 **Implementation:** Store the last world matrix or instance-matrix version per caster. Run the transitions above. Report `autoMovers` and `autoTransitions` in the stats and the marker. Change the `@constraint` line so that `trackCaster` reads as an override, not a requirement.
 
-- [ ] A moved caster becomes a mover in the same frame, and only its old-bounds region is invalidated. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`.
-- [ ] A mover returns to static after `staticAfterFrames` quiet frames, and only its current-bounds region is invalidated. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`.
-- [ ] `trackCaster` pins a mover, `pinStatic` excludes an object, a deforming mesh stays a mover while visible, and an object with `castShadow = false` is never scanned. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`.
+- [x] A moved caster becomes a mover in the same frame, and only its old-bounds region is invalidated. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`. Result: 12 new specs green (99 in the file); the same 12 fail on the pre-change source.
+- [x] A mover returns to static after `staticAfterFrames` quiet frames, and only its current-bounds region is invalidated. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`. Result: 12 new specs green (99 in the file); the same 12 fail on the pre-change source.
+- [x] `trackCaster` pins a mover, `pinStatic` excludes an object, a deforming mesh stays a mover while visible, and an object with `castShadow = false` is never scanned. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`. Result: 12 new specs green (99 in the file); the same 12 fail on the pre-change source.
 - [ ] On `examples/abyss-framework`, the classification scan costs at most 0.05 ms JS per frame. proof: `node packages/playtest/dist/runner/cli.js perf` with the `TN_VIRTUAL_SHADOW` scan timing, `--browser-recipe webgpu`.
 
 #### Phase 2: Proof on a real adapter and in the example
