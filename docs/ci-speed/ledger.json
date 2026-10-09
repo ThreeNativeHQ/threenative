@@ -929,6 +929,107 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": 12,
+      "at": "2026-10-09T16:04:17.913Z",
+      "commit": "f1e868d47",
+      "label": "hourly refresh",
+      "notes": "Catch-up tick after the 09:00 stop. No new PR merged. The window still has 2 merged PRs, 470 and 458. It now has 31 merge-group runs, up from 29. Run success is 24.1 percent, up from 22.2. Board median is 95.1 min, down from 102.5. Queue wait p90 is 38.7 min over 2118 jobs. First failing job in the 13 red groups: test-unit (3/4) 5, integration / velocity 4, test-browser 2, test-unit (1/4) 2. test-unit (1/4) is new in this list. The named costs are unchanged. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 38.7
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 31,
+        "mergeGroupRunSuccessPct": 24.1,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 2118
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "integration / velocity",
+          "count": 4
+        },
+        {
+          "job": "test-browser",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 1
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
     }
   ]
 }
