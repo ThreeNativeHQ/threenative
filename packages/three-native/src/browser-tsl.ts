@@ -8,7 +8,7 @@
  * (tn::abi::TslScopes, shared with the V8 back end).
  */
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
-import { liveUniforms, uniformLanes } from "./tsl-uniforms.js";
+import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
 
 /** One argument as `tn_tsl_call` takes it. */
 export type TslArgValue =
@@ -217,9 +217,12 @@ function takesEngineObject(name: string, index: number): boolean {
 
 /**
  * Defines the TSL exports over `runtime`. `sync` pushes edited Color/VectorN uniform values; the
- * renderer calls it before each frame.
+ * renderer calls it before each frame. With `classes`, constants answer r185's ConstNode.value.
  */
-export function defineTsl(runtime: ITslRuntime): {
+export function defineTsl(
+  runtime: ITslRuntime,
+  classes?: ConstClasses,
+): {
   exports: Record<string, unknown>;
   sync(): void;
 } {
@@ -396,5 +399,6 @@ export function defineTsl(runtime: ITslRuntime): {
   );
   exports.uniform = live.uniform;
   exports.uniformArray = live.uniformArray;
+  if (classes !== undefined) withConstValues(exports, classes);
   return { exports, sync: live.sync };
 }

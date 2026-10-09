@@ -1,9 +1,9 @@
 /**
- * three's `uniform(value).value` for both engine back ends (PRD-540). A uniform node keeps the value
- * it was made from: a number is replaced by `.value = x`; a three Color or VectorN stays the same
- * object, so `origin.value.set(x, z)` edits it in place, as Midway's ocean does. `sync()` pushes the
- * edited objects' lanes before a frame draws; a number goes through at once. Either way the engine
- * updates its uniform data and keeps the program.
+ * three's `uniform(value).value` for both engine back ends (PRD-540). As r185's InputNode, `.value = x`
+ * replaces the value and the getter returns what was written; a Color or VectorN value can then be
+ * edited in place (`origin.value.set(x, z)`, as Midway's ocean does), and `sync()` pushes the edited
+ * objects' lanes before a frame draws. A write goes through at once, and the engine refuses one whose
+ * lanes do not fit the uniform's type. Either way the engine keeps the program.
  */
 
 interface IUniformState {
@@ -55,11 +55,8 @@ export function liveUniforms<TNode extends object>(
         configurable: true,
         get: () => state.value,
         set: (next: unknown) => {
-          const current = state.value as { copy?: (source: unknown) => unknown } | number;
-          // three keeps a Color or VectorN uniform's object and copies into it; a number is replaced.
-          if (typeof current === "object" && typeof current.copy === "function") current.copy(next);
-          else state.value = next;
-          setValues(node, uniformLanes(state.value));
+          setValues(node, uniformLanes(next));
+          state.value = next;
         },
       });
       if (typeof value === "object" && value !== null) objects.add(new WeakRef(node));
@@ -150,4 +147,44 @@ export function liveUniforms<TNode extends object>(
     },
   };
   return live;
+}
+
+/** The three classes a constant's value is made of. */
+export type ConstClasses = Readonly<
+  Record<"Vector2" | "Vector3" | "Vector4" | "Color", new (...lanes: number[]) => object>
+>;
+
+const CONSTANTS = ["float", "int", "uint", "vec2", "vec3", "vec4", "color"] as const;
+
+/**
+ * r185's ConstNode.value on the constant constructors, as getValueFromType makes it: float(2).value is
+ * 2, vec3(1, 2, 3).value a Vector3 (one number fills every lane) and color(0xff0000).value a Color. A
+ * call with a node argument is a conversion and keeps no value. Replaces the functions in `fns`.
+ */
+export function withConstValues(fns: Record<string, unknown>, classes: ConstClasses): void {
+  for (const name of CONSTANTS) {
+    const make = fns[name];
+    if (typeof make !== "function") continue;
+    const lanes = name.startsWith("vec") ? Number(name.slice(3)) : 0;
+    const cls =
+      name === "color"
+        ? classes.Color
+        : lanes > 0
+          ? classes[`Vector${lanes}` as "Vector2"]
+          : undefined;
+    fns[name] = (...args: unknown[]) => {
+      const node = (make as (...a: unknown[]) => object)(...args);
+      if (args.length > 0 && args.every((arg) => typeof arg === "number")) {
+        const numbers = args as number[];
+        const value =
+          cls === undefined
+            ? numbers[0]
+            : new cls(
+                ...(numbers.length === 1 && lanes > 0 ? Array(lanes).fill(numbers[0]) : numbers),
+              );
+        Object.defineProperty(node, "value", { configurable: true, value });
+      }
+      return node;
+    };
+  }
 }

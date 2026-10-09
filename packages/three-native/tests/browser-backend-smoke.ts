@@ -23,6 +23,7 @@ import {
 import { bindWebEngine } from "../src/browser-entry.js";
 import { type ITslRuntime, type TslArgValue, defineTsl } from "../src/browser-tsl.js";
 import { defineReflector } from "../src/reflector.js";
+import type { ConstClasses } from "../src/tsl-uniforms.js";
 
 const modulePath = process.argv[2];
 if (modulePath === undefined) throw new Error("usage: browser-backend-smoke.ts <abi module .js>");
@@ -52,6 +53,8 @@ const {
   Vector3,
   Vector4,
 } = engine.classes as unknown as typeof THREE;
+
+const constClasses = engine.classes as unknown as ConstClasses;
 
 function check(condition: boolean, what: string): void {
   if (!condition) {
@@ -797,14 +800,14 @@ function traceTsl(real: ITslRuntime): ITrace {
     },
     setPost: (node) => real.setPost(node),
   };
-  const live = defineTsl(runtime);
+  const live = defineTsl(runtime, constClasses);
   return { calls, sets, uniforms, released, runtime, tsl: live.exports, sync: live.sync };
 }
 
 // TSL by name over the real ABI: pmremTexture's texture crosses as a handle in tn_tsl_arg_t.
 check(runtime.tsl !== undefined, "the module answers TSL by name");
 if (runtime.tsl !== undefined) {
-  const tslInstance = defineTsl(runtime.tsl);
+  const tslInstance = defineTsl(runtime.tsl, constClasses);
   // biome-ignore lint/suspicious/noExplicitAny: smoke test calls dynamic TSL methods
   const tsl = tslInstance.exports as Record<string, any>;
   const direction = tsl.vec3?.(0, 1, 0);
@@ -1142,6 +1145,42 @@ if (runtime.tsl !== undefined) {
     check(
       threw.includes("original") && names().join() === "scope:open,scope:close",
       `a throwing callback closes its scope: ${names().join()}`,
+    );
+  }
+  {
+    // r185's InputNode.value: a write replaces the value, the getter returns what was written, and a
+    // later edit to it reaches the engine. A value of another type is refused by the engine, by name.
+    const t = traceTsl(runtime.tsl);
+    const flagged = <T extends object>(value: T, flag: string): T =>
+      Object.assign(value, { [flag]: true });
+    const offset = t.tsl.uniform(flagged(new Vector2(1, 2), "isVector2"));
+    const next = flagged(new Vector2(7, 8), "isVector2");
+    offset.value = next;
+    check(offset.value === next, "uniform.value returns the value that was written");
+    next.x = 9;
+    t.sync();
+    check(
+      t.uniforms.at(-1)?.endsWith("=9,8") === true,
+      `an edit to the written vector reaches the engine: ${t.uniforms.join(" ")}`,
+    );
+    let refused = "";
+    try {
+      offset.value = flagged(new Vector3(1, 2, 3), "isVector3");
+    } catch (error) {
+      refused = String(error);
+    }
+    check(
+      refused.includes("TN_TSL_UNIFORM_VALUE") && offset.value === next,
+      `a Vector3 written to a vec2 uniform is refused by name and the value stays: ${refused}`,
+    );
+    // r185's ConstNode.value: float(2).value is 2 and vec3(1, 2, 3).value a Vector3.
+    const three = t.tsl.vec3(1, 2, 3).value;
+    check(
+      t.tsl.float(2).value === 2 &&
+        three instanceof Vector3 &&
+        three.z === 3 &&
+        t.tsl.vec2(4).value?.y === 4,
+      "a constant node answers its value as r185's ConstNode does",
     );
   }
   {

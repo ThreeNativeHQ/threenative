@@ -1,8 +1,12 @@
 // TSL authoring calls the native lazy graph; no upstream shader implementation enters the player.
-import { liveUniforms } from "../../../../three-native/src/tsl-uniforms.ts";
+import { liveUniforms, withConstValues } from "../../../../three-native/src/tsl-uniforms.ts";
 import { defineReflector } from "../../../../three-native/src/reflector.ts";
 import { definePass } from "../../../../three-native/src/pass-node.ts";
-import { Object3D, PerspectiveCamera } from "./core-three.mjs";
+import { Color, Object3D, PerspectiveCamera, Vector2, Vector3, Vector4 } from "./core-three.mjs";
+
+// r185's ConstNode.value on float(), vec3(), color() and the other constants (shared with the Wasm back end).
+const constants = { ...globalThis.tsl };
+withConstValues(constants, { Vector2, Vector3, Vector4, Color });
 
 // three's `uniform.value = x` (shared with the Wasm back end): a number goes through at once; an
 // edited Color or VectorN goes through `syncUniforms`, which the renderer calls before each frame.
@@ -11,12 +15,13 @@ export const uniform = live.uniform;
 export const uniformArray = live.uniformArray;
 export const syncUniforms = live.sync;
 
+export const { float, int, uint, vec2, vec3, vec4, color } = constants;
 export const {
-  float, int, uint, vec2, vec3, vec4, attribute, uv, texture, Fn, If, Loop,
+  attribute, uv, texture, Fn, If, Loop,
   instancedArray, add, sub, mul, div, negate, lessThan, greaterThan, equal, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
-  normalViewGeometry, instanceIndex, cameraViewMatrix, color, ivec2, nodeObject, reflect, textureLoad,
+  normalViewGeometry, instanceIndex, cameraViewMatrix, ivec2, nodeObject, reflect, textureLoad,
   mx_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,

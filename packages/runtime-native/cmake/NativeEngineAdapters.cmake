@@ -204,6 +204,11 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-render-target.mjs
                 $<TARGET_FILE:tn-native-engine-player-v8>)
         set_tests_properties(native_engine_player_render_target PROPERTIES LABELS "native-engine")
+        # PRD-547: uniform and constant values through the player's TSL (shared with Wasm).
+        add_test(NAME native_engine_player_tsl_values
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-tsl-values.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_tsl_values PROPERTIES LABELS "native-engine")
     endif()
 
     if(ANDROID)

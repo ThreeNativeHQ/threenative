@@ -125,7 +125,7 @@ export async function bindWebEngine(
       materials: extending("Material"),
     });
   // TSL through the engine's shared name table (tn_tsl_call), when the module carries it.
-  const tsl = runtime.tsl ? defineTsl(runtime.tsl) : undefined;
+  const tsl = runtime.tsl ? defineTsl(runtime.tsl, classes as never) : undefined;
   const bound: Record<string, unknown> = {
     ...withTextureSources(classes, runtime),
     ...tsl?.exports,
