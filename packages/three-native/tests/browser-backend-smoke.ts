@@ -289,6 +289,25 @@ engine.collect();
     "extrude is a BufferGeometry",
   );
 }
+// The templates' check (src/render/materialAssignments.ts): a material whose hooks are three's
+// defaults reads them from Material.prototype, and a game's own hook is told apart (PRD-546).
+{
+  type Hooks = { onBeforeCompile: unknown; customProgramCacheKey: () => unknown };
+  const web = (await bindWebEngine(createTnAbi, ["MeshStandardMaterial", "Material"])) as Record<
+    string,
+    new () => Hooks
+  >;
+  const base = (web.Material as unknown as { prototype: Hooks }).prototype;
+  const lit = new (web.MeshStandardMaterial as new () => Hooks)();
+  check(
+    lit.onBeforeCompile === base.onBeforeCompile &&
+      lit.customProgramCacheKey === base.customProgramCacheKey &&
+      typeof lit.customProgramCacheKey() === "string",
+    "Material hooks read three's defaults",
+  );
+  lit.onBeforeCompile = () => {};
+  check(lit.onBeforeCompile !== base.onBeforeCompile, "a game's onBeforeCompile is its own");
+}
 // three's attribute.array is the attribute's own JS typed array (PRD-540): of its scalar type, one
 // per attribute, kept across Wasm memory growth; an element write is what the engine reads back
 // before its next call, BufferAttribute keeps the array it is handed, and needsUpdate sends a write.
