@@ -1213,6 +1213,20 @@ void geometryLifecycle() {
     if (got != "true,BoxGeometry,true,1,9,36,1,true,1,true,0") std::fprintf(stderr, "geometry lifecycle: %s\n", got.c_str());
 }
 
+// three keeps a material's slots as own fields; games find textures with Object.values(material).
+void materialSlots() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const t = new Texture();
+        const m = new MeshStandardMaterial({ map: t });
+        [Object.keys(m).includes("map"), Object.values(m).includes(t)].join()
+    )JS");
+    CHECK(got == "true,true");
+    if (got != "true,true") std::fprintf(stderr, "material slots: %s\n", got.c_str());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", unsupported}, {"gc_release", gcRelease},
@@ -1221,4 +1235,5 @@ TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", un
              {"scene", scene}, {"raycaster_lod", raycasterLOD},
              {"catalog_coverage", catalogCoverage},
              {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
-             {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle})
+             {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle},
+             {"material_slots", materialSlots})

@@ -288,6 +288,10 @@ export function defineBrowserClasses(
 ): IBrowserEngine {
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object }>();
+  // three keeps a material's slots as its own fields, and games find textures with
+  // Object.values(material); a material wrapper carries its accessors as own enumerable ones.
+  // ponytail: per-instance accessors leave V8's fast mode; materials are few, Object3D stays prototype-only.
+  const ownSlots = new Map<object, PropertyDescriptorMap>();
   const typeNames = new Map<number, string>();
   (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
   // Reads that need no engine call: a field the engine holds in place is read from its memory (Wasm,
@@ -383,6 +387,8 @@ export function defineBrowserClasses(
       throw new TypeError(`TN_BROWSER_TYPE_UNKNOWN: no class for engine type ${ref.type}`);
     // Held until the next safe point decides: the engine may reference what it just handed out.
     const wrapper = adopt(Object.create(cls.prototype) as object, ref);
+    const own = ownSlots.get(cls.prototype);
+    if (own !== undefined) Object.defineProperties(wrapper, own);
     hold(wrapper);
     return wrapper;
   };
@@ -452,6 +458,8 @@ export function defineBrowserClasses(
             : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
+        const own = ownSlots.get(cls.prototype);
+        if (own !== undefined) Object.defineProperties(this, own);
         if (parameters !== undefined) setValues(this, name, parameters);
         // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
         const handed = args[0];
@@ -718,6 +726,14 @@ export function defineBrowserClasses(
         binding.members.includes("children") || binding.getters.includes("children"),
         binding.methods.includes("__walk"),
       );
+    }
+    if (name.endsWith("Material")) {
+      const own: PropertyDescriptorMap = {};
+      for (const property of [...binding.getters, ...binding.members]) {
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, property);
+        if (descriptor?.get !== undefined) own[property] = { ...descriptor, enumerable: true };
+      }
+      ownSlots.set(prototype, own);
     }
     classes[name] = cls;
     byType.set(runtime.typeId(name), cls);

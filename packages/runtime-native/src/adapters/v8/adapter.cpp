@@ -943,6 +943,10 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             if (binding.fixedMembers.count(hot) && int(slots.size()) + 1 < kWrapperFields) slots[hot] = int(slots.size()) + 1;
         for (const auto& [path, settable, fixed] : properties)
             if (fixed && !slots.count(path) && int(slots.size()) + 1 < kWrapperFields) slots[path] = int(slots.size()) + 1;
+        // three keeps a material's slots as own fields, and games find textures with
+        // Object.values(material): a material instance carries its accessors as own ones too.
+        std::vector<v8::Local<v8::ObjectTemplate>> slotTemplates{proto};
+        if (name.ends_with("Material")) slotTemplates.push_back(ctor->InstanceTemplate());
         for (const auto& [path, settable, fixed] : properties) {
             if ((name == "MeshBasicNodeMaterial" || name == "MeshStandardNodeMaterial") && path.ends_with("Node")) {
                 auto* data = keep(new MethodData{this, path, {}});
@@ -981,7 +985,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             data->own = fixed && !settable;
             if (fixed && slots.count(path)) { data->slot = slots[path]; data->type = type; }
             else if (fixed) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
-            proto->SetAccessorProperty(
+            for (v8::Local<v8::ObjectTemplate> on : slotTemplates)
+            on->SetAccessorProperty(
                 str(isolate_, path),
                 v8::FunctionTemplate::New(
                     isolate_,

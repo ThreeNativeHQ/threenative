@@ -123,6 +123,20 @@ describe("the browser-JS back end", () => {
     expect(Object.hasOwn(texture, "needsUpdate")).toBe(false);
   });
 
+  it("lists a material's slots in Object.values, as three's own fields are", () => {
+    // Midway's anisotropy pass walks Object.values(material) for textures; prototype-only
+    // accessors hid every map from it and the far deck rendered without anisotropy.
+    const runtime: IBrowserRuntime = {
+      ...surfaceOnly(),
+      construct: (name) => ({ key: name, type: 1 }),
+      get: (_self, property) => (property === "map" ? 7 : 0),
+    };
+    const { classes: recorded } = defineBrowserClasses(registry, runtime);
+    const material = new (recorded.MeshStandardMaterial as new () => object)();
+    expect(Object.keys(material)).toEqual(expect.arrayContaining(["map", "normalMap", "color"]));
+    expect(Object.values(material)).toContain(7);
+  });
+
   it("refuses to construct a class the registry gives no constructor", () => {
     for (const [name, binding] of Object.entries(registry.classes)) {
       if (binding.constructor) continue;
