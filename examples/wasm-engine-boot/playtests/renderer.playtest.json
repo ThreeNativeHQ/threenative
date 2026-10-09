@@ -78,6 +78,13 @@
       {
         "entity": "wasm-renderer",
         "component": "probe",
+        "path": "volumeStrip",
+        "equals": "0,255,0,255,80,255,0,255,160,255,0,255,240,255,0,255",
+        "allowTrivial": "PRD-546: texture3D samples slice 1 of a nearest-filtered 4x1x2 Data3DTexture: (80x, 255, 0) per column."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
         "path": "steadyCompiles",
         "equals": 0,
         "allowTrivial": "A steady frame compiles no pipeline; -1 means frame 10 never drew."

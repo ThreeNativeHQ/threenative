@@ -31,7 +31,7 @@ file.
 | # | PRD | Status | Label | Depends on | Next box |
 | --- | --- | --- | --- | --- | --- |
 | 1 | [PRD-545 — Corpus gaps in math, the object model and geometry (N22a)](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | IN PROGRESS | `prd:75%` | PRD-501, PRD-508 (done) | Midway's update loop reports no "argument is not a Vector3" error |
-| 2 | [PRD-546 — Corpus gaps in materials, textures and render state (N22b)](N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | IN PROGRESS | `prd:75%` | PRD-545; PRD-509, PRD-514 (done) | `Data3DTexture` uploads a 3D texture and TSL `texture3D` samples it |
+| 2 | [PRD-546 — Corpus gaps in materials, textures and render state (N22b)](../done/native-engine/N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | DONE (2026-10-09) | `prd:100%` | PRD-545; PRD-509, PRD-514 (done) | — |
 | 3 | [PRD-547 — Corpus gaps in TSL and shader nodes (N22c)](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | NOT STARTED | `prd:0%` | PRD-546; PRD-510 to PRD-512 (done) | The TSL names that corpus games import and the shared table lacks |
 | 4 | [PRD-548 — Corpus gaps in renderer passes, loaders, animation and addons (N22d)](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) | NOT STARTED | `prd:0%` | PRD-547; PRD-515, PRD-518, PRD-523 to PRD-526 (done) | Post-node parameters set after the first render take effect |
 | 5 | [PRD-540 — Web games boot on the Wasm engine](PRD-540-web-games-boot-on-the-wasm-engine.md) | IN PROGRESS | `prd:25%` | PRD-532 (done), PRD-531 | A `@threenative/core` game without TSL boots through `createRenderer` under `engine: "native"` |
@@ -141,8 +141,8 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 2/5 | in progress |
 | [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
 | [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md) | Web games boot on the Wasm engine (N20 support) | 4/10 | in progress |
-| [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | Corpus gaps in math, the object model and geometry (N22a) | 0/6 | in progress |
-| [PRD-546](N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | Corpus gaps in materials, textures and render state (N22b) | 0/8 | in progress |
+| [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | Corpus gaps in math, the object model and geometry (N22a) | 5/6 | in progress |
+| [PRD-546](../done/native-engine/N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | Corpus gaps in materials, textures and render state (N22b) | 8/8 | done |
 | [PRD-547](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | Corpus gaps in TSL and shader nodes (N22c) | 0/8 | not started |
 | [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) | Corpus gaps in renderer passes, loaders, animation and addons (N22d) | 0/9 | not started |
 
@@ -223,7 +223,7 @@ The wave plan of 4 October 2026, kept as history. The current order is [Start he
 | N21 | [PRD-535 — The JS engine is deleted](PRD-535-n21-the-js-engine-is-deleted.md) | N20 + one release, N19 |
 | N22 | [three.js surface coverage, ranked by real-game use](N22-three-surface-coverage/README.md) (N20 support) | N18, N19 |
 | N22a | ↳ [PRD-545 — Corpus gaps in math, the object model and geometry](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | N04, N06 |
-| N22b | ↳ [PRD-546 — Corpus gaps in materials, textures and render state](N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | N22a, N07, N09 |
+| N22b | ↳ [PRD-546 — Corpus gaps in materials, textures and render state](../done/native-engine/N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | N22a, N07, N09 |
 | N22c | ↳ [PRD-547 — Corpus gaps in TSL and shader nodes](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | N22b, N08 |
 | N22d | ↳ [PRD-548 — Corpus gaps in renderer passes, loaders, animation and addons](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) | N22c, N10, N11, N14 |
 

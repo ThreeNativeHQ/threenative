@@ -8,6 +8,7 @@ import {
   AnimationClip,
   AnimationMixer,
   BoxGeometry,
+  Data3DTexture,
   DataTexture,
   DirectionalLight,
   HalfFloatType,
@@ -43,6 +44,7 @@ import {
   positionLocal,
   screenUV,
   texture,
+  texture3D,
   uniform,
   uv,
   vec3,
@@ -86,6 +88,8 @@ const probe = {
   instancedStrip: "",
   /** PRD-545: an InstancedMesh strip before and after instanceColor is assigned. */
   instanceColorSet: "",
+  /** PRD-546: texture3D reads slice 1 of a 4x1x2 Data3DTexture across a 4x1 strip. */
+  volumeStrip: "",
 };
 const started = performance.now();
 
@@ -335,6 +339,20 @@ try {
     3,
   );
   probe.instanceColorSet = `${uncolored}|${await drawStrip(coloredScene)}`;
+  // A Data3DTexture (nearest): texel (x, 0, z) is (80x, 255z, 0). One quad spans the strip, so column
+  // x samples texel x, and w 0.75 is slice 1.
+  const volumeTexels = new Uint8Array(4 * 1 * 2 * 4);
+  for (let z = 0; z < 2; z++)
+    for (let x = 0; x < 4; x++) volumeTexels.set([x * 80, z * 255, 0, 255], (z * 4 + x) * 4);
+  const volume = new Data3DTexture(volumeTexels, 4, 1, 2);
+  volume.needsUpdate = true;
+  const volumeMaterial = new MeshBasicNodeMaterial();
+  volumeMaterial.colorNode = vec4(texture3D(volume, vec3(uv().x, 0.5, 0.75)).rgb, 1);
+  const volumeQuad = new Mesh(new PlaneGeometry(4, 1), volumeMaterial);
+  volumeQuad.position.set(2, 0.5, 0);
+  const volumeScene = new Scene();
+  volumeScene.add(volumeQuad);
+  probe.volumeStrip = await drawStrip(volumeScene);
   // Midway's renderer settings: they reach the engine before each frame, as on the V8 player.
   renderer.toneMapping = 5;
   try {
