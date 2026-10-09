@@ -151,6 +151,7 @@ function defineShapeHoles(Shape: Constructor): void {
           this,
           new Proxy(holes.get?.call(this) as unknown[], {
             set(target, key, value) {
+              // quality-allow: target is unknown[] accessed by PropertyKey inside Proxy handler.
               (target as unknown as Record<PropertyKey, unknown>)[key] = value;
               holes.set?.call(shape, [...target]);
               return true;
@@ -183,6 +184,7 @@ export class Material {
     return this.onBeforeCompile.toString();
   }
 }
+// quality-allow: Material.prototype does not declare dynamic isMaterial property from Three.js class contract.
 (Material.prototype as unknown as Prototype).isMaterial = true;
 
 /** Attaches the shared views to a back end's engine classes. */

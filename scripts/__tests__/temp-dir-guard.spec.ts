@@ -11,6 +11,38 @@ const allowedProductionCreators = new Map<string, string>([
     "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/flip-reference.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-batched-mesh.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-free-run.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-gc.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-geometry-utils.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-render-target.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-textures.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-tsl-values.mjs",
+    "The standalone Node/CTest probe removes its owned bundle directory on process exit; it cannot import the Vitest temp-dir helper.",
+  ],
+  [
     "packages/runtime-native/tests/native-engine/post-normal-pass.ts",
     "The CTest probe writes its fixture and readback under its caller's build directory, not the OS temp directory.",
   ],

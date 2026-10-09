@@ -3,6 +3,7 @@
  * `engine: "native"` (PRD-540): the shared post effects over the Wasm engine's TSL functions, which
  * the web engine module hands over as `__tnTsl` beside three's own exports.
  */
+// quality-allow: __tnTsl is injected into the virtual three/tsl module by the web-engine bundler.
 // @ts-expect-error -- `__tnTsl` exists only in the web engine module "three/tsl" resolves to.
 import { __tnTsl } from "three/tsl";
 import { type IEffectTsl, definePostEffects } from "./post-effects.js";

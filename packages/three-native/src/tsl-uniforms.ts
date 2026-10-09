@@ -116,9 +116,11 @@ export function liveUniforms<TNode extends object>(
           let node = elements.get(index);
           if (node === undefined) {
             node = live.uniform(values[index]);
-            (
-              node as unknown as { onRenderUpdate: (callback: () => unknown) => void }
-            ).onRenderUpdate(() => values[index]);
+            // quality-allow: TNode does not expose internal onRenderUpdate hook from WebGPU node system.
+            const updatable = node as unknown as {
+              onRenderUpdate: (callback: () => unknown) => void;
+            };
+            updatable.onRenderUpdate(() => values[index]);
             elements.set(index, node);
           }
           return node;

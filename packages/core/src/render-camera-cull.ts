@@ -132,6 +132,7 @@ export function alwaysRender(object: Object3D, enabled = true): void {
   object.userData[ALWAYS_RENDER_KEY] = enabled;
   // The native engine runs this cull itself and cannot read userData: it reads its own marker.
   if (ENGINE_MARKER in object)
+    // quality-allow: the native engine player reads __alwaysRender directly off the object; not in Three.Object3D types.
     (object as unknown as Record<string, boolean>)[ENGINE_MARKER] = enabled;
 }
 

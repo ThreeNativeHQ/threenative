@@ -8,20 +8,21 @@ import { DataTexture, LinearFilter, LinearSRGBColorSpace, RGBAFormat } from "thr
 
 import { HALF_FLOAT_TYPE, parseHDR } from "./hdr.js";
 
-type EngineDataTexture = {
+interface IEngineDataTexture {
   colorSpace: string;
   flipY: boolean;
   magFilter: number;
   minFilter: number;
   needsUpdate: boolean;
-};
+}
+// quality-allow: DataTexture constructor in generated three.d.ts takes 0 arguments; web-engine constructor takes 5 arguments.
 const EngineDataTexture = DataTexture as unknown as new (
   data: ArrayLike<number>,
   width: number,
   height: number,
   format: number,
   type: number,
-) => EngineDataTexture;
+) => IEngineDataTexture;
 
 export class HDRLoader {
   type: number = HALF_FLOAT_TYPE;
@@ -39,7 +40,7 @@ export class HDRLoader {
 
   load(
     url: string,
-    onLoad?: (texture: EngineDataTexture) => void,
+    onLoad?: (texture: IEngineDataTexture) => void,
     _onProgress?: unknown,
     onError?: (error: unknown) => void,
   ): void {
@@ -49,7 +50,7 @@ export class HDRLoader {
     });
   }
 
-  async loadAsync(url: string): Promise<EngineDataTexture> {
+  async loadAsync(url: string): Promise<IEngineDataTexture> {
     const response = await fetch(this.path + url);
     if (!response.ok)
       throw new Error(`TN_HDR_FETCH: ${this.path + url} answered ${String(response.status)}`);

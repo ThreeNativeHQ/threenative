@@ -24,6 +24,7 @@ export function definePropertyBinding(Native: EngineClass) {
   // One engine object with no root answers the statics.
   let helper: IEngineBinding | undefined;
   const statics = (): IEngineBinding => {
+    // quality-allow: Native engine PropertyBinding constructor produces instance satisfying IEngineBinding interface.
     helper ??= new Native() as unknown as IEngineBinding;
     return helper;
   };

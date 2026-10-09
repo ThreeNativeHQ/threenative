@@ -82,10 +82,12 @@ export async function bindWebEngine(
   const { classes, wrap, collect } = defineBrowserClasses(
     registry as IRegistryDump,
     runtime,
+    // quality-allow: catalog.json is imported raw JSON narrowed to ICatalog contract.
     catalogJson as unknown as ICatalog,
   );
   defineTypeFlags(classes);
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
+  // quality-allow: catalog.json is imported raw JSON narrowed to ICatalog contract.
   const entries = (catalogJson as unknown as ICatalog).entries;
   const extending = (base: string) =>
     entries
@@ -119,6 +121,7 @@ export async function bindWebEngine(
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
   // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
   const audio = defineAudioClasses({
+    // quality-allow: classes record from defineBrowserClasses maps class names to engine constructors.
     ...(classes as unknown as Omit<IAudioEngine, "read">),
     read: async (url) => {
       const response = await fetch(url);
@@ -164,6 +167,7 @@ export async function bindWebEngine(
       }),
     );
   }
+  // quality-allow: catalog.json is imported raw JSON narrowed to ICatalog contract.
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
 

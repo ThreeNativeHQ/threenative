@@ -82,8 +82,10 @@ interface IMergedGeometry {
 
 /** What one engine supplies: the two classes a merge builds. */
 export interface IGeometryUtilsEngine {
+  // quality-allow: three's PascalCase class name passed in engine constructor map.
   // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
   readonly BufferGeometry: new () => object;
+  // quality-allow: three's PascalCase class name passed in engine constructor map.
   // biome-ignore lint/style/useNamingConvention: see BufferGeometry.
   readonly BufferAttribute: new (
     array: TypedArray,

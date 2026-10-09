@@ -380,6 +380,7 @@ export function defineBrowserClasses(
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      // quality-allow: ArrayBufferView like Float32Array or Uint8Array cast to ArrayLike<number> for Array.from conversion.
       const list = Array.from(value as unknown as ArrayLike<number>);
       Object.defineProperty(list, TYPED, { value: value.constructor.name });
       return list;
@@ -877,6 +878,7 @@ function gltfOf(
   context: number,
   h: Pick<IAbiHelpers, "scoped" | "alloc"> & { keyOf(pointer: number): IEngineRef },
 ): Pick<IBrowserRuntime, "loadGltf"> {
+  // quality-allow: TnAbiModule does not declare optional host glTF C-ABI symbols, cast to access optional exports.
   const host = abi as unknown as Partial<
     Record<"_tnw_web_load_gltf" | "_tnw_web_load_error", (...args: number[]) => number>
   >;
@@ -912,6 +914,7 @@ function tslOf(
   h: IAbiHelpers,
 ): { tsl: ITslRuntime } | undefined {
   // Node ids are u64 in the C ABI; Emscripten passes a 64-bit parameter as a BigInt.
+  // quality-allow: TnAbiModule does not declare optional TSL C-ABI entrypoints, cast to access optional exports.
   const calls = abi as unknown as Partial<
     Record<TslCall, (...args: (number | bigint)[]) => number>
   >;

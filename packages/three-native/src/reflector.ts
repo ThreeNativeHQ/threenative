@@ -25,8 +25,10 @@ export interface IReflectorParameters {
 
 /** The engine classes the reflector builds its target and virtual camera from. */
 export interface IReflectorClasses {
+  // quality-allow: three's PascalCase class name passed in engine constructor map.
   // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
   readonly Object3D: new () => object;
+  // quality-allow: three's PascalCase class name passed in engine constructor map.
   // biome-ignore lint/style/useNamingConvention: see Object3D.
   readonly PerspectiveCamera: new () => object;
 }

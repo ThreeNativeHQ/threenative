@@ -29,21 +29,26 @@ interface IAudioObject3D {
 
 /** What one engine supplies: its classes, and how `AudioLoader` reads a URL's bytes. */
 export interface IAudioEngine {
+  // quality-allow: three's PascalCase class name passed in engine constructor map.
   // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
   readonly Object3D: new () => IAudioObject3D;
+  // quality-allow: three's PascalCase class name passed in engine constructor map.
   // biome-ignore lint/style/useNamingConvention: see Object3D.
   readonly Vector3: new () => IAudioVector3;
+  // quality-allow: three's PascalCase class name passed in engine constructor map.
   // biome-ignore lint/style/useNamingConvention: see Object3D.
   readonly Quaternion: new () => object;
   readonly read: (url: string) => Promise<ArrayBuffer>;
 }
 
-type Ramped = { linearRampToValueAtTime(value: number, endTime: number): unknown };
-type LegacyListener = {
-  positionX?: Ramped;
+interface IRamped {
+  linearRampToValueAtTime(value: number, endTime: number): unknown;
+}
+interface ILegacyListener {
+  positionX?: IRamped;
   setPosition(x: number, y: number, z: number): void;
   setOrientation(x: number, y: number, z: number, ux: number, uy: number, uz: number): void;
-};
+}
 
 export function defineAudioClasses(engine: IAudioEngine) {
   const { Object3D, Vector3, Quaternion } = engine;
@@ -66,6 +71,7 @@ export function defineAudioClasses(engine: IAudioEngine) {
   const AudioContext = {
     getContext(): BaseAudioContext {
       if (shared === undefined) {
+        // quality-allow: webkitAudioContext is the legacy Safari global prefix missing from standard DOM types.
         const host = globalThis as unknown as Record<
           string,
           (new () => BaseAudioContext) | undefined
@@ -139,7 +145,9 @@ export function defineAudioClasses(engine: IAudioEngine) {
       const now = globalThis.performance.now();
       this.timeDelta = this.#last === undefined ? 0 : (now - this.#last) / 1000;
       this.#last = now;
-      const listener = this.context.listener as unknown as LegacyListener & Record<string, Ramped>;
+      // quality-allow: WebAudio AudioListener differences between standard AudioParam and legacy setPosition/orientation.
+      const listener = this.context.listener as unknown as ILegacyListener &
+        Record<string, IRamped>;
       this.matrixWorld.decompose(position, quaternion, scale);
       forward.set(0, 0, -1).applyQuaternion(quaternion);
       up.set(0, 1, 0).applyQuaternion(quaternion);
@@ -195,6 +203,7 @@ export function defineAudioClasses(engine: IAudioEngine) {
       detached.add(new WeakRef(this));
     }
     getOutput(): TNode {
+      // quality-allow: Audio.gain is GainNode which bridges to TNode (defaulting to GainNode or subtype).
       return this.gain as unknown as TNode;
     }
     setNodeSource(audioNode: AudioNode): this {
