@@ -3995,3 +3995,37 @@ streaming. Under Xvfb the native frame is about 58 ms, so the measured one-slice
 50% duty. Option (3) therefore comes before any deadline or slicing change.
 
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
+
+### 2026-10-08 — the web playtest red was a spawn-gate deadlock; covered admission
+
+Measured with temporary probes (reverted). The real `terrain.playtest.json` run showed fixed-step
+ticks stop at frame 60 (10.8 s) while spawn coverage read 6/6 ready from 36.6 s. The game observed
+its spawn gate only in `afterPhysics`, and the playtest's deterministic clock advances no fixed step
+while startup is held, so the gate could not resolve until the 120 s deadline released the hold.
+That, not slow loading, failed the 60 s `worldReady` step. **Fixed** in `0d08f9f71`: the gate is
+also observed in `beforeRender`, once per world draw. Red → green on the web lane (host load 27):
+before, `worldReady` timed out after 60,166 ms (exit 2, no assertion reached); after, startup is
+ready at 43.6 s and the run evaluates all **62 assertions: 57 pass, 5 fail**.
+
+Admission behind the cover. `WorldCells` admitted 2 ms and two fresh batch meshes per update even
+while the opaque startup cover hid the world. **Fixed** in `0571f5dc5` (core): the loop passes
+`covered` to `IComputeDriven.process`, and while covered `WorldCells` scales its admission budget
+and fresh-mesh allowance by 8×, with named overrides `coveredAdmissionBudgetMs` and
+`coveredFreshMeshesPerUpdate`. Play-time streaming is unchanged. Web probe, host load 20: attach to
+spawn ready 16–25 s → 3.2 s, world ready 28 s after page load. Red → green specs in
+`world-cells-admission.spec.ts`; world, game and compute specs 629 passed.
+
+The 5 remaining web reds were hidden behind the deadlock, so none is a regression of this work:
+
+- `afterFirstFrameTaskMs` 8,671 > 250: one 8.65 s task (`TN_FRAME_HITCH`) at a later world switch,
+  between the transition warm-up and the new scene's `waiting-for-physics` stage.
+- `timeToReadyMs` 43,656 > 15,000 (host load 27).
+- `measuredGpuViewCount` 0 < 17 and `maxViewGpuMs` −1: three logged `Timestamp tracking is
+  disabled` on the NVIDIA Turing adapter, so this Chrome launch granted no `timestamp-query`.
+  Earlier PRD runs did resolve timestamps; unresolved here.
+- `props.crags.drawn` false at the `overview` step.
+
+Native still misses its 120 s spawn deadline under Xvfb (6/6 at 180 s in the last native run, before
+these two fixes); not rerun.
+
+No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
