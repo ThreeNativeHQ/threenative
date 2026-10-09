@@ -39,7 +39,7 @@ const published = (member: string): boolean => !member.startsWith("__");
 function registryMembers(binding: IRegistryClass): string[] {
   return [
     ...binding.methods.filter(published),
-    ...binding.getters.filter((name) => !name.includes(".")),
+    ...binding.getters.filter((name) => !name.includes(".") && published(name)),
     ...binding.members.filter((name) => !name.includes(".")),
     ...binding.callbacks,
   ];

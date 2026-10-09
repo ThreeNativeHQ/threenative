@@ -221,7 +221,7 @@ const published = (member: string): boolean => !member.startsWith("__");
 function registryMembers(binding: IRegistryClass): Set<string> {
   return new Set([
     ...binding.methods.filter(published),
-    ...binding.getters.filter((name) => !name.includes(".")),
+    ...binding.getters.filter((name) => !name.includes(".") && published(name)),
     ...binding.members.filter((name) => !name.includes(".")),
     ...binding.callbacks,
   ]);
@@ -625,7 +625,7 @@ function addMissingMembers(dump: IRegistryDump, byName: Map<string, MutableClass
       covered.add(member);
     }
     const getters = [
-      ...binding.getters.filter((member) => !member.includes(".")),
+      ...binding.getters.filter((member) => !member.includes(".") && published(member)),
       ...binding.members.filter((member) => !member.includes(".")),
     ];
     for (const member of getters) {

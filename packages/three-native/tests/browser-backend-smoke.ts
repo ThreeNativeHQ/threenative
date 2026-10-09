@@ -457,6 +457,56 @@ engine.collect();
     "SkeletonUtils.clone remaps the skin",
   );
 }
+// Reads that need no engine call (Wasm): a math field the engine holds in place (`x`, `r`, `radius`,
+// `elements`) comes from its memory, and a fixed member (`position`, `matrixWorld`) is the same
+// object every read. Writes still go through the engine, and memory reads see them, and see what the
+// engine itself computes (updateMatrixWorld).
+{
+  // biome-ignore lint/suspicious/noExplicitAny: engine objects typed as three's at runtime only
+  type Any = Record<string, any>;
+  const web = (await bindWebEngine(createTnAbi, [
+    "Object3D",
+    "Vector3",
+    "Sphere",
+    "Color",
+  ])) as Record<string, new (...args: unknown[]) => Any>;
+  const object = new (web.Object3D as new () => Any)();
+  const sphere = new (web.Sphere as new (...a: unknown[]) => Any)(
+    new (web.Vector3 as new (...a: unknown[]) => Any)(1, 2, 3),
+    4,
+  );
+  const colour = new (web.Color as new (...a: unknown[]) => Any)(0.25, 0.5, 0.75);
+  object.position.set(1, 2, 3);
+  object.updateMatrixWorld(true);
+  const counts = new Map<string, number>();
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = counts;
+  const position = object.position;
+  for (let i = 0; i < 50; i++) {
+    void object.position.x;
+    void object.matrixWorld.elements;
+    void sphere.radius;
+    void colour.g;
+  }
+  const reads = [...counts.values()].reduce((sum, n) => sum + n, 0);
+  object.position.x = 7; // a write crosses
+  object.updateMatrixWorld(true);
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = undefined;
+  check(object.position === position, "a fixed member is the same object every read");
+  check(
+    object.position.x === 7 && object.matrixWorld.elements[12] === 7,
+    "memory reads see engine writes and updates",
+  );
+  check(
+    sphere.radius === 4 && colour.g === 0.5 && sphere.center.z === 3,
+    "math fields read in place",
+  );
+  // Each object's first read asks for its address (position, matrixWorld, its elements' owner, sphere,
+  // colour) and each fixed member is fetched once; nothing per read after that.
+  check(
+    reads <= 8,
+    `50 rounds of field reads cost ${reads} engine calls (${[...counts.keys()].join(", ")})`,
+  );
+}
 // traverse and traverseVisible are one engine walk (`__walk`), in three's order: a frame's scene walks
 // cost one crossing each, not two per object (the minimal template made 330 such calls a frame).
 {

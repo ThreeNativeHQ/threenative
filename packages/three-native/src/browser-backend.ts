@@ -24,6 +24,10 @@ export interface IRegistryClass {
   readonly callbacks: readonly string[];
   /** Event types the engine dispatches (AnimationMixer's `finished`, `loop`). */
   readonly events?: readonly string[];
+  /** Members the owner keeps for life (`position`, `matrixWorld`): the first answer may be kept. */
+  readonly fixedMembers?: readonly string[];
+  /** Doubles held in place: [byte offset from the object's `__address`, count]. */
+  readonly fields?: Readonly<Record<string, readonly [number, number]>>;
 }
 
 export interface IRegistryDump {
@@ -54,6 +58,8 @@ export interface IBrowserRuntime {
   get(self: IEngineRef, path: string): EngineValue;
   set(self: IEngineRef, path: string, value: EngineValue): void;
   release(self: IEngineRef): void;
+  /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
+  readDoubles?(address: number, count: number): number | number[];
   /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
   attributeArray?(self: IEngineRef): TypedArray;
   /** Writes `array` into the attribute's data; present with attributeArray. */
@@ -260,6 +266,38 @@ export function defineBrowserClasses(
   const byType = new Map<number, { prototype: object }>();
   const typeNames = new Map<number, string>();
   (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
+  // Reads that need no engine call: a field the engine holds in place is read from its memory (Wasm,
+  // `readDoubles`), and a fixed member (`position`, `matrixWorld`) is kept after its first answer.
+  // Writes still go through the engine's setters, which it reacts to.
+  const addresses = new WeakMap<object, number>();
+  const kept = new WeakMap<object, Map<string, unknown>>();
+  const fastGetter = (binding: IRegistryClass, property: string) => {
+    const field = binding.fields?.[property];
+    const read = runtime.readDoubles;
+    if (field !== undefined && read !== undefined) {
+      const [offset, count] = field;
+      return function (this: object) {
+        let address = addresses.get(this);
+        if (address === undefined) {
+          address = runtime.get(refOf(this), "__address") as number;
+          addresses.set(this, address);
+        }
+        return read(address + offset, count);
+      };
+    }
+    if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property))
+      return function (this: object) {
+        let members = kept.get(this);
+        if (members === undefined) {
+          members = new Map();
+          kept.set(this, members);
+        }
+        if (!members.has(property))
+          members.set(property, fromEngine(runtime.get(refOf(this), property)));
+        return members.get(property);
+      };
+    return undefined;
+  };
   const wrappers = new Map<string, WeakRef<object>>();
   // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
   // the collector sees; `held` roots a wrapper while the engine may still call it.
@@ -453,9 +491,11 @@ export function defineBrowserClasses(
         continue;
       Object.defineProperty(prototype, property, {
         configurable: true,
-        get(this: object) {
-          return fromEngine(runtime.get(refOf(this), property));
-        },
+        get:
+          fastGetter(binding, property) ??
+          function (this: object) {
+            return fromEngine(runtime.get(refOf(this), property));
+          },
         ...(setters.has(property)
           ? {
               set(this: object, value: unknown) {
@@ -1257,6 +1297,12 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         );
         return readValue(out);
       }),
+    readDoubles: (address, count) => {
+      const at = address / 8;
+      return count === 1
+        ? (abi.HEAPF64[at] as number)
+        : Array.from(abi.HEAPF64.subarray(at, at + count));
+    },
     get: (self, path) =>
       scoped(() => {
         countCall("get", self, path);

@@ -1321,6 +1321,32 @@ void registerMathBindings(Registry& classes) {
         bind(binding);
         classes[name] = binding;
     }
+    // In-place doubles (ClassBinding::fields), measured on a real object of each class.
+    const auto field = [](const auto& object, const auto& member, uint32_t count = 1) {
+        const auto* base = reinterpret_cast<const char*>(&object);
+        return std::pair<uint32_t, uint32_t>{uint32_t(reinterpret_cast<const char*>(&member) - base), count};
+    };
+    static const Vector2 v2;
+    static const Vector3 v3;
+    static const Vector4 v4;
+    static const Quaternion q;
+    static const Euler e;
+    static const Color c;
+    static const Matrix3 m3;
+    static const Matrix4 m4;
+    static const Sphere sphere;
+    classes["Vector2"].fields = {{"x", field(v2, v2.x)}, {"y", field(v2, v2.y)}};
+    classes["Vector3"].fields = {{"x", field(v3, v3.x)}, {"y", field(v3, v3.y)}, {"z", field(v3, v3.z)}};
+    classes["Vector4"].fields = {{"x", field(v4, v4.x)}, {"y", field(v4, v4.y)}, {"z", field(v4, v4.z)}, {"w", field(v4, v4.w)}};
+    classes["Quaternion"].fields = {{"x", field(q, q.x)}, {"y", field(q, q.y)}, {"z", field(q, q.z)}, {"w", field(q, q.w)}};
+    classes["Euler"].fields = {{"x", field(e, e.x)}, {"y", field(e, e.y)}, {"z", field(e, e.z)}};
+    classes["Color"].fields = {{"r", field(c, c.r)}, {"g", field(c, c.g)}, {"b", field(c, c.b)}};
+    classes["Matrix3"].fields = {{"elements", field(m3, m3.elements[0], 9)}};
+    classes["Matrix4"].fields = {{"elements", field(m4, m4.elements[0], 16)}};
+    classes["Sphere"].fields = {{"radius", field(sphere, sphere.radius)}};
+    for (auto& [name, binding] : classes)
+        if (!binding.fields.empty())
+            binding.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
 }
 
 }  // namespace tn::binding
