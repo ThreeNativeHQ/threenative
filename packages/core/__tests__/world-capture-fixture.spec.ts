@@ -25,6 +25,7 @@ async function probe() {
   // catch dropped or invented diagnostics; WorldCells itself has separate engine tests.
   let stats = {
     admission: { backlog: 13, deferred: 2, spentMs: 3.75 },
+    bundle: { children: 5, on: true, reason: "default", records: 7 },
     evictions: 7,
     failures: 0,
     gpuScene: { on: false, reason: "renderer has no computeAsync", dispatches: 0 },
@@ -90,6 +91,8 @@ describe("PRD-477 world capture fixture", () => {
       admissionBacklog: 13,
       admissionDeferred: 2,
       admissionSpentMs: 3.75,
+      bundleChildren: 5,
+      bundleOn: true,
       gpuSceneOn: false,
       gpuSceneReason: "renderer has no computeAsync",
       loadsQueued: 3,
@@ -245,11 +248,16 @@ describe("PRD-477 world capture fixture", () => {
       );
       // Android uses the documented CLI --target android override of a web scenario.
       expect(scenario.target).toBe(target === "android" ? "web" : target);
-      expect(scenario.assert?.diagnostics).toMatchObject({
-        runtimeReady: true,
-        noRuntimeDiagnostics: true,
-        noConsoleErrors: true,
-      });
+      if (target === "desktop")
+        // The desktop runner produces no runtimeDiagnostics observation, so a diagnostics block
+        // fails every desktop run with TN_PLAYTEST_OBSERVATION_UNAVAILABLE.
+        expect(scenario.assert?.diagnostics).toBeUndefined();
+      else
+        expect(scenario.assert?.diagnostics).toMatchObject({
+          runtimeReady: true,
+          noRuntimeDiagnostics: true,
+          noConsoleErrors: true,
+        });
       expect(resolveDiagnosticsPolicy(scenario.assert?.diagnostics, target)).toMatchObject({
         noNetworkErrors: false,
         networkErrorsOptOutReason: expect.stringContaining("no network observer"),
@@ -260,6 +268,13 @@ describe("PRD-477 world capture fixture", () => {
           expect.objectContaining({ component: "instances", gte: 1, lte: 20_000 }),
           expect.objectContaining({ component: "admissionBacklog", equals: 0 }),
           expect.objectContaining({ component: "loadsQueued", equals: 0 }),
+          // Only the desktop scenario proves the native host draws the world with bundles on.
+          ...(target === "desktop"
+            ? [
+                expect.objectContaining({ component: "bundleOn", equals: true }),
+                expect.objectContaining({ component: "bundleChildren", gte: 1 }),
+              ]
+            : []),
         ]),
       );
       // The final admission unit may overshoot 2ms. Do not turn a diagnostic into a false cap.
