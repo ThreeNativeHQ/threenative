@@ -54,8 +54,9 @@ All three are mechanism in `packages/core`; no game sets anything, and an explic
 **Status:** NOT STARTED
 **Files:** `packages/core/src/resolution-scaler.ts`, `packages/core/src/renderer.ts`; `packages/core/__tests__/`
 
-- [ ] The gate that held the scale at 1.0 through the laptop's early route is named and fixed, so a fill-bound deficit reaches the floor within a few windows of readiness. proof: a laptop run's scaler markers, then a red-green `resolution-scaler.spec.ts` on that gate
-  Named: the stall rule (`stallP99Multiple` 10). Fixed in `4da9bdba4` (a stalled window whose median present and fresh GPU are both over budget may step down), red-green spec green. Open: the laptop run that shows the scale leave 1.0.
+- [x] The gate that held the scale at 1.0 through the laptop's early route is named and fixed, so a fill-bound deficit reaches the floor within a few windows of readiness. proof: a laptop run's scaler markers, then a red-green `resolution-scaler.spec.ts` on that gate
+  Laptop run live13 (2026-10-08, `lodfix11`, load 8.4–9.4, CPU 82 °C): the scale went 1.0 → 0.61 four windows into the walk (tick 1262) and held the desktop floor from tick 1882; main-pass GPU median 29–50 ms at 1.0 (live12) → 18–33 ms at 0.61; late-walk fps 33 → 47–50.
+  Named: three gates in a row, each found by a laptop run. (1) The stall rule (`stallP99Multiple` 10) deferred every window (`4da9bdba4`). (2) Its exception asked for presented p50 over budget, which read 6–9 ms while the main pass took 25–40 ms (`6d8840163`). (3) The Iris Xe resolves GPU timestamps 233–593 frames late, past `maxGpuAgeFrames` 16, so the scaler saw no GPU reading; a window with ≥ 4 of its own samples now uses their median (`b4aa0155d`). Each is a red-green case in `resolution-scaler.spec.ts` (82/82 across the 8 scaler spec files).
 - [ ] At the floor scale the sample count drops to 1, and comes back with the hysteresis. proof: red-green spec; laptop run shows the drop in `TN_FRAME_BUDGET.surface`
 
 #### Phase 2: LOD ceiling
@@ -70,10 +71,13 @@ All three are mechanism in `packages/core`; no game sets anything, and an explic
 **Files:** `packages/core/src/render/virtual-shadow.ts`, `packages/core/src/world-gpu-scene.ts`; `packages/core/__tests__/`
 
 - [x] An invalidation redraw waits out its own GPU cost: an engine-chosen `invalidationDelay` is at least `shadowRedrawGpuMs / 0.1`, so a 300 ms redraw waits 3 s and a 5 ms one keeps the 0.25 s base. proof: `virtual-shadow.spec.ts` "should space a redraw that stalls a weak GPU to a tenth of the time" — red with the delay removed, green with it (96/96 with `render-pass-budget.spec.ts`), commit `748aab403`
+- [ ] The first redraws are priced too: live13 made 42 of its 54 invalidation redraws in the first ~16 s, before any shadow-pass GPU reading resolved (timestamps are sampled one frame in eight); after the first reading (305 ms) it made 11 in ~80 s, one per 7 s. proof: a laptop run whose first-16-s count drops, plus a red-green spec
 - [ ] A level whose redraw still exceeds its share halves its map and coarsens its casters, and restores both when it fits. proof: red-green `virtual-shadow.spec.ts`
 - [ ] AC-1/AC-2 runs on the laptop. proof: recorded here
 - [ ] AC-3 on the desktop. proof: quiet runs and raters on PR 473
 
 ## Blocked on
+
+- AC-1's quiet laptop: live13 ran at load 8.4–9.4 (other sessions' CI runners on the laptop). Its walking presented p50 was 6.1–13.6 ms in every window, which is the AC-1 number, but the proof asks for load < 4.
 
 - AC-3's timing: the RTX 2080 on a quiet desktop (shared with PRD-478's AC-1 loop).
