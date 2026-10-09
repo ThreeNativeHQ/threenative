@@ -72,7 +72,13 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { NodeBuilder, StackNode, StorageBufferAttribute } from "three/webgpu";
+import { modelNormalMatrix } from "three/tsl";
+import {
+  NodeBuilder,
+  StackNode,
+  StorageBufferAttribute,
+  WebGPUCoordinateSystem,
+} from "three/webgpu";
 
 type TslNode = {
   isNode?: boolean;
@@ -163,6 +169,7 @@ function storageName(element: TslNode): string {
  */
 const accessorBuilder = {
   camera: new PerspectiveCamera(),
+  renderer: { coordinateSystem: WebGPUCoordinateSystem },
   subBuildFn: "NORMAL",
   isFlatShading: () => false,
   material: { side: FrontSide },
@@ -183,7 +190,10 @@ const RENAMES: Record<string, string> = {
 };
 const renamed = (name: string) => RENAMES[name] ?? name;
 /** Upstream builtins that are unnamed uniforms the renderer fills each frame, bound by these names. */
-const BUILTIN_UNIFORMS = new Map<unknown, string>([[frameTime, "time"]]);
+const BUILTIN_UNIFORMS = new Map<unknown, string>([
+  [frameTime, "time"],
+  [modelNormalMatrix, "modelNormalMatrix"],
+]);
 
 const OPERATORS: Record<string, string> = {
   "+": "add",

@@ -645,6 +645,14 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
         else if (name == "positionView")
             value = v.swizzle(v.mul(v.uniform("viewMatrix", Type::mat(4, 4)),
                                     v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position)), "xyz");
+        // r185's positionViewDirection: positionView.negate() carried to the fragment, normalized there.
+        else if (name == "positionViewDirection")
+            value = v.neg(v.swizzle(v.mul(v.uniform("viewMatrix", Type::mat(4, 4)),
+                                          v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position)), "xyz"));
+        // r185's normalWorldGeometry: normalLocal.transformDirection(modelWorldMatrix), so neither a
+        // normalNode nor a normal map reaches it.
+        else if (name == "normalWorldGeometry" && local.normal != kInvalid)
+            value = transformDirection(v, v.uniform("modelMatrix", Type::mat(4, 4)), local.normal);
         else if (name == "positionGeometry") value = v.attribute("position", type);
         else value = v.attribute(name, type);
         v.output(name, value);
@@ -1232,18 +1240,22 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     StandardPrograms out;
     Program& v = out.vertex;
     // A graph that reads normalView (normalWorld) gets the lit materials' normal: instanced, skinned
-    // and morphed by localVertex, then written as the normalView varying.
-    std::unordered_set<const graph::NodeData*> seen;
-    const std::function<bool(const graph::Node&)> readsNormal = [&](const graph::Node& n) {
-        if (!n || !seen.insert(n.get()).second) return false;
-        if (n->kind == graph::Kind::Varying && n->args.empty() && n->name == "normalView") return true;
-        for (const auto* list : {&n->args, &n->body, &n->otherwise})
-            for (const auto& child : *list) if (readsNormal(child)) return true;
+    // and morphed by localVertex, then written as the normalView varying. normalWorldGeometry needs
+    // the same local normal, without normalView.
+    const auto reads = [&variant](std::string_view varying) {
+        std::unordered_set<const graph::NodeData*> seen;
+        const std::function<bool(const graph::Node&)> visit = [&](const graph::Node& n) {
+            if (!n || !seen.insert(n.get()).second) return false;
+            if (n->kind == graph::Kind::Varying && n->args.empty() && n->name == varying) return true;
+            for (const auto* list : {&n->args, &n->body, &n->otherwise})
+                for (const auto& child : *list) if (visit(child)) return true;
+            return false;
+        };
+        for (const auto& node : variant.nodes.graphs()) if (visit(node)) return true;
         return false;
     };
-    bool needsNormal = false;
-    for (const auto& node : variant.nodes.graphs()) needsNormal = needsNormal || readsNormal(node);
-    const LocalVertex local = localVertex(v, variant, needsNormal);
+    const bool needsNormal = reads("normalView");
+    const LocalVertex local = localVertex(v, variant, needsNormal || reads("normalWorldGeometry"));
     const ExprId viewPosition = v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position));
     ExprId clip = v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), viewPosition);
     if (variant.background) {

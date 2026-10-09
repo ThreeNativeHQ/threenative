@@ -35,6 +35,7 @@ import {
   cameraViewMatrix,
   cameraWorldMatrix,
   convertToTexture,
+  depth,
   float,
   instanceIndex,
   instancedArray,
@@ -48,12 +49,14 @@ import {
   normalView,
   normalViewGeometry,
   normalWorld,
+  normalWorldGeometry,
   normalize,
   output,
   pass,
   pmremTexture,
   positionGeometry,
   positionLocal,
+  positionViewDirection,
   positionWorld,
   reflector,
   roughness,
@@ -764,6 +767,20 @@ export const programs = {
     const mapped = target.getObjectByName("mapped").material;
     mapped.normalMap = dataTexture(4, 4, () => [200, 128, 230]);
     mapped.emissiveNode = shade;
+  },
+  /** The fragment varyings r185 builds for positionViewDirection, normalWorldGeometry (which a normal
+   *  map does not reach) and depth. */
+  async "tsl-view-geometry-varyings"({ target }) {
+    target.getObjectByName("sphere").material.colorNode = vec4(
+      positionViewDirection.mul(0.5).add(0.5),
+      1,
+    );
+    const geometryShade = normalWorldGeometry.mul(0.5).add(0.5);
+    target.getObjectByName("box").material.colorNode = vec4(geometryShade, 1);
+    const mapped = target.getObjectByName("mapped").material;
+    mapped.normalMap = dataTexture(4, 4, () => [200, 128, 230]);
+    mapped.emissiveNode = geometryShade;
+    target.getObjectByName("depth").material.colorNode = vec4(vec3(depth.oneMinus().mul(25)), 1);
   },
   async "tsl-stage-vertex-texture-level"({ target }) {
     const ramp = dataTexture(8, 4, (x, y) => [x * 36, y * 80, 200 - x * 20]);

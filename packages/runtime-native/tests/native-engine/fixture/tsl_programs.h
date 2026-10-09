@@ -360,6 +360,31 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         for (auto* m : {front, back, tilted, mapped}) m->needsUpdate();
         return "";
     }
+    if (program == "tsl-view-geometry-varyings") {
+        // r185's positionViewDirection, normalWorldGeometry and depth fragment varyings, through the shared TSL table.
+        if (object.cls != "Scene") return "TN_FIXTURE_VARYINGS_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        namespace g = engine::shader::graph;
+        uint64_t serial = 0;
+        const auto tsl = [&serial](const char* name) { return abi::tslCall(name, nullptr, {}, serial); };
+        const auto half = [](const g::Node& n) { return g::add(g::mul(n, g::float_(0.5)), g::float_(0.5)); };
+        const auto material = [&scene](const char* name) {
+            auto* mesh = dynamic_cast<engine::Mesh*>(scene.getObjectByName(name));
+            return mesh ? mesh->material.get() : nullptr;
+        };
+        auto *sphere = material("sphere"), *box = material("box"), *mapped = material("mapped"), *depth = material("depth");
+        if (!sphere || !box || !mapped || !depth) return "TN_FIXTURE_VARYINGS_INVALID: meshes";
+        sphere->nodes.colorNode = g::vec4({half(tsl("positionViewDirection")), g::float_(1)});
+        const auto geometryShade = half(tsl("normalWorldGeometry"));
+        box->nodes.colorNode = g::vec4({geometryShade, g::float_(1)});
+        mapped->nodes.emissiveNode = geometryShade;
+        using Rgb = std::array<uint8_t, 3>;
+        mapped->maps["normalMap"] = tsl_detail::dataTexture(4, 4, [](uint32_t, uint32_t) { return Rgb{200, 128, 230}; });
+        const auto shade = g::mul(g::sub(g::float_(1), tsl("depth")), g::float_(25));
+        depth->nodes.colorNode = g::vec4({g::vec3({shade, shade, shade}), g::float_(1)});
+        for (auto* m : {sphere, box, mapped, depth}) m->needsUpdate();
+        return "";
+    }
     if (program == "instanced-geometry") {
         if (object.cls != "Scene") return "TN_FIXTURE_INSTANCED_INVALID: requires scene";
         auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
