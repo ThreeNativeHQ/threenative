@@ -736,7 +736,7 @@
       "symbol": "AnimationPlayer"
     },
     {
-      "aliases": ["bright sky saturated green platforms"],
+      "aliases": ["green platforms bright saturated sky"],
       "constraints": [
         "supply rayleigh, mie, ozone, planetRadius, and atmosphereRadius; there is no Earth fallback",
         "the game creates the sky object, surface, and sun from the returned nodes"
@@ -1223,7 +1223,7 @@
       "symbol": "counterDeviceOf"
     },
     {
-      "aliases": ["different props in each area", "first playable screen external assets"],
+      "aliases": ["different area props", "first playable screen external assets"],
       "constraints": [
         "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches"
       ],
@@ -1340,9 +1340,9 @@
     },
     {
       "aliases": [
-        "firing line nearest target crosshair",
+        "nearest target crosshair spawns",
         "third-person camera",
-        "restart the run without a page reload",
+        "restart run without page reload",
         "field of view while aiming"
       ],
       "constraints": [

@@ -4,10 +4,12 @@ prd_contract: v1
 
 # PRD-297 — Capability recall is a number this repository reports
 
-**Status:** OPEN, filed 2026-08-31 against `77a68bec`. Planning only; the one measurement quoted
-below was executed and is recorded at `docs/verification/capability-recall-baseline-2026-08-31.md`.
+**Status:** DONE 2026-10-08. Filed 2026-08-31 against `77a68bec`. The gate, corpus and floor
+landed earlier; this close re-ran every control on `origin/develop` `f7dd08621` plus `cc5a8b432`,
+which removed brief text from four shipped aliases. Evidence: the 2026-10-08 section of
+`docs/verification/capability-recall-baseline-2026-08-31.md`.
 
-**Priority:** P1 — Prerequisite for P1 PRD-298: its recall numbers only exist once this lands. Capability recall still unmeasured; corpus, floor and fail-closed gate are planning only.
+**Priority:** P1 — Prerequisite for P1 PRD-298, whose floor calibration reads these recall numbers. Shipped: corpus, floor and fail-closed gate run in `pnpm budgets`.
 **Outcome:** `pnpm caps:recall` answers, from a corpus whose every query is traceable to a line
 that already exists in this repository, what fraction of real authoring queries reach the right
 capability — and `pnpm budgets` fails when that fraction drops. An authoring agent's inability to
@@ -84,13 +86,10 @@ flowchart LR
 
 **Key decisions:**
 
-- [ ] No new dependency. `tsx`, `node:fs`, and the existing engine-mcp source.
-- [ ] Corpus and floor are **never** shipped. They live under `scripts/fixtures/`, which is not in
-      any package `files` array, and no phase writes brief text into `capabilities.json`.
-- [ ] Fail closed: an empty corpus, an unresolvable `source`, or a malformed row **throws**. An
-      empty assertion set reporting green is the v1 harness failure this repository already paid
-      for.
-- [ ] The gate reports; it does not edit the manifest or the tags.
+- [x] No new dependency. `tsx`, `node:fs`, and the existing engine-mcp source. proof: `scripts/capability-recall.ts` imports only `node:` modules and `packages/engine-mcp/src`; no package.json dependency was added for the gate (2026-10-08).
+- [x] Corpus and floor are **never** shipped. They live under `scripts/fixtures/`, which is not in any package `files` array, and no phase writes brief text into `capabilities.json`. proof: `scripts/fixtures/` is in no package `files` array; the shipping grep exits 1 and a four-word brief-overlap scan finds 0 phrases in both manifests after `cc5a8b432` (verification doc, 2026-10-08 section).
+- [x] Fail closed: an empty corpus, an unresolvable `source`, or a malformed row **throws**. An empty assertion set reporting green is the v1 harness failure this repository already paid for. proof: empty corpus -> `TN_CAPABILITY_RECALL: … corpus has no rows`, rc=1; renamed heading -> `source … no longer resolves`, rc=1 (controls 3-4, 2026-10-08).
+- [x] The gate reports; it does not edit the manifest or the tags. proof: the gate writes only `budget.json`, and only with `--update-budget`; `git status` is clean after every control run (2026-10-08).
 
 **Data changes:** two new JSON fixtures. No schema, no migration, no shipped artifact.
 
@@ -169,21 +168,18 @@ neither is deleted.
 
 **Implementation:**
 
-- [ ] Row schema: `{ id, query, scope: "request"|"mechanic", source, expect: string[], reject: string[] }`
-- [ ] `expect` symbols must exist in the manifest — an `expect` naming a symbol that was renamed is
-      a gate failure, not a miss
-- [ ] `source` resolves as `brief:<genre>#<bullet-index>` or `template:<name>#<heading text>` (PRD-451 adds `sandbox:<game>#<file>`, provenance only: the games are not in this repo);
-      re-read the file and confirm the line is still there
-- [ ] Seed the corpus with **every** brief bullet, including the 11 known misses, and at least the
-      11 plain-words queries from the baseline record
-- [ ] Phase 1 exits 0 and reports; the ratchet arrives in Phase 2 so CI is not red on landing
+- [x] Row schema: `{ id, query, scope: "request"|"mechanic", source, expect: string[], reject: string[] }` proof: `validateCorpusRow` in `scripts/capability-recall.ts`; 87 rows load and validate in `pnpm caps:recall`, rc=0 (2026-10-08).
+- [x] `expect` symbols must exist in the manifest — an `expect` naming a symbol that was renamed is a gate failure, not a miss proof: stale-manifest control -> `request.drive-a-racing-kart: symbol 'VehicleBody3D' is absent from manifest`, rc=1; spec `should throw when a row expects a symbol absent from the manifest` passes (2026-10-08).
+- [x] `source` resolves as `brief:<genre>#<bullet-index>` or `template:<name>#<heading text>` (PRD-451 adds `sandbox:<game>#<file>`, provenance only: the games are not in this repo); re-read the file and confirm the line is still there proof: renaming the action-rpg `Start every change` heading -> `source 'template:action-rpg#Start every change' no longer resolves`, rc=1; sandbox pointers covered by spec `should accept a sandbox game pointer and reject an unknown source kind` (2026-10-08).
+- [x] Seed the corpus with **every** brief bullet, including the 11 known misses, and at least the 11 plain-words queries from the baseline record proof: `--harvest` yields 46 brief candidates and all 46 have a corpus row with the same `source`; 87 rows total, including the 11 plain-words requests (2026-10-08).
+- [x] Phase 1 exits 0 and reports; the ratchet arrives in Phase 2 so CI is not red on landing proof: `pnpm caps:recall` prints the table, the miss list and the numbers, rc=0 (2026-10-08).
 
 **Wiring:**
 
-- [ ] Caller edited: `package.json` gains `caps:recall`
-- [ ] Registration: npm script only in this phase
-- [ ] Old path: n/a
-- [ ] Ledger rows filled: #2, #3
+- [x] Caller edited: `package.json` gains `caps:recall` proof: `package.json:25` `"caps:recall": "tsx scripts/capability-recall.ts"`.
+- [x] Registration: npm script only in this phase proof: `package.json:25`.
+- [x] Old path: n/a proof: nothing replaced.
+- [x] Ledger rows filled: #2, #3 proof: Integration Ledger rows 2-3 carry callers and controls; both controls observed red on 2026-10-08.
 
 **Tests required:**
 
@@ -217,17 +213,17 @@ itself; Phase 2 makes it strong by putting the gate inside `pnpm budgets`.
 
 **Implementation:**
 
-- [ ] Floor holds `zeroResultRate` (max), `recallAtK` (min), `rejectHits` (max), and `rowCount` (min)
-- [ ] `rowCount` in the floor prevents the cheapest cheat: deleting failing rows to raise recall
-- [ ] Regression output names the row ids that moved, not just the aggregate
-- [ ] `--update-budget` writes the floor, so improving is one explicit flag and one visible diff
+- [x] Floor holds `zeroResultRate` (max), `recallAtK` (min), `rejectHits` (max), and `rowCount` (min) proof: `budget.json` holds `zeroResultRate`, `unresolvedResultRate`, `recallAtK`, `rejectHits`, `rowCount`, `rowIds`, `recalledRows`, `notOwnedRows`; since the 2026-09-05 not-owned migration the zero-result ceiling is enforced as `unresolvedResultRate` (verification doc).
+- [x] `rowCount` in the floor prevents the cheapest cheat: deleting failing rows to raise recall proof: deleting `request.platformer-double-jump` -> `rowCount 86 is below floor 87`, rc=1 (control 2, 2026-10-08).
+- [x] Regression output names the row ids that moved, not just the aggregate proof: situation deletion -> `recalledRows: 1 previously recalled row no longer reaches an expected symbol`, rows: `guard.animation-feet` (control 1, 2026-10-08).
+- [x] `--update-budget` writes the floor, so improving is one explicit flag and one visible diff proof: `pnpm caps:recall --update-budget` exists and refuses a regression (rc=1 on 2026-10-08), so a lowered floor needs a visible hand edit, as in `cc5a8b432`.
 
 **Wiring:**
 
-- [ ] Caller edited: `package.json:16` `budgets` chain invokes `capability-recall.ts`
-- [ ] Registration: runs in CI's existing chain, no new CI job
-- [ ] Old path: n/a
-- [ ] Ledger rows filled: #1, #4
+- [x] Caller edited: `package.json:16` `budgets` chain invokes `capability-recall.ts` proof: `package.json:21` `budgets` runs `pnpm caps:recall` before `check-evidence-budget.ts`; removing the script makes `pnpm budgets` exit 1 with `ERR_MODULE_NOT_FOUND` (control 7, 2026-10-08).
+- [x] Registration: runs in CI's existing chain, no new CI job proof: no workflow file changed; the gate rides `pnpm budgets`.
+- [x] Old path: n/a proof: nothing replaced.
+- [x] Ledger rows filled: #1, #4 proof: Integration Ledger rows 1 and 4 observed red on 2026-10-08 (controls 1 and 6).
 
 **Tests required:**
 
@@ -291,21 +287,16 @@ grep -rn "endless runner\|firing line\|Magazine 30" packages/create-threenative/
 Consumer-scoped. Every one is about what an authoring agent can find, or what a committing agent
 is stopped from breaking.
 
-- [ ] A query taken verbatim from a sealed brief that finds its capability today still finds it
-      after any later change to tags, ranking, or the manifest — or `pnpm budgets` refuses the
-      commit and names the query.
-- [ ] The 11 brief bullets that return nothing today are in the corpus **as rows that fail**, so
-      PRD-298/299/300/301 each have a number to move rather than an anecdote.
-- [ ] Deleting corpus rows cannot improve the reported recall (`rowCount` floor).
-- [ ] `pnpm caps:recall` run in a clean checkout reproduces the number in
-      `docs/verification/capability-recall-baseline-2026-08-31.md`.
-- [ ] No brief text, corpus row, or expected-symbol list appears in either copy of
-      `capabilities.json` — grep pasted.
+- [x] A query taken verbatim from a sealed brief that finds its capability today still finds it after any later change to tags, ranking, or the manifest — or `pnpm budgets` refuses the commit and names the query. proof: each of the 79 recalled rows is pinned in `budget.json` `recalledRows`; deleting one `@situation` turns `guard.animation-feet` red by name (control 1, 2026-10-08).
+- [x] The 11 brief bullets that return nothing today are in the corpus **as rows that fail**, so PRD-298/299/300/301 each have a number to move rather than an anecdote. proof: all 46 brief bullets are corpus rows; the historical misses stay rows with their original `expect`; `brief.fps.3`, `brief.fps.6` and `brief.fps.8` still fail as listed misses (2026-10-08).
+- [x] Deleting corpus rows cannot improve the reported recall (`rowCount` floor). proof: row deletion -> `rowCount 86 is below floor 87` and `rowIds … missing request.platformer-double-jump`, rc=1 (control 2, 2026-10-08).
+- [x] `pnpm caps:recall` run in a clean checkout reproduces the number in `docs/verification/capability-recall-baseline-2026-08-31.md`. proof: fresh worktree from `origin/develop` + `cc5a8b432`: 79/87 recalled, 0/87 unresolved, 16 reject hits, recorded in the 2026-10-08 section of the verification doc.
+- [x] No brief text, corpus row, or expected-symbol list appears in either copy of `capabilities.json` — grep pasted. proof: shipping grep exits 1 on both manifests after `cc5a8b432` reworded four brief-derived aliases; four-word overlap scan: 0 (2026-10-08).
 
 **Integration gates:**
 
-- [ ] Integration Ledger has zero `TBD` cells
-- [ ] `capability-recall.ts` has a non-test consumer (`package.json:16`), census pasted
-- [ ] Revert check pasted: removing the gate breaks `pnpm budgets`
-- [ ] Every gate has an observed red, pasted, including the `@situation` deletion mutation
-- [ ] Proved on the real subject: the full 46-bullet sealed-brief corpus, not a hand-picked subset
+- [x] Integration Ledger has zero `TBD` cells proof: the ledger table has no TBD cell; the only `TBD` in the file is this box text.
+- [x] `capability-recall.ts` has a non-test consumer (`package.json:16`), census pasted proof: census: `package.json:25` `caps:recall` -> `tsx scripts/capability-recall.ts`; `package.json:21` `budgets` -> `pnpm caps:recall` (2026-10-08).
+- [x] Revert check pasted: removing the gate breaks `pnpm budgets` proof: script removed -> `pnpm budgets` rc=1, `ERR_MODULE_NOT_FOUND … scripts/capability-recall.ts` (control 7, verification doc 2026-10-08).
+- [x] Every gate has an observed red, pasted, including the `@situation` deletion mutation proof: seven controls pasted in the 2026-10-08 section: situation deletion, row deletion, heading rename, empty corpus, stale manifest, lowered floor, gate removal.
+- [x] Proved on the real subject: the full 46-bullet sealed-brief corpus, not a hand-picked subset proof: the corpus holds all 46 harvested sealed-brief bullets plus 41 further rows; `pnpm caps:recall` runs on all 87 (2026-10-08).
