@@ -1461,6 +1461,134 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": 17,
+      "at": "2026-10-09T21:26:04.973Z",
+      "commit": "0a4ce848c",
+      "label": "hourly refresh",
+      "notes": "Merged into develop since 2026-10-09 are 5 PRs, 473, 471, 470, 468 and 458. The merge-group run count is 42 and the run success percent is 18.4 with the first-attempt merge percent at 40. The board median wall is 95.1 minutes, and the last push to merge median is 477.4 minutes and p90 is 1023.9 minutes. The queue wait p90 is 40.4 minutes over 2873 jobs. The first failing job counts are 6 for integration / velocity, 5 for test-unit (2/4), 5 for test-unit (3/4), 3 for test-browser, 2 for integration / auto-exposure, 2 for integration / auto-exposure cold boot, 2 for test-unit (1/4), and 1 each for golden-path-template (platformer), integration / capture, native-platforms / iOS simulator runtime and no-Xcode consumer handoff, native-platforms / macOS desktop core, template-nonvisual (platformer) and test-playtest. Develop head is 6b18d913e and its CI run has finished with success. None of these PRs carry the phase 1 change on PR 476, which is still open, so this window cannot judge that change, and local commit 0a4ce848c adds a test only diagnostic and does not change any merge-group result, giving an inconclusive decision.",
+      "decision": "inconclusive",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 477.4,
+        "lastPushToMergeP90Min": 1023.9,
+        "firstAttemptSuccessPct": 40,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 41.5
+      },
+      "extra": {
+        "prCount": 5,
+        "mergeGroupRuns": 42,
+        "mergeGroupRunSuccessPct": 18.4,
+        "enqueueToMergeMedianMin": 454.8,
+        "queueWaitJobs": 2877
+      },
+      "prs": [
+        {
+          "number": 473,
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "lastPushToMergeMin": 317.9,
+          "enqueueToMergeMin": 454.8,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        },
+        {
+          "number": 471,
+          "title": "fix(capabilities): every manifest import resolves in every scaffolded template (PRD-354)",
+          "lastPushToMergeMin": 1011.6,
+          "enqueueToMergeMin": 1015.5,
+          "attempts": 8,
+          "firstAttempt": "success",
+          "firstFailingJob": "test-playtest"
+        },
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 468,
+          "title": "feat(core): ship threenative-sculpt-mcp 0.2.1",
+          "lastPushToMergeMin": 1032.1,
+          "enqueueToMergeMin": 631.5,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-browser"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 6
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
     }
   ]
 }
