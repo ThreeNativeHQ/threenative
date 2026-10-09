@@ -166,7 +166,7 @@ excluding `docs/PRDs/done`, 0 hits). About 5.7 MiB of tracked bytes.
   override (`pnpm audit --prod --audit-level high`, exit 0).
   A starter installed from packed tarballs reports no high `sharp` advisory in `npm audit --omit=dev`.
   **Blocked — needs an upstream release, not a local change.** `threenative-sculpt-mcp@0.1.1`
-  (external, `jonit-dev/threenative-sculpt-mcp`) pins `sharp` to exactly `0.35.3`, so a fresh
+  (external, `ThreeNativeHQ/threenative-sculpt-mcp`) pins `sharp` to exactly `0.35.3`, so a fresh
   consumer install nests a vulnerable copy even when `@threenative/assets` floors the direct pin.
   Measured: `npm install @threenative/core@0.3.2 @threenative/assets@0.3.2` in a clean project
   installs `sharp` `0.35.4` at the root (assets path clean) and `0.35.3` under

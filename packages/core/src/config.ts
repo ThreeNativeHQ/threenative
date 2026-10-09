@@ -339,7 +339,8 @@ export interface IThreeNativeConfig {
      * What the native host does when the player leaves the app — presses the power button,
      * switches away, minimizes the window. `"pause"` (the default) stops running frames and
      * suspends audio until the app comes back; `"continue"` keeps rendering off-screen, which a
-     * server-shaped or split-screen game may genuinely want.
+     * server-shaped or split-screen game may genuinely want. On Android the operating system
+     * stops the app whatever this says, so `"continue"` takes effect on desktop only.
      *
      * Turning the pause off does not turn the reporting off: `TN_LIFECYCLE` markers are emitted
      * either way and name the mode that executed.

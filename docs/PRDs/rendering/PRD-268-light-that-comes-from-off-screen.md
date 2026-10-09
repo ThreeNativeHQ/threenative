@@ -13,6 +13,7 @@ PRD-266 landed as
 [PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md); judged after
 [PRD-269](../done/PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch: docs/PRDs/lighting.**
 
+**Priority:** P2 — Its irradiance probe volume, off-screen-emitter fixture and hue gate are unbuilt.
 **Goal: a surface is lit by light it cannot see.** This is the one item in the batch that closes a
 real gap rather than wiring an existing one, and it is the reason screen-space GI alone never reads
 as Lumen.
