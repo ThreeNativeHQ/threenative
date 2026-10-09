@@ -526,6 +526,49 @@ function clampSkySun(sky: Texture): void {
   }
 }
 
+/**
+ * The sky's diffuse light as two colours: the cosine-weighted mean radiance of the upper hemisphere
+ * (what a level surface receives) and of the lower one (the bounce a surface facing down receives).
+ * A rough surface shows little more of image-based light than this, and two colours cost no sampler.
+ */
+export function skyIrradiance(sky: Texture): {
+  up: [number, number, number];
+  down: [number, number, number];
+} {
+  const image = sky.image as { data: Uint16Array | Float32Array; width: number; height: number };
+  const data = image.data;
+  const half = data instanceof Uint16Array;
+  const read = (i: number) =>
+    half ? DataUtils.fromHalfFloat(data[i] as number) : (data[i] as number);
+  const channels = data.length / (image.width * image.height);
+  const up = [0, 0, 0];
+  const down = [0, 0, 0];
+  let upWeight = 0;
+  let downWeight = 0;
+  for (let row = 0; row < image.height; row += 2) {
+    // Equirectangular rows run from the zenith (row 0) to the nadir.
+    const theta = ((row + 0.5) / image.height) * Math.PI;
+    const y = Math.cos(theta);
+    const solid = Math.sin(theta);
+    for (let column = 0; column < image.width; column += 2) {
+      const i = (row * image.width + column) * channels;
+      const weight = Math.abs(y) * solid;
+      const target = y >= 0 ? up : down;
+      target[0] = (target[0] ?? 0) + read(i) * weight;
+      target[1] = (target[1] ?? 0) + read(i + 1) * weight;
+      target[2] = (target[2] ?? 0) + read(i + 2) * weight;
+      if (y >= 0) upWeight += weight;
+      else downWeight += weight;
+    }
+  }
+  const mean = (c: number[], w: number): [number, number, number] => [
+    (c[0] ?? 0) / (w || 1),
+    (c[1] ?? 0) / (w || 1),
+    (c[2] ?? 0) / (w || 1),
+  ];
+  return { up: mean(up, upWeight), down: mean(down, downWeight) };
+}
+
 let skyLight: Promise<Texture | undefined> | undefined;
 /** The CC0 sky photograph, loaded once; absent locally, vegetation keeps the fill alone. */
 export function loadSkyLight(assets: IAssetLoader): Promise<Texture | undefined> {

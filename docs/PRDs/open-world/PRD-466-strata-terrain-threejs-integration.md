@@ -4127,3 +4127,14 @@ Thinning only variant 2 (far above 80% of near) to 45% cut 70.9M → 61.8M, but 
 6.5 (flatter, speckled mid-distance crowns). Perf wins never cost visuals, so both are reverted. The
 variant 2 far level needs a proper reduced cook (sloppy simplification or an impostor) from the Fab
 library; that re-import needs the owner's Fab EULA acknowledgement.
+
+### 2026-10-09 — the ground receives sky light
+
+The diagnosis noted "the ground receives no env light at all": every plant read the clamped sky, so
+terrain in tree shadow fell to near-black olive. An `envMap` on the ground made 17 samplers and
+WebGPU refused the pipeline (the ground holds 15 of 16). Instead `skyIrradiance` (`pack.ts`) reduces
+the clamped HDR to two cosine-weighted colours, sky-up and ground-bounce, and the temperate ground
+adds `albedo × mix(down, up, n.y) × 0.6` as its diffuse sky term (no sampler). A fresh judge scored
+the elevated view 6 → 6.5 (lighter, cooler, still readable tree shadows; no glow or wash-out) and
+the meadow unchanged at 7.5 ([elevated](../../benchmark/strata-loading-2026-10-06/ground-sky-light-player.jpg),
+[meadow](../../benchmark/strata-loading-2026-10-06/ground-sky-light-meadow.jpg)).

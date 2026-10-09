@@ -25,6 +25,7 @@ import {
   mix,
   mx_fractal_noise_float,
   mx_noise_float,
+  normalWorld,
   normalWorldGeometry,
   normalize,
   oneMinus,
@@ -58,6 +59,7 @@ import { alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
 // Texture budget: six albedos + four normals + curvature + two shadow levels × two = 15/16.
 import { BIOMES, type IBiome, biomeWeights } from "./biomes.js";
 import { createHorizonGeometry } from "./horizon.js";
+import { loadSkyLight, skyIrradiance } from "./pack.js";
 import {
   type IBakedLake,
   type IBakedRiver,
@@ -154,6 +156,8 @@ const WET_SAND = {
  * its normal map and every other surface alone.
  */
 const MEADOW = vec3(0.47, 0.72, 0.4);
+/** How much of the vegetation's sky light the ground receives; the vegetation's own is 1.13. */
+const GROUND_SKY_LIGHT = 0.6;
 /** Multiplier that turns meadow turf into shaded needle litter under a stand. */
 const FOREST_FLOOR = vec3(0.44, 0.38, 0.3);
 
@@ -998,6 +1002,18 @@ export function createTerrain(
         mesh.material = ground;
         horizon.material = ground;
         material.dispose();
+        // The ground took no image-based light, so terrain in shadow fell to near-black while every
+        // plant on it read the sky. It reads the same clamped sky the vegetation does.
+        if (biome === undefined || biome.world === "forest" || biome.world === "coastal")
+          void loadSkyLight(assets).then((sky) => {
+            if (!sky || mesh.material !== ground || !ground.colorNode) return;
+            // An envMap would be the ground's 17th sampler; the diffuse sky it carries is two colours.
+            const { up, down } = skyIrradiance(sky);
+            ground.emissiveNode = (ground.colorNode as Node<"vec3">)
+              .mul(mix(vec3(...down), vec3(...up), normalWorld.y.mul(0.5).add(0.5)))
+              .mul(GROUND_SKY_LIGHT);
+            ground.needsUpdate = true;
+          });
       })
       // A map that never arrives, or a set this material cannot bind, leaves the ground on its
       // baked vertex colours. It must still collide and still draw.
