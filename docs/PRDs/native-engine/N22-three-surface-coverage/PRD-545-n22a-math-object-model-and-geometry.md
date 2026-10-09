@@ -1,6 +1,6 @@
 # PRD-545 — Corpus gaps in math, the object model and geometry (N22a)
 
-**Status:** IN PROGRESS — the `InstancedBufferGeometry` box is in progress on lane-wasm-templates
+**Status:** IN PROGRESS — the `InstancedBufferGeometry` box has its native half proven; its Wasm proof is open
 **Priority:** P1 — rain, Midway, Bayview, shooter, snow and five more corpus games construct a class here that the engine refuses, so their journeys cannot pass on Wasm or V8
 **Complexity:** 5 (MEDIUM) — 6–10 engine files across foundation, scene and the bindings; no new module
 **Owner:** João
@@ -57,7 +57,7 @@ The registry snapshot and the catalog follow each new member (`native_engine_reg
 **Files:** `packages/runtime-native/src/engine/scene/geometries.cpp`, `packages/runtime-native/src/engine/scene/geometry.cpp`, `packages/runtime-native/src/engine/abi/bindings_geometry.cpp`
 - [x] `IcosahedronGeometry`, `CapsuleGeometry`, `DodecahedronGeometry`, `OctahedronGeometry` and `TorusKnotGeometry` build the same vertex, normal, uv and index buffers as r185. Users: Bayview, platformer, racing, rts, shooter, snow, tower-defense. Extends PRD-508. proof: one `geometry-<class>` fixture per class through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_geometry`
   Done 2026-10-08: `native_engine_geometry` 17/17 pass, bit-exact at `abs: 0`, with fixtures `geometry-icosahedron`, `-capsule`, `-dodecahedron`, `-octahedron`, `-torus-knot` (red: all five BLOCKED, class unsupported). V8 exports them; registry, catalog and ABI digest regenerated; `player_imports`, `v8_catalog_coverage`, `v8_geometry_lifecycle` pass.
-- [ ] `InstancedBufferGeometry` with `instanceCount` and per-instance `InstancedBufferAttribute`s draws `instanceCount` instances, and TSL `attribute()` reads an instance attribute per instance. Users: rain, Midway (water effects, particles); core `projection-skinned.ts`, `world-cells.ts`. Extends PRD-508 and PRD-504. proof: fixture `instanced-buffer-geometry` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_instanced`, and `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend`
+- [ ] `InstancedBufferGeometry` with `instanceCount` and per-instance `InstancedBufferAttribute`s draws `instanceCount` instances, and TSL `attribute()` reads an instance attribute per instance. Users: rain, Midway (water effects, particles); core `projection-skinned.ts`, `world-cells.ts`. Extends PRD-508 and PRD-504. proof: fixture `instanced-buffer-geometry` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_instanced`, and `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend` — 2026-10-09 (lane/ne-midway): the native half is green: `native_engine_render_instanced_buffer_geometry` matches its new headed-WebGPU golden, and fails with the per-instance step mode forced off and with the instance count forced to 1. The Wasm half is not run: no emsdk on that host, so the box stays open.
   In progress on lane-wasm-templates (2026-10-08).
 
 New render groups need a line in the render-case list in `packages/runtime-native/cmake/NativeEngine.cmake`:

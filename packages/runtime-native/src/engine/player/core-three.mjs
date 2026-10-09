@@ -33,6 +33,7 @@ export const {
   Group,
   HemisphereLight,
   InstancedBufferAttribute,
+  InstancedBufferGeometry,
   InstancedMesh,
   LatheGeometry,
   LOD,
@@ -139,7 +140,6 @@ export function unsupported() {
 }
 
 export const BatchedMesh = unsupported;
-export const InstancedBufferGeometry = unsupported;
 export const LineLoop = unsupported;
 export const Points = unsupported;
 export const WebGLRenderer = unsupported;
@@ -215,6 +215,7 @@ const geometries = [
   DodecahedronGeometry,
   OctahedronGeometry,
   TorusKnotGeometry,
+  InstancedBufferGeometry,
 ];
 // Adapt wrapper inheritance only; native classes continue to own every scene operation.
 for (const [base, names] of [
@@ -263,6 +264,7 @@ for (const value of [
   BufferGeometry,
   BufferAttribute,
   InstancedBufferAttribute,
+  InstancedBufferGeometry,
 ])
   value.prototype[`is${value.name}`] = true;
 CatmullRomCurve3.prototype.isCatmullRomCurve3 = true;

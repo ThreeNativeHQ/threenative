@@ -46,7 +46,7 @@ BufferGeometry& geometryArg(Store& store, const Value& arg) {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
         "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry", "LatheGeometry",
         "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry", "IcosahedronGeometry", "CapsuleGeometry",
-        "DodecahedronGeometry", "OctahedronGeometry", "TorusKnotGeometry"};
+        "DodecahedronGeometry", "OctahedronGeometry", "TorusKnotGeometry", "InstancedBufferGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -847,6 +847,12 @@ void registerGeometryBindings(Registry& classes) {
     ClassBinding& instanced = classes["InstancedBufferAttribute"];
     registerBufferAttribute(instanced, "InstancedBufferAttribute");
     instanced.getters["meshPerAttribute"] = [](void*) { return Value::of(1.0); };
+    // Marks its storage as per-instance, so a geometry's draw steps it once per instance.
+    instanced.ctor = [base = instanced.ctor](const Args& a, Store& store) {
+        auto attribute = base(a, store);
+        static_cast<BufferAttribute*>(attribute.get())->instanced = true;
+        return attribute;
+    };
     // three's Float32BufferAttribute: the same attribute, but its constructor wraps whatever it is
     // given in a Float32Array, so the storage is F32 and each value rounds once to binary32.
     ClassBinding& float32 = classes["Float32BufferAttribute"];
@@ -862,6 +868,21 @@ void registerGeometryBindings(Registry& classes) {
             BufferAttribute::fromDoubles(Scalar::F32, values, static_cast<int>(itemSize), normalized));
     };
     registerBufferGeometry(classes["BufferGeometry"]);
+    // three's InstancedBufferGeometry: a BufferGeometry with instanceCount (Infinity by default).
+    ClassBinding& instancedGeometry = classes["InstancedBufferGeometry"];
+    registerBufferGeometry(instancedGeometry);
+    instancedGeometry.ctor = [](const Args&, Store&) {
+        return std::static_pointer_cast<void>(std::make_shared<InstancedBufferGeometry>());
+    };
+    instancedGeometry.getters["instanceCount"] = [](void* self) {
+        return Value::of(static_cast<InstancedBufferGeometry*>(as<BufferGeometry>(self))->instanceCount);
+    };
+    instancedGeometry.setters["instanceCount"] = [](void* self, const Value& v) {
+        const double count = number(v);
+        if (!(count >= 0) || (std::isfinite(count) && count != std::floor(count)))
+            throw Unsupported{"instanceCount must be a whole number of instances or Infinity"};
+        static_cast<InstancedBufferGeometry*>(as<BufferGeometry>(self))->instanceCount = count;
+    };
     registerGeometryGenerators(classes);
     registerCatmullRomCurve3(classes["CatmullRomCurve3"]);
     registerPath<Path>(classes["Path"]);

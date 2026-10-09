@@ -53,6 +53,17 @@ Matrix3 normalMatrix(const Matrix& m) {
     return {inv[0], inv[3], inv[6], inv[1], inv[4], inv[7], inv[2], inv[5], inv[8]};
 }
 
+// The vertex buffers a draw steps per instance, by the vertex stage's attribute index: three's
+// stepMode = geometryAttribute.isInstancedBufferAttribute ? Instance : Vertex.
+uint32_t instanceSteps(const DrawItem& item, const shader::StageModule& vertex) {
+    if (!item.geometry) return 0;
+    uint32_t steps = 0;
+    for (size_t i = 0; i < vertex.attributes.size() && i < 32; ++i)
+        if (const auto attribute = item.geometry->getAttribute(vertex.attributes[i].name); attribute && attribute->instanced)
+            steps |= 1u << i;
+    return steps;
+}
+
 WGPUVertexFormat skinIndexFormat(const DrawItem& item) {
     if (!item.skinIndices) return WGPUVertexFormat_Uint16x4;
     switch (item.skinIndices->scalar()) {
@@ -1778,6 +1789,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         if (item.background) target.depthCompare = WGPUCompareFunction_Always;
         target.frontFace = item.frontFace();
         target.skinIndex = skinIndexFormat(item);
+        target.instanceSteps = instanceSteps(item, program.vertex);
         lineTopology(target, item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
         if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
@@ -1925,6 +1937,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.layout = program.pipelineLayout;
             target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
+            target.instanceSteps = instanceSteps(item, program.vertex);
             WGPURenderPipeline pipeline = pipelines_.get(program.vertex, nullptr, target);
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
             const uint64_t v = frameUniforms_.size();
@@ -1963,6 +1976,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.layout = velocity.pipelineLayout; target.depthWrite = false;
             lineTopology(target, item);
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            target.instanceSteps = instanceSteps(item, velocity.vertex);
             const auto pipeline = pipelines_.get(velocity.vertex, &velocity.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
             const uint32_t offset = frameUniforms_.size();
@@ -2079,6 +2093,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.layout = draw.program->pipelineLayout; target.depthWrite = false;
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
+            target.instanceSteps = instanceSteps(item, draw.program->vertex);
             const auto pipeline = pipelines_.get(draw.program->vertex, &normalFragment_, target);
             if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
             Planned normal = draw;
@@ -2125,6 +2140,14 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                   : a.name == "skinIndex"     ? item.skinIndices
                                   : a.name == "skinWeight"    ? item.skinWeights
                                   : column                   ? item.instanceMatrices : nullptr;
+            // Any other name is the geometry's own attribute (TSL attribute()), float32 as the stage reads it.
+            if (!source && item.geometry)
+                if (const auto custom = item.geometry->getAttribute(a.name)) {
+                    if (custom->store->scalar() != Scalar::F32 || uint32_t(custom->itemSize) != a.type.rows)
+                        throw std::runtime_error("TN_NATIVE_ATTRIBUTE_FORMAT: " + a.name + " must hold " +
+                                                 std::to_string(a.type.rows) + " float32 values per element");
+                    source = custom->store.get();
+                }
             if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
             BufferStore& store = *source;
             const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;

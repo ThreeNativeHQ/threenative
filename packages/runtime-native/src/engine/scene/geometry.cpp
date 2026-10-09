@@ -465,7 +465,19 @@ std::shared_ptr<BufferAttribute> BufferAttribute::clone() const {
     copy->name = name;
     copy->usage = usage;
     copy->gpuType = gpuType;
+    copy->instanced = instanced;
     return copy;
+}
+
+uint32_t InstancedBufferGeometry::drawInstances() const {
+    double held = std::numeric_limits<double>::infinity();
+    for (const auto& [name, attribute] : attributes)
+        if (attribute && attribute->instanced) held = std::min(held, double(attribute->count()));
+    const double count = std::min(instanceCount, held);
+    // ponytail: three passes an Infinity count with no instanced attribute straight to the backend;
+    // here that draws once.
+    if (!std::isfinite(count)) return 1;
+    return count <= 0 ? 0u : static_cast<uint32_t>(std::min(count, 4294967295.0));
 }
 
 namespace {

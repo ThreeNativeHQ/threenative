@@ -54,6 +54,9 @@ public:
     bool normalized = false;
     uint32_t usage = 35044;  // StaticDrawUsage
     uint32_t gpuType = 1015;  // FloatType
+    /** InstancedBufferAttribute: one element per instance (meshPerAttribute 1), a vertex buffer
+     *  stepped per instance; a plain attribute steps per vertex. */
+    bool instanced = false;
     std::string name;
     uint64_t id = 0;
 
@@ -184,6 +187,20 @@ public:
 
 private:
     uint64_t revision_ = 0;
+};
+
+/**
+ * three's InstancedBufferGeometry: a BufferGeometry drawn `instanceCount` times, its
+ * InstancedBufferAttributes read once per instance. Infinity (three's default) draws as many
+ * instances as its instanced attributes hold (instanceCount()).
+ */
+class InstancedBufferGeometry : public BufferGeometry {
+public:
+    InstancedBufferGeometry() { type = "InstancedBufferGeometry"; }
+    double instanceCount = std::numeric_limits<double>::infinity();
+    /** The instances a draw issues: instanceCount, clamped to the instances every instanced attribute
+     *  holds (WebGPU refuses a draw that reads past a vertex buffer); 0 draws nothing. */
+    [[nodiscard]] uint32_t drawInstances() const;
 };
 
 }  // namespace tn::engine

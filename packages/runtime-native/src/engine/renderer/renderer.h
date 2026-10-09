@@ -113,6 +113,9 @@ struct DrawItem {
     BufferStore* instanceMatrices = nullptr;
     BufferStore* instanceColors = nullptr;
     uint32_t instanceCount = 1;
+    /** The mesh's geometry: attributes a node graph reads by name (TSL attribute()) and whether each
+     *  steps per instance (an InstancedBufferGeometry's InstancedBufferAttributes). */
+    const BufferGeometry* geometry = nullptr;
     bool sprite = false, spriteSizeAttenuation = true;
     std::array<double, 2> spriteCenter{0.5, 0.5};
     double spriteRotation = 0;

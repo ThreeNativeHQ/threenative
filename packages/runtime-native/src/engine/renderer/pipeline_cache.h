@@ -27,6 +27,9 @@ struct PipelineTarget {
     WGPUCompareFunction depthCompare = WGPUCompareFunction_LessEqual;
     WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
     WGPUIndexFormat stripIndexFormat = WGPUIndexFormat_Undefined;  // an indexed line strip's index format
+    // The vertex stage's attributes stepped per instance, by attribute index: a geometry's
+    // InstancedBufferAttributes (instanceMatrix columns and instanceColor step by name).
+    uint32_t instanceSteps = 0;
 };
 
 /**

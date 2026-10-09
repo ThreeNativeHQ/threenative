@@ -1,0 +1,35 @@
+{
+  "name": "instanced-buffer-geometry",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — an InstancedBufferGeometry (three r185) drawn instanceCount = 5 times from six per-instance InstancedBufferAttributes, read by TSL attribute(): positionLocal + attribute('offset') places each quad and varying(attribute('tint')) colours it, as Midway's whitewater and rain read theirs",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:0a6122e50d0b0ed1dad375a51b60285d3c4302fc2325735c9b89b8e854f57999",
+      "decimal": "0a6122e50d0b0ed1dad375a51b60285d3c4302fc2325735c9b89b8e854f57999"
+    }
+  ],
+  "render": {
+    "png": "instanced-buffer-geometry.png",
+    "pngSha256": "0a6122e50d0b0ed1dad375a51b60285d3c4302fc2325735c9b89b8e854f57999",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

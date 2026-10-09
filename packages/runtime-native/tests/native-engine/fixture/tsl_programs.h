@@ -322,6 +322,36 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         scene.backgroundRotation.set(0.1, 0.4, 0); scene.environmentRotation.set(0.1, 0.4, 0);
         return "";
     }
+    if (program == "instanced-buffer-geometry") {
+        if (object.cls != "Mesh") return "TN_FIXTURE_INSTANCED_INVALID: requires mesh";
+        auto& mesh = *static_cast<engine::Mesh*>(object.ptr.get());
+        if (!mesh.material) return "TN_FIXTURE_INSTANCED_INVALID: material";
+        namespace g = engine::shader::graph;
+        // PlaneGeometry(0.5, 0.5): four corners, two triangles, as three builds it.
+        auto geometry = std::make_shared<engine::InstancedBufferGeometry>();
+        geometry->setAttribute("position", engine::BufferAttribute::fromFloats(
+            {-0.25, 0.25, 0, 0.25, 0.25, 0, -0.25, -0.25, 0, 0.25, -0.25, 0}, 3));
+        geometry->setAttribute("uv", engine::BufferAttribute::fromFloats({0, 1, 1, 1, 0, 0, 1, 0}, 2));
+        geometry->setIndexFromArray({0, 2, 1, 2, 3, 1});
+        const auto instanced = [](std::vector<double> values) {
+            auto attribute = engine::BufferAttribute::fromFloats(values, 3);
+            attribute->instanced = true;
+            return attribute;
+        };
+        geometry->setAttribute("offset", instanced({-1, 0.5, 0, 0, 0.5, 0, 1, 0.5, 0, -1, -0.5, 0, 0, -0.5, 0, 1, -0.5, 0}));
+        geometry->setAttribute("tint", instanced({1, 0.2, 0.2, 0.2, 1, 0.2, 0.2, 0.2, 1, 1, 1, 0.2, 0.2, 1, 1, 1, 1, 1}));
+        geometry->instanceCount = 5;
+        mesh.geometry = geometry;
+        uint64_t serial = 0;
+        const auto attribute = [&serial](const char* name) {
+            return abi::tslCall("attribute", nullptr, {abi::TslArg::of(std::string(name)), abi::TslArg::of(std::string("vec3"))}, serial);
+        };
+        const auto tint = abi::tslCall("varying", nullptr, {abi::TslArg::of(attribute("tint"))}, serial);
+        mesh.material->nodes.positionNode = g::add(g::positionLocal(), attribute("offset"));
+        mesh.material->nodes.colorNode = g::vec4({tint, g::float_(1)});
+        mesh.material->needsUpdate();
+        return "";
+    }
     if (program == "reflector-plane") {
         if (object.cls != "Scene") return "TN_FIXTURE_REFLECTOR_INVALID: requires scene";
         auto& scene = *static_cast<engine::Scene*>(object.ptr.get());

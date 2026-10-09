@@ -27,6 +27,7 @@ struct GraphFind {
     const Texture* texture = nullptr;
     std::shared_ptr<const void> reflector;
     std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples, by binding
+    bool customAttributes = false;  // an attribute() other than the ones a compact batch carries
 };
 
 GraphFind findGraphSources(const Material& material) {
@@ -44,6 +45,9 @@ GraphFind findGraphSources(const Material& material) {
             if (std::none_of(found.textures.begin(), found.textures.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
                 found.textures.emplace_back(node->name, texture);
+        } else if (node->kind == shader::graph::Kind::Attribute && node->name != "position" &&
+                   node->name != "normal" && node->name != "uv") {
+            found.customAttributes = true;
         } else if (node->kind == shader::graph::Kind::Reflector) {
             if (found.reflector && found.reflector != node->object)
                 throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: one material samples two reflectors");
@@ -437,7 +441,7 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
     if (cached.roots != roots || cached.version != material.version()) {
         GraphFind found = findGraphSources(material);
         cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
-                              std::move(found.textures)};
+                              std::move(found.textures), found.customAttributes};
     }
     return cached;
 }
@@ -462,6 +466,8 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                  !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                  !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
+                                 mesh.geometry->type != "InstancedBufferGeometry" &&
+                                 !graphSources(*mesh.material).customAttributes &&
                                  (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
                                  mesh.matrixWorld.determinant() > 0;
             Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
@@ -473,6 +479,10 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 } else {
                     DrawItem& d = refresh(mesh, r);
                     d.batchable = false;
+                    d.geometry = mesh.geometry.get();
+                    // three draws an InstancedBufferGeometry geometry.instanceCount times, read every frame.
+                    if (mesh.geometry->type == "InstancedBufferGeometry")
+                        d.instanceCount = static_cast<const InstancedBufferGeometry&>(*mesh.geometry).drawInstances();
                     const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();
                     d.morphGeometry = morphed ? mesh.geometry.get() : nullptr;
                     d.morphInfluences = morphed ? &mesh.morphTargetInfluences : nullptr;

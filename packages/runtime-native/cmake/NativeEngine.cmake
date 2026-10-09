@@ -175,6 +175,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "render_post_addons:tsl-post-ao,tsl-post-ao-raw,tsl-post-bloom,tsl-post-smaa,tsl-post-template-high,tsl-post-live-parameters,tsl-post-uniform-write"
                 "render_data_textures:textures-data-*" "render_lines:lines-*" "render_materialx:materialx-*"
                 "render_pmrem:pmrem-*" "render_screen_uv:screen-uv" "render_texture_object:texture-object"
+                "render_instanced_buffer_geometry:instanced-buffer-geometry"
                 "render_reflector:reflector-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
             list(GET render_pair 0 render_name)

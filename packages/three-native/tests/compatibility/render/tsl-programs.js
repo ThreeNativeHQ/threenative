@@ -4,11 +4,14 @@ import {
   DataTexture,
   DataUtils,
   EquirectangularReflectionMapping,
+  InstancedBufferAttribute,
+  InstancedBufferGeometry,
   LinearFilter,
   LinearMipmapLinearFilter,
   Mesh,
   MeshLambertNodeMaterial,
   NearestFilter,
+  PlaneGeometry,
   PointLight,
   RenderPipeline,
   RenderTarget,
@@ -18,6 +21,7 @@ import {
 } from "three";
 import {
   Fn,
+  attribute,
   cameraProjectionMatrix,
   cameraViewMatrix,
   convertToTexture,
@@ -49,6 +53,7 @@ import {
   uint,
   uniform,
   uv,
+  varying,
   vec2,
   vec3,
   vec4,
@@ -690,6 +695,21 @@ export const programs = {
   },
   async "screen-uv"({ target }) {
     target.colorNode = vec4(screenUV.flipX(), screenUV.x.mul(screenUV.y), 1);
+  },
+  async "instanced-buffer-geometry"({ target }) {
+    const base = new PlaneGeometry(0.5, 0.5);
+    const geometry = new InstancedBufferGeometry();
+    geometry.setIndex(base.index);
+    geometry.setAttribute("position", base.getAttribute("position"));
+    geometry.setAttribute("uv", base.getAttribute("uv"));
+    const offsets = [-1, 0.5, 0, 0, 0.5, 0, 1, 0.5, 0, -1, -0.5, 0, 0, -0.5, 0, 1, -0.5, 0];
+    const tints = [1, 0.2, 0.2, 0.2, 1, 0.2, 0.2, 0.2, 1, 1, 1, 0.2, 0.2, 1, 1, 1, 1, 1];
+    geometry.setAttribute("offset", new InstancedBufferAttribute(new Float32Array(offsets), 3));
+    geometry.setAttribute("tint", new InstancedBufferAttribute(new Float32Array(tints), 3));
+    geometry.instanceCount = 5; // the sixth (white, bottom right) is not drawn
+    target.geometry = geometry;
+    target.material.positionNode = positionLocal.add(attribute("offset", "vec3"));
+    target.material.colorNode = vec4(varying(attribute("tint", "vec3")), 1);
   },
   async "texture-object"({ target }) {
     const bands = equirectSky();

@@ -6543,12 +6543,21 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_INSTANCEDBUFFERGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "instanceCount",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": []
     },
     {

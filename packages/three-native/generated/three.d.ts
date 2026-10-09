@@ -861,11 +861,17 @@ export declare const IncrementStencilOp: 7682;
 /** Catalog partial (native-not-implemented): three/IncrementWrapStencilOp. */
 export declare const IncrementWrapStencilOp: 34055;
 
+/** Catalog supported: three/InstancedBufferGeometry. */
+export declare class InstancedBufferGeometry extends BufferGeometry {
+constructor();
+instanceCount: number;
+}
+
 /** Catalog supported: three/webgpu/InstancedMesh. */
 export declare class InstancedMesh extends Mesh {
 constructor();
 count: number;
-readonly instanceColor: InstancedBufferAttribute | null;
+instanceColor: InstancedBufferAttribute | null;
 readonly instanceMatrix: InstancedBufferAttribute;
 boundingBox: Box3 | null;
 
@@ -1026,6 +1032,9 @@ color: Color;
 map: Texture | null;
 vertexColors: boolean;
 forceSinglePass: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -1423,6 +1432,9 @@ blending: Blending;
 vertexColors: boolean;
 forceSinglePass: boolean;
 vertexNode: Node | null;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -1556,6 +1568,9 @@ emissiveMap: Texture | null;
 vertexColors: boolean;
 forceSinglePass: boolean;
 vertexNode: Node | null;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -2427,6 +2442,9 @@ fog: boolean;
 blending: Blending;
 vertexColors: boolean;
 forceSinglePass: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -2463,6 +2481,9 @@ blending: Blending;
 vertexColors: boolean;
 forceSinglePass: boolean;
 vertexNode: Node | null;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -3118,6 +3139,9 @@ normalMap: Texture | null;
 normalScale: Vector2;
 vertexColors: boolean;
 forceSinglePass: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -3150,6 +3174,9 @@ normalMap: Texture | null;
 normalScale: Vector2;
 vertexColors: boolean;
 forceSinglePass: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
