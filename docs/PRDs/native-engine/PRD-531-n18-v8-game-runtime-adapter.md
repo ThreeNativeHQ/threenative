@@ -148,7 +148,7 @@ each gap has one box. The items left here are V8 back-end work.
 
 - `native_engine_v8_catalog_coverage` is red after the feat merge (41aca5170): the installed
   globals plus constants no longer sum to `capability_count` (`v8_adapter_test.cpp:458`).
-- Moved to [PRD-544](N22-three-surface-coverage/PRD-544-n22d-uniforms-post-parameters-and-loaders.md):
+- Moved to [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md):
   `aoPass.resolutionScale` set after the first render does nothing.
 - Every `pass()` overwrites `tn.scene`/`tn.camera` (`core-tsl.mjs`); a second distinct scene or
   camera must refuse by name.
@@ -156,9 +156,8 @@ each gap has one box. The items left here are V8 back-end work.
 - `renderer.info`: `frame` never increments, `compute` is empty, `memory` is missing. Make each
   real or absent.
 - Low: the MRT slot markers (`normalView`, `metalness`, `roughness`, `output`) are frozen
-  objects. Moved to [PRD-544](N22-three-surface-coverage/PRD-544-n22d-uniforms-post-parameters-and-loaders.md):
-  the `bloom()` uniforms and the skinned `getVertexPosition`. Listed as unranked (no corpus user)
-  in the [N22 README](N22-three-surface-coverage/README.md#owned-elsewhere-not-boxes-here):
+  objects. Moved: the `bloom()` uniforms to [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md), the skinned
+  `getVertexPosition` to [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md). In the [N22 backlog](N22-three-surface-coverage/README.md#backlog-gaps-no-corpus-game-reaches) (no corpus user):
   `AnimationMixer.clipAction` ignores its `optionalRoot` argument.
 - The V8 player's performance series (owner decision above) is not built yet. Core announces a
   runner through `TN_PLAYTEST_ENDPOINT`, which the V8 player does not set, and announcing freezes

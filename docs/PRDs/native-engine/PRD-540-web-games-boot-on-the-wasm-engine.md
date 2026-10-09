@@ -59,7 +59,7 @@ reach geometry arrays directly.
 
 ## Decisions
 
-- 2026-10-08 (team lead, slicing PRD-541 to PRD-544): an engine gap lives in one box in [N22](N22-three-surface-coverage/README.md); this PRD keeps the Wasm back-end work and the game-journey boxes. The engine items of phase 3 and the Midway TSL box moved there.
+- 2026-10-08 (team lead, slicing PRD-545 to PRD-548): an engine gap lives in one box in [N22](N22-three-surface-coverage/README.md); this PRD keeps the Wasm back-end work and the game-journey boxes. The engine items of phase 3 and the Midway TSL box moved there.
 - 2026-10-08 (owner, relayed by the coordinator): no stubs or mocks for unreached imports. A symbol a game reaches is made real by its owner (TSL Node classes: lane-531; MeshBVH: lane-assets); an import nothing reaches leaves the bundle (lane-tier-imports).
 
 ## Execution Phases
@@ -103,16 +103,16 @@ a stale native coverage digest. This lane changed no `packages/runtime-native` f
 **Status:** NOT STARTED
 **Files:** `packages/three-native/src/`, `packages/runtime-native/src/engine/abi/`, shared with PRD-531
 - [ ] The TSL graphs in the `minimal` template compile through the engine shader IR from the browser back end. proof: `pnpm exec vitest run packages/three-native/__tests__/browser-tsl.spec.ts`
-  Progress 2026-10-08, not the box: the V8 TSL name table moved into the engine as `tn::abi::tslCall` (630e3ca26, V8 TSL ctests unchanged), the C ABI gained `tn_tsl_call`, and the browser back end binds `three/tsl` over it (13ad549a0). The renderer fixture draws a node material built from `uniform(0.5)` on `nvidia turing`. Still open for `minimal`: Fn, If, Loop, Else, toVar, assign, writing `uniform.value`, and the TSL names `minimal` uses that the table lacks (`mrt`, `normalView`, `output`, `pass`, `positionViewDirection`, `screenCoordinate`).
+  Progress 2026-10-08, not the box: the V8 TSL name table moved into the engine as `tn::abi::tslCall` (630e3ca26, V8 TSL ctests unchanged), the C ABI gained `tn_tsl_call`, and the browser back end binds `three/tsl` over it (13ad549a0). The renderer fixture draws a node material built from `uniform(0.5)` on `nvidia turing`. Still open for `minimal`: Fn, If, Loop, Else, toVar, assign, writing `uniform.value`, and the TSL names `minimal` uses that the table lacks (`mrt`, `normalView`, `output`, `pass`, `positionViewDirection`, `screenCoordinate`). The two engine names are boxes in [PRD-547](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md).
   Progress 2026-10-08 (lane-tsl-runtime), not the box: `uniform.value` writes landed in a38a6eb50 (lane-wasm-templates). The statement forms (Fn, If, Else, Loop, toVar, assign) now run on Wasm through the engine's `tn::abi::TslScopes`, which the V8 back end also uses. The shared table also answers the TSL constants, uniform `setName` and `storage:element`. `native_engine_wasm_tsl_js` runs `tsl-corpus/corpus.js` (the corpus V8 runs) through `browser-tsl.ts` on the real Wasm ABI module: 25 graphs, 0 differ. Without the statement forms it fails with "uniform(...).setName is not a function". That run also found an engine bug: a `vec3(0.5)` splat read freed memory (`ids.assign(n, ids[0])`). ASan on Wasm reported it; the fix is 83ca173c6. Open, from QA on the uniform work:
-  - Moved → [PRD-544](N22-three-surface-coverage/PRD-544-n22d-uniforms-post-parameters-and-loaders.md): post and render-texture graphs keep a copy of their uniforms (HIGH).
-  - Moved → [PRD-544](N22-three-surface-coverage/PRD-544-n22d-uniforms-post-parameters-and-loaders.md): uniform value types.
+  - Moved → [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md): post and render-texture graphs keep a copy of their uniforms (HIGH).
+  - Moved → [PRD-547](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md): uniform value types.
   - [ ] `vec3(new Vector3())` on Wasm leaks the inner engine node. Wrap or release it, and add a node-count check to a real-module spec. proof: open.
-  - Moved → [PRD-544](N22-three-surface-coverage/PRD-544-n22d-uniforms-post-parameters-and-loaders.md): a `setName` conflict is found at graph build.
+  - Moved → [PRD-547](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md): a `setName` conflict is found at graph build.
   - [ ] No mocks: `browser-tsl.spec.ts` uses a fake `ITslRuntime`. Move it onto the real Node-Wasm ABI module. Give the renderer playtest a pixel assertion on the TSL tile's colour and on a `uniform.value` write, and show it red with a wrong tint. proof: open.
 - [ ] `pass` and `RenderPipeline` render the `minimal` post chain on Wasm through the PRD-531 C ABI. proof: `node packages/playtest/dist/runner/cli.js <wasm-post>.playtest.json --browser-recipe webgpu`
 - [ ] The `minimal` template journey passes on the Wasm engine. proof: `TN_TEMPLATE_ONLY=minimal TN_TEMPLATE_ENGINE=native pnpm test:templates`
-- Moved 2026-10-08: the box "Midway's TSL nodes are complete in the shared table". Its landed part is recorded in [PRD-543](N22-three-surface-coverage/PRD-543-n22c-screen-reads-vertex-stage-and-tsl-names.md) Context; its open parts are boxes there (shadow-depth camera slots, the `varying` scratch lowering), in [PRD-542](N22-three-surface-coverage/PRD-542-n22b-materials-and-textures.md) (`normalWorld` on `DoubleSide`) and in [PRD-541](N22-three-surface-coverage/PRD-541-n22a-instancing-and-primitives.md) (`material.vertexNode`).
+- Moved 2026-10-08: the box "Midway's TSL nodes are complete in the shared table". Its landed part is recorded in [PRD-547](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) Context; its open parts are boxes there (`normalWorld` on `DoubleSide`, the `varying` scratch lowering), in [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) (shadow-depth camera slots) and in [PRD-546](N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) (`material.vertexNode`).
 
 Every template's journey, visuals and the blind A/B stay PRD-533 phase 3 boxes 2-4; this PRD makes
 them runnable.
