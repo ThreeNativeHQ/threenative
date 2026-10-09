@@ -2321,7 +2321,7 @@ export declare class Sprite extends Object3D {
 constructor();
 count: number;
 readonly morphTargetInfluences: number[];
-readonly geometry: BufferGeometry;
+geometry: BufferGeometry;
 material: SpriteMaterial;
 
   updateMorphTargets(): void;

@@ -18614,7 +18614,7 @@
         {
           "name": "geometry",
           "type": "BufferGeometry",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"

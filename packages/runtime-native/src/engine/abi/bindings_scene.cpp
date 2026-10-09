@@ -823,6 +823,10 @@ void registerMesh(ClassBinding& b) {
     b.members["geometry"] = [](void* self, const Args&, Store& store) -> Value {
         return store.share("BufferGeometry", as<Mesh>(self)->geometry);
     };
+    // three's Mesh.geometry is a plain property: a game swaps it (Midway's LOD and merged hulls).
+    b.setters["geometry"] = [](void* self, const Value& value, Store& store) {
+        as<Mesh>(self)->geometry = geometryArg(store, value);
+    };
     // morphTargetInfluences: a plain array three sizes from the geometry's morph targets.
     b.methods["updateMorphTargets"] = [](void* self, const Args&, Store&) {
         as<Mesh>(self)->updateMorphTargets();
