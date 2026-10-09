@@ -1592,6 +1592,52 @@ void normalMapTilt() {
     CHECK(renderer.materialTextureCount() == 0);  // no dead texture's GPU copy is kept
 }
 
+// three's WebGPUTextureUtils builds a map's mip chain on the GPU: only level 0 crosses from the CPU,
+// and an sRGB map filters in linear light. A 16x16 sRGB map with one white texel per 4x4 block, drawn
+// at 4:1, reads level 2: 1/16 in linear light is sRGB 71. Level 0 alone reads 0; averaging the
+// encoded bytes reads 16.
+void gpuMipmaps() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(4, 4);
+    renderer.setOutput(OutputState{std::nullopt, 1, true});
+    auto map = std::make_shared<Texture>();
+    map->width = map->height = 16;
+    map->colorSpace = TextureColorSpace::SRGB;
+    for (uint32_t y = 0; y < 16; ++y)
+        for (uint32_t x = 0; x < 16; ++x) {
+            const uint8_t v = x % 4 == 0 && y % 4 == 0 ? 255 : 0;
+            map->data.insert(map->data.end(), {v, v, v, 255});
+        }
+    map->needsUpdate();
+    auto material = std::make_shared<Material>(MaterialType::Basic);
+    material->maps["map"] = map;
+    Scene scene;
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 2;
+    camera.updateProjectionMatrix();
+    Mesh plane(makePlaneGeometry(2, 2), material);
+    scene.add(plane);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(database.diagnostics().empty());
+    const auto px = read(renderer, events);
+    CHECK(px.size() == 4 * 4 * 4);
+    std::fprintf(stderr, "gpu mipmaps: centre %d, %llu texture bytes uploaded\n", px[(1 * 4 + 1) * 4],
+                 static_cast<unsigned long long>(renderer.textureUploadBytes()));
+    for (size_t i = 0; i < px.size(); i += 4) CHECK(std::abs(int(px[i]) - 71) <= 2);
+    CHECK(renderer.textureUploadBytes() == 16 * 16 * 4);  // level 0 only
+    // A render target draws the same map from the same upload, as three's one renderer does.
+    const auto target = RenderTarget::make(4, 4, kTextureUnsignedByteType);
+    CHECK(renderToTarget(renderer, *target, scene, camera, {0, 0, 0, 1}, false).empty());
+    std::fprintf(stderr, "gpu mipmaps: %llu texture bytes after a render target\n",
+                 static_cast<unsigned long long>(renderer.textureUploadBytes()));
+    CHECK(renderer.textureUploadBytes() == 16 * 16 * 4);
+}
+
 // PRD-526 review: a decoded map the standard program does not read is refused by name, never drawn without it.
 void unsupportedMapSlot() {
     mystral::webgpu::Context context;
@@ -1790,6 +1836,6 @@ void gpuTimerIsOptIn() {
 }  // namespace
 
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
-             {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"updates", updates},
+             {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn})

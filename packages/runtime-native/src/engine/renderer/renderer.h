@@ -237,13 +237,18 @@ public:
     /** The post normal target (RGBA16Float, packed rows); InvalidHandle until a post pass has read "normal". */
     GpuStatus readNormalPixels(ReadbackCallback done);
     /** Textures the renderer holds GPU copies of (a destroyed Texture's are released at the next frame). */
-    std::size_t materialTextureCount() const { return materialTextures_.size(); }
+    std::size_t materialTextureCount() const { return textures_->records.size(); }
     /** What the last frame refused or skipped by name; cleared at the start of each frame. */
     const std::vector<std::string>& diagnostics() const { return diagnostics_; }
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
     /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
-    std::unique_ptr<Renderer> sibling() { return std::make_unique<Renderer>(instance_, device_, queue_, events_); }
+    /** A renderer on the same device for a render target or a reflection: it shares this one's map textures. */
+    std::unique_ptr<Renderer> sibling() {
+        auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
+        child->textures_ = textures_;
+        return child;
+    }
     /** The last render's linear HDR scene target (RGBA16Float), before post and the output transform. */
     WGPUTextureView sceneColorView() const { return sceneView_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
@@ -293,6 +298,8 @@ public:
                     bool bgra = false);
     /** How many overlay frames setOverlay uploaded: a steady UI adds none. */
     uint64_t overlayUploads() const { return overlayUploads_; }
+    /** Bytes of map pixels written from the CPU by this renderer and its siblings: level 0 only, the GPU builds the mips. */
+    uint64_t textureUploadBytes() const { return textures_->uploadBytes; }
     /**
      * The next render() draws its output pass straight into `target`, a view of `format`, in place
      * of the intermediate RGBA8 frame and the blitTo that copies it: a presented frame costs one
@@ -414,6 +421,9 @@ private:
     Program& depthProgram(const shader::VertexVariant& variant);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
     struct MaterialTexture;
+    /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */
+    WGPURenderPipeline copyPipeline(WGPUTextureFormat format, uint8_t blend);
+    void generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels);
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler,
                             WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr,
@@ -425,11 +435,11 @@ private:
                             const GraphTextures* graphTextures = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
-        Handle gpu;
-        WGPUTexture mipped = nullptr;  // the texture when it carries a mip chain (gpu is then unused)
+        WGPUTexture texture = nullptr;
         WGPUTextureView view = nullptr;
         WGPUSampler sampler = nullptr;
         uint32_t version = 0;
+        void release();
     };
     const MaterialTexture* materialTexture(const Texture& texture);
     // Render-target textures by texture id: views borrowed from each target's renderer, never released here.
@@ -517,6 +527,17 @@ private:
     WGPUTextureView overlayView_ = nullptr;
     uint32_t overlayWidth_ = 0, overlayHeight_ = 0;
     uint64_t overlayVersion_ = 0, overlayUploads_ = 0;
+    // Map textures, shared with every sibling(), as three's one renderer serves every render target.
+    struct MaterialTextureStore {
+        std::unordered_map<uint64_t, MaterialTexture> records;  // by Texture::ident, never an address
+        uint64_t generation = 0;  // moves when a record's view is replaced or released
+        uint64_t uploadBytes = 0;
+        ~MaterialTextureStore();
+    };
+    std::shared_ptr<MaterialTextureStore> textures_ = std::make_shared<MaterialTextureStore>();
+    uint64_t texturesSeen_ = 0;
+    /** A shared map texture's view went away: drop the groups bound to views, here and (by generation) in siblings. */
+    void texturesChanged();
     bool overlayBgra_ = false;
     std::vector<uint8_t> overlayRows_;  // a padded frame's rows, packed for the upload
     Handle presented_;  // readPresented's RGBA8 copy of the presented frame
@@ -597,7 +618,6 @@ private:
     std::map<std::string, std::pair<Handle, uint64_t>> externalStorage_;  // setStorage, by name
     // A material's diffuse map: its GPU texture/sampler, and, per (program, texture), the bind group
     // that binds it alongside the frame's uniforms. Cleared when the uniform buffer is rebuilt.
-    std::unordered_map<uint64_t, MaterialTexture> materialTextures_;  // by Texture::ident, never an address
     std::map<std::string, WGPUBindGroup> mapGroups_;
     // PMREM (three's PMREMGenerator.fromEquirectangular): the cubeUV tiles and the pipelines that
     // fill them, keyed by the equirect source texture.
