@@ -261,8 +261,12 @@ export function defineWebRenderer(
       if (Array.isArray(gpuMs)) {
         if (this.#gpuSamples < 0) check(module._tnw_web_gpu_timer(1));
         const samples = module._tnw_web_frame(8);
-        if (samples > this.#gpuSamples && this.#gpuSamples >= 0)
+        if (samples > this.#gpuSamples && this.#gpuSamples >= 0) {
           gpuMs.push(module._tnw_web_frame(7));
+          // Optional: shadow, scene, post and output milliseconds per timed frame.
+          const segments = (globalThis as { __tnGpuSegments?: number[][] }).__tnGpuSegments;
+          segments?.push([9, 10, 11, 12].map((field) => module._tnw_web_frame(field)));
+        }
         this.#gpuSamples = samples;
       }
     }

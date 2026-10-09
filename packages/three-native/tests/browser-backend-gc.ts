@@ -23,6 +23,15 @@ const createTnAbi = createRequire(import.meta.url)(
   path.resolve(modulePath),
 ) as () => Promise<TnAbiModule>;
 const runtime = createWasmRuntime(await createTnAbi());
+// How many wrappers each safe point asks the engine about.
+const asked: number[] = [];
+const engineReferences = runtime.engineReferences?.bind(runtime);
+if (engineReferences === undefined)
+  throw new Error("TN_BROWSER_GC_NO_REFERENCES: the module counts no references");
+runtime.engineReferences = (refs) => {
+  asked.push(refs.length);
+  return engineReferences(refs);
+};
 const { classes, collect } = defineBrowserClasses(
   read("native-registry.json") as IRegistryDump,
   runtime,
@@ -33,6 +42,7 @@ type Node3D = Record<string, unknown> & {
   userData: Record<string, unknown>;
   children: Node3D[];
   add(...objects: object[]): void;
+  remove(...objects: object[]): void;
 };
 const failures: string[] = [];
 const check = (ok: boolean, name: string) => {
@@ -84,6 +94,28 @@ check(
   "a JS subclass instance survives as itself",
 );
 check(weakDetached.deref() === undefined, "a detached subtree nothing reaches is collected");
+
+// A steady safe point asks about a bounded slice of what it holds, not every wrapper every frame
+// (PRD-553: 300 held wrappers made the minimal template's safe point 10% of its frame), and a
+// wrapper detached after it was confirmed is still let go once the sweep reaches it.
+const crowd = new Group();
+scene.add(crowd);
+let weakLate: WeakRef<Node3D>;
+(() => {
+  for (let i = 0; i < 500; i++) crowd.add(new Object3D());
+})();
+collect();
+asked.length = 0;
+collect();
+check((asked[0] ?? 0) <= 64, `a steady safe point asks about ${asked[0]} wrappers, at most 64`);
+(() => {
+  const late = crowd.children[250] as Node3D;
+  weakLate = new WeakRef(late);
+  crowd.remove(late);
+})();
+for (let i = 0; i < 40; i++) collect();
+await collectAll();
+check(weakLate.deref() === undefined, "a confirmed wrapper detached later is collected");
 
 if (failures.length > 0) {
   console.error(`TN_BROWSER_GC_FAILED: ${failures.join("; ")}`);

@@ -96,6 +96,8 @@ export interface IBrowserEngine {
 }
 
 const REF = Symbol("tn.engineRef");
+/** Held wrappers a safe point re-asks about beyond the new ones (`collect()`). */
+const SWEEP = 32;
 
 type TypedArray =
   | Float32Array
@@ -307,6 +309,16 @@ export function defineBrowserClasses(
   const callbackFunctions = new WeakMap<object, Map<string, (...args: unknown[]) => unknown>>();
   const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
   const held = new Set<object>();
+  // A safe point asks about every wrapper held since the last one, and a slice of the rest in turn:
+  // a wrapper the engine lets go of is released within a few frames, and a frame's cost stays flat
+  // whatever the scene holds.
+  const fresh = new Set<object>();
+  let sweep = held.values();
+  const hold = (wrapper: object): void => {
+    if (held.has(wrapper)) return;
+    held.add(wrapper);
+    fresh.add(wrapper);
+  };
   // userData is the game's: it lives with the wrapper, which `held` keeps while the engine references it.
   const userData = new WeakMap<object, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
@@ -352,7 +364,7 @@ export function defineBrowserClasses(
       throw new TypeError(`TN_BROWSER_TYPE_UNKNOWN: no class for engine type ${ref.type}`);
     // Held until the next safe point decides: the engine may reference what it just handed out.
     const wrapper = adopt(Object.create(cls.prototype) as object, ref);
-    held.add(wrapper);
+    hold(wrapper);
     return wrapper;
   };
   const refOf = (self: unknown): IEngineRef => {
@@ -375,7 +387,7 @@ export function defineBrowserClasses(
     if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
     if (typeof value === "object" && REF in value) {
       // A wrapper passed into the engine is held until the next safe point decides (collect()).
-      held.add(value);
+      hold(value);
       return (value as IWrapped)[REF];
     }
     // An options object (`new ExtrudeGeometry(shape, { depth })`) crosses as a record of scalars and
@@ -578,7 +590,7 @@ export function defineBrowserClasses(
           functions.set(callback, fn as (...args: unknown[]) => unknown);
           callbackFunctions.set(this, functions);
           callbackNames.set(ref.key, (callbackNames.get(ref.key) ?? new Set()).add(callback));
-          held.add(this);
+          hold(this);
         },
       });
     }
@@ -624,7 +636,7 @@ export function defineBrowserClasses(
                   ref.key,
                   (callbackNames.get(ref.key) ?? new Set()).add(type as string),
                 );
-                held.add(this);
+                hold(this);
               }
             }
             if (!list.includes(listener)) list.push(listener);
@@ -752,11 +764,20 @@ export function defineBrowserClasses(
     classes,
     wrap,
     collect() {
-      const candidates = [...held];
-      const counts = runtime.engineReferences?.(candidates.map(refOf));
-      // ponytail: every held wrapper is asked each safe point, in one call; keep a dirty set if a
-      // scene's held count shows in a profile.
-      candidates.forEach((wrapper, i) => {
+      const candidates = new Set(fresh);
+      fresh.clear();
+      for (let n = 0; n < SWEEP; ++n) {
+        let next = sweep.next();
+        if (next.done === true) {
+          sweep = held.values();
+          next = sweep.next();
+        }
+        if (next.done === true || candidates.has(next.value)) break;
+        candidates.add(next.value);
+      }
+      const asked = [...candidates];
+      const counts = runtime.engineReferences?.(asked.map(refOf));
+      asked.forEach((wrapper, i) => {
         const referenced =
           counts !== undefined
             ? (counts[i] as number) > 0

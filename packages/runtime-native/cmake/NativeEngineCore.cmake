@@ -479,6 +479,11 @@ if(EMSCRIPTEN)
     endif()
     target_include_directories(tn-native-engine-web PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     tn_native_engine_target(tn-native-engine-web)
+    # `pnpm profile:wasm-page` names Wasm functions only in a module linked with their names.
+    option(TN_WEB_PROFILING_FUNCS "Keep Wasm function names in the web host, for profiling" OFF)
+    if(TN_WEB_PROFILING_FUNCS)
+        target_link_options(tn-native-engine-web PRIVATE --profiling-funcs)
+    endif()
     set_target_properties(tn-native-engine-web PROPERTIES SUFFIX ".mjs"
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/web)
     target_link_options(tn-native-engine-web PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1

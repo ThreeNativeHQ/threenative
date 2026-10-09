@@ -2512,6 +2512,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             const uint64_t begin = shadowTimed ? ns[4] : ns[0];
             if (ns[3] <= begin) return;  // a reset clock reads as no sample
             t->lastMs = double(ns[3] - begin) / 1e6;
+            const auto span = [](uint64_t from, uint64_t to) { return to > from ? double(to - from) / 1e6 : 0.0; };
+            t->segments = {shadowTimed ? span(ns[4], ns[0]) : 0.0, span(ns[0], ns[1]), span(ns[1], ns[2]), span(ns[2], ns[3])};
             ++t->samples;
         });
     }

@@ -390,6 +390,7 @@ extern "C" double tnw_web_frame(int field) {
         case 6: return double(renderer->programCount());
         case 7: return renderer->lastGpuMs();  // negative until a timed frame came back
         case 8: return double(renderer->gpuSamples());
+        case 9: case 10: case 11: case 12: return renderer->lastGpuSegments()[field - 9];  // shadow, scene, post, output
         default: return 0;
     }
 }

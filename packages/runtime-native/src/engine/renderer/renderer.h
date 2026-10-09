@@ -337,6 +337,11 @@ public:
      * set and reads it back, a cost every frame pays and only a caller of lastGpuMs wants.
      */
     void setGpuTimer(bool on) { gpuTimer_ = on; }
+    /**
+     * The last timed frame's GPU time by segment, in ms: shadow passes (0 when the frame drew none),
+     * scene pass, everything between the scene and output passes (post, TRAA), output pass.
+     */
+    std::array<double, 4> lastGpuSegments() const { return timing_->segments; }
     /** How many GPU times have come back, so a caller samples each one once. */
     uint64_t gpuSamples() const { return timing_->samples; }
     /** Whether the last timed frame's GPU time began at its first shadow pass (else at the scene pass). */
@@ -543,6 +548,7 @@ private:
     struct Timing {
         bool pending = false;  // a resolve is being read back; the next frames are not timed
         double lastMs = -1;
+        std::array<double, 4> segments{};  // shadow passes, scene pass, post (between), output pass, in ms
         uint64_t samples = 0;
     };
     std::shared_ptr<Timing> timing_ = std::make_shared<Timing>();
