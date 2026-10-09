@@ -127,7 +127,8 @@ constexpr const char* kSlotNames[] = {
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
     "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "cameraPosition", "cameraProjectionMatrix",
     "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform", "specularColorMapUvTransform",
-    "specularIntensityMapUvTransform", "aoMapIntensity",
+    "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
+    "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale",
     "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
@@ -1676,7 +1677,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.map = item.map != nullptr;
         v.normalMap = item.normalMap != nullptr;
         for (int k = 0; k < shader::kPbrMapCount; ++k)
-            if (item.pbrMaps[k]) v.pbrMaps |= static_cast<uint8_t>(1u << k);
+            if (item.pbrMaps[k]) v.pbrMaps |= static_cast<uint16_t>(1u << k);
+        // three's useClearcoat: a physical material with clearcoat > 0 builds the clearcoat layer.
+        v.clearcoat = item.kind == MaterialKind::Physical && item.material && item.material->clearcoat > 0;
         v.mapSRGB = false;  // WGSLNodeBuilder uses GPU sRGB formats; no shader colour conversion.
         return v;
     };
@@ -1748,6 +1751,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         put(frameUniforms_, f, fs[kIor], std::array<double, 1>{m.ior});
         put(frameUniforms_, f, fs[kSpecularIntensity], std::array<double, 1>{m.specularIntensity});
         put(frameUniforms_, f, fs[kSpecularColor], std::array<double, 3>{m.specularColor[0], m.specularColor[1], m.specularColor[2]});
+        put(frameUniforms_, f, fs[kClearcoat], std::array<double, 1>{m.clearcoat});
+        put(frameUniforms_, f, fs[kClearcoatRoughness], std::array<double, 1>{m.clearcoatRoughness});
+        put(frameUniforms_, f, fs[kClearcoatNormalScale], std::array<double, 2>{m.clearcoatNormalScale[0], m.clearcoatNormalScale[1]});
         if (item.background) put(frameUniforms_, f, fs[kBackgroundRotation], item.backgroundRotation);
         if (item.fog) {
             const auto& fog = *item.fog;

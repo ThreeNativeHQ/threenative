@@ -182,7 +182,7 @@ DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 
     return out;
 }
 
-/** How many PbrMaps a material reads: Standard its four, Physical also the specular two, others none. */
+/** How many PbrMaps a material reads: Standard its four, Physical also its specular and clearcoat maps, others none. */
 int pbrMapsRead(const Material& material) {
     return material.type == MaterialType::Physical ? shader::kPbrMapCount
            : material.type == MaterialType::Standard ? shader::kStandardPbrMapCount : 0;
@@ -229,6 +229,8 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.specularIntensity = float(m.specularIntensity);
     p.specularColor = {float(m.specularColor.r), float(m.specularColor.g), float(m.specularColor.b)};
     p.clearcoat = float(m.clearcoat);
+    p.clearcoatRoughness = float(m.clearcoatRoughness);
+    p.clearcoatNormalScale = {float(m.clearcoatNormalScale.x), float(m.clearcoatNormalScale.y)};
     p.sheen = float(m.sheen);
     p.transmission = float(m.transmission);
     p.iridescence = float(m.iridescence);

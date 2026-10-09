@@ -69,6 +69,8 @@ public:
     double specularIntensity = 1;    // Physical
     Color specularColor{1, 1, 1};    // Physical
     double clearcoat = 0, sheen = 0, transmission = 0, iridescence = 0, anisotropy = 0, dispersion = 0;
+    double clearcoatRoughness = 0;          // Physical
+    Vector2 clearcoatNormalScale{1, 1};     // Physical
     bool vertexColors = false;
     bool flatShading = false;
     Vector2 normalScale{1, 1};

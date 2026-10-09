@@ -25573,6 +25573,51 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "clearcoatRoughness",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "clearcoatMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "clearcoatNormalMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "clearcoatNormalScale",
+          "type": "Vector2",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "clearcoatRoughnessMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []

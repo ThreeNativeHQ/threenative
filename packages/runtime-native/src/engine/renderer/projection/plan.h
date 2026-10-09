@@ -108,7 +108,9 @@ inline bool sameUniforms(const Material& a, const Material& b) {
             (a.emissiveIntensity == b.emissiveIntensity) & (a.roughness == b.roughness) &
             (a.metalness == b.metalness) & eq(a.specular, b.specular) & (a.shininess == b.shininess) &
             (a.ior == b.ior) & (a.specularIntensity == b.specularIntensity) & eq(a.specularColor, b.specularColor) &
-            (a.clearcoat == b.clearcoat) & (a.sheen == b.sheen) & (a.transmission == b.transmission) &
+            (a.clearcoat == b.clearcoat) & (a.clearcoatRoughness == b.clearcoatRoughness) &
+            (a.clearcoatNormalScale.x == b.clearcoatNormalScale.x) & (a.clearcoatNormalScale.y == b.clearcoatNormalScale.y) &
+            (a.sheen == b.sheen) & (a.transmission == b.transmission) &
             (a.iridescence == b.iridescence) & (a.anisotropy == b.anisotropy) & (a.dispersion == b.dispersion) &
             (a.envMapIntensity == b.envMapIntensity) & (a.normalScale.x == b.normalScale.x) &
             (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity)) &&
@@ -146,6 +148,9 @@ inline std::size_t uniformHash(const Material& m) {
                      m.specularColor.g,
                      m.specularColor.b,
                      m.clearcoat,
+                     m.clearcoatRoughness,
+                     m.clearcoatNormalScale.x,
+                     m.clearcoatNormalScale.y,
                      m.sheen,
                      m.transmission,
                      m.iridescence,

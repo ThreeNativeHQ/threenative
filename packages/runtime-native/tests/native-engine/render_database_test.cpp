@@ -796,9 +796,9 @@ void materialUnsupported() {
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
     renderer.setSize(64, 48);
     LitScene s;
-    auto coated = std::make_shared<Material>(MaterialType::Physical);
-    coated->clearcoat = 0.5;
-    Mesh refused{s.geometry, coated};
+    auto sheened = std::make_shared<Material>(MaterialType::Physical);
+    sheened->sheen = 0.5;
+    Mesh refused{s.geometry, sheened};
     refused.position.x = 1;
     s.scene.add(refused);
     RenderDatabase database;
@@ -806,7 +806,7 @@ void materialUnsupported() {
     bool named = false;
     for (const std::string& d : database.diagnostics()) {
         std::fprintf(stderr, "%s\n", d.c_str());
-        named = named || (d.rfind("TN_NATIVE_MATERIAL_UNSUPPORTED MeshPhysicalMaterial", 0) == 0 && d.find("clearcoat") != std::string::npos);
+        named = named || (d.rfind("TN_NATIVE_MATERIAL_UNSUPPORTED MeshPhysicalMaterial", 0) == 0 && d.find("sheen") != std::string::npos);
     }
     CHECK(named);
     CHECK(database.diagnostics().size() == 1);  // the standard mesh beside it is not refused

@@ -87,9 +87,9 @@ void unsupported() {
         const char* feature;
         float StandardMaterial::*field;
     };
-    const Case cases[] = {{"clearcoat", &StandardMaterial::clearcoat},       {"sheen", &StandardMaterial::sheen},
-                          {"transmission", &StandardMaterial::transmission}, {"iridescence", &StandardMaterial::iridescence},
-                          {"anisotropy", &StandardMaterial::anisotropy},     {"dispersion", &StandardMaterial::dispersion}};
+    const Case cases[] = {{"sheen", &StandardMaterial::sheen},             {"transmission", &StandardMaterial::transmission},
+                          {"iridescence", &StandardMaterial::iridescence}, {"anisotropy", &StandardMaterial::anisotropy},
+                          {"dispersion", &StandardMaterial::dispersion}};
     for (const Case& c : cases) {
         StandardMaterial m;
         m.*c.field = 0.5f;
@@ -99,9 +99,17 @@ void unsupported() {
               programs.diagnostics[0] == std::string("TN_MATERIAL_UNSUPPORTED ") + c.feature);
     }
     // Never a silent fallback: a refused material produces no shader at all.
-    StandardMaterial clearcoat;
-    clearcoat.clearcoat = 1;
-    CHECK(buildStandard(clearcoat).fragment.exprCount() == 0);
+    StandardMaterial sheen;
+    sheen.sheen = 1;
+    CHECK(buildStandard(sheen).fragment.exprCount() == 0);
+    // Clearcoat is ported: the physical program builds its layer (the materials-physical-clearcoat* goldens).
+    StandardMaterial coated;
+    coated.clearcoat = 1;
+    VertexVariant coatedVariant;
+    coatedVariant.clearcoat = true;
+    const StandardPrograms coatedPrograms = buildPhysical(coated, coatedVariant);
+    CHECK(coatedPrograms.diagnostics.empty());
+    CHECK(coatedPrograms.fragment.exprCount() > buildPhysical(coated).fragment.exprCount());
 }
 
 void nodes() {

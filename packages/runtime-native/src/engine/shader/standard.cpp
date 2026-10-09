@@ -263,7 +263,6 @@ std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
     auto check = [&](float value, const char* feature) {
         if (value != 0) out.push_back(std::string("TN_MATERIAL_UNSUPPORTED ") + feature);
     };
-    check(m.clearcoat, "clearcoat");
     check(m.sheen, "sheen");
     check(m.transmission, "transmission");
     check(m.iridescence, "iridescence");
@@ -442,6 +441,8 @@ static ExprId srgbDecode(Program& f, ExprId channel) {
 // the tangent frame from the screen-space derivatives of the view position and the uv. The map
 // is linear data; normalScale scales the xy of the decoded vector. faceDirection flips the frame for a
 // back face. Called after the fragment's other varyings exist, so `uv` takes the vertex stage's slot.
+static ExprId perturbNormal2Arb(Program& f, ExprId eye, ExprId uv, ExprId surfaceNormal, ExprId mapN);
+
 static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
     const ExprId eye = f.varying("positionView", Type::vec(3));
     if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
@@ -452,6 +453,12 @@ static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId s
     const ExprId decoded = f.sub(f.mul(texel, f.constant(2.0f)), f.constant(1.0f));
     const ExprId scaled = f.mul(f.swizzle(decoded, "xy"), f.uniform("normalScale", Type::vec(2)));
     const ExprId mapN = f.construct(Type::vec(3), {scaled, f.swizzle(decoded, "z")});
+    return perturbNormal2Arb(f, eye, uv, surfaceNormal, mapN);
+}
+
+// perturbNormal2Arb's frame: the tangent and bitangent from the screen-space derivatives of the view
+// position `eye` and the geometry `uv`, around `surfaceNormal`, applied to the decoded `mapN`.
+static ExprId perturbNormal2Arb(Program& f, ExprId eye, ExprId uv, ExprId surfaceNormal, ExprId mapN) {
     const ExprId q0 = f.call("dFdx", {eye}), q1 = f.call("dFdy", {eye});
     // TangentUtils takes the derivatives of the geometry's uv itself, not of the map's transformed uv.
     const ExprId st0 = f.call("dFdx", {uv}), st1 = f.call("dFdy", {uv});
@@ -476,6 +483,20 @@ static ExprId pbrTexel(Program& f, const VertexVariant& variant, PbrMap map) {
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform(name + "UvTransform", Type::mat(3, 3));
     return f.sample(f.texture2d(name), f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy"));
+}
+
+// MaterialNode.CLEARCOAT_NORMAL with a clearcoatNormalMap: normalMap(clearcoatNormalMap,
+// clearcoatNormalScale), a tangent-space map whose frame surrounds the material's own normal (three's
+// normalView outside the NORMAL sub-build). Without the map the clearcoat normal is that normal.
+static ExprId clearcoatNormal(Program& f, const VertexVariant& variant, ExprId materialNormal) {
+    if (!variant.reads(kClearcoatNormalMap)) return materialNormal;
+    const ExprId eye = f.varying("positionView", Type::vec(3));
+    const ExprId texel = f.swizzle(pbrTexel(f, variant, kClearcoatNormalMap), "xyz");
+    const ExprId uv = f.varying("uv", Type::vec(2));
+    const ExprId decoded = f.sub(f.mul(texel, f.constant(2.0f)), f.constant(1.0f));
+    const ExprId scaled = f.mul(f.swizzle(decoded, "xy"), f.uniform("clearcoatNormalScale", Type::vec(2)));
+    const ExprId mapN = f.construct(Type::vec(3), {scaled, f.swizzle(decoded, "z")});
+    return perturbNormal2Arb(f, eye, uv, materialNormal, mapN);
 }
 
 // three's setupDiffuseColor: the map texel multiplies the diffuse colour and alpha. It is sampled at
@@ -871,6 +892,29 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId diffuseContribution = f.mul(diffuseColor, t.oneMinus(metalness));
     const Surface surface{n, positionViewDirection, roughness, specularColorBlended, t.f(1), f.texture2d("dfg")};
 
+    // MeshPhysicalNodeMaterial.setupVariants with useClearcoat: clearcoat = materialClearcoat (times the
+    // clearcoatMap's red), clearcoatRoughness = getRoughness(materialClearcoatRoughness, times the
+    // clearcoatRoughnessMap's red). PhysicalLightingModel's clearcoatF0 = vec3(0.04), clearcoatF90 = 1.
+    const bool coated = physical && variant.clearcoat;
+    ExprId clearcoat = kInvalid, clearcoatNormalView = kInvalid;
+    Surface coat{};
+    ExprId clearcoatSpecularDirect = kInvalid, clearcoatSpecularIndirect = kInvalid;
+    if (coated) {
+        clearcoat = f.uniform("clearcoat", Type::f32());
+        if (variant.reads(kClearcoatMap)) clearcoat = f.mul(clearcoat, f.swizzle(pbrTexel(f, variant, kClearcoatMap), "x"));
+        ExprId clearcoatRoughnessFactor = f.uniform("clearcoatRoughness", Type::f32());
+        if (variant.reads(kClearcoatRoughnessMap))
+            clearcoatRoughnessFactor =
+                f.mul(clearcoatRoughnessFactor, f.swizzle(pbrTexel(f, variant, kClearcoatRoughnessMap), "x"));
+        ExprId clearcoatRoughness = f.call("min", {f.add(f.call("max", {clearcoatRoughnessFactor, t.f(0.0525f)}), geometryRoughness), t.f(1)});
+        // Its derivatives run before the environment's branches, as roughness's do.
+        if (variant.environment) clearcoatRoughness = f.load(f.var(Type::f32(), clearcoatRoughness));
+        clearcoatNormalView = clearcoatNormal(f, variant, n);
+        coat = Surface{clearcoatNormalView, positionViewDirection, clearcoatRoughness,
+                       f.construct(Type::vec(3), {t.f(0.04f)}), t.f(1), f.texture2d("dfg")};
+        clearcoatSpecularDirect = f.construct(Type::vec(3), {t.f(0)});
+    }
+
     // PhysicalLightingModel.direct for each light, accumulated in three's order.
     const ExprId brdfLambert = f.mul(diffuseContribution, t.f(1 / kPi));
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
@@ -880,6 +924,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
         directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
+        if (coated) {
+            // PhysicalLightingModel.direct: BRDF_GGX on the clearcoat normal, with its own irradiance.
+            const ExprId ccIrradiance = f.mul(t.saturate(t.dot(clearcoatNormalView, light.direction)), light.color);
+            clearcoatSpecularDirect = f.add(clearcoatSpecularDirect, f.mul(ccIrradiance, brdfGgx(t, coat, light.direction)));
+        }
     }
 
     // Hemisphere and ambient irradiance, then PhysicalLightingModel.indirect diffuse.
@@ -916,6 +965,18 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         const ExprId cosineWeightedIrradiance = f.mul(iblIrradiance, t.f(1 / kPi));
         environmentSpecular = f.add(f.mul(radiance, single), f.mul(multi, cosineWeightedIrradiance));
         environmentDiffuse = f.mul(f.mul(diffuseContribution, energyLoss), cosineWeightedIrradiance);
+        if (coated) {
+            // EnvironmentNode's clearcoatRadiance (the radiance context of clearcoatRoughness and the
+            // clearcoat normal), then PhysicalLightingModel.indirectSpecular's EnvironmentBRDF.
+            ExprId ccReflect = f.call("reflect", {f.neg(positionViewDirection), clearcoatNormalView});
+            ccReflect = f.call("normalize", {f.call("mix", {ccReflect, clearcoatNormalView,
+                                                            f.mul(f.mul(t.pow2(coat.roughness), coat.roughness), coat.roughness)})});
+            ccReflect = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), ccReflect);
+            const ExprId clearcoatRadiance = f.mul(textureCubeUV(f, env, flipped(ccReflect), coat.roughness), envIntensity);
+            const ExprId fab = dfgLut(t, coat, t.saturate(t.dot(clearcoatNormalView, positionViewDirection)));
+            const ExprId clearcoatEnv = f.add(f.mul(coat.f0, f.swizzle(fab, "x")), f.mul(coat.f90, f.swizzle(fab, "y")));
+            clearcoatSpecularIndirect = f.mul(clearcoatRadiance, clearcoatEnv);
+        }
     }
 
     // MaterialNode.EMISSIVE: emissive * emissiveIntensity (the uniform), times the emissiveMap texel.
@@ -931,6 +992,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         // occlusion, indirect specular times its roughness-shaped specular occlusion.
         const ExprId ao = f.add(f.mul(f.sub(f.swizzle(pbrTexel(f, variant, kAoMap), "x"), t.f(1)), f.uniform("aoMapIntensity", Type::f32())), t.f(1));
         totalIndirectDiffuse = f.mul(totalIndirectDiffuse, ao);
+        if (clearcoatSpecularIndirect != kInvalid) clearcoatSpecularIndirect = f.mul(clearcoatSpecularIndirect, ao);
         if (environmentSpecular != kInvalid) {
             const ExprId dotNV = t.saturate(t.dot(n, positionViewDirection));
             const ExprId aoExp = f.call("exp2", {f.neg(t.oneMinus(f.mul(roughness, t.f(-16))))});
@@ -939,7 +1001,17 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         }
     }
     const ExprId totalSpecular = environmentSpecular == kInvalid ? directSpecular : f.add(directSpecular, environmentSpecular);
-    const ExprId outgoing = f.add(f.add(f.add(directDiffuse, totalIndirectDiffuse), totalSpecular), emissive);
+    ExprId outgoingLight = f.add(f.add(directDiffuse, totalIndirectDiffuse), totalSpecular);
+    if (coated) {
+        // PhysicalLightingModel.finish: the base layer through (1 - clearcoat * Fcc), plus the clearcoat's
+        // direct and indirect specular scaled by clearcoat; emissive is added after, as NodeMaterial does.
+        const ExprId dotNVcc = t.saturate(t.dot(clearcoatNormalView, positionViewDirection));
+        const ExprId Fcc = fSchlick(t, coat.f0, coat.f90, dotNVcc);
+        const ExprId ccSpecular = clearcoatSpecularIndirect == kInvalid ? clearcoatSpecularDirect
+                                                                         : f.add(clearcoatSpecularDirect, clearcoatSpecularIndirect);
+        outgoingLight = f.add(f.mul(outgoingLight, t.oneMinus(f.mul(clearcoat, Fcc))), f.mul(ccSpecular, clearcoat));
+    }
+    const ExprId outgoing = f.add(outgoingLight, emissive);
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha)));

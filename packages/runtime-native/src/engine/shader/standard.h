@@ -44,8 +44,12 @@ struct StandardMaterial {
     std::array<float, 3> specularColor{1, 1, 1};
     /** MeshStandardMaterial.envMapIntensity: scales the environment's radiance and irradiance. */
     float envMapIntensity = 1;
-    // MeshPhysicalMaterial: any non-default value is a feature in use.
+    // MeshPhysicalMaterial's clearcoat layer (PhysicalLightingModel's clearcoat), read by buildPhysical
+    // when VertexVariant::clearcoat is set: three's useClearcoat, clearcoat > 0.
     float clearcoat = 0;
+    float clearcoatRoughness = 0;
+    std::array<float, 2> clearcoatNormalScale{1, 1};
+    // MeshPhysicalMaterial: any non-default value is a feature in use.
     float sheen = 0;
     float transmission = 0;
     float iridescence = 0;
@@ -61,9 +65,11 @@ struct StandardMaterial {
  */
 /** The scalar and emissive maps MeshStandardMaterial reads besides map and normalMap, as bits of
  *  VertexVariant::pbrMaps. Each is sampled at `<name>UvTransform * vec3(uv, 1)` from texture `<name>`. */
-enum PbrMap : uint8_t { kRoughnessMap, kMetalnessMap, kAoMap, kEmissiveMap, kSpecularColorMap, kSpecularIntensityMap, kPbrMapCount };
+enum PbrMap : uint8_t { kRoughnessMap, kMetalnessMap, kAoMap, kEmissiveMap, kSpecularColorMap, kSpecularIntensityMap,
+                        kClearcoatMap, kClearcoatRoughnessMap, kClearcoatNormalMap, kPbrMapCount };
 inline constexpr const char* kPbrMapNames[kPbrMapCount] = {"roughnessMap", "metalnessMap", "aoMap", "emissiveMap",
-                                                           "specularColorMap", "specularIntensityMap"};
+                                                           "specularColorMap", "specularIntensityMap", "clearcoatMap",
+                                                           "clearcoatRoughnessMap", "clearcoatNormalMap"};
 /** MeshStandardMaterial's PbrMaps; the ones after it are MeshPhysicalMaterial's own. */
 inline constexpr int kStandardPbrMapCount = kSpecularColorMap;
 
@@ -105,10 +111,11 @@ struct VertexVariant {
     bool normalMap = false;
     /**
      * MeshStandardMaterial's roughnessMap (.g), metalnessMap (.b), aoMap (.r, aoMapIntensity) and
-     * emissiveMap (.rgb), and MeshPhysicalMaterial's specularColorMap (.rgb) and specularIntensityMap
-     * (.a), one bit per PbrMap; read only by the standard and physical programs.
+     * emissiveMap (.rgb), and MeshPhysicalMaterial's specularColorMap (.rgb), specularIntensityMap
+     * (.a), clearcoatMap (.r), clearcoatRoughnessMap (.r) and tangent-space clearcoatNormalMap, one bit
+     * per PbrMap; read only by the standard and physical programs.
      */
-    uint8_t pbrMaps = 0;
+    uint16_t pbrMaps = 0;
     [[nodiscard]] bool reads(PbrMap map) const { return (pbrMaps >> map) & 1u; }
     /**
      * The map's colorSpace is SRGBColorSpace: the sampled texel is decoded with three's
@@ -121,6 +128,11 @@ struct VertexVariant {
      * cubeUV texture `env` for IBL irradiance and radiance (three's EnvironmentNode).
      */
     bool environment = false;
+    /**
+     * MeshPhysicalMaterial's clearcoat layer (three's useClearcoat: clearcoat > 0): the fragment reads
+     * `clearcoat`, `clearcoatRoughness` and, with a clearcoatNormalMap, `clearcoatNormalScale`.
+     */
+    bool clearcoat = false;
     /** The position output is @invariant: this frame draws a normal pass that shares the vertex stage, or TRAA's velocity pass depth-Equal against it. */
     bool invariantPosition = false;
     MaterialNodes nodes;
@@ -128,7 +140,7 @@ struct VertexVariant {
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
-               (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (invariantPosition ? "i" : "") +
+               (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };
@@ -182,8 +194,10 @@ StandardPrograms buildStandard(const StandardMaterial& material, const VertexVar
  * MeshPhysicalNodeMaterial's non-feature path: the standard program with setupSpecular's physical
  * F0/F90 — specularColorBlended = mix(min(pow2((ior-1)/(ior+1)) * specularColor, vec3(1)) *
  * specularIntensity, diffuseColor.rgb, metalness), specularF90 = mix(specularIntensity, 1, metalness)
- * — instead of the standard's fixed 0.04 / 1. A physical feature in use (clearcoat, sheen, …) is
- * still refused by name. Same uniforms as buildStandard plus ior, specularIntensity, specularColor.
+ * — instead of the standard's fixed 0.04 / 1. VertexVariant::clearcoat adds PhysicalLightingModel's
+ * clearcoat layer (uniforms clearcoat, clearcoatRoughness, clearcoatNormalScale). Another physical
+ * feature in use (sheen, …) is still refused by name. Same uniforms as buildStandard plus ior,
+ * specularIntensity, specularColor.
  */
 StandardPrograms buildPhysical(const StandardMaterial& material, const VertexVariant& variant = {},
                                const LightLayout& lights = {});

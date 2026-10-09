@@ -3068,6 +3068,11 @@ transmission: number;
 specularColor: Color;
 specularColorMap: Texture | null;
 specularIntensityMap: Texture | null;
+clearcoatRoughness: number;
+clearcoatMap: Texture | null;
+clearcoatNormalMap: Texture | null;
+clearcoatNormalScale: Vector2;
+clearcoatRoughnessMap: Texture | null;
 }
 
 /** Catalog supported: three/Ray. */
