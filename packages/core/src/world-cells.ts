@@ -2903,7 +2903,9 @@ function samplesFramebuffer(node: unknown, seen: Set<unknown>): boolean {
   )
     return true;
   for (const value of Object.values(node)) {
-    if (value === null || typeof value !== "object") continue;
+    // A pixel or vertex array holds numbers, never a node: enumerating a texture's mips element by
+    // element held Machinefall's main thread for 22.9 s.
+    if (value === null || typeof value !== "object" || ArrayBuffer.isView(value)) continue;
     if (samplesFramebuffer(value, seen)) return true;
   }
   return false;

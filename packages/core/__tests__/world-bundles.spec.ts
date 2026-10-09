@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   BoxGeometry,
+  DataTexture,
   Group,
   InstancedMesh,
   Matrix4,
@@ -723,6 +724,39 @@ describe("the main pass's draw bundles", () => {
     cells.dispose();
     expect(lifted.parent).not.toBe(group);
     expect(lifted.parent instanceof BundleGroup).toBe(false);
+  });
+
+  it("asks a textured surface whether it can be recorded without reading its pixels", async () => {
+    // Machinefall's map-walk blocked its main thread for 22.9 s on the develop core: the
+    // framebuffer walk went through `Object.values` of everything a material reaches, so every
+    // texture's pixel array was enumerated one element at a time. A pixel array holds bytes,
+    // never a node, so a walk that reads one is all cost. The spy is an enumerable own property
+    // of the array, which only an element-by-element enumeration of the array itself reaches.
+    let pixelReads = 0;
+    const pixels = new Uint8Array(4 * 4 * 4);
+    Object.defineProperty(pixels, "spy", {
+      enumerable: true,
+      get: () => {
+        pixelReads += 1;
+        return 0;
+      },
+    });
+    const textured = new MeshStandardNodeMaterial();
+    textured.map = new DataTexture(pixels, 4, 4);
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([textured])),
+    });
+    cells.update(renderer, eastCamera());
+    await flushed(cells, renderer, eastCamera());
+
+    const drawn = project(cells, eastCamera());
+    expect(drawn.bundled.filter(isChunk).map((mesh) => (mesh as Mesh).material)).toContain(
+      textured,
+    );
+    expect(pixelReads).toBe(0);
+    expect(cells.stats().failures).toBe(0);
+    cells.dispose();
   });
 
   it("leaves a main batch a record cannot replay on the per-object path, and records the rest", async () => {
