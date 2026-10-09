@@ -254,7 +254,8 @@ check(summed && typeof summed.addAssign === "function" && typeof summed.cbrt ===
 // Every swizzle three answers, as Midway's ocean reads positionWorld.xz.
 const lanes = vec3(1, 2, 3);
 check(lanes.xz && lanes.zxy && lanes.st && lanes.bgr && lanes.xxxx && lanes.xyzwx === undefined, "swizzles");
-basic.alphaTestNode = summed;
+basic.alphaTestNode = summed.clamp();
+basic.alphaTestNode = clamp(summed, 0.1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
   check(THREE[name] === expected, name + " differs from pinned Three.js");
 // three's audio classes are engine objects over the player's WebAudio, and the native tick pushes

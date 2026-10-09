@@ -421,6 +421,12 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(2);
         return name == "mix" ? g::mix(arg(0), arg(1), lhs()) : g::smoothstep(arg(0), arg(1), lhs());
     }
+    // r185's clamp(value, low = 0, high = 1) (MathNode.js): the bounds are optional.
+    if (name == "clamp" && args.size() < (method ? 2u : 3u)) {
+        const size_t first = method ? 0 : 1;
+        if (!method && args.empty()) throw std::runtime_error("expected a value to clamp");
+        return g::clamp(lhs(), args.size() > first ? arg(first) : g::float_(0), g::float_(1));
+    }
 #define TERNARY(symbol)                                                                                                \
     if (name == #symbol) {                                                                                             \
         arity(method ? 2 : 3);                                                                                         \
