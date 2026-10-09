@@ -1,6 +1,6 @@
 // Ported from three.js r185 (three@0.185.1). The MIT License, Copyright © 2010-2026 three.js authors.
 /**
- * three's `BufferGeometryUtils.mergeGeometries` and `mergeAttributes` (three@0.185.1
+ * three's `BufferGeometryUtils.mergeGeometries`, `mergeAttributes` and `mergeVertices` (three@0.185.1
  * examples/jsm/utils/BufferGeometryUtils.js) over an engine's own BufferGeometry and
  * BufferAttribute, for both back ends.
  *
@@ -34,6 +34,43 @@ interface IGeometryLike {
   readonly attributes: Readonly<Record<string, IAttributeLike>>;
   readonly morphAttributes: Readonly<Record<string, readonly IAttributeLike[]>>;
   readonly morphTargetsRelative: boolean;
+}
+
+interface IVertexGeometry extends IGeometryLike {
+  getIndex(): IGeometryLike["index"];
+  clone(): IMergedGeometry;
+}
+
+/** three's MathUtils.denormalize and normalize: a normalized integer attribute's stored value and its number. */
+function denormalize(value: number, array: TypedArray): number {
+  if (array instanceof Uint32Array) return value / 4294967295;
+  if (array instanceof Uint16Array) return value / 65535;
+  if (array instanceof Uint8Array) return value / 255;
+  if (array instanceof Int32Array) return Math.max(value / 2147483647, -1);
+  if (array instanceof Int16Array) return Math.max(value / 32767, -1);
+  if (array instanceof Int8Array) return Math.max(value / 127, -1);
+  return value;
+}
+function normalize(value: number, array: TypedArray): number {
+  if (array instanceof Uint32Array) return Math.round(value * 4294967295);
+  if (array instanceof Uint16Array) return Math.round(value * 65535);
+  if (array instanceof Uint8Array) return Math.round(value * 255);
+  if (array instanceof Int32Array) return Math.round(value * 2147483647);
+  if (array instanceof Int16Array) return Math.round(value * 32767);
+  if (array instanceof Int8Array) return Math.round(value * 127);
+  return value;
+}
+
+/** three's `attribute.getX(index)` and its siblings for one component. */
+function component(attribute: IAttributeLike, index: number, k: number): number {
+  if (attribute.isInterleavedBufferAttribute) return attribute.getComponent(index, k);
+  const value = attribute.array[index * attribute.itemSize + k] as number;
+  return attribute.normalized ? denormalize(value, attribute.array) : value;
+}
+
+/** three's `attribute.setX(index, value)` into the array a new attribute is built from. */
+function store(array: TypedArray, source: IAttributeLike, at: number, value: number): void {
+  array[at] = source.normalized ? normalize(value, array) : value;
 }
 
 interface IMergedGeometry {
@@ -205,5 +242,83 @@ export function defineBufferGeometryUtils(engine: IGeometryUtilsEngine) {
     return merged;
   }
 
-  return { mergeGeometries, mergeAttributes };
+  /**
+   * three's mergeVertices: vertices whose attributes hash alike (to `tolerance`) become one vertex,
+   * and the clone is re-indexed. The merged attributes are engine BufferAttributes over the source
+   * arrays' types, as three keeps each attribute's constructor.
+   */
+  function mergeVertices(geometry: IVertexGeometry, tolerance = 1e-4): object {
+    const used = Math.max(tolerance, Number.EPSILON);
+    const hashToIndex = new Map<string, number>();
+    const indices = geometry.getIndex();
+    const positions = geometry.attributes.position as IAttributeLike;
+    const vertexCount = indices ? indices.count : positions.count;
+    const names = Object.keys(geometry.attributes);
+    const arrays: Record<string, TypedArray> = {};
+    const morphArrays: Record<string, TypedArray[]> = {};
+    const made = (attribute: IAttributeLike) =>
+      new (attribute.array.constructor as new (length: number) => TypedArray)(
+        attribute.count * attribute.itemSize,
+      );
+    for (const name of names) {
+      arrays[name] = made(geometry.attributes[name] as IAttributeLike);
+      const morphs = geometry.morphAttributes[name];
+      if (morphs) morphArrays[name] = morphs.map(made);
+    }
+    const hashMultiplier = 10 ** Math.log10(1 / used);
+    const hashAdditive = used * 0.5 * hashMultiplier;
+    const newIndices: number[] = [];
+    let nextIndex = 0;
+    for (let i = 0; i < vertexCount; i++) {
+      const index = indices ? indices.getX(i) : i;
+      let hash = "";
+      for (const name of names) {
+        const attribute = geometry.attributes[name] as IAttributeLike;
+        for (let k = 0; k < attribute.itemSize; k++)
+          hash += `${~~(component(attribute, index, k) * hashMultiplier + hashAdditive)},`;
+      }
+      const known = hashToIndex.get(hash);
+      if (known !== undefined) {
+        newIndices.push(known);
+        continue;
+      }
+      for (const name of names) {
+        const attribute = geometry.attributes[name] as IAttributeLike;
+        const morphs = geometry.morphAttributes[name];
+        for (let k = 0; k < attribute.itemSize; k++) {
+          const at = nextIndex * attribute.itemSize + k;
+          store(arrays[name] as TypedArray, attribute, at, component(attribute, index, k));
+          morphs?.forEach((morph, m) => {
+            const target = (morphArrays[name] as TypedArray[])[m] as TypedArray;
+            store(target, morph, nextIndex * morph.itemSize + k, component(morph, index, k));
+          });
+        }
+      }
+      hashToIndex.set(hash, nextIndex);
+      newIndices.push(nextIndex);
+      nextIndex++;
+    }
+    const result = geometry.clone();
+    const rebuilt = (array: TypedArray, source: IAttributeLike) =>
+      new engine.BufferAttribute(
+        array.slice(0, nextIndex * source.itemSize),
+        source.itemSize,
+        source.normalized,
+      ) as IAttributeLike;
+    for (const name of names) {
+      result.setAttribute(
+        name,
+        rebuilt(arrays[name] as TypedArray, geometry.attributes[name] as IAttributeLike),
+      );
+      const morphs = geometry.morphAttributes[name];
+      if (morphs)
+        result.morphAttributes[name] = morphs.map((morph, m) =>
+          rebuilt((morphArrays[name] as TypedArray[])[m] as TypedArray, morph),
+        );
+    }
+    result.setIndex(newIndices);
+    return result;
+  }
+
+  return { mergeGeometries, mergeAttributes, mergeVertices };
 }

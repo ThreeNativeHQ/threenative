@@ -739,6 +739,30 @@ engine.collect();
     dump(ported) === dump(utils.mergeGeometries(parts(T), true)),
     "web mergeGeometries equals three's",
   );
+  // mergeVertices over a box with only positions and one position morph: 24 face vertices weld to 8.
+  const welded = (K: Loose, merge: (g: Loose, tolerance?: number) => Loose) => {
+    const box = new K.BoxGeometry(1, 2, 3);
+    box.deleteAttribute("normal");
+    box.deleteAttribute("uv");
+    const count = box.getAttribute("position").count;
+    box.morphAttributes.position = [
+      new K.Float32BufferAttribute(
+        new Float32Array(count * 3).map((_, i) => (i % 3) / 4),
+        3,
+      ),
+    ];
+    const merged = merge(box, 1e-3);
+    return JSON.stringify([
+      Array.from(merged.index.array),
+      Array.from(merged.getAttribute("position").array),
+      merged.morphAttributes.position.map((a: Loose) => Array.from(a.array)),
+    ]);
+  };
+  const weldedWeb = welded(web, defineBufferGeometryUtils(web).mergeVertices as never);
+  check(
+    weldedWeb === welded(T, utils.mergeVertices) && JSON.parse(weldedWeb)[1].length === 24,
+    `web mergeVertices equals three's: ${weldedWeb.slice(0, 120)}`,
+  );
 }
 // The calls the spec read off its fake runtime, read off the real one. Each node id is numbered in
 // the order it was made, from 1, as the fake numbered them, so the spec's expected values hold as written.

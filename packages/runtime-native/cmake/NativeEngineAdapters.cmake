@@ -209,6 +209,11 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-tsl-values.mjs
                 $<TARGET_FILE:tn-native-engine-player-v8>)
         set_tests_properties(native_engine_player_tsl_values PROPERTIES LABELS "native-engine")
+        # PRD-548: BufferGeometryUtils over engine geometry on the player, three r185 in Node as the oracle.
+        add_test(NAME native_engine_player_geometry_utils
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-geometry-utils.mjs
+                $<TARGET_FILE:tn-native-engine-player-v8>)
+        set_tests_properties(native_engine_player_geometry_utils PROPERTIES LABELS "native-engine")
     endif()
 
     if(ANDROID)
