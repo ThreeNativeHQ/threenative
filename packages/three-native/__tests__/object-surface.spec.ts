@@ -57,4 +57,20 @@ describe("defineObjectSurface", () => {
     ).not.toThrow();
     expect(new MeshBasicMaterial()).toBeInstanceOf(Material);
   });
+
+  it("replaces morphAttributes whole through the engine's holder, refusing other keys", () => {
+    const holder: Record<string, unknown> = { position: ["p"], normal: ["n"] };
+    class MorphGeometry extends BufferGeometry {}
+    Object.defineProperty(MorphGeometry.prototype, "morphAttributes", {
+      configurable: true,
+      get: () => holder,
+    });
+    defineObjectSurface({ bufferGeometry: MorphGeometry, geometries: [], materials: [] });
+    const geometry = new MorphGeometry() as unknown as { morphAttributes: Record<string, unknown> };
+    geometry.morphAttributes = {};
+    expect(holder).toEqual({ position: [], normal: [] });
+    expect(() => {
+      geometry.morphAttributes = { color: [] };
+    }).toThrow("morphAttributes.color");
+  });
 });
