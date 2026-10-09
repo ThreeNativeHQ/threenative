@@ -346,5 +346,6 @@ export function defineTsl(runtime: ITslRuntime): {
     runtime.setUniform(node[TSL_NODE], lanes),
   );
   exports.uniform = live.uniform;
+  exports.uniformArray = live.uniformArray;
   return { exports, sync: live.sync };
 }

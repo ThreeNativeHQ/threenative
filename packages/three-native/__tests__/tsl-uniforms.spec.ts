@@ -22,4 +22,24 @@ describe("liveUniforms", () => {
     expect(node.value).toBe(5);
     expect(written).toEqual([[5]]);
   });
+
+  it("gives uniformArray elements as live uniforms that follow in-place edits", () => {
+    const written: number[][] = [];
+    const live = liveUniforms(
+      () => ({}),
+      (_node, lanes) => written.push([...lanes]),
+    );
+    const ships = [
+      { x: 1, y: 2, z: 3, w: 4 },
+      { x: 5, y: 6, z: 7, w: 8 },
+    ];
+    const array = live.uniformArray(ships);
+    const second = array.element(1) as { value: unknown };
+    expect(second.value).toBe(ships[1]);
+    ships[1].x = 50;
+    live.sync();
+    expect(written).toContainEqual([50, 6, 7, 8]);
+    expect(() => array.element(2)).toThrow("TN_TSL_UNIFORM_ARRAY_INDEX");
+    expect(() => array.element({})).toThrow("TN_TSL_UNIFORM_ARRAY_INDEX");
+  });
 });

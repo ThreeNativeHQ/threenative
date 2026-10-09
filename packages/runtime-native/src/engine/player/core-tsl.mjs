@@ -7,6 +7,7 @@ import { Object3D, PerspectiveCamera } from "./core-three.mjs";
 // edited Color or VectorN goes through `syncUniforms`, which the renderer calls before each frame.
 const live = liveUniforms(globalThis.tsl.uniform, (node, lanes) => globalThis.tsl.setUniform(node, ...lanes));
 export const uniform = live.uniform;
+export const uniformArray = live.uniformArray;
 export const syncUniforms = live.sync;
 
 export const {

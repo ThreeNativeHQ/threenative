@@ -33,15 +33,22 @@ export function uniformLanes(value: unknown): number[] {
 export function liveUniforms<TNode extends object>(
   uniform: (value: unknown) => TNode,
   setValues: (node: TNode, lanes: readonly number[]) => void,
-): { uniform: (value: unknown) => TNode; sync(): void } {
+): {
+  uniform: (value: unknown) => TNode;
+  uniformArray: (values: readonly unknown[]) => {
+    array: readonly unknown[];
+    element(index: unknown): TNode;
+  };
+  sync(): void;
+} {
   const states = new WeakMap<object, IUniformState>();
   const objects = new Set<WeakRef<TNode>>();
   const updates = new Map<
     WeakRef<TNode>,
     (this: TNode, frame: undefined, node: TNode) => unknown
   >();
-  return {
-    uniform(value) {
+  const api = {
+    uniform(value: unknown): TNode {
       const node = uniform(value);
       const state: IUniformState = { value };
       states.set(node, state);
@@ -68,6 +75,26 @@ export function liveUniforms<TNode extends object>(
       if (typeof value === "object" && value !== null) objects.add(new WeakRef(node));
       return node;
     },
+    /**
+     * three's uniformArray(values): `element(i)` is element i's live uniform, so a game that edits
+     * values[i] in place (Midway's ship wakes) sees it next frame, as three's per-frame array upload.
+     * ponytail: one uniform per element and a constant index only; a node index is refused. Add a
+     * native array uniform if a game indexes one with a node.
+     */
+    uniformArray(values: readonly unknown[]) {
+      const elements = values.map((value) => api.uniform(value));
+      return {
+        array: values,
+        element(index: unknown): TNode {
+          const element = typeof index === "number" ? elements[index] : undefined;
+          if (element === undefined)
+            throw new TypeError(
+              `TN_TSL_UNIFORM_ARRAY_INDEX: uniformArray.element needs a constant index below ${String(elements.length)}`,
+            );
+          return element;
+        },
+      };
+    },
     sync() {
       for (const [ref, callback] of updates) {
         const node = ref.deref();
@@ -88,4 +115,5 @@ export function liveUniforms<TNode extends object>(
       }
     },
   };
+  return api;
 }
