@@ -468,7 +468,10 @@ describe("the sculpt server the engine ships", () => {
       dependencies: Record<string, string>;
     };
 
-    expect(manifest.dependencies[MCP_PACKAGES.sculpt.name]).toBe(MCP_PACKAGES.sculpt.version);
+    const sculpt = MCP_PACKAGES.sculpt;
+    if (sculpt === undefined) throw new Error("MCP_PACKAGES.sculpt is missing.");
+
+    expect(manifest.dependencies[sculpt.name]).toBe(sculpt.version);
   });
 
   it("serves the 0.2 rig and animation gates through the shipped launch shim", async () => {
