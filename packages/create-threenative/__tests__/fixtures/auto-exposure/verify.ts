@@ -17,7 +17,7 @@ const artifacts = join(root, "artifacts/prd339-exposure");
 interface IFixtureCase extends IExposureCaseProof {
   name: string;
   query: string;
-  scenario: "static" | "cut" | "cut-frames";
+  scenario: "static" | "cut" | "cut-frames" | "backlit";
   mutation?: ExposureMutation;
 }
 // Scene-linear reference readings from the inspected 5c3b176 fixture, independently of adaptation.
@@ -110,6 +110,10 @@ const cases: IFixtureCase[] = [
     applied: true,
     expectedLuminance: darkLuminance,
   },
+  // PRD-571: a sky 10 stops over the room (8% of the frame) and a 1% sun disc 14 stops over it
+  // must both leave the metered subject inside backlit.playtest.json's tone band.
+  { name: "backlit-sky", query: "bright=0&backlit=sky", scenario: "backlit", applied: true },
+  { name: "backlit-disc", query: "bright=0&backlit=disc", scenario: "backlit", applied: true },
   {
     name: "fixed-exposure",
     query: "enabled=0&bright=1",
@@ -184,10 +188,14 @@ const cases: IFixtureCase[] = [
     reject: "TN_EXPOSURE_WRONG_CLOCK",
   },
 ];
+// TN_EXPOSURE_CASES=<regex> runs a subset of the cases while iterating; CI runs them all.
+const only = process.env.TN_EXPOSURE_CASES;
+const selected = only === undefined ? cases : cases.filter(({ name }) => new RegExp(only).test(name));
 await mkdir(artifacts, { recursive: true });
 const sites = new Map<string, string>();
 for (const mutation of [undefined, "linear", "disabled", "meter", "clock"] as const) {
   const name = mutation ?? "normal";
+  if (!selected.some((item) => item.mutation === mutation)) continue;
   const site = join(artifacts, "sites", name);
   let mutationReceipt: unknown;
   await build({
@@ -219,7 +227,7 @@ if (!process.argv.includes("--build-only")) {
     "bin/vite.js",
   );
   const results = [];
-  for (const item of cases) {
+  for (const item of selected) {
     const site = sites.get(item.mutation ?? "normal");
     if (site === undefined) throw new Error(`${item.name}: fixture build missing.`);
     const directory = join(artifacts, item.name);

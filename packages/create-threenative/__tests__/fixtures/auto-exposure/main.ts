@@ -20,6 +20,7 @@ const game = createExposureFixture({
   deterministic: query.get("deterministic") === "1",
   coldBoot: query.get("coldBoot") === "1",
   cameraCut: query.get("cameraCut") === "1",
+  backlit: (query.get("backlit") as "sky" | "disc" | null) ?? undefined,
 });
 void game
   .start()
