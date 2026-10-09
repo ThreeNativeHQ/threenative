@@ -79,6 +79,9 @@ constexpr const char* kPrelude = R"JS(
 globalThis.tn = {
   __update: null,
   onUpdate(fn) { globalThis.tn.__update = fn; },
+  // Called once per presented frame with the frame clock in ms (requestAnimationFrame's timestamp).
+  __frame: null,
+  onFrame(fn) { globalThis.tn.__frame = fn; },
   input: { isDown(key) { return __tnIsDown(String(key)); } },
 };
 )JS";
@@ -161,14 +164,22 @@ class V8Game {
     void frameDrawn(const Renderer& renderer) {
         drawCalls_ = renderer.lastFrame().draws;
         triangles_ = renderer.lastFrame().triangles;
+        frameClockMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStartedAt_).count();
     }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
+        presentFrame();  // the game's frame callbacks may change the renderer state applied below
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
         database.shadowMapEnabled = shadowMap_;
         database.shadowMapType = shadowMapType_;
     }
   private:
+    void presentFrame();
+    // The frame clock tn.onFrame reads: it moves only by each presented frame's own duration, from
+    // the game's frame callbacks through present (the TN_FRAME_BUDGET quantity, owner 2026-10-08),
+    // so a runner's tick batches and idle waits between frames are never counted as frame time.
+    std::chrono::steady_clock::time_point frameStartedAt_ = std::chrono::steady_clock::now();
+    double frameClockMs_ = 0;
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -601,6 +612,10 @@ bool V8Game::start(const std::string& path, std::string& error) {
     v8::Local<v8::Value> ignored;
     if (!v8::Script::Compile(ctx, v8str(isolate_, kPrelude)).ToLocal(&prelude) || !prelude->Run(ctx).ToLocal(&ignored))
         return error = "host prelude failed", false;
+    // A playtest runner announces itself as on the legacy desktop host, so core's playtest plugin
+    // collects the per-frame render samples the runner's performance assertions read.
+    if (const char* root = std::getenv("TN_PLAYTEST_MAILBOX_ROOT"); root != nullptr && root[0] != '\0')
+        ctx->Global()->Set(ctx, v8str(isolate_, "TN_PLAYTEST_ENDPOINT"), v8str(isolate_, "native://desktop-mailbox")).Check();
     const auto host = ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocalChecked().As<v8::Object>();
     auto platform = v8::Object::New(isolate_);
     platform->Set(ctx, v8str(isolate_, "runtime"), v8str(isolate_, "native")).Check();
@@ -741,6 +756,27 @@ void V8Game::tick(double dt) {
         const bool traced = tryCatch.StackTrace(ctx).ToLocal(&stack) && stack->IsString();
         v8::String::Utf8Value message(isolate_, traced ? stack : tryCatch.Exception());
         std::printf("[Playtest] TN_V8_UPDATE_FAILED: %s\n", *message ? *message : "the update threw");
+    }
+}
+
+// `tn.onFrame(fn)`: fn(ms) once per presented frame with the frame clock, so the step between two
+// frame callbacks is the wall-clock duration of a real frame (CPU frame plus present), not ticks.
+void V8Game::presentFrame() {
+    v8::Isolate::Scope isolateScope(isolate_);
+    v8::HandleScope scope(isolate_);
+    v8::Local<v8::Context> ctx = js_.Get(isolate_);
+    v8::Context::Scope contextScope(ctx);
+    v8::Local<v8::Value> host, frame;
+    if (!ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocal(&host) || !host->IsObject() ||
+        !host.As<v8::Object>()->Get(ctx, v8str(isolate_, "__frame")).ToLocal(&frame) || !frame->IsFunction())
+        return;
+    v8::TryCatch tryCatch(isolate_);
+    frameStartedAt_ = std::chrono::steady_clock::now();
+    v8::Local<v8::Value> argument = v8::Number::New(isolate_, frameClockMs_);
+    v8::Local<v8::Value> ignored;
+    if (!frame.As<v8::Function>()->Call(ctx, ctx->Global(), 1, &argument).ToLocal(&ignored)) {
+        v8::String::Utf8Value message(isolate_, tryCatch.Exception());
+        std::printf("[Playtest] TN_V8_FRAME_FAILED: %s\n", *message ? *message : "the frame callback threw");
     }
 }
 

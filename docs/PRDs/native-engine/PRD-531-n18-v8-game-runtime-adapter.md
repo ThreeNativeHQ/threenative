@@ -47,6 +47,7 @@ The CP1 checkpoint ([PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md)) 
 **Files:** `packages/create-threenative/` (engine profile resolution)
 - [x] Per-call cost of a property write and a method call through the adapter is reported. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_v8_crossing_bench` — 2026-10-04: `native_engine_v8_crossing_bench` prints `TN_V8_CROSSING`; first reading on this host (RTX 2080 desktop, V8 13.1, Release): property write 108 ns, method call with an object argument 365 ns, property read 81 ns. The cost is string-keyed member lookup and string-encoded object refs per call; CP1 decides between member ids and bulk paths (decision 9)
 - [ ] The minimal template, unchanged, runs its playtest journey on the native engine profile on desktop. proof: `node packages/playtest/dist/runner/cli.js <minimal journey>.playtest.json --target desktop`
+  Progress 2026-10-09, not the box: a fresh `minimal` scaffold, bundled for the V8 player with its cooked assets (`bundle-native-engine.mjs --engine native --game-runtime v8 --entry src/game.ts --out <dir>/game.js --assets <project>`), runs `playtests/play.playtest.json --target desktop --executable tn-native-engine-player-v8 --host-arg <dir>/game.js` with 6/8 assertions green: the player moves from x -2 to 1, tier high on hardware, 0 console errors, 18 draws, 19,523 triangles. The two frame-time assertions fail: the series now reads each presented frame's real duration (owner decision 2026-10-08: tick time never satisfies `minFps` or p95), about 28.5 ms, of which the CPU frame is about 1.1 ms (game JS 0.5 ms, engine render 0.6 ms) and present about 27 ms on the runner's private Xvfb; the first frame (753 ms, pipeline compiles) sets p95. See Blocked on. `sky`, `survives` and `touch-controls` stop at `TN_PLAYTEST_UNSUPPORTED_ON_TARGET`: each declares a network assertion, and desktop has no network observer.
 
 ## Design: the minimal template's path (2026-10-06)
 
@@ -135,6 +136,10 @@ the V8 adapter and the Wasm back end (`tn_tsl_call`) build the same graph.
   bundler refuses the import by name (`TN_NATIVE_ENGINE_UNBOUND`); nothing refuses at call time.
 
 ## Blocked on
+
+- A display that presents at the GPU's rate: the owner's host display (`TN_PLAYTEST_HOST_DISPLAY=1`)
+  or the device lane. On the runner's private Xvfb the present costs about 27 ms per frame, so
+  box 49's `minFps` and p95 measure the Xvfb copy, not the engine (CPU frame about 1.1 ms).
 
 - lane-tier-imports: the imports the minimal template references but never runs at its tiers
   (ssgi, ssr, godrays, sharpen, fxaa, TempNode, QuadMesh, RenderTarget, RendererUtils,

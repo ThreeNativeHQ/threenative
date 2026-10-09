@@ -37,6 +37,16 @@ globalThis.setInterval = (callback, delay) => {
 };
 globalThis.clearInterval = globalThis.clearTimeout;
 
+const runnerAttached = () => globalThis.TN_PLAYTEST_ENDPOINT !== undefined;
+const flushFrames = (now) => {
+  const pending = [...frames.values()];
+  frames.clear();
+  for (const callback of pending) callback(now);
+};
+globalThis.tn.onFrame((frameMs) => {
+  if (runnerAttached()) flushFrames(frameMs);
+});
+
 globalThis.tn.onUpdate((dt) => {
   time += dt * 1000;
   for (const key of keys) {
@@ -51,9 +61,16 @@ globalThis.tn.onUpdate((dt) => {
     else timer.due += timer.interval;
     timer.callback();
   }
-  const pending = [...frames.values()];
-  frames.clear();
-  for (const callback of pending) callback(time);
+  // Under a playtest runner core freezes its loop, so ticks are the only clock: the legacy host's
+  // mailbox advance calls the bridge's fixed step, and here each native tick is that advance. The
+  // frame callbacks then run once per presented frame on its frame clock (tn.onFrame below), so a
+  // render sample is a real frame time: tick time never satisfies minFps or p95 (owner, 2026-10-08).
+  if (runnerAttached()) {
+    const bridge = globalThis.__THREENATIVE_PLAYTEST_BRIDGE__;
+    if (typeof bridge?.advance === "function") void bridge.advance(1);
+  } else {
+    flushFrames(time);
+  }
   audio.updateAudio();
 });
 
