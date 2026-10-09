@@ -5492,5 +5492,38 @@
       "members": [],
       "callbacks": []
     }
-  }
+  },
+  "constants": [
+    "ACESFilmicToneMapping",
+    "AdditiveBlending",
+    "AgXToneMapping",
+    "AttachedBindMode",
+    "BackSide",
+    "ClampToEdgeWrapping",
+    "DoubleSide",
+    "DynamicDrawUsage",
+    "EquirectangularReflectionMapping",
+    "FloatType",
+    "FrontSide",
+    "HalfFloatType",
+    "LinearFilter",
+    "LinearMipmapLinearFilter",
+    "LinearSRGBColorSpace",
+    "LoopOnce",
+    "LoopPingPong",
+    "LoopRepeat",
+    "NearestFilter",
+    "NeutralToneMapping",
+    "NoBlending",
+    "NoColorSpace",
+    "NoToneMapping",
+    "NormalBlending",
+    "PCFShadowMap",
+    "PCFSoftShadowMap",
+    "RGBAFormat",
+    "RepeatWrapping",
+    "SRGBColorSpace",
+    "StaticDrawUsage",
+    "UnsignedByteType"
+  ]
 }

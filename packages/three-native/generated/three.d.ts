@@ -92,7 +92,7 @@ timeScale: number;
   uncacheRoot(root: Object3D): void;
 }
 
-/** Catalog partial (native-not-implemented): three/AttachedBindMode. */
+/** Catalog supported: three/AttachedBindMode. */
 export declare const AttachedBindMode: "attached";
 
 /** Catalog partial (native-not-implemented): three/AttributeGPUType. */
@@ -445,7 +445,7 @@ export declare class CircleGeometry extends BufferGeometry {
 constructor();
 }
 
-/** Catalog partial (native-not-implemented): three/ClampToEdgeWrapping. */
+/** Catalog supported: three/ClampToEdgeWrapping. */
 export declare const ClampToEdgeWrapping: 1001;
 
 /** Catalog supported: three/Color. */
@@ -672,7 +672,7 @@ export declare const EqualDepth: 4;
 /** Catalog partial (native-not-implemented): three/EqualStencilFunc. */
 export declare const EqualStencilFunc: 514;
 
-/** Catalog partial (native-not-implemented): three/EquirectangularReflectionMapping. */
+/** Catalog supported: three/EquirectangularReflectionMapping. */
 export declare const EquirectangularReflectionMapping: 303;
 
 /** Catalog partial (native-not-implemented): three/EquirectangularRefractionMapping. */
@@ -743,7 +743,7 @@ export declare class Float32BufferAttribute extends BufferAttribute {
 constructor(array: TypedArray, itemSize: number, normalized?: boolean);
 }
 
-/** Catalog partial (native-not-implemented): three/FloatType. */
+/** Catalog supported: three/FloatType. */
 export declare const FloatType: 1015;
 
 /** Catalog supported: three/Fog. */
@@ -824,7 +824,7 @@ readonly isGroup: true;
 /** Catalog partial (native-not-implemented): three/HSL. */
 export type HSL = { h: number; s: number; l: number; };
 
-/** Catalog partial (native-not-implemented): three/HalfFloatType. */
+/** Catalog supported: three/HalfFloatType. */
 export declare const HalfFloatType: 1016;
 
 /** Catalog supported: three/webgpu/HemisphereLight. */
@@ -976,7 +976,7 @@ end: Vector3;
   equals(line: Line3): boolean;
 }
 
-/** Catalog partial (native-not-implemented): three/LinearFilter. */
+/** Catalog supported: three/LinearFilter. */
 export declare const LinearFilter: 1006;
 
 /** Catalog partial (native-not-implemented): three/LinearMipMapLinearFilter. */
@@ -985,7 +985,7 @@ export declare const LinearMipMapLinearFilter: 1008;
 /** Catalog partial (native-not-implemented): three/LinearMipMapNearestFilter. */
 export declare const LinearMipMapNearestFilter: 1007;
 
-/** Catalog partial (native-not-implemented): three/LinearMipmapLinearFilter. */
+/** Catalog supported: three/LinearMipmapLinearFilter. */
 export declare const LinearMipmapLinearFilter: 1008;
 
 /** Catalog partial (native-not-implemented): three/LinearMipmapNearestFilter. */
@@ -1517,7 +1517,7 @@ export declare const MultiplyBlending: 4;
 /** Catalog partial (native-not-implemented): three/MultiplyOperation. */
 export declare const MultiplyOperation: 0;
 
-/** Catalog partial (native-not-implemented): three/NearestFilter. */
+/** Catalog supported: three/NearestFilter. */
 export declare const NearestFilter: 1003;
 
 /** Catalog partial (native-not-implemented): three/NearestMipMapLinearFilter. */
@@ -1553,7 +1553,7 @@ export declare const NoColorSpace: "";
 /** Catalog partial (native-not-implemented): three/NoNormalPacking. */
 export declare const NoNormalPacking: "";
 
-/** Catalog partial (native-not-implemented): three/NoToneMapping. */
+/** Catalog supported: three/NoToneMapping. */
 export declare const NoToneMapping: 0;
 
 /** Catalog partial (graph-authoring-only, constructor-not-bound): three/webgpu/Node. */
@@ -2002,7 +2002,7 @@ export type RGB = { r: number; g: number; b: number; };
 /** Catalog partial (native-not-implemented): three/RGBADepthPacking. */
 export declare const RGBADepthPacking: 3201;
 
-/** Catalog partial (native-not-implemented): three/RGBAFormat. */
+/** Catalog supported: three/RGBAFormat. */
 export declare const RGBAFormat: 1023;
 
 /** Catalog partial (native-not-implemented): three/RGBAIntegerFormat. */
@@ -2137,7 +2137,7 @@ export declare const RedIntegerFormat: 1029;
 /** Catalog partial (native-not-implemented): three/ReinhardToneMapping. */
 export declare const ReinhardToneMapping: 2;
 
-/** Catalog partial (native-not-implemented): three/RepeatWrapping. */
+/** Catalog supported: three/RepeatWrapping. */
 export declare const RepeatWrapping: 1000;
 
 /** Catalog partial (native-not-implemented): three/ReplaceStencilOp. */
@@ -2168,7 +2168,7 @@ export declare const SIGNED_RED_RGTC1_Format: 36284;
 /** Catalog partial (native-not-implemented): three/SIGNED_RG11_EAC_Format. */
 export declare const SIGNED_RG11_EAC_Format: 37491;
 
-/** Catalog partial (native-not-implemented): three/SRGBColorSpace. */
+/** Catalog supported: three/SRGBColorSpace. */
 export declare const SRGBColorSpace: "srgb";
 
 /** Catalog partial (native-not-implemented): three/SRGBTransfer. */
@@ -2527,7 +2527,7 @@ export type TypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array
 /** Catalog partial (native-not-implemented): three/UVMapping. */
 export declare const UVMapping: 300;
 
-/** Catalog partial (native-not-implemented): three/UnsignedByteType. */
+/** Catalog supported: three/UnsignedByteType. */
 export declare const UnsignedByteType: 1009;
 
 /** Catalog partial (native-not-implemented): three/UnsignedInt101111Type. */

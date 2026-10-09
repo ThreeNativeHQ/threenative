@@ -1282,40 +1282,15 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         classes_[type].Reset(isolate_, ctor);
         target->Set(context, str(isolate_, name), ctor->GetFunction(context).ToLocalChecked()).Check();
     }
-    // three's scalar constants the minimal template imports (PRD-531 small bindings): plain values
+    // three's scalar constants the engine binds: plain values
     // beside the classes, read as globals the way the classes are. The values are three r185's
     // (ThreeConstants.h, proven bit-exact by the mathutils reference test); this only wires them.
-    target->Set(context, str(isolate_, "ACESFilmicToneMapping"),
-                v8::Number::New(isolate_, tn::engine::ACESFilmicToneMapping)).Check();
-    target->Set(context, str(isolate_, "AgXToneMapping"),
-                v8::Number::New(isolate_, tn::engine::AgXToneMapping)).Check();
-    target->Set(context, str(isolate_, "NeutralToneMapping"),
-                v8::Number::New(isolate_, tn::engine::NeutralToneMapping)).Check();
-    target->Set(context, str(isolate_, "PCFSoftShadowMap"),
-                v8::Number::New(isolate_, tn::engine::PCFSoftShadowMap)).Check();
-    target->Set(context, str(isolate_, "NoColorSpace"), str(isolate_, tn::engine::NoColorSpace)).Check();
-    target->Set(context, str(isolate_, "LinearSRGBColorSpace"),
-                str(isolate_, tn::engine::LinearSRGBColorSpace)).Check();
-    for (const auto& [name, value] : std::map<std::string, double>{
-        {"RepeatWrapping", static_cast<double>(tn::engine::TextureWrap::Repeat)},
-        {"ClampToEdgeWrapping", static_cast<double>(tn::engine::TextureWrap::ClampToEdge)},
-        {"NearestFilter", static_cast<double>(tn::engine::TextureFilter::Nearest)},
-        {"LinearFilter", static_cast<double>(tn::engine::TextureFilter::Linear)},
-        {"LinearMipmapLinearFilter", static_cast<double>(tn::engine::TextureFilter::LinearMipmapLinear)},
-        {"UnsignedByteType", tn::engine::kTextureUnsignedByteType},
-        {"FloatType", tn::engine::kTextureFloatType},
-        {"RGBAFormat", tn::engine::kTextureRGBAFormat},
-        {"EquirectangularReflectionMapping", 303},
-        {"NoToneMapping", 0}, {"LoopOnce", 2200}, {"LoopRepeat", 2201}, {"LoopPingPong", 2202},
-        {"FrontSide", static_cast<double>(tn::engine::Side::Front)},
-        {"BackSide", static_cast<double>(tn::engine::Side::Back)},
-        {"DoubleSide", static_cast<double>(tn::engine::Side::Double)},
-        {"StaticDrawUsage", 35044}, {"DynamicDrawUsage", 35048},
-        {"NoBlending", static_cast<double>(tn::engine::Blending::None)},
-        {"NormalBlending", static_cast<double>(tn::engine::Blending::Normal)},
-        {"AdditiveBlending", static_cast<double>(tn::engine::Blending::Additive)},
-        {"PCFShadowMap", 1},
-    }) target->Set(context, str(isolate_, name), v8::Number::New(isolate_, value)).Check();
+    for (const auto& c : tn::engine::kThreeConstants) {
+        v8::Local<v8::Value> val = c.text != nullptr
+            ? v8::Local<v8::Value>(str(isolate_, c.text))
+            : v8::Local<v8::Value>(v8::Number::New(isolate_, c.number));
+        target->Set(context, str(isolate_, c.name), val).Check();
+    }
     const auto animation = [&](int operation) {
         auto data = v8::Array::New(isolate_, 2);
         data->Set(context, 0, v8::External::New(isolate_, this)).Check();
@@ -1395,8 +1370,6 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                 info.GetReturnValue().Set(view);
             }, v8::External::New(isolate_, this)).ToLocalChecked());
     }
-    target->Set(context, str(isolate_, "AttachedBindMode"), str(isolate_, "attached")).Check();
-    target->Set(context, str(isolate_, "SRGBColorSpace"), str(isolate_, "srgb")).Check();
 }
 
 }  // namespace tn::adapters::v8adapter

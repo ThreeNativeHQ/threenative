@@ -51,9 +51,14 @@ interface IRegistryClass {
 
 interface IRegistryDump {
   readonly classes: Record<string, IRegistryClass>;
+  readonly constants?: readonly string[];
 }
 
 const SUPPORTED = { kind: "supported" } as const;
+const NOT_IMPLEMENTED = {
+  kind: "partial" as const,
+  gaps: ["native-not-implemented"] as string[],
+};
 const NOT_BOUND = { kind: "partial" as const, gaps: ["native-not-bound"] as string[] };
 
 const unknown: string[] = [];
@@ -613,6 +618,30 @@ function main(): void {
   const catalog = JSON.parse(readFileSync(CATALOG_PATH, "utf8")) as MutableCatalog;
   const byName = new Map<string, MutableClass>();
   for (const entry of catalog.entries) if (entry.kind === "class") byName.set(entry.name, entry);
+
+  if (dump.constants !== undefined) {
+    const dumpConstants = new Set(dump.constants);
+    const catalogConstants = new Map(
+      catalog.entries
+        .filter(
+          (entry): entry is Extract<CatalogEntry, { kind: "constant" }> =>
+            entry.kind === "constant",
+        )
+        .map((entry) => [entry.name, entry]),
+    );
+    for (const name of dump.constants) {
+      if (!catalogConstants.has(name)) {
+        unknown.push(`constant.${name}`);
+      }
+    }
+    for (const [name, entry] of catalogConstants) {
+      if (dumpConstants.has(name)) {
+        entry.status = SUPPORTED;
+      } else if (entry.status?.kind === "supported") {
+        entry.status = NOT_IMPLEMENTED;
+      }
+    }
+  }
 
   if (
     dump.classes.MeshBasicNodeMaterial !== undefined ||
