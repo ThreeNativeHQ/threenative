@@ -1068,6 +1068,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const at = (x: number, z: number, up: number): Vector3 =>
         new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {
+        // The spawn gate also settles per world draw, not only per simulation step: a deterministic
+        // playtest clock advances no fixed step while startup is held, so a gate observed only in
+        // `afterPhysics` waited on the very readiness it was meant to report (ticks stopped at
+        // frame 60 while the spawn read 6/6 ready, until the 120 s deadline released the hold).
+        const spawnRegion = props?.readinessAt(spawn);
+        admission.observe(spawnRegion?.ready === true, spawnRegion?.failures ?? 0);
         renderedFrames[world]++;
         if (
           measuredView !== currentView ||
