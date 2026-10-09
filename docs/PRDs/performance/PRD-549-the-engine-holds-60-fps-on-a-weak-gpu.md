@@ -25,7 +25,7 @@ Measured on the LAN laptop (Intel Iris Xe, Mesa Vulkan, Chrome WebGPU on its rea
 
 Each control loop already measures its own cost; what is missing is the range and speed of its answer.
 
-1. **Resolution scaler: proportional steps, and samples as a rung.** When a window is far over target, step to the scale the measured deficit predicts instead of one rung per window. After the floor scale, drop MSAA (4 → 1, alpha coverage falls back to alpha test) before anything else gives way. Back up the same ladder with the existing hysteresis.
+1. **Resolution scaler: reach the pixels the GPU needs, then the samples.** The scaler already steps up to 4 rungs at once, sized from the GPU deficit, but on the laptop it held 1.0 through the early route. It acts only after startup readiness, on windows that are not compiling, behind an insensitivity guard, and never below the 0.61 desktop floor. Find which gate held it there, and fix that gate. Then add MSAA as the last rung below the floor (4 → 1, alpha coverage falls back to alpha test), restored with the same hysteresis. Variant A ran at 0.5 without MSAA, below anything the scaler can reach today.
 2. **LOD bias: a measured ceiling.** Replace the constant 2.5 cap with "keep rising while the main pass is over its share, until every asset is at its coarsest level". The rise rate stays bounded (no pop), and the decay is unchanged.
 3. **Shadow redraw cost follows the GPU.** When one level redraw costs more than a share of the frame, halve that level's map resolution (4096 → 2048 → 1024) and coarsen the caster shape (cast with the coarsest level instead of the finest that casts); restore when it fits. Measured per redraw, reported in `TN_FRAME_BUDGET`.
 
@@ -43,7 +43,7 @@ All three are mechanism in `packages/core`; no game sets anything, and an explic
 **Status:** NOT STARTED
 **Files:** `packages/core/src/resolution-scaler.ts`, `packages/core/src/renderer.ts`; `packages/core/__tests__/`
 
-- [ ] A window far over target steps to the predicted scale in one move, not one rung. proof: red-green `resolution-scaler.spec.ts`
+- [ ] The gate that held the scale at 1.0 through the laptop's early route is named and fixed, so a fill-bound deficit reaches the floor within a few windows of readiness. proof: a laptop run's scaler markers, then a red-green `resolution-scaler.spec.ts` on that gate
 - [ ] At the floor scale the sample count drops to 1, and comes back with the hysteresis. proof: red-green spec; laptop run shows the drop in `TN_FRAME_BUDGET.surface`
 
 #### Phase 2: LOD ceiling
