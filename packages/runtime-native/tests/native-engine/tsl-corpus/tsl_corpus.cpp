@@ -113,6 +113,10 @@ int main() {
     graph("mat2", "color", [] { return vec4({matrix2(vec2({1, 0}), vec2({0, 1})).mul(vec2({u(), time()})), 0, 1}); });
     graph("hash", "color", [] { return vec4({hashOf(u()), 0, 0, 1}); });
     graph("time", "color", [] { return vec4({time(), 0, 0, 1}); });
+    graph("normal-local", "position", [] { return vec4({positionLocal().add(attribute("normal", Type::vec(3)).mul(u())), 1}); });
+    graph("tangent-local", "position",
+          [] { return vec4({positionLocal().add(attribute("tangent", Type::vec(4)).xyz().mul(u())), 1}); });
+    graph("position-previous", "color", [] { return vec4({program().varying("positionPrevious", Type::vec(3)), 1}); });
 
     compute("fn-if-store", [](Storage positions) {
         const Var acc = toVar(float_(0));

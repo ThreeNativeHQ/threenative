@@ -42,10 +42,12 @@ import {
   min,
   mix,
   mod,
+  normalLocal,
   normalWorld,
   normalize,
   positionGeometry,
   positionLocal,
+  positionPrevious,
   pow,
   saturation,
   select,
@@ -54,6 +56,7 @@ import {
   smoothstep,
   sqrt,
   step,
+  tangentLocal,
   texture,
   uint,
   uniform,
@@ -158,6 +161,8 @@ const accessorBuilder = {
   isFlatShading: () => false,
   material: { side: FrontSide },
   context: {},
+  // r185's normalLocal reads normalGeometry when the geometry has a normal (Normal.js).
+  geometry: { hasAttribute: () => true },
 };
 
 /** Upstream names the native renderer binds under its own: the view matrix and the normal varying. */
@@ -333,6 +338,9 @@ export const CORPUS: [string, string, unknown][] = [
   ["mat2", "color", vec4(mat2(vec2(1, 0), vec2(0, 1)).mul(vec2(u, time)), 0, 1)],
   ["hash", "color", vec4(hash(u), 0, 0, 1)],
   ["time", "color", vec4(frameTime, 0, 0, 1)],
+  ["normal-local", "position", vec4(positionLocal.add(normalLocal.mul(u)), 1)],
+  ["tangent-local", "position", vec4(positionLocal.add(tangentLocal.mul(u)), 1)],
+  ["position-previous", "color", vec4(positionPrevious, 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

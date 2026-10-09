@@ -122,6 +122,9 @@ const CONSTANTS = [
   "screenCoordinate",
   "normalGeometry",
   "tangentGeometry",
+  "normalLocal",
+  "tangentLocal",
+  "positionPrevious",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [

@@ -29,10 +29,12 @@ const {
   min,
   mix,
   mod,
+  normalLocal,
   normalWorld,
   normalize,
   positionGeometry,
   positionLocal,
+  positionPrevious,
   pow,
   saturation,
   select,
@@ -40,6 +42,7 @@ const {
   smoothstep,
   sqrt,
   step,
+  tangentLocal,
   texture,
   time: frameTime,
   uint,
@@ -97,6 +100,9 @@ const CORPUS = [
   ["mat2", "color", vec4(mat2(vec2(1, 0), vec2(0, 1)).mul(vec2(u, time)), 0, 1)],
   ["hash", "color", vec4(hash(u), 0, 0, 1)],
   ["time", "color", vec4(frameTime, 0, 0, 1)],
+  ["normal-local", "position", vec4(positionLocal.add(normalLocal.mul(u)), 1)],
+  ["tangent-local", "position", vec4(positionLocal.add(tangentLocal.mul(u)), 1)],
+  ["position-previous", "color", vec4(positionPrevious, 1)],
 ];
 
 const positions = instancedArray(16, "vec4").setName("positions");

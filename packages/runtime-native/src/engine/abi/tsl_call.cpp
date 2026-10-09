@@ -304,6 +304,22 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return g::attribute("position", Type::vec(3));
     }
+    // r185's local accessors as they read: normalLocal = normalGeometry.toVar('normalLocal'),
+    // tangentLocal = tangentGeometry.xyz.toVar('tangentLocal') and positionPrevious =
+    // positionGeometry.toVarying('positionPrevious'). Assigning one (core's projection-skinned
+    // writes them in a positionNode) is refused by name: the standard program does not read it back.
+    if (name == "normalLocal") {
+        arity(0);
+        return g::attribute("normal", Type::vec(3));
+    }
+    if (name == "tangentLocal") {
+        arity(0);
+        return g::swizzle(g::attribute("tangent", Type::vec(4)), "xyz");
+    }
+    if (name == "positionPrevious") {
+        arity(0);
+        return g::varying(g::attribute("position", Type::vec(3)), "positionPrevious");
+    }
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix):
     // normalize((vec4(normalView, 0) * viewMatrix).xyz), normalView the interpolated geometry normal.
     // ponytail: the geometry normal only; a normalNode, normal map or back-face flip is not applied.
@@ -541,7 +557,7 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"time", g::uniform("time", Type::f32())}};
     // The node constants tslCall also answers by name; neither takes a serial.
     uint64_t serial = 0;
-    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "positionGeometry", "normalWorld",
+    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "positionGeometry", "normalWorld", "normalLocal", "tangentLocal", "positionPrevious",
                              "normalView", "positionViewDirection", "screenCoordinate", "normalGeometry", "tangentGeometry"})
         constants.emplace_back(name, tslCall(name, nullptr, {}, serial));
     return constants;
@@ -617,7 +633,10 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         auto& statements = open().back().statements;
         const auto target = self();
         if (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement)
-            throw std::runtime_error("assign requires a variable or storage element");
+            throw std::runtime_error(target->kind == g::Kind::Attribute || target->kind == g::Kind::Varying
+                ? "assign requires a variable or storage element: " + target->name +
+                      " is a read here (normalLocal, tangentLocal and positionPrevious are not written back)"
+                : std::string("assign requires a variable or storage element"));
         g::Block block;
         block.assign(target, input(args[0]));
         statements.push_back(block.node()->body[0]);

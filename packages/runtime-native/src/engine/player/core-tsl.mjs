@@ -22,7 +22,8 @@ export const {
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
 } = globalThis.tsl;
 export const {
-  oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection,
+  oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection, normalLocal, tangentLocal,
+  positionPrevious,
   atan, mod, fwidth, saturation, mat2, hash, time, transformDirection,
 } = globalThis.tsl;
 
