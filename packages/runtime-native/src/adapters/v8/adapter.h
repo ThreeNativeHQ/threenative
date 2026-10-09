@@ -4,6 +4,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 #include <unordered_map>
 
 #include <v8.h>
@@ -58,6 +59,14 @@ public:
     void noteGenericArguments() { ++genericArguments_; }
 
 private:
+    // What install() allocates as its functions' data (method and accessor records): owned here and
+    // freed with the adapter, whose installed functions JS no longer calls once it is gone, as for its
+    // wrappers. One install per isolate leaked them before, so a process that made isolates grew.
+    std::vector<std::shared_ptr<void>> installed_;
+    template <typename T> T* keep(T* made) {
+        installed_.emplace_back(std::shared_ptr<T>(made));
+        return made;
+    }
     struct Wrapper;
     struct CallbackData;
     static uint64_t key(tn_handle_t h) { return (uint64_t{h.index} << 32) | h.generation; }

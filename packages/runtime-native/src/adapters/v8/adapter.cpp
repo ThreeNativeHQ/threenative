@@ -767,7 +767,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             if (!binding.events.empty() && (method == "addEventListener" || method == "removeEventListener" ||
                                             method == "hasEventListener" || method == "dispatchEvent"))
                 continue;
-            auto* data = new MethodData{this, method};  // ponytail: lives for the process; one per method per install
+            auto* data = keep(new MethodData{this, method});
             data->intersections = method == "intersectObject" || method == "intersectObjects";
             proto->Set(str(isolate_, method),
                        v8::FunctionTemplate::New(
@@ -874,7 +874,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         for (const auto& [path, getter] : binding.getters) {
             // A dotted path (`position.x`) is reached through the member object, not as a property.
             if (path.find('.') != std::string::npos) continue;
-            if (indexed(path)) liveArrays.push_back(new MethodData{this, path, {}});
+            if (indexed(path)) liveArrays.push_back(keep(new MethodData{this, path, {}}));
             else properties.push_back({path, binding.setters.count(path) > 0, false});
         }
         // `mesh.morphTargetInfluences[0] = 0.5` must reach the engine, as it reaches three's plain
@@ -945,7 +945,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             if (fixed && !slots.count(path) && int(slots.size()) + 1 < kWrapperFields) slots[path] = int(slots.size()) + 1;
         for (const auto& [path, settable, fixed] : properties) {
             if ((name == "MeshBasicNodeMaterial" || name == "MeshStandardNodeMaterial") && path.ends_with("Node")) {
-                auto* data = new MethodData{this, path, {}};
+                auto* data = keep(new MethodData{this, path, {}});
                 proto->SetAccessorProperty(str(isolate_, path),
                     v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
                         auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
@@ -977,7 +977,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     }, v8::External::New(isolate_, data)));
                 continue;
             }
-            auto* data = new MethodData{this, path, {}};
+            auto* data = keep(new MethodData{this, path, {}});
             data->own = fixed && !settable;
             if (fixed && slots.count(path)) { data->slot = slots[path]; data->type = type; }
             else if (fixed) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
@@ -1059,11 +1059,11 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             if (dot == std::string::npos) continue;
             const std::string head = path.substr(0, dot);
             if (binding.members.count(head) > 0 || binding.getters.count(head) > 0) continue;
-            holders[head].push_back(new MethodData{this, path, {}});
+            holders[head].push_back(keep(new MethodData{this, path, {}}));
             holders[head].back()->readable = binding.getters.count(path) > 0 || binding.members.count(path) > 0;
         }
         for (const auto& [head, paths] : holders) {
-            auto* tails = new std::vector<MethodData*>(paths);
+            auto* tails = keep(new std::vector<MethodData*>(paths));
             proto->SetAccessorProperty(str(isolate_, head), v8::FunctionTemplate::New(isolate_,
                 [](const v8::FunctionCallbackInfo<v8::Value>& info) {
                     v8::Isolate* isolate = info.GetIsolate();
@@ -1120,7 +1120,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         if (!binding.events.empty()) {
             if (listenersKey_.IsEmpty()) listenersKey_.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:listeners")));
             for (const char* method : {"addEventListener", "removeEventListener", "hasEventListener", "dispatchEvent"}) {
-                auto* data = new MethodData{this, method, {}};
+                auto* data = keep(new MethodData{this, method, {}});
                 data->cls = name;
                 proto->Set(str(isolate_, method), v8::FunctionTemplate::New(isolate_, &Adapter::eventListener,
                                                                             v8::External::New(isolate_, data)));
@@ -1145,13 +1145,13 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     if (!toValues(*d->adapter, info, args, texts, arrays, values) || args.size() != 1 ||
                         tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
                         throwStatus(info.GetIsolate(), diagnostic);
-                }, v8::External::New(isolate_, new MethodData{this, path, {}})));
+                }, v8::External::New(isolate_, keep(new MethodData{this, path, {}}))));
         }
         for (const auto& [name, set] : binding.callbacks) {
             (void)set;
             if (callbackKeys_.find(name) == callbackKeys_.end())
                 callbackKeys_[name].Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:callback:" + name)));
-            auto* data = new MethodData{this, name, {}};
+            auto* data = keep(new MethodData{this, name, {}});
             proto->SetAccessorProperty(str(isolate_, name),
                                        v8::FunctionTemplate::New(isolate_, &Adapter::getCallback, v8::External::New(isolate_, data)),
                                        v8::FunctionTemplate::New(isolate_, &Adapter::setCallback, v8::External::New(isolate_, data)));
