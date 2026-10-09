@@ -66,7 +66,7 @@ const std::set<std::string> kThreeExtensions = {
     "KHR_materials_emissive_strength", "EXT_materials_bump", "EXT_texture_webp", "EXT_texture_avif",
     "EXT_meshopt_compression", "KHR_meshopt_compression", "EXT_mesh_gpu_instancing"};
 const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit",
-                                          "KHR_materials_ior", "KHR_materials_specular"};
+                                          "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat"};
 
 class Builder {
   public:
@@ -537,6 +537,9 @@ class Builder {
         to.ior = from.ior;
         to.specularIntensity = from.specularIntensity;
         to.specularColor = from.specularColor;
+        to.clearcoat = from.clearcoat;
+        to.clearcoatRoughness = from.clearcoatRoughness;
+        to.clearcoatNormalScale = from.clearcoatNormalScale;
         to.maps = from.maps;
     }
 
@@ -547,9 +550,11 @@ class Builder {
         const bool unlit = member(extensions, "KHR_materials_unlit") != nullptr;
         const Value* ior = member(extensions, "KHR_materials_ior");
         const Value* specular = member(extensions, "KHR_materials_specular");
-        // loadMaterial: unlit wins; otherwise the ior and specular plugins choose MeshPhysicalMaterial.
+        const Value* clearcoat = member(extensions, "KHR_materials_clearcoat");
+        // loadMaterial: unlit wins; otherwise the ior, specular and clearcoat plugins choose MeshPhysicalMaterial.
         auto material = std::make_shared<Material>(unlit ? MaterialType::Basic
-                                                   : ior || specular ? MaterialType::Physical : MaterialType::Standard);
+                                                   : ior || specular || clearcoat ? MaterialType::Physical
+                                                                                  : MaterialType::Standard);
         if (index < 0) {
             // createDefaultMaterial
             material->metalness = 1;
@@ -602,6 +607,20 @@ class Builder {
                 if (const Value* color = member(specular, "specularColorFactor"); color && color->isArray())
                     material->specularColor = Color(number(item(color, 0), 1), number(item(color, 1), 1), number(item(color, 2), 1));
                 assignTexture(*material, "specularColorMap", member(specular, "specularColorTexture"));
+            }
+            // GLTFMaterialsClearcoatExtension: each factor only when present (the physical defaults stand
+            // otherwise), and the coat's maps and normal scale.
+            if (clearcoat) {
+                if (member(clearcoat, "clearcoatFactor")) material->clearcoat = number(member(clearcoat, "clearcoatFactor"), 0);
+                assignTexture(*material, "clearcoatMap", member(clearcoat, "clearcoatTexture"));
+                if (member(clearcoat, "clearcoatRoughnessFactor"))
+                    material->clearcoatRoughness = number(member(clearcoat, "clearcoatRoughnessFactor"), 0);
+                assignTexture(*material, "clearcoatRoughnessMap", member(clearcoat, "clearcoatRoughnessTexture"));
+                if (const Value* normal = member(clearcoat, "clearcoatNormalTexture")) {
+                    assignTexture(*material, "clearcoatNormalMap", normal);
+                    if (member(normal, "scale"))
+                        material->clearcoatNormalScale.x = material->clearcoatNormalScale.y = number(member(normal, "scale"), 1);
+                }
             }
         }
         if (truthyName(member(def, "name"))) material->name = text(member(def, "name"));
