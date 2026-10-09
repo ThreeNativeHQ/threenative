@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "engine/renderer/pipeline_cache.h"
 
 #include <algorithm>
 #include <cctype>
@@ -763,7 +764,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
     desc.layout = layout;
     desc.entryCount = entries.size();
     desc.entries = entries.data();
-    return wgpuDeviceCreateBindGroup(device_, &desc);
+    return createBindGroup(device_, &desc);
 }
 
 const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
@@ -1236,7 +1237,7 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
         groupDesc.layout = envLayout_;
         groupDesc.entryCount = 3;
         groupDesc.entries = entries;
-        WGPUBindGroup group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
+        WGPUBindGroup group = createBindGroup(device_, &groupDesc);
         WGPURenderPassColorAttachment color = {};
         color.view = passes[p].target;
         color.loadOp = p == 0 ? WGPULoadOp_Clear : WGPULoadOp_Load;

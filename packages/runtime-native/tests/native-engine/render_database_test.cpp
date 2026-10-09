@@ -8,6 +8,7 @@
 #include "engine/renderer/render_database.h"
 #include "engine/renderer/projection/plan.h"
 #include "engine/shader/package.h"
+#include "engine/shader/graph/post_effects.h"
 #include "engine/player/skinned_crowd.h"
 #include "engine/scene/geometries.h"
 #include "mystral/webgpu/context.h"
@@ -902,6 +903,61 @@ void timeUniform() {
     CHECK(first != second);
 }
 
+// A steady frame does no setup work: after warm-up, sixty more frames of a lit node-material scene with
+// shadows and the template's bloom + GTAO/denoise chain compile no pipeline, build no pipeline text
+// key, create no bind group, serialize no graph key and build no program. Each of these was a
+// per-frame regression once (the wasm32 pipeline-id hash, per-draw graph keys, per-pass post bind
+// groups); counters, unlike timings, fail the same way on every machine.
+void steadyState() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 72);
+    LitScene s;
+    s.mesh.setCastShadow(true);
+    s.mesh.setReceiveShadow(true);
+    s.light.setCastShadow(true);
+    auto rim = std::make_shared<Material>(MaterialType::Standard, true);
+    rim->color.setRGB(0.6, 0.6, 0.65);
+    const auto gain = g::uniform("steadyGain", shader::Type::f32(), {0.25f});
+    rim->nodes.emissiveNode = g::mul(g::swizzle(g::uniform("diffuse", shader::Type::vec(4)), "xyz"), gain);
+    s.mesh.material = rim;
+    const auto colour = g::texture("scene", g::uv()), depth = g::texture("depth", g::uv()),
+               normal = g::texture("normal", g::uv());
+    auto contact = g::gtaoEffect(depth, normal);
+    const auto occlusion = g::effectNode(g::denoiseEffect(g::effectNode(contact), depth, normal, 1));
+    renderer.setPostGraph(g::add(g::mul(colour, g::swizzle(occlusion, "x")), g::bloom(colour, 0.7, 0.5, 0.2)));
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto frame = [&] {
+        database.render(renderer, s.scene, s.camera);
+        renderer.poll();
+        events.drain();
+    };
+    for (int i = 0; i < 5; ++i) frame();
+    CHECK(database.diagnostics().empty() && renderer.diagnostics().empty());
+    const auto compiles = renderer.pipelines().compiles(), texts = renderer.pipelines().textLookups();
+    const auto groups = bindGroupsCreated(), keys = g::keyBuilds();
+    const auto programs = renderer.programCount();
+    for (int i = 0; i < 60; ++i) {
+        if (i % 2) s.mesh.position.x = 0.01 * i;  // a moving object is still a steady frame
+        frame();
+    }
+    std::fprintf(stderr, "steady state over 60 frames: compiles +%llu, text keys +%llu, bind groups +%llu, graph keys +%llu, programs +%zu\n",
+                 (unsigned long long)(renderer.pipelines().compiles() - compiles),
+                 (unsigned long long)(renderer.pipelines().textLookups() - texts),
+                 (unsigned long long)(bindGroupsCreated() - groups), (unsigned long long)(g::keyBuilds() - keys),
+                 renderer.programCount() - programs);
+    CHECK(renderer.pipelines().compiles() == compiles);
+    CHECK(renderer.pipelines().textLookups() == texts);
+    CHECK(bindGroupsCreated() == groups);
+    CHECK(g::keyBuilds() == keys);
+    CHECK(renderer.programCount() == programs);
+    CHECK(database.diagnostics().empty() && renderer.diagnostics().empty());
+}
+
 // PRD-514: an edit between frames shows on the next frame, and nothing a frame no longer draws stays
 // behind: a released geometry's GPU copies are freed and never served to a geometry that reuses its
 // address.
@@ -1537,7 +1593,7 @@ void gpuTimerIsOptIn() {
 
 }  // namespace
 
-TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn})

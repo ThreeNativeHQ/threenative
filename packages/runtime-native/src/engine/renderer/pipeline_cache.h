@@ -28,6 +28,14 @@ struct PipelineTarget {
 };
 
 /**
+ * Every bind group the renderer creates goes through here, so a steady frame can be held to creating
+ * none (render_database_test steady_state): a per-frame group is a regression, not a cost to tune.
+ */
+WGPUBindGroup createBindGroup(WGPUDevice device, const WGPUBindGroupDescriptor* descriptor);
+/** How many bind groups createBindGroup has made in this process. */
+uint64_t bindGroupsCreated();
+
+/**
  * Render pipelines by what they are made of (PRD-514): the stages' WGSL text — deterministic by
  * construction (PRD-511) — their vertex layout and the target formats. The first request compiles;
  * every later one, every frame, is a lookup.

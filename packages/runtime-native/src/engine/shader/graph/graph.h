@@ -207,6 +207,8 @@ ExprId lower(const Graph& graph, Program& program,
              const std::unordered_map<std::string, ExprId>& inputs = {});
 /** Canonical DAG serialization, independent of addresses; includes sharing and every operation. */
 std::string key(const Graph& graph);
+/** How many times key() has serialized a graph in this process; a steady frame serializes none. */
+uint64_t keyBuilds();
 /** key(graph) interned: equal structures answer the same id, computed once per node (0 for null). */
 uint64_t keyId(const Graph& graph);
 /** Named uniform data reachable from the graph. Conflicting values fail rather than pick one. */

@@ -1,4 +1,5 @@
 #include "effects.h"
+#include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/foundation/math/Matrix.h"
@@ -313,7 +314,7 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
             groupDesc.layout = pass.layout;
             groupDesc.entryCount = entries.size();
             groupDesc.entries = entries.data();
-            pass.group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
+            pass.group = createBindGroup(device_, &groupDesc);
             pass.groupEntries = entries;
         }
         const auto group = pass.group;
