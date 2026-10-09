@@ -201,7 +201,7 @@ std::array<const Texture*, shader::kPbrMapCount> pbrMapsOf(const Material& mater
     std::array<const Texture*, shader::kPbrMapCount> maps{};
     for (int k = 0; k < pbrMapsRead(material); ++k) {
         const auto found = material.maps.find(shader::kPbrMapNames[k]);
-        if (found != material.maps.end() && found->second && found->second->hasImage()) maps[k] = found->second.get();
+        if (found != material.maps.end() && found->second && found->second->sampleable()) maps[k] = found->second.get();
     }
     return maps;
 }
@@ -316,7 +316,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         // A decoded map the standard program does not read is refused by name, never drawn without it.
         // (A placeholder with no image was already refused where models load.)
         for (const auto& [slot, texture] : material->maps) {
-            if (!texture || !texture->hasImage() || slot == "map" || slot == "normalMap") continue;
+            if (!texture || !texture->sampleable() || slot == "map" || slot == "normalMap") continue;
             const auto pbr = std::find(std::begin(shader::kPbrMapNames), std::end(shader::kPbrMapNames), slot);
             if (pbr - std::begin(shader::kPbrMapNames) < pbrMapsRead(*material)) continue;
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
@@ -324,14 +324,14 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
             return r;
         }
         if (const auto normal = material->maps.find("normalMap");
-            normal != material->maps.end() && normal->second && normal->second->hasImage() &&
+            normal != material->maps.end() && normal->second && normal->second->sampleable() &&
             !store(*mesh.geometry, "uv")) {
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) +
                                    ": normalMap needs a uv attribute (drawn without it)");
         }
         for (int k = 0; k < pbrMapsRead(*material); ++k)
             if (const auto map = material->maps.find(shader::kPbrMapNames[k]); map != material->maps.end() &&
-                map->second && map->second->hasImage() && !store(*mesh.geometry, "uv"))
+                map->second && map->second->sampleable() && !store(*mesh.geometry, "uv"))
                 diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " +
                                        shader::kPbrMapNames[k] + " needs a uv attribute (drawn without it)");
         r.buffers = {floatStore(*mesh.geometry, "position"), floatStore(*mesh.geometry, "normal"),
@@ -365,10 +365,10 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     // image-less glTF placeholder (source only) keeps drawing its flat colour as before.
     if (d.uvs != nullptr) {
         const auto found = material->maps.find("map");
-        if (found != material->maps.end() && found->second && found->second->hasImage())
+        if (found != material->maps.end() && found->second && found->second->sampleable())
             d.map = found->second.get();
         const auto normal = material->maps.find("normalMap");
-        if (normal != material->maps.end() && normal->second && normal->second->hasImage())
+        if (normal != material->maps.end() && normal->second && normal->second->sampleable())
             d.normalMap = normal->second.get();
         d.pbrMaps = pbrMapsOf(*material);
     }
@@ -406,10 +406,10 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.pbrMaps = {};
     if (d.uvs) {
         const auto map = r.material->maps.find("map");
-        if (map != r.material->maps.end() && map->second && map->second->hasImage())
+        if (map != r.material->maps.end() && map->second && map->second->sampleable())
             d.map = map->second.get();
         const auto normal = r.material->maps.find("normalMap");
-        if (normal != r.material->maps.end() && normal->second && normal->second->hasImage())
+        if (normal != r.material->maps.end() && normal->second && normal->second->sampleable())
             d.normalMap = normal->second.get();
         d.pbrMaps = pbrMapsOf(*r.material);
     }

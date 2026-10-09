@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
+#include "engine/renderer/render_target_pass.h"
 
 #include <algorithm>
 #include <cctype>
@@ -768,6 +769,17 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
 }
 
 const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
+    // A render target's texture is that target's last render, borrowed from its own renderer.
+    if (const auto target = std::static_pointer_cast<RenderTarget>(texture.renderTarget.lock())) {
+        MaterialTexture& sampled = renderTargetTextures_[texture.ident.value()];
+        const WGPUTextureView view = renderTargetView(*this, *target);
+        if (sampled.view != view) {
+            if (sampled.view) dropMapGroups();  // a resized target's old view address may come back
+            sampled.view = view;
+            sampled.sampler = linearClampSampler();
+        }
+        return &sampled;
+    }
     MaterialTexture& record = materialTextures_[texture.ident.value()];
     if (record.view != nullptr && record.version == texture.version()) return &record;
     if (record.view) dropMapGroups();  // its old view's address may be reused by the new one

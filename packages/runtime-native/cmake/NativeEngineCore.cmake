@@ -398,7 +398,8 @@ set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/
     src/engine/renderer/presentation.cpp src/engine/renderer/package_loader.cpp
     src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
     src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp
-    src/engine/renderer/post/traa.cpp src/engine/renderer/post/effects.cpp src/engine/renderer/probes/capture.cpp)
+    src/engine/renderer/post/traa.cpp src/engine/renderer/post/effects.cpp src/engine/renderer/probes/capture.cpp
+    src/engine/renderer/render_target_pass.cpp)
 if(EMSCRIPTEN)
     # PRD-532: the same renderer over the browser's WebGPU through Dawn's emdawnwebgpu port, whose
     # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.

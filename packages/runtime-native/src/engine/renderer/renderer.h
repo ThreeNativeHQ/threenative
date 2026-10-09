@@ -395,6 +395,8 @@ private:
         uint32_t version = 0;
     };
     const MaterialTexture* materialTexture(const Texture& texture);
+    // Render-target textures by texture id: views borrowed from each target's renderer, never released here.
+    std::unordered_map<uint64_t, MaterialTexture> renderTargetTextures_;
     struct BackgroundCube {
         WGPUTexture texture = nullptr;
         WGPUTextureView view = nullptr;

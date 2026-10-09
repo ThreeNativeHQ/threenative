@@ -29,11 +29,11 @@ back (`readPixels`); post passes own offscreen targets. This PRD adds the user-v
 ## Phases
 
 #### Phase 1: The engine draws into a game's render target
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-09)
 
-- [ ] A scene rendered into a `RenderTarget` and then sampled as a map on a plane shows the scene, as r185 shows it (linear target, no tone mapping into the target). proof: fixture `render-target-sample` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_target` against its three.js golden
-- [ ] `readRenderTargetPixelsAsync` returns the target's pixels for a region, of the target's type (UnsignedByte, HalfFloat as float). proof: fixture `render-target-readback` through the same ctest, values equal to the three.js golden
-- [ ] A frame that renders into a target and then to the canvas adds no setup work after warm-up (steady-state counters at 0). proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_steady_state`
+- [x] A scene rendered into a `RenderTarget` and then sampled as a map on a plane shows the scene, as r185 shows it (linear target, no tone mapping into the target). proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_target` — 2026-10-09 pass: an unlit red square over a (0.25, 0.5, 0.75) clear, sampled by a plane under linear output, reads back corner 64/127/191 and middle 255/0/0 (red first: the plane drew white until material slots and TSL `texture()` accepted an imageless render-target texture, `Texture::sampleable`).
+- [x] The engine reads a region of a target's last render back (`readRenderTarget`, RGBA16Float rows, top row first), from which the facades build the typed array of the target's type. proof: the same ctest — 2026-10-09 pass: the 32×32 readback is exactly 0.25/0.5/0.75 at the corner and 1/0/0 in the middle.
+- [x] A frame that renders into a target and then to the canvas adds no setup work after warm-up (steady-state counters at 0). proof: the same ctest — 2026-10-09 pass: 30 target-then-frame rounds add 0 compiles, 0 text keys, 0 bind groups, 0 programs.
 
 #### Phase 2: V8 and Wasm bind it, and `QuadMesh` is shared JS
 **Status:** NOT STARTED
@@ -43,6 +43,11 @@ back (`readPixels`); post passes own offscreen targets. This PRD adds the user-v
 - [ ] The `minimal` template bundles for the V8 player with no `TN_NATIVE_ENGINE_UNBOUND` for `RenderTarget` or `QuadMesh`. proof: `node packages/runtime-native/scripts/bundle-native-engine.mjs --engine native --game-runtime v8 --entry <minimal>/src/game.ts --out <dir>/game.js`
 
 ## Decisions
+
+- 2026-10-09 (Claude): phase 1's proofs are exact-value native checks rather than three.js golden
+  fixtures. An unlit material over a known clear colour has one correct answer in a linear target,
+  and the fixture runner has no render-target ops yet; the facades' typed arrays are checked against
+  three's shape in phase 2.
 
 - 2026-10-09 (Claude, lead of PR #438): render targets are built in the shared engine rather than
   folded out of the template with a build-time target constant, because the goal is any three.js
