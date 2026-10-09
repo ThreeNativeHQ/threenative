@@ -34,6 +34,41 @@
       {
         "entity": "wasm-renderer",
         "component": "probe",
+        "path": "steadyCompiles",
+        "equals": 0,
+        "allowTrivial": "A steady frame compiles no pipeline; -1 means frame 10 never drew."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "steadyTextKeys",
+        "equals": 0,
+        "allowTrivial": "Every pipeline lookup after warm-up hits the id cache (the wasm32 hash once missed every one)."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "steadyBindGroups",
+        "equals": 0,
+        "allowTrivial": "A steady frame creates no bind group."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "steadyGraphKeys",
+        "equals": 0,
+        "allowTrivial": "A steady frame serializes no TSL graph key."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "steadyPrograms",
+        "equals": 0,
+        "allowTrivial": "A steady frame builds no program."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
         "path": "draws",
         "gte": 1,
         "allowTrivial": "ready() resolves after the first engine frame, so the draw count holds from the first sample."

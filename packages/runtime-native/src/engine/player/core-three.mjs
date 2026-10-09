@@ -176,11 +176,6 @@ for (const name of [
         return parent.call(this) ?? null;
       },
     },
-    children: {
-      get() {
-        return globalThis.tn.children(this);
-      },
-    },
     userData: {
       get() {
         if (!bags.has(this)) bags.set(this, {});
@@ -188,11 +183,12 @@ for (const name of [
       },
     },
   });
+  // The engine's walk (`__walk`, shared with the Wasm back end): one call for the whole subtree.
   prototype.traverse = function (callback) {
-    globalThis.tn.traverse(this, callback, false);
+    for (const object of this.__walk(false)) callback(object);
   };
   prototype.traverseVisible = function (callback) {
-    globalThis.tn.traverse(this, callback, true);
+    for (const object of this.__walk(true)) callback(object);
   };
 }
 defineTypeFlags(globalThis);

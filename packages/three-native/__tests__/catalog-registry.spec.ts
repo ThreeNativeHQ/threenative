@@ -32,11 +32,14 @@ interface IRegistryDump {
   readonly constants?: readonly string[];
 }
 
+/** A `__` member is engine-internal (a back end calls it, as `__walk`); three's surface never has it. */
+const published = (member: string): boolean => !member.startsWith("__");
+
 /** Top-level getters and member objects are catalog members; a dotted path is a protocol path. */
 function registryMembers(binding: IRegistryClass): string[] {
   return [
-    ...binding.methods,
-    ...binding.getters.filter((name) => !name.includes(".")),
+    ...binding.methods.filter(published),
+    ...binding.getters.filter((name) => !name.includes(".") && published(name)),
     ...binding.members.filter((name) => !name.includes(".")),
     ...binding.callbacks,
   ];

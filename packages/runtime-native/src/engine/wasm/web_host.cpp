@@ -5,6 +5,7 @@
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
 #include "engine/renderer/render_database.h"
+#include "engine/shader/graph/graph.h"
 
 #include <cstdio>
 #include <set>
@@ -288,8 +289,21 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
 #endif
 }
 
-/** The last frame's draws (0) and triangles (1), as three's `renderer.info.render` reports them. */
+/**
+ * The last frame's draws (0) and triangles (1), as three's `renderer.info.render` reports them, then
+ * the setup work done so far, which a steady frame must not add to: pipeline compiles (2), pipeline
+ * text-key lookups (3), bind groups created (4), graph keys serialized (5) and programs built (6).
+ */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
-    return field == 0 ? double(renderer->lastFrame().draws) : double(renderer->lastFrame().triangles);
+    switch (field) {
+        case 0: return double(renderer->lastFrame().draws);
+        case 1: return double(renderer->lastFrame().triangles);
+        case 2: return double(renderer->pipelines().compiles());
+        case 3: return double(renderer->pipelines().textLookups());
+        case 4: return double(bindGroupsCreated());
+        case 5: return double(shader::graph::keyBuilds());
+        case 6: return double(renderer->programCount());
+        default: return 0;
+    }
 }

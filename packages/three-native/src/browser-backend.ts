@@ -24,6 +24,10 @@ export interface IRegistryClass {
   readonly callbacks: readonly string[];
   /** Event types the engine dispatches (AnimationMixer's `finished`, `loop`). */
   readonly events?: readonly string[];
+  /** Members the owner keeps for life (`position`, `matrixWorld`): the first answer may be kept. */
+  readonly fixedMembers?: readonly string[];
+  /** Doubles held in place: [byte offset from the object's `__address`, count]. */
+  readonly fields?: Readonly<Record<string, readonly [number, number]>>;
 }
 
 export interface IRegistryDump {
@@ -54,6 +58,8 @@ export interface IBrowserRuntime {
   get(self: IEngineRef, path: string): EngineValue;
   set(self: IEngineRef, path: string, value: EngineValue): void;
   release(self: IEngineRef): void;
+  /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
+  readDoubles?(address: number, count: number): number | number[];
   /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
   attributeArray?(self: IEngineRef): TypedArray;
   /** Writes `array` into the attribute's data; present with attributeArray. */
@@ -207,18 +213,30 @@ function defineTraversal(
   prototype: Record<string, unknown>,
   className: string,
   hasChildren: boolean,
+  walks: boolean,
 ) {
   const childrenOf = (object: object): object[] => {
     if (!hasChildren) throw new TypeError(`TN_BROWSER_UNBOUND: ${className}.children`);
     return (object as { children: object[] }).children;
   };
+  // The engine's walk: one crossing for the whole subtree, in three's order (`__walk`).
+  const walk = (object: object, visibleOnly: boolean): object[] =>
+    (object as { __walk(visibleOnly: boolean): object[] }).__walk(visibleOnly);
   const methods: Record<string, (this: object, callback: TraverseCallback) => void> = {
     traverse(callback) {
+      if (walks) {
+        for (const object of walk(this, false)) callback(object);
+        return;
+      }
       callback(this);
       for (const child of childrenOf(this))
         (child as { traverse(c: TraverseCallback): void }).traverse(callback);
     },
     traverseVisible(callback) {
+      if (walks) {
+        for (const object of walk(this, true)) callback(object);
+        return;
+      }
       if ((this as { visible: boolean }).visible === false) return;
       callback(this);
       for (const child of childrenOf(this))
@@ -246,6 +264,40 @@ export function defineBrowserClasses(
 ): IBrowserEngine {
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object }>();
+  const typeNames = new Map<number, string>();
+  (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
+  // Reads that need no engine call: a field the engine holds in place is read from its memory (Wasm,
+  // `readDoubles`), and a fixed member (`position`, `matrixWorld`) is kept after its first answer.
+  // Writes still go through the engine's setters, which it reacts to.
+  const addresses = new WeakMap<object, number>();
+  const kept = new WeakMap<object, Map<string, unknown>>();
+  const fastGetter = (binding: IRegistryClass, property: string) => {
+    const field = binding.fields?.[property];
+    const read = runtime.readDoubles;
+    if (field !== undefined && read !== undefined) {
+      const [offset, count] = field;
+      return function (this: object) {
+        let address = addresses.get(this);
+        if (address === undefined) {
+          address = runtime.get(refOf(this), "__address") as number;
+          addresses.set(this, address);
+        }
+        return read(address + offset, count);
+      };
+    }
+    if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property))
+      return function (this: object) {
+        let members = kept.get(this);
+        if (members === undefined) {
+          members = new Map();
+          kept.set(this, members);
+        }
+        if (!members.has(property))
+          members.set(property, fromEngine(runtime.get(refOf(this), property)));
+        return members.get(property);
+      };
+    return undefined;
+  };
   const wrappers = new Map<string, WeakRef<object>>();
   // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
   // the collector sees; `held` roots a wrapper while the engine may still call it.
@@ -439,9 +491,11 @@ export function defineBrowserClasses(
         continue;
       Object.defineProperty(prototype, property, {
         configurable: true,
-        get(this: object) {
-          return fromEngine(runtime.get(refOf(this), property));
-        },
+        get:
+          fastGetter(binding, property) ??
+          function (this: object) {
+            return fromEngine(runtime.get(refOf(this), property));
+          },
         ...(setters.has(property)
           ? {
               set(this: object, value: unknown) {
@@ -631,10 +685,12 @@ export function defineBrowserClasses(
         prototype,
         name,
         binding.members.includes("children") || binding.getters.includes("children"),
+        binding.methods.includes("__walk"),
       );
     }
     classes[name] = cls;
     byType.set(runtime.typeId(name), cls);
+    typeNames.set(runtime.typeId(name), name);
   }
   if (attributeArray !== undefined && attributeWrite !== undefined) {
     for (const name of ATTRIBUTE_CLASSES) {
@@ -934,6 +990,18 @@ function tslOf(
 }
 
 /** The runtime over a loaded ABI module: one engine context, every call checked. */
+/**
+ * Opt-in boundary census for `pnpm profile:wasm-page --calls`: while the page sets
+ * `globalThis.__tnCallCounts` to a Map, every engine get, set and invoke counts under
+ * "<kind> <type id>.<name>" (`__tnEngineTypes` names the type ids). Off, it costs one global read.
+ */
+function countCall(kind: string, self: IEngineRef, name: string): void {
+  const counts = (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts;
+  if (counts === undefined) return;
+  const key = `${kind} ${self.type}.${name}`;
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   let dataView = new DataView(abi.HEAPU8.buffer);
   const view = () => {
@@ -1219,6 +1287,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       }),
     invoke: (self, method, args) =>
       scoped(() => {
+        countCall("call", self, method);
         const out = alloc(VALUE);
         const diag = diagnostic();
         check(
@@ -1228,8 +1297,15 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         );
         return readValue(out);
       }),
+    readDoubles: (address, count) => {
+      const at = address / 8;
+      return count === 1
+        ? (abi.HEAPF64[at] as number)
+        : Array.from(abi.HEAPF64.subarray(at, at + count));
+    },
     get: (self, path) =>
       scoped(() => {
+        countCall("get", self, path);
         const out = alloc(VALUE);
         const diag = diagnostic();
         check(abi._tn_get(handleOf(self), name(path), out, diag), diag, `get ${path}`);
@@ -1237,6 +1313,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       }),
     set: (self, path, value) =>
       scoped(() => {
+        countCall("set", self, path);
         const pointer = values([value]);
         const diag = diagnostic();
         check(abi._tn_set(handleOf(self), name(path), pointer, diag), diag, `set ${path}`);

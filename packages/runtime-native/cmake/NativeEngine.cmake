@@ -226,6 +226,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_standard_materials_unsupported=material_unsupported
         native_engine_renderer_shader_invalid=shader_invalid
         native_engine_renderer_time_uniform=time_uniform
+        native_engine_renderer_steady_state=steady_state
         native_engine_renderer_updates=updates
         native_engine_renderer_multi_camera_layers=multi_camera_layers
         native_engine_renderer_callback=render_callback

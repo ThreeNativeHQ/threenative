@@ -633,7 +633,14 @@ ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std:
     return lowerer.expression(graph);
 }
 
+namespace {
+uint64_t keySerializations = 0;
+}
+
+uint64_t keyBuilds() { return keySerializations; }
+
 std::string key(const Graph& graph) {
+    ++keySerializations;
     std::unordered_map<const NodeData*, size_t> ids;
     std::string out;
     const auto text = [&](const std::string& s) { out += std::to_string(s.size()) + ":" + s; };

@@ -52,7 +52,20 @@ std::string dump(const tn::binding::Registry& registry) {
         out << "      \"setters\": " << keys(binding.setters) << ",\n";
         out << "      \"members\": " << keys(binding.members) << ",\n";
         out << "      \"callbacks\": " << keys(binding.callbacks) << ",\n";
-        out << "      \"events\": " << keys(binding.events) << "\n";
+        out << "      \"events\": " << keys(binding.events) << ",\n";
+        out << "      \"fixedMembers\": [";
+        bool firstFixed = true;
+        for (const auto& member : binding.fixedMembers) {
+            out << (firstFixed ? "" : ", ") << "\"" << escape(member) << "\"";
+            firstFixed = false;
+        }
+        out << "],\n      \"fields\": {";
+        bool firstField = true;
+        for (const auto& [field, at] : binding.fields) {
+            out << (firstField ? "" : ", ") << "\"" << escape(field) << "\": [" << at.first << ", " << at.second << "]";
+            firstField = false;
+        }
+        out << "}\n";
         out << "    }";
     }
     out << "\n  },\n  \"constants\": [";

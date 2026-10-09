@@ -340,6 +340,8 @@ public:
     GpuResources& gpu() { return gpu_; }
     const GeometryCache& geometry() const { return geometry_; }
     const PipelineCache& pipelines() const { return pipelines_; }
+    /** Material programs built or refused so far; a steady frame adds none. */
+    size_t programCount() const { return programs_.size(); }
 
 private:
     // The uniforms a material program may read, resolved to block offsets once per program.

@@ -37,7 +37,18 @@ function sceneRuntime(children: Map<string, IEngineRef[]>, visible: Set<string>)
     construct(name) {
       return { key: `${name}:0:${++next}:1`, type: types.get(name) ?? 0 };
     },
-    invoke: () => null,
+    // `__walk`: the engine's preorder walk of this graph, only visible subtrees when asked.
+    invoke(self, method, args): EngineValue {
+      if (method !== "__walk") return null;
+      const walked: IEngineRef[] = [];
+      const visit = (ref: IEngineRef) => {
+        if (args[0] === true && !visible.has(ref.key)) return;
+        walked.push(ref);
+        for (const child of children.get(ref.key) ?? []) visit(child);
+      };
+      visit(self);
+      return walked;
+    },
     get(self, property): EngineValue {
       if (property === "children") return children.get(self.key) ?? [];
       if (property === "visible") return visible.has(self.key);
@@ -50,13 +61,17 @@ function sceneRuntime(children: Map<string, IEngineRef[]>, visible: Set<string>)
   };
 }
 
-/** The registry without `children`, as it was before the engine bound it. */
+/** The registry without `children` (and the walk over it), as it was before the engine bound it. */
 function withoutChildren(dump: IRegistryDump): IRegistryDump {
   return {
     classes: Object.fromEntries(
       Object.entries(dump.classes).map(([name, binding]) => [
         name,
-        { ...binding, members: binding.members.filter((member) => member !== "children") },
+        {
+          ...binding,
+          members: binding.members.filter((member) => member !== "children"),
+          methods: binding.methods.filter((method) => method !== "__walk"),
+        },
       ]),
     ),
   };

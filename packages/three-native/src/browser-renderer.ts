@@ -99,6 +99,9 @@ export function defineWebRenderer(
       render: { calls: 0, drawCalls: 0, frameCalls: 0, triangles: 0, timestamp: 0 },
       compute: { calls: 0, frameCalls: 0, timestamp: 0 },
       memory: { geometries: 0, textures: 0 },
+      // Not three's: the setup work the engine has done so far. A steady frame adds none of it, so a
+      // playtest holds each count still across frames (examples/wasm-engine-boot renderer scenario).
+      engine: { compiles: 0, textLookups: 0, bindGroups: 0, graphKeys: 0, programs: 0 },
       reset(): void {},
     };
     readonly samples = 1;
@@ -238,6 +241,12 @@ export function defineWebRenderer(
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls = this.info.render.frameCalls;
       this.info.render.triangles = module._tnw_web_frame(1);
+      const engine = this.info.engine;
+      engine.compiles = module._tnw_web_frame(2);
+      engine.textLookups = module._tnw_web_frame(3);
+      engine.bindGroups = module._tnw_web_frame(4);
+      engine.graphKeys = module._tnw_web_frame(5);
+      engine.programs = module._tnw_web_frame(6);
     }
 
     /** three's output and shadow settings, handed to the engine when they change. */

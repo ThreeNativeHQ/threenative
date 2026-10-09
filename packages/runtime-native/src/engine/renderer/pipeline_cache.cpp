@@ -46,6 +46,17 @@ bool PipelineCache::IdKey::operator==(const IdKey& o) const {
            target.stripIndexFormat == o.target.stripIndexFormat && target.instanceSteps == o.target.instanceSteps;
 }
 
+namespace {
+uint64_t bindGroupCount = 0;
+}
+
+WGPUBindGroup createBindGroup(WGPUDevice device, const WGPUBindGroupDescriptor* descriptor) {
+    ++bindGroupCount;
+    return wgpuDeviceCreateBindGroup(device, descriptor);
+}
+
+uint64_t bindGroupsCreated() { return bindGroupCount; }
+
 size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     // 64-bit on every target: size_t is 32 bits on wasm32, where `size << 32` was undefined and gave
     // equal keys different hashes, so every lookup missed and the alias map grew each frame.

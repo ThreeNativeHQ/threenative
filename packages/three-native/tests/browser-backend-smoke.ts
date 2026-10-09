@@ -457,6 +457,104 @@ engine.collect();
     "SkeletonUtils.clone remaps the skin",
   );
 }
+// Reads that need no engine call (Wasm): a math field the engine holds in place (`x`, `r`, `radius`,
+// `elements`) comes from its memory, and a fixed member (`position`, `matrixWorld`) is the same
+// object every read. Writes still go through the engine, and memory reads see them, and see what the
+// engine itself computes (updateMatrixWorld).
+{
+  // biome-ignore lint/suspicious/noExplicitAny: engine objects typed as three's at runtime only
+  type Any = Record<string, any>;
+  const web = (await bindWebEngine(createTnAbi, [
+    "Object3D",
+    "Vector3",
+    "Sphere",
+    "Color",
+  ])) as Record<string, new (...args: unknown[]) => Any>;
+  const object = new (web.Object3D as new () => Any)();
+  const sphere = new (web.Sphere as new (...a: unknown[]) => Any)(
+    new (web.Vector3 as new (...a: unknown[]) => Any)(1, 2, 3),
+    4,
+  );
+  const colour = new (web.Color as new (...a: unknown[]) => Any)(0.25, 0.5, 0.75);
+  object.position.set(1, 2, 3);
+  object.updateMatrixWorld(true);
+  const counts = new Map<string, number>();
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = counts;
+  const position = object.position;
+  for (let i = 0; i < 50; i++) {
+    void object.position.x;
+    void object.matrixWorld.elements;
+    void sphere.radius;
+    void colour.g;
+  }
+  const reads = [...counts.values()].reduce((sum, n) => sum + n, 0);
+  object.position.x = 7; // a write crosses
+  object.updateMatrixWorld(true);
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = undefined;
+  check(object.position === position, "a fixed member is the same object every read");
+  check(
+    object.position.x === 7 && object.matrixWorld.elements[12] === 7,
+    "memory reads see engine writes and updates",
+  );
+  check(
+    sphere.radius === 4 && colour.g === 0.5 && sphere.center.z === 3,
+    "math fields read in place",
+  );
+  // Each object's first read asks for its address (position, matrixWorld, its elements' owner, sphere,
+  // colour) and each fixed member is fetched once; nothing per read after that.
+  check(
+    reads <= 8,
+    `50 rounds of field reads cost ${reads} engine calls (${[...counts.keys()].join(", ")})`,
+  );
+}
+// traverse and traverseVisible are one engine walk (`__walk`), in three's order: a frame's scene walks
+// cost one crossing each, not two per object (the minimal template made 330 such calls a frame).
+{
+  type Node3D = Record<string, unknown> & {
+    name: string;
+    visible: boolean;
+    add(...children: object[]): void;
+    traverse(callback: (object: Node3D) => void): void;
+    traverseVisible(callback: (object: Node3D) => void): void;
+  };
+  const web = (await bindWebEngine(createTnAbi, ["Group", "Object3D"])) as Record<
+    string,
+    new () => Node3D
+  >;
+  const made = (name: string) => {
+    const node = new (web.Object3D as new () => Node3D)();
+    node.name = name;
+    return node;
+  };
+  const root = new (web.Group as new () => Node3D)();
+  root.name = "root";
+  const a = made("a");
+  const b = made("b");
+  const a1 = made("a1");
+  const b1 = made("b1");
+  root.add(a, b);
+  a.add(a1);
+  b.add(b1);
+  b.visible = false;
+  const counts = new Map<string, number>();
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = counts;
+  const order: string[] = [];
+  root.traverse((object) => order.push(object.name));
+  const visible: string[] = [];
+  root.traverseVisible((object) => visible.push(object.name));
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = undefined;
+  const crossings = [...counts.values()].reduce((sum, n) => sum + n, 0);
+  check(order.join() === "root,a,a1,b,b1", `traverse order: ${order.join()}`);
+  check(
+    visible.join() === "root,a,a1",
+    `traverseVisible skips a hidden subtree: ${visible.join()}`,
+  );
+  // Two walks, and the callbacks read `name` (a crossing each): 2 + 8 names.
+  check(
+    crossings === 10,
+    `two walks cost two engine calls plus the names read: ${crossings} (${[...counts.keys()].join(", ")})`,
+  );
+}
 // three's type flags on the scene classes (PRD-540): a game, three's own code and the playtest
 // bridge find lights, cameras and bones by `isLight`, `isCamera`, `isBone`, never by class.
 {

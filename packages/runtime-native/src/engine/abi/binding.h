@@ -141,6 +141,11 @@ struct ClassBinding {
     // object for the owner's whole life, so a caller may keep the Ref it got the first time. A member
     // that can be reassigned (`mesh.material`, `geometry.attributes.position`) is never listed.
     std::set<std::string> fixedMembers;
+    // Doubles the object holds in place (`x`, `r`, `radius`, `elements`): byte offset from `self` and
+    // count. A back end that shares the engine's memory (Wasm) reads them there instead of calling
+    // the getter of the same name; writes still go through the setter, which the engine reacts to.
+    // A class with fields also answers the engine-internal getter `__address` (self, as a number).
+    std::map<std::string, std::pair<uint32_t, uint32_t>> fields;
     // Callbacks a language sets on the object (`onBeforeRender`): set through tn_set_callback, never
     // a Value, because the engine calls back into the language that set them.
     std::map<std::string, std::function<void(void* self, tn::engine::RenderCallback)>> callbacks;
