@@ -34,13 +34,17 @@ export function uniformLanes(value: unknown): number[] {
 export function liveUniforms<TNode extends object>(
   uniform: (value: unknown) => TNode,
   setValues: (node: TNode, lanes: readonly number[]) => void,
-): { uniform: (value: unknown) => TNode; sync(): void } {
+): {
+  uniform: (value: unknown) => TNode;
+  uniformArray: (values: unknown[], type?: string) => { array: unknown[]; element(index: unknown): TNode };
+  sync(): void;
+} {
   const states = new WeakMap<object, IUniformState>();
   const objects = new Set<WeakRef<TNode>>();
   const updating = new Set<WeakRef<TNode>>();
   let frameId = 0;
-  return {
-    uniform(value) {
+  const live = {
+    uniform(value: unknown): TNode {
       const node = uniform(value);
       const state: IUniformState = { value };
       states.set(node, state);
@@ -74,6 +78,29 @@ export function liveUniforms<TNode extends object>(
       });
       return node;
     },
+    /**
+     * three's uniformArray(values): `element(i)` at a constant index is a uniform that reads
+     * `values[i]` before each render, as UniformArrayNode copies its array per update. ponytail: a
+     * node index needs an engine uniform array; it is refused by name.
+     */
+    uniformArray(values: unknown[]) {
+      if (!Array.isArray(values)) throw new TypeError("TN_TSL_UNIFORM_ARRAY: uniformArray takes an array");
+      const elements = new Map<number, TNode>();
+      return {
+        array: values,
+        element(index: unknown): TNode {
+          if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= values.length)
+            throw new RangeError(`TN_TSL_UNIFORM_ARRAY: element needs a constant index in [0, ${values.length})`);
+          let node = elements.get(index);
+          if (node === undefined) {
+            node = live.uniform(values[index]);
+            (node as unknown as { onRenderUpdate: (callback: () => unknown) => void }).onRenderUpdate(() => values[index]);
+            elements.set(index, node);
+          }
+          return node;
+        },
+      };
+    },
     sync() {
       const frame = { frameId: ++frameId };
       for (const ref of updating) {
@@ -95,4 +122,5 @@ export function liveUniforms<TNode extends object>(
       }
     },
   };
+  return live;
 }

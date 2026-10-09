@@ -169,6 +169,24 @@ describe("TSL on the browser back end", () => {
     expect(() => (side.onObjectUpdate as Fn)(() => 1)).toThrow(/TN_TSL_UPDATE_UNSUPPORTED/);
   });
 
+  it("reads uniformArray entries each render, as three's UniformArrayNode reads its array", () => {
+    const uniforms: string[] = [];
+    const runtime = tslRuntime([], [], uniforms);
+    const values: Record<string, EngineValue> = { x: 0, y: 0, z: 0, w: 0 };
+    const { classes } = defineBrowserClasses(registry, engineRuntime(runtime, values), catalog);
+    const tsl = defineTsl(runtime);
+    // Midway's ocean: uniformArray(ships, "vec4") and shipNodes.element(i) for each ship.
+    const ships = [new (classes.Vector4 as Constructor)(), new (classes.Vector4 as Constructor)()];
+    const array = (tsl.exports.uniformArray as Fn)(ships, "vec4");
+    const first = (array.element as Fn)(1);
+    expect((array.element as Fn)(1)).toBe(first);
+    Object.assign(values, { x: 3, y: 4, z: 5, w: 6 });
+    tsl.sync();
+    expect(uniforms.at(-1)).toMatch(/^\d+=3,4,5,6$/);
+    expect(() => (array.element as Fn)(first)).toThrow(/TN_TSL_UNIFORM_ARRAY/);
+    expect(() => (array.element as Fn)(2)).toThrow(/TN_TSL_UNIFORM_ARRAY/);
+  });
+
   it("answers every swizzle three does: xyzw, rgba and stpq, one to four lanes", () => {
     const calls: ICall[] = [];
     const tsl = defineTsl(tslRuntime(calls, [])).exports;
