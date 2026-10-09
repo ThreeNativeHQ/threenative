@@ -923,6 +923,58 @@ describe("the main pass's draw bundles", () => {
     cells.dispose();
   });
 
+  it("re-records a shard recorded during a compile once the compile has settled", async () => {
+    // Three encodes a draw only when its pipeline is ready, so a record cut while a `compileAsync`
+    // overlaps silently leaves the not-yet-ready draw out — and the replay never re-checks. A shard
+    // bumped during a compile must be re-recorded once the compile settles, or its geometry stays
+    // missing until something else happens to bump that same shard.
+    const {
+      follow,
+      renderer,
+      world: cells,
+    } = await world({
+      bundles: true,
+      gpuScene: false,
+      rockInWest: true,
+    });
+    cells.update(renderer, playerCamera([0, 1]));
+    await flushed(cells, renderer, playerCamera([0, 1]));
+
+    // The stub with a settable compile state: `compiling` in flight and a compile that has started.
+    const busy: IRendererLike & { compiling: boolean; compileCount: number } = Object.assign(
+      Object.create(renderer) as IRendererLike,
+      { compileCount: 1, compiling: true },
+    );
+
+    const before = new Map(mainBundleGroups(cells).map((group) => [group, group.version]));
+    // Walk east into a new cell with a compile in flight, so the shards the walk re-dresses are
+    // recorded during a busy renderer.
+    const at = cellCentre(3, 1);
+    follow.position.x = at.x;
+    follow.position.z = at.z;
+    cells.update(busy, playerCamera([0, 1]));
+    await flushed(cells, busy, playerCamera([0, 1]));
+    const bumped = [...before]
+      .filter(([group, version]) => group.version !== version)
+      .map(([group]) => group);
+    expect(bumped.length).toBeGreaterThan(0);
+    const during = new Map(bumped.map((group) => [group, group.version]));
+
+    // The compile settles: the same `compileCount`, no longer `compiling`. Every shard the busy
+    // phase recorded has to be re-recorded, or the draw it left out is never drawn again.
+    busy.compiling = false;
+    for (let index = 0; index < 2; index += 1) cells.update(busy, playerCamera([0, 1]));
+    for (const group of bumped) expect(group.version).toBeGreaterThan(during.get(group) as number);
+
+    // Settled once, not every frame: further resting frames change no shard's version.
+    const settled = new Map(mainBundleGroups(cells).map((group) => [group, group.version]));
+    for (let index = 0; index < 20; index += 1) cells.update(busy, playerCamera([0, 1]));
+    for (const group of mainBundleGroups(cells)) expect(group.version).toBe(settled.get(group));
+
+    expect(cells.stats().failures).toBe(0);
+    cells.dispose();
+  });
+
   it("records by default, and the marker says the run asked for nothing else", async () => {
     // Phase 2 box 2: the default follows the measurement. AC-2 measured the walking `draw` span at
     // -5.0 ms against develop over 3 interleaved runs with bundles on, so a world that says nothing

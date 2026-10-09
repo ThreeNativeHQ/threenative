@@ -3953,6 +3953,16 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #bundles = new Map<number, BundleGroup>();
   #bundleRecords = 0;
   /**
+   * Shards re-recorded while a compile was in flight, so they are re-recorded again once it settles.
+   * Three encodes a draw only when its pipeline is ready, so a record cut during a `compileAsync`
+   * silently leaves a not-yet-ready draw out, and the replay never re-checks it. Bumped from
+   * {@link #bumpBundle} while {@link #compileBusy}, flushed at the top of the update that sees the
+   * compile settle.
+   */
+  #compileSeen = 0;
+  #compileBusy = false;
+  readonly #recordedWhileBusy = new Set<BundleGroup>();
+  /**
    * One `BundleGroup` per resident cell that has chunks attached, keyed by cell key, each with the
    * main-cull cluster whose answer decides whether it is in the frame. Minted by the first chunk a
    * cell attaches, so a world with no chunks pays nothing; see the `bundles` option.
@@ -4311,6 +4321,18 @@ export class WorldCells extends Group implements IComputeDriven {
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#renderer = renderer;
     if (camera !== undefined) this.#camera = camera;
+    // A bundle recorded while a compile was in flight left out every draw whose pipeline was not
+    // ready, and the replay never re-checks; re-record those shards now that it has settled. Set
+    // `#compileBusy` first, so this flush's own bumps are not added back to the set.
+    const compiles = renderer?.compileCount ?? 0;
+    const busy = renderer?.compiling === true || compiles !== this.#compileSeen;
+    this.#compileSeen = compiles;
+    this.#compileBusy = busy;
+    if (!busy && this.#recordedWhileBusy.size > 0) {
+      const recorded = [...this.#recordedWhileBusy];
+      this.#recordedWhileBusy.clear();
+      for (const group of recorded) if (group.parent !== null) this.#bumpBundle(group);
+    }
     // The adaptive LOD bias, before the dispatch below reads the gates it scales.
     this.#adaptLodBias(renderer);
     // The first frame that hands over a renderer is the only one that can answer whether this
@@ -5183,6 +5205,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#proxyMaterials.clear();
     this.#renderer = undefined;
     this.#camera = undefined;
+    this.#recordedWhileBusy.clear();
     // After every asset's release above, so no record is still held by a surface; disposes the cached
     // atlases and aborts any bake still in flight.
     this.#drainImpostors();
@@ -6400,6 +6423,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #bumpBundle(group: BundleGroup): void {
     this.#bundleRecords += 1;
     group.needsUpdate = true;
+    if (this.#compileBusy) this.#recordedWhileBusy.add(group);
   }
 
   /**
