@@ -18,6 +18,8 @@ import {
 } from "three";
 import {
   Fn,
+  cameraProjectionMatrix,
+  cameraViewMatrix,
   convertToTexture,
   float,
   instanceIndex,
@@ -32,12 +34,10 @@ import {
   normalViewGeometry,
   normalWorld,
   normalize,
-  cameraProjectionMatrix,
-  cameraViewMatrix,
-  positionGeometry,
   output,
   pass,
   pmremTexture,
+  positionGeometry,
   positionLocal,
   positionWorld,
   reflector,
