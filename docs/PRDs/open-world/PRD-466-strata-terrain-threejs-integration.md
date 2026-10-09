@@ -4028,4 +4028,19 @@ The 5 remaining web reds were hidden behind the deadlock, so none is a regressio
 Native still misses its 120 s spawn deadline under Xvfb (6/6 at 180 s in the last native run, before
 these two fixes); not rerun.
 
+World-switch hitch, profiled (forest → tundra, host load 18): two main-thread hitches, 2.07 s and
+5.57 s. The tundra scene `enter` ran 5.08 s synchronously: `scatterProps` 3.6 s (the tundra `wet`
+test checked every candidate against every river segment) and `createTerrain` 1.35 s. The first
+frame then built about 4 s of node graphs inside the transparent pass's `updateBefore`, because a
+transition warms only compute nodes (`#enterTransitionScene`), while startup warms every render
+pipeline. **Fixed** the scatter in `8b24bf0c2`: river segments bucketed on a 32 m grid; HEAD and the
+change give the same 36,306 tundra placements with the same SHA-256 (`59002b165fe4d94d`), and the
+scatter takes 3,538 ms → 187 ms. Still open: transition render-pipeline warm-up (a core change to
+every game's transition timing, which needs its own PRD) and the 1.35 s terrain build.
+
+GPU timing reds: the adapter does expose `timestamp-query` under the playtest's flags (checked
+in-page on a localhost origin with three flag sets). The `Timestamp tracking is disabled` warning
+is benign: core samples timestamps every Nth frame and three warns once when a resolve lands on an
+untracked frame. Why the game records 0 GPU view windows is not yet traced.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
