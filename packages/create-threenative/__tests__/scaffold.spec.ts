@@ -220,20 +220,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
   // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
   // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
-  "action-rpg": "cd574a02b28888c5312d142ed0e7e9268efc08b25967ddf14c31e46c0006c23a",
-  minimal: "c71de730797df6596c87c42e3ff48fe88a9042f02a62e7224edc167a48da6956",
-  platformer: "f11f3ac4b6eae945e9de62a0a05220c70e0e97b7f8baf7e22c295e59b21dd004",
-  puzzle: "38b961aea3e80f279c01153e1663ea214dcd67cd4a1b1699b0441fb4833522a1",
-  racing: "8b23b116b318a74d91e2112c0deb105a424ce5833ad275f73449d24327511205",
-  rain: "d70189677763e9c062e5d2aab697573c5be0d988fc7ae27effe3f644f58d01f6",
-  rts: "53243c0a77b7af91cfc6331936dbe997c650b45d1137373456a164aeec4bc629",
-  runner: "2181151151ef09c110d2d7129d59bafd35a6fabc84263d7fc0364ad1cd45ed56",
+  "action-rpg": "50af94a62c41f25ece2bb72b875b1b1cd3893729d449076a7cdcebebfc0bea0d",
+  minimal: "3dcbb219d6eee5062776b79e099c865304600f9e386b7f07f38cd3a57d508d4b",
+  platformer: "3929c2a00be948484d98310b243c063f71fe67dde1624829349e62bd02ccebd5",
+  puzzle: "dc2422df6244993cb210c6d7d80e9a88c22813e91e1acd76ab4012b37231cee1",
+  racing: "14239087e9ffbe4930c0dd7dc674ab3d840003362ebf8c7ffd0cc69129df51eb",
+  rain: "d184a5c63eddf7892089523a8f84fa6f3224fe380539b4e0fc85e33feb597d53",
+  rts: "c97e2dccf9d465aeadc893e695ae72d32eeba461ff91bdf75cde003e384b0717",
+  runner: "5454cc8a6d5e9ed6e9fb1e15f1156ddaca7cc1d6dd0cb2ebf22ad610259137c6",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "48b5612943e7ee806389088233f59450d5dd9078e493be105e4e6fbe9392da77",
-  shooter: "d62ec3f6cad382d7a0fe36c58a049ed9608fa01719709407541f796db3949590",
-  snow: "5ffdaed925d514408f7340e9c67fdb7d08c8c5b1a1520614f0a3fec7bc14862a",
-  starter: "236c06878107c92b3c0efdfc84294c360332efcd872e87ae663236cf150703a6",
-  "tower-defense": "6c002a7af721cfe5d2f8230251819f26df2f848b081a2af43ac1e3bf037adb9f",
+  sailing: "1e6bab25d173fb6aac8fce2d257b014e356a276f67c0fc6cab7b11d6e8e5b324",
+  shooter: "c313b0d98896e5809536a662a364118e74d6d86e3b2bf0da0a0eb67c61649e7c",
+  snow: "a05dee4dc202dc50baa00ec5e0157c9b8ef54c04b7dc21f3413bac45e2ecdbfa",
+  starter: "74ba367a151bb154e3c76c1d88beee773ccb0d6d150a559ca6746c099109301c",
+  "tower-defense": "15917c9202a3d7eee228f76711b8952775f9e10c9379a4c4463de72c4cf73da9",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

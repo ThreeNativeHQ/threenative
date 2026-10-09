@@ -409,3 +409,51 @@ describe("StartupReadiness holds", () => {
     expect(warms).toBe(0);
   });
 });
+
+describe("StartupReadiness predicate holds", () => {
+  // A game observed its spawn gate only in afterPhysics; the playtest's deterministic clock advances
+  // no fixed step while startup is held, so the gate never ran and the hold met its 120 s deadline.
+  // A predicate hold is polled on every rendered frame, so no simulation tick is involved.
+  it("releases a predicate hold on the first frame it reads true", async () => {
+    const readiness = new StartupReadiness({
+      compileBudgetMs: 1_000,
+      frameBudgetMs: 50,
+      stableFrames: 1,
+    });
+    let ready = false;
+    void readiness.whenReady().then(() => {
+      ready = true;
+    });
+    let spawned = false;
+    readiness.hold("spawn", () => spawned, 60_000);
+    readiness.start();
+    for (let frame = 0; frame < 5; frame += 1) readiness.observe(1);
+    for (let index = 0; index < 4; index += 1) await Promise.resolve();
+    expect(ready).toBe(false);
+    spawned = true;
+    readiness.observe(1);
+    readiness.observe(1);
+    for (let index = 0; index < 4; index += 1) await Promise.resolve();
+    expect(ready).toBe(true);
+  });
+
+  it("fails open when the predicate throws", async () => {
+    const readiness = new StartupReadiness({
+      compileBudgetMs: 1_000,
+      frameBudgetMs: 50,
+      stableFrames: 1,
+    });
+    let ready = false;
+    void readiness.whenReady().then(() => {
+      ready = true;
+    });
+    readiness.hold("broken", () => {
+      throw new Error("lost");
+    });
+    readiness.start();
+    readiness.observe(1);
+    readiness.observe(1);
+    for (let index = 0; index < 4; index += 1) await Promise.resolve();
+    expect(ready).toBe(true);
+  });
+});

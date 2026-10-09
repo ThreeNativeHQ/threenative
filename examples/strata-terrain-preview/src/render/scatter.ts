@@ -10,7 +10,7 @@ import { createRandom } from "@threenative/core";
 // Placement is seeded and deterministic: the same world always grows the same forest, and a camera
 // can walk through it twice without the trees moving. Nothing here reads the frame clock.
 import type { Heightfield } from "@threenative/core/world";
-import type { IPlacement } from "@threenative/terrain";
+import { type IPlacement, createSegmentIndex, slopeQuantile } from "@threenative/terrain";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 import type { WorldName } from "./biomes.js";
 import { type IBakedWorld, depositAtIndex } from "./terrain.js";
@@ -162,45 +162,39 @@ export function scatterProps(
   const random = createRandom(SCATTER.seed);
   const half = data.size / 2;
   const inside = (x: number, z: number) => Math.abs(x) < half - 3 && Math.abs(z) < half - 3;
-  // River segments bucketed on a coarse grid by their reach, so a candidate tests only the segments
-  // that could be within reach of it. Testing every segment for every candidate cost 3.4 s of the
-  // tundra switch's synchronous `enter`; the answers are the same.
-  const RIVER_CELL = 32;
-  const riverCells = new Map<
-    string,
-    { a: readonly number[]; b: readonly number[]; reach: number }[]
-  >();
-  if (tundra)
-    for (const river of data.rivers ?? [])
-      river.points.forEach((b, index) => {
-        const a = river.points[index - 1];
-        if (!a) return;
-        const reach = river.width * 2.5;
-        const fromX = Math.floor((Math.min(a[0] ?? 0, b[0] ?? 0) - reach) / RIVER_CELL);
-        const toX = Math.floor((Math.max(a[0] ?? 0, b[0] ?? 0) + reach) / RIVER_CELL);
-        const fromZ = Math.floor((Math.min(a[2] ?? 0, b[2] ?? 0) - reach) / RIVER_CELL);
-        const toZ = Math.floor((Math.max(a[2] ?? 0, b[2] ?? 0) + reach) / RIVER_CELL);
-        for (let cx = fromX; cx <= toX; cx++)
-          for (let cz = fromZ; cz <= toZ; cz++) {
-            const key = `${cx}:${cz}`;
-            const list = riverCells.get(key) ?? [];
-            list.push({ a, b, reach });
-            riverCells.set(key, list);
-          }
-      });
+  // River segments indexed by their reach (`@threenative/terrain`), so a candidate tests only the
+  // segments that can reach it rather than every segment of every river.
+  const riverIndex = createSegmentIndex(
+    tundra
+      ? (data.rivers ?? []).flatMap((river) =>
+          river.points.flatMap((b, index) => {
+            const a = river.points[index - 1];
+            return a
+              ? [
+                  {
+                    a: [a[0] ?? 0, a[2] ?? 0] as const,
+                    b: [b[0] ?? 0, b[2] ?? 0] as const,
+                    reach: river.width * 2.5,
+                    data: { a, b, reach: river.width * 2.5 },
+                  },
+                ]
+              : [];
+          }),
+        )
+      : [],
+    32,
+  );
   const nearRiver = (x: number, z: number): boolean =>
-    (riverCells.get(`${Math.floor(x / RIVER_CELL)}:${Math.floor(z / RIVER_CELL)}`) ?? []).some(
-      ({ a, b, reach }) => {
-        const dx = (b[0] ?? 0) - (a[0] ?? 0);
-        const dz = (b[2] ?? 0) - (a[2] ?? 0);
-        const t = clamp01(
-          ((x - (a[0] ?? 0)) * dx + (z - (a[2] ?? 0)) * dz) / (dx * dx + dz * dz || 1),
-        );
-        const distance = Math.hypot(x - (a[0] ?? 0) - t * dx, z - (a[2] ?? 0) - t * dz);
-        const level = (a[1] ?? 0) + t * ((b[1] ?? 0) - (a[1] ?? 0));
-        return distance < reach && clampedHeight(data, x, z) < level + 0.35;
-      },
-    );
+    riverIndex.nearby(x, z).some(({ a, b, reach }) => {
+      const dx = (b[0] ?? 0) - (a[0] ?? 0);
+      const dz = (b[2] ?? 0) - (a[2] ?? 0);
+      const t = clamp01(
+        ((x - (a[0] ?? 0)) * dx + (z - (a[2] ?? 0)) * dz) / (dx * dx + dz * dz || 1),
+      );
+      const distance = Math.hypot(x - (a[0] ?? 0) - t * dx, z - (a[2] ?? 0) - t * dz);
+      const level = (a[1] ?? 0) + t * ((b[1] ?? 0) - (a[1] ?? 0));
+      return distance < reach && clampedHeight(data, x, z) < level + 0.35;
+    });
   const wet = (x: number, z: number) =>
     (data.waterLevel !== null && clampedHeight(data, x, z) < data.waterLevel + 0.35) ||
     (tundra && nearRiver(x, z)) ||
@@ -638,15 +632,14 @@ export function scatterProps(
     // Separate seed: dressing the rock/shore never reshuffles the established stands.
     const dressing = createRandom(SCATTER.seed + 12);
     // Rock outcrops take this terrain's own steepest ground: its steepest 2%, but never ground gentler
-    // than 30 degrees would allow. A fixed 30 left the rebaked forest (98th percentile 22 degrees,
-    // 282 cells over 30 of 66,000) with no outcrop at all.
-    const spacing = data.size / Math.max(1, data.resolution - 1);
-    const slopes: number[] = [];
-    for (let z = -half + spacing; z < half - spacing; z += spacing)
-      for (let x = -half + spacing; x < half - spacing; x += spacing)
-        slopes.push(slopeDegrees(data, x, z));
-    slopes.sort((a, b) => a - b);
-    const outcropSlope = Math.min(30, slopes[Math.floor(slopes.length * 0.98)] ?? 30);
+    // than 30 degrees would allow (`@threenative/terrain` slopeQuantile).
+    const outcropSlope = Math.min(
+      30,
+      slopeQuantile(
+        { height: data.field.heights, resolution: data.resolution, size: data.size },
+        0.98,
+      ),
+    );
     for (let z = -half + 12; z < half - 12; z += 12)
       for (let x = -half + 12; x < half - 12; x += 12) {
         const sx = x + (dressing() - 0.5) * 10;

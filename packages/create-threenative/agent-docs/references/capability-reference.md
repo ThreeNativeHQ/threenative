@@ -5557,6 +5557,22 @@ export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPacka
 const { manifest, files } = bakeWorldPackage(state, { assets });
 ```
 
+### `createSegmentIndex`
+
+`function` — Build the index once per world; ask `nearby` per scatter candidate or heightfield vertex.
+
+```ts
+export function createSegmentIndex<T>( segments: readonly IWaterSegment<T>[], cellSize: number, ): ISegmentIndex<T> { … }
+```
+
+- **Use when:** test scatter candidates or terrain vertices against rivers and lakes without scanning every segment · find which river stations can reach a heightfield vertex when baking a wet margin
+- **Constraints:** returns candidates only; the caller applies its own exact distance and level test
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const rivers = createSegmentIndex(segments, 32); const wet = rivers.nearby(x, z).some(isWet);
+```
+
 ### `decodeHeightPNG`
 
 `function` — CRC-checked bounded non-interlaced grayscale PNG height decoder.
@@ -5731,6 +5747,22 @@ export function slopeAtIndex(grid: ISampledGrid, i: number): number { … }
 
 ```ts
 const slope = slopeAtIndex(new Terrain({ resolution: 17 }).evaluate(), 0);
+```
+
+### `slopeQuantile`
+
+`function` — A slope, in degrees, that the given share of this terrain's interior vertices lie at or below. Placement rules keyed to fixed degrees break when a world is rebaked smoother or rougher: an outcrop rule of "over 30 degrees" placed nothing on a forest whose 98th percentile is 22. Asking the terrain for its own steepest share keeps the rule meaning the same thing on every world.
+
+```ts
+export function slopeQuantile(grid: ISampledGrid, quantile: number): number { … }
+```
+
+- **Use when:** place rocks or cliffs on a terrain's own steepest ground instead of a fixed slope in degrees
+- **Constraints:** interior vertices only (edges have one-sided differences); quantile must be in [0, 1]
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const steep = slopeQuantile(grid, 0.98); if (slopeAt(x, z) > Math.min(30, steep)) placeRock(x, z);
 ```
 
 ### `splinePoints`

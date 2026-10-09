@@ -337,7 +337,13 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       if (ctx.startup.phase !== "ready")
         ctx.startup.hold(
           "strata-spawn",
-          admission.promise,
+          // Core polls this once per rendered frame, so the gate settles under a playtest's
+          // deterministic clock, which advances no fixed step while startup is held.
+          () => {
+            const region = props?.readinessAt(spawn);
+            admission.observe(region?.ready === true, region?.failures ?? 0);
+            return admission.ready || admission.error !== "";
+          },
           120_000,
           () =>
             completedPropsWork +
@@ -829,6 +835,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       };
 
       let frames = 0;
+      let propCounts = { draws: 0, instances: 0, triangles: 0 };
       let travel = 0;
       currentView = `${world}:player`;
       viewBudgets.set(currentView, {
@@ -940,6 +947,19 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           );
         }
         frames++;
+        // `props.meshes` walks every streamed world; three walks per fixed step were 8.3 s of a
+        // 15.6 s main-thread stall in a profiled session (PRD-541). Half a second is fresh enough.
+        if (frames % 30 === 1) {
+          const meshes = props?.meshes ?? [];
+          propCounts = {
+            draws: meshes.length,
+            instances: meshes.reduce((sum, draw) => sum + draw.count, 0),
+            triangles: meshes.reduce(
+              (sum, draw) => sum + (draw.count * (draw.geometry.index?.count ?? 0)) / 3,
+              0,
+            ),
+          };
+        }
         const streaming = props?.stats();
         const region = props?.readinessAt(spawn);
         admission.observe(region?.ready === true, region?.failures ?? 0);
@@ -1025,13 +1045,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           waveSamples,
           waveRange: waveSamples ? maxWave - minWave : 0,
           sampleSlopeRange: waveSamples ? maxSlope - minSlope : 0,
-          propDraws: props?.meshes.length ?? 0,
-          propInstances: props?.meshes.reduce((sum, draw) => sum + draw.count, 0) ?? 0,
-          propTriangles:
-            props?.meshes.reduce(
-              (sum, draw) => sum + (draw.count * (draw.geometry.index?.count ?? 0)) / 3,
-              0,
-            ) ?? 0,
+          propDraws: propCounts.draws,
+          propInstances: propCounts.instances,
+          propTriangles: propCounts.triangles,
           preparedLodBaseSpread,
           preparedLevelsWithoutSolid,
           windowDrawCalls: budget.drawCalls,
@@ -1069,12 +1085,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const at = (x: number, z: number, up: number): Vector3 =>
         new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {
-        // The spawn gate also settles per world draw, not only per simulation step: a deterministic
-        // playtest clock advances no fixed step while startup is held, so a gate observed only in
-        // `afterPhysics` waited on the very readiness it was meant to report (ticks stopped at
-        // frame 60 while the spawn read 6/6 ready, until the 120 s deadline released the hold).
-        const spawnRegion = props?.readinessAt(spawn);
-        admission.observe(spawnRegion?.ready === true, spawnRegion?.failures ?? 0);
         renderedFrames[world]++;
         if (
           measuredView !== currentView ||

@@ -6783,6 +6783,26 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "returns candidates only; the caller applies its own exact distance and level test"
+      ],
+      "example": "const rivers = createSegmentIndex(segments, 32); const wet = rivers.nearby(x, z).some(isWet);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function createSegmentIndex<T>( segments: readonly IWaterSegment<T>[], cellSize: number, ): ISegmentIndex<T> { … }",
+      "situations": [
+        "test scatter candidates or terrain vertices against rivers and lakes without scanning every segment",
+        "find which river stations can reach a heightfield vertex when baking a wet margin"
+      ],
+      "summary": "Build the index once per world; ask `nearby` per scatter candidate or heightfield vertex.",
+      "supersedes": [],
+      "symbol": "createSegmentIndex"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const png = await encodeHeightPNG(new Terrain({ resolution: 17 }).evaluate()); const heights = await decodeHeightPNG(png);",
       "importPath": "@threenative/terrain",
@@ -6945,6 +6965,25 @@
       "summary": "Slope in degrees at a heightfield sample.",
       "supersedes": [],
       "symbol": "slopeAtIndex"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "interior vertices only (edges have one-sided differences); quantile must be in [0, 1]"
+      ],
+      "example": "const steep = slopeQuantile(grid, 0.98); if (slopeAt(x, z) > Math.min(30, steep)) placeRock(x, z);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function slopeQuantile(grid: ISampledGrid, quantile: number): number { … }",
+      "situations": [
+        "place rocks or cliffs on a terrain's own steepest ground instead of a fixed slope in degrees"
+      ],
+      "summary": "A slope, in degrees, that the given share of this terrain's interior vertices lie at or below. Placement rules keyed to fixed degrees break when a world is rebaked smoother or rougher: an outcrop rule of \"over 30 degrees\" placed nothing on a forest whose 98th percentile is 22. Asking the terrain for its own steepest share keeps the rule meaning the same thing on every world.",
+      "supersedes": [],
+      "symbol": "slopeQuantile"
     },
     {
       "aliases": [],

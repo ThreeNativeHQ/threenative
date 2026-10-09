@@ -75,6 +75,9 @@ export const STARTUP_HOLD_BUDGET_MS = 45_000;
 /** One registered hold: the game's own launch work, and the bounded wait for it. */
 interface IHold {
   readonly label: string;
+  /** Polled once per rendered frame for a predicate hold; absent for a promise hold. */
+  readonly ready?: () => boolean;
+  release?: (expired: boolean) => void;
   settled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
   expired: boolean;
@@ -211,7 +214,7 @@ export class StartupReadiness {
    */
   hold(
     label: string,
-    work: Promise<unknown>,
+    work: Promise<unknown> | (() => boolean),
     budgetMs: number = this.#holdBudgetMs,
     progress?: () => number,
   ): void {
@@ -231,6 +234,7 @@ export class StartupReadiness {
       progress,
       settled: false,
       timer: undefined,
+      ...(typeof work === "function" ? { ready: work } : {}),
     };
     this.#holds.set(label, hold);
     const release = (expired: boolean): void => {
@@ -244,6 +248,8 @@ export class StartupReadiness {
       this.#resolveIfComplete();
     };
     hold.timer = setTimeout(() => release(true), bounded);
+    hold.release = release;
+    if (typeof work === "function") return;
     void Promise.resolve(work).then(
       () => release(false),
       () => release(false),
@@ -258,6 +264,24 @@ export class StartupReadiness {
         hold.completed = Math.max(hold.completed, measured);
     } catch {
       // Observation cannot block settlement or disable stall detection; failed reads get no credit.
+    }
+  }
+
+  /**
+   * Predicate holds settle on rendered frames, not simulation steps: a deterministic playtest clock
+   * advances no fixed step while startup is held, so a gate read only in `afterPhysics` waited on
+   * itself until its deadline. A throwing predicate fails open, like a rejected promise.
+   */
+  #pollHolds(): void {
+    for (const hold of this.#holds.values()) {
+      if (hold.settled || hold.ready === undefined) continue;
+      let done: boolean;
+      try {
+        done = hold.ready();
+      } catch {
+        done = true;
+      }
+      if (done) hold.release?.(false);
     }
   }
 
@@ -283,6 +307,7 @@ export class StartupReadiness {
 
   /** Feed actual callback wall time, not requestAnimationFrame timestamp spacing. */
   observe(frameMs: number): void {
+    if (!this.#ready) this.#pollHolds();
     if (!this.#started || this.#ready) return;
     if (
       this.#compileSettled &&
