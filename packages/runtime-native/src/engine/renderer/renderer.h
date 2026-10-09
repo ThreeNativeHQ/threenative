@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <memory>
 #include <tuple>
@@ -165,6 +166,14 @@ struct OutputState {
     double toneMappingExposure = 1;
     bool srgb = true;  // false: LinearSRGBColorSpace
 };
+
+/**
+ * three's renderer settings by their JS values: the `toneMapping` constant, `toneMappingExposure` and
+ * `outputColorSpace`. Returns the OutputState, or empty with `refusal` naming the value the renderer
+ * does not implement; a value is never mapped to a neighbour. Shared by the V8 player and the web host.
+ */
+std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
+                                         std::string& refusal);
 
 /**
  * The native renderer's draw core (PRD-514): standard-material meshes into a linear RGBA16Float

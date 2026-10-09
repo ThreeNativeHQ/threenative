@@ -34,6 +34,12 @@ EventQueue events;
 std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
 tn::engine::shader::graph::Node pendingPost;  // a RenderPipeline set before the device was ready
+// three's renderer settings the game last set (WebGPURenderer's defaults until it does), applied
+// before the next frame, as the V8 player's setRendererState does.
+OutputState output{std::nullopt, 1, true};
+bool outputChanged = true;
+bool shadowMap = false;
+int shadowMapType = 1;  // PCFShadowMap
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -173,6 +179,10 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     wgpuSurfaceGetCurrentTexture(surface, &frame);
     if (frame.texture == nullptr) return fail("TN_WASM_SURFACE: no canvas texture");
     WGPUTextureView view = wgpuTextureCreateView(frame.texture, nullptr);
+    if (outputChanged) renderer->setOutput(output);
+    outputChanged = false;
+    database.shadowMapEnabled = shadowMap;
+    database.shadowMapType = shadowMapType;
     {
         Renderer::PresentScope present(*renderer, view, surfaceFormat);
         database.render(*renderer, *scene, *camera, {r, g, b, a});
@@ -180,6 +190,31 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(frame.texture);
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
+    return 0;
+}
+
+/**
+ * three's `toneMapping`, `toneMappingExposure`, `outputColorSpace` and `shadowMap.{enabled,type}`,
+ * applied before the next frame. A value the engine does not implement is refused by name; a refusal
+ * leaves the renderer running.
+ */
+extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const char* colorSpace, int shadowEnabled,
+                                      double shadowType) {
+    std::string refusal;
+    const auto next = outputStateOf(toneMapping, exposure, colorSpace, refusal);
+    // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
+    if (next && shadowType != 1 && shadowType != 2) refusal = "shadowMap.type must be PCFShadowMap or PCFSoftShadowMap";
+    if (!refusal.empty()) {
+        if (state != Failed) failure = "TN_NATIVE_RENDERER_STATE: " + refusal;
+        return 1;
+    }
+    if (next->toneMapping != output.toneMapping || next->toneMappingExposure != output.toneMappingExposure ||
+        next->srgb != output.srgb) {
+        output = *next;
+        outputChanged = true;
+    }
+    shadowMap = shadowEnabled != 0;
+    shadowMapType = static_cast<int>(shadowType);
     return 0;
 }
 

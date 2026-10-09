@@ -473,7 +473,7 @@ if(EMSCRIPTEN)
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/web)
     target_link_options(tn-native-engine-web PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_web_init,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_tnw_web_load_gltf,_tnw_web_load_error,_malloc,_free"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_web_init,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_renderer_state,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_tnw_web_load_gltf,_tnw_web_load_error,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
     find_program(TN_WASM_NODE node REQUIRED)
     configure_file(tests/native-engine/wasm/assets.html ${CMAKE_CURRENT_BINARY_DIR}/native-core-assets.html COPYONLY)

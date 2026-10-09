@@ -23,6 +23,13 @@
         "equals": false,
         "allowTrivial": "The engine's own adapter is hardware, never SwiftShader."
       },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "refusal",
+        "equals": "TN_NATIVE_RENDERER_STATE: toneMapping 5.000000",
+        "allowTrivial": "Set once before the first frame; the engine names the tone mapping it refused."
+      },
       { "entity": "wasm-renderer", "component": "probe", "path": "frames", "gte": 30 },
       {
         "entity": "wasm-renderer",

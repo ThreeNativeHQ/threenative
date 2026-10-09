@@ -3,11 +3,13 @@
  * engine's classes and `WebGPURenderer` is its facade; the scenario reads what the engine drew.
  */
 import {
+  ACESFilmicToneMapping,
   AmbientLight,
   BoxGeometry,
   DirectionalLight,
   Mesh,
   MeshStandardMaterial,
+  PCFShadowMap,
   PerspectiveCamera,
   Scene,
   SphereGeometry,
@@ -23,6 +25,8 @@ const probe = {
   draws: 0,
   triangles: 0,
   error: "",
+  /** The engine's refusal of a tone mapping it does not implement (three's CustomToneMapping, 5). */
+  refusal: "",
   ticks: 0,
 };
 const started = performance.now();
@@ -97,6 +101,16 @@ try {
   sun.position.set(3, 5, 4);
   scene.add(sun, new AmbientLight(0xffffff, 0.4));
   renderer.setClearColor(0x102030, 1);
+  // Midway's renderer settings: they reach the engine before each frame, as on the V8 player.
+  renderer.toneMapping = 5;
+  try {
+    renderer.render(scene, camera);
+  } catch (error) {
+    probe.refusal = error instanceof Error ? error.message : String(error);
+  }
+  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFShadowMap;
 
   const frame = () => {
     probe.ticks += 1;

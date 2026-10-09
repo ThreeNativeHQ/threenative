@@ -356,20 +356,15 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
     if (!shadowMap.As<v8::Object>()->Get(ctx, v8str(isolate, "enabled")).ToLocal(&enabled) ||
         !shadowMap.As<v8::Object>()->Get(ctx, v8str(isolate, "type")).ToLocal(&type))
         return;
-    // three's constants: NoToneMapping 0, Linear 1, Reinhard 2, Cineon 3, ACESFilmic 4, AgX 6, Neutral 7.
-    static const std::map<double, std::optional<shader::ToneMapping>> mappings{
-        {0, std::nullopt}, {1, shader::ToneMapping::Linear}, {2, shader::ToneMapping::Reinhard},
-        {3, shader::ToneMapping::Cineon}, {4, shader::ToneMapping::ACESFilmic}, {6, shader::ToneMapping::AgX},
-        {7, shader::ToneMapping::Neutral}};
-    const auto tone = mappings.find(mapping.As<v8::Number>()->Value());
-    if (tone == mappings.end()) return refuse("toneMapping " + std::to_string(mapping.As<v8::Number>()->Value()));
     v8::String::Utf8Value space(isolate, colorSpace);
-    const std::string spaceText(*space, space.length());
-    if (spaceText != "srgb" && spaceText != "srgb-linear") return refuse("outputColorSpace " + spaceText);
+    std::string refusal;
+    const auto state = outputStateOf(mapping.As<v8::Number>()->Value(), exposure.As<v8::Number>()->Value(),
+                                     std::string(*space, space.length()), refusal);
+    if (!state) return refuse(refusal);
     // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
     if (!enabled->IsBoolean() || !type->IsNumber() || (type.As<v8::Number>()->Value() != 1 && type.As<v8::Number>()->Value() != 2))
         return refuse("shadowMap.enabled must be a boolean and shadowMap.type PCFShadowMap or PCFSoftShadowMap");
-    const OutputState output{tone->second, exposure.As<v8::Number>()->Value(), spaceText == "srgb"};
+    const OutputState output = *state;
     if (output.toneMapping != game.output_.toneMapping || output.toneMappingExposure != game.output_.toneMappingExposure ||
         output.srgb != game.output_.srgb) {
         game.output_ = output;

@@ -528,6 +528,29 @@ void Renderer::releaseOutputGroup() {
     outputGroup_ = nullptr;
 }
 
+std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
+                                         std::string& refusal) {
+    // three's constants: NoToneMapping 0, Linear 1, Reinhard 2, Cineon 3, ACESFilmic 4, AgX 6, Neutral 7.
+    static const std::map<double, std::optional<shader::ToneMapping>> mappings{
+        {0, std::nullopt}, {1, shader::ToneMapping::Linear}, {2, shader::ToneMapping::Reinhard},
+        {3, shader::ToneMapping::Cineon}, {4, shader::ToneMapping::ACESFilmic}, {6, shader::ToneMapping::AgX},
+        {7, shader::ToneMapping::Neutral}};
+    const auto tone = mappings.find(toneMapping);
+    if (tone == mappings.end()) {
+        refusal = "toneMapping " + std::to_string(toneMapping);
+        return std::nullopt;
+    }
+    if (!std::isfinite(exposure)) {
+        refusal = "toneMappingExposure must be finite";
+        return std::nullopt;
+    }
+    if (colorSpace != "srgb" && colorSpace != "srgb-linear") {
+        refusal = "outputColorSpace " + colorSpace;
+        return std::nullopt;
+    }
+    return OutputState{tone->second, exposure, colorSpace == "srgb"};
+}
+
 void Renderer::setOutput(const OutputState& output) {
     const bool programChanged = outputVertex_.wgsl.code.empty() || output.toneMapping != output_.toneMapping || output.srgb != output_.srgb;
     output_ = output;

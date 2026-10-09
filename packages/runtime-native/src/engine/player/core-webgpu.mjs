@@ -1,6 +1,7 @@
 export * from "./core-three.mjs";
 import { unsupported } from "./core-three.mjs";
 import { syncUniforms } from "./core-tsl.mjs";
+import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 
 export const { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
@@ -16,20 +17,6 @@ for (const material of [MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteN
 // the same `adapter.info` identity (and software-adapter verdict) it reads in a browser.
 class NativeBackend {
   gpu = { requestAdapter: () => globalThis.tn.requestAdapter() };
-}
-
-// three's renderer.shadowMap: the facade hands `enabled` and `type` to the player with the renderer's
-// other settings before each frame (tn.setRendererState). A type the engine has no filter for is
-// refused when it is set, as well as there.
-class ShadowMap {
-  enabled = false;
-  #type = 1; // PCFShadowMap, three's default
-  get type() { return this.#type; }
-  set type(value) {
-    if (value !== 1 && value !== 2)
-      throw new Error("TN_NATIVE_SHADOWMAP_TYPE_UNSUPPORTED: renderer.shadowMap.type must be PCFShadowMap or PCFSoftShadowMap");
-    this.#type = value;
-  }
 }
 
 export class WebGPURenderer {
