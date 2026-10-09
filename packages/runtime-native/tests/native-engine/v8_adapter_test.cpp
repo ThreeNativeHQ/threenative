@@ -768,6 +768,17 @@ void nodeMaterials() {
                 m.colorNode = null;
                 if (m.colorNode !== null) return 'clear';
             }
+            // three's Material.copy: a node material takes a plain material's values, keeping its class and id.
+            const source = new MeshStandardMaterial({ color: 0x336699, roughness: 0.25, metalness: 0.75, transparent: true, side: DoubleSide });
+            source.map = new DataTexture(new Uint8Array(4), 1, 1);
+            source.name = 'hull';
+            const target = new MeshStandardNodeMaterial();
+            const targetId = target.id;
+            if (target.copy(source) !== target) return 'copy chains';
+            if (target.type !== 'MeshStandardNodeMaterial' || target.id !== targetId) return 'copy identity';
+            if (target.color.getHex() !== 0x336699 || target.roughness !== 0.25 || target.metalness !== 0.75 ||
+                !target.transparent || target.side !== DoubleSide || target.map !== source.map || target.name !== 'hull')
+                return 'copy values';
             const held = new MeshBasicNodeMaterial();
             (() => { held.colorNode = tsl.vec4(tsl.uv(), tsl.uniform(0.35), 1); })();
             gc(); gc();

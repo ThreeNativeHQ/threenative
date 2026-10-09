@@ -1028,6 +1028,8 @@ vertexColors: boolean;
 forceSinglePass: boolean;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/LineSegments. */
@@ -1386,6 +1388,8 @@ readonly type: string;
   setValues(values?: MeshBasicMaterialParameters): void;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (shader-parameters): three/MeshBasicMaterialParameters. */
@@ -1421,6 +1425,8 @@ forceSinglePass: boolean;
 vertexNode: Node | null;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1502,6 +1508,8 @@ readonly type: string;
   setValues(values?: MeshStandardMaterialParameters): void;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (shader-parameters): three/MeshStandardMaterialParameters. */
@@ -1550,6 +1558,8 @@ forceSinglePass: boolean;
 vertexNode: Node | null;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -2419,6 +2429,8 @@ vertexColors: boolean;
 forceSinglePass: boolean;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2453,6 +2465,8 @@ forceSinglePass: boolean;
 vertexNode: Node | null;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -3106,6 +3120,8 @@ vertexColors: boolean;
 forceSinglePass: boolean;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -3136,6 +3152,8 @@ vertexColors: boolean;
 forceSinglePass: boolean;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */

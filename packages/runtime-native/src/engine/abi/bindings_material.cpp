@@ -110,6 +110,10 @@ void registerMaterialBase(ClassBinding& b) {
         const std::shared_ptr<Material> copy = as<Material>(self)->clone();
         return store.adopt(std::string(copy->typeName()), std::static_pointer_cast<void>(copy));
     };
+    b.methods["copy"] = [](void* self, const Args& a, Store& store) {
+        as<Material>(self)->copy(*store.shared<Material>(a.at(0), "Material"));
+        return chain();
+    };
     b.getters["type"] = [](void* self) { return string(std::string(as<Material>(self)->typeName())); };
     b.getters["id"] = [](void* self) { return Value::of(double(as<Material>(self)->id)); };
     b.getters["name"] = [](void* self) { return string(as<Material>(self)->name); };
