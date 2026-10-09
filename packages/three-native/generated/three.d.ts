@@ -124,6 +124,33 @@ export declare const BasicDepthPacking: 3200;
 /** Catalog partial (native-not-implemented): three/BasicShadowMap. */
 export declare const BasicShadowMap: 0;
 
+/** Catalog supported: three/webgpu/BatchedMesh. */
+export declare class BatchedMesh extends Mesh {
+constructor();
+readonly instanceCount: number;
+readonly maxInstanceCount: number;
+perObjectFrustumCulled: boolean;
+sortObjects: boolean;
+
+  addGeometry(geometry: BufferGeometry, reservedVertexRange?: number, reservedIndexRange?: number): number;
+
+  addInstance(geometryId: number): number;
+
+  deleteInstance(instanceId: number): this;
+
+  getColorAt(instanceId: number, color: Color): Color;
+
+  getMatrixAt(instanceId: number, target: Matrix4): Matrix4;
+
+  getVisibleAt(instanceId: number): boolean;
+
+  setColorAt(instanceId: number, color: Color | Vector4): void;
+
+  setMatrixAt(instanceId: number, matrix: Matrix4): this;
+
+  setVisibleAt(instanceId: number, visible: boolean): this;
+}
+
 /** Catalog partial (native-not-implemented): three/Blending. */
 export declare const Blending = {
   NoBlending: 0,

@@ -568,6 +568,10 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                         callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
                 }
             }
+        } else if (type == "BatchedMesh") {
+            // three's BatchedMesh: each geometry's visible instances, drawn as one instanced mesh.
+            for (const auto& batch : static_cast<BatchedMesh&>(object).drawBatches())
+                project(*batch, camera, items, lights, false, false, nullptr, false);
         } else if (type == "AmbientLight") {
             const auto& l = static_cast<const AmbientLight&>(object);
             for (int c = 0; c < 3; ++c)

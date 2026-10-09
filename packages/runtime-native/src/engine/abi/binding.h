@@ -80,7 +80,7 @@ inline bool isObject3DClass(std::string_view cls) {
         "Object3D",   "Group",       "Mesh",          "Scene",      "Camera",       "PerspectiveCamera",
         "OrthographicCamera", "AmbientLight", "DirectionalLight", "HemisphereLight", "InstancedMesh",
         "PointLight", "Sprite",      "SpotLight",     "Bone",       "SkinnedMesh",  "LOD",
-        "Line",       "LineSegments"};
+        "Line",       "LineSegments", "BatchedMesh"};
     for (const std::string_view known : kClasses)
         if (cls == known) return true;
     return false;

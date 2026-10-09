@@ -7551,6 +7551,11 @@
         "source": "three"
       },
       {
+        "symbol": "BatchedMesh",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
         "symbol": "Bone",
         "kind": "class",
         "source": "three/webgpu"

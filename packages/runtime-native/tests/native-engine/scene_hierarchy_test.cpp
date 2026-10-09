@@ -11,6 +11,7 @@
 
 #include "engine/abi/bindings.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/scene/geometries.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
 
@@ -20,6 +21,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -1170,7 +1172,33 @@ void rotation_sync() {
     CHECK(quatAssigned.rotation.z == 1.5707963267948963);
 }
 
+// PRD-552: three's BatchedMesh keeps what was set per instance, reuses a freed id first, and refuses
+// past its sizes with three's messages; the draws follow the visible instances.
+void batched_mesh() {
+    BatchedMesh batch(2, 30, 60, nullptr);
+    const auto refused = [](auto call, const char* message) {
+        try { call(); } catch (const std::exception& error) { return std::string(error.what()) == message; }
+        return false;
+    };
+    const uint32_t box = batch.addGeometry(*makeBoxGeometry());  // 24 vertices, 36 indices
+    CHECK(refused([&] { batch.addGeometry(*makeBoxGeometry()); },
+                  "THREE.BatchedMesh: Reserved space request exceeds the maximum buffer size."));
+    const uint32_t a = batch.addInstance(box), b = batch.addInstance(box);
+    CHECK(a == 0 && b == 1 && batch.instanceCount() == 2);
+    CHECK(refused([&] { batch.addInstance(box); }, "THREE.BatchedMesh: Maximum item count reached."));
+    Matrix4 moved, read;
+    moved.makeTranslation(1, 2, 3);
+    batch.setMatrixAt(b, moved).setColorAt(b, Color(0.5, 0.25, 1)).setVisibleAt(a, false);
+    Color color;
+    CHECK(batch.getMatrixAt(b, read).elements[13] == 2 && batch.getColorAt(b, color).b == 1 && !batch.getVisibleAt(a));
+    CHECK(batch.drawBatches().size() == 1 && batch.drawBatches()[0]->count == 1);
+    batch.deleteInstance(a);
+    CHECK(refused([&] { batch.getVisibleAt(a); },
+                  "THREE.BatchedMesh: Invalid instanceId 0. Instance is either out of range or has been deleted."));
+    CHECK(batch.addInstance(box) == a && batch.getVisibleAt(a) && batch.drawBatches()[0]->count == 2);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
-             {"rotation_sync", rotation_sync}, {"teardown", teardown})
+             {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh})

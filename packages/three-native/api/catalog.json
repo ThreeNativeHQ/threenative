@@ -641,13 +641,256 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_BATCHEDMESH"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Mesh",
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "instanceCount",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "maxInstanceCount",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "perObjectFrustumCulled",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "sortObjects",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "addGeometry",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "geometry",
+                  "type": "BufferGeometry",
+                  "optional": false
+                },
+                {
+                  "name": "reservedVertexRange",
+                  "type": "number",
+                  "optional": true
+                },
+                {
+                  "name": "reservedIndexRange",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "addInstance",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "geometryId",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "number"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "deleteInstance",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "instanceId",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getColorAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "instanceId",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "color",
+                  "type": "Color",
+                  "optional": false
+                }
+              ],
+              "returns": "Color"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getMatrixAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "instanceId",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "target",
+                  "type": "Matrix4",
+                  "optional": false
+                }
+              ],
+              "returns": "Matrix4"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "getVisibleAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "instanceId",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "boolean"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setColorAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "instanceId",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "color",
+                  "type": "Color | Vector4",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setMatrixAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "instanceId",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "matrix",
+                  "type": "Matrix4",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setVisibleAt",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "instanceId",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "visible",
+                  "type": "boolean",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "BindMode",

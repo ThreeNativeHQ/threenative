@@ -205,6 +205,7 @@ const FLAGGED_CLASSES = [
   "Mesh",
   "SkinnedMesh",
   "InstancedMesh",
+  "BatchedMesh",
   "Bone",
   "LOD",
   "Sprite",

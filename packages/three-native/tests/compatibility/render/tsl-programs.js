@@ -1,14 +1,20 @@
 import {
+  AmbientLight,
   BackSide,
+  BatchedMesh,
   BoxGeometry,
+  Color,
   Data3DTexture,
   DataTexture,
   DataUtils,
+  DirectionalLight,
   EquirectangularReflectionMapping,
   LinearFilter,
   LinearMipmapLinearFilter,
+  Matrix4,
   Mesh,
   MeshLambertNodeMaterial,
+  MeshStandardMaterial,
   NearestFilter,
   PointLight,
   RenderPipeline,
@@ -16,6 +22,7 @@ import {
   RepeatWrapping,
   SRGBColorSpace,
   Scene,
+  SphereGeometry,
   StorageBufferAttribute,
   Vector3,
 } from "three";
@@ -772,6 +779,28 @@ export const programs = {
    *  plane over a lit floor. */
   /** The depth reads r185 gives a water surface: the scene depth behind it, its own, and the camera range. */
   /** SkeletonUtils.clone on a SkinnedMesh: the copy's own bones bend its skin, the original keeps its pose. */
+  /** A BatchedMesh: two geometries, five coloured instances (one rotated, one hidden), as core's projection builds one. */
+  async "batched-mesh"({ target }) {
+    const batch = new BatchedMesh(8, 2000, 4000, new MeshStandardMaterial({ roughness: 0.5 }));
+    const box = batch.addGeometry(new BoxGeometry(0.8, 0.8, 0.8).toNonIndexed());
+    const ball = batch.addGeometry(new SphereGeometry(0.5, 16, 8).toNonIndexed());
+    const matrix = new Matrix4();
+    const place = (geometry, x, y, r, g, b) => {
+      const id = batch.addInstance(geometry);
+      batch.setMatrixAt(id, matrix.makeRotationZ(x * 0.3).setPosition(x, y, 0));
+      batch.setColorAt(id, new Color().setRGB(r, g, b));
+      return id;
+    };
+    place(box, -1.5, 0.6, 1, 0.25, 0.25);
+    place(box, 0, 0.6, 0.25, 1, 0.25);
+    place(box, 1.5, 0.6, 0.25, 0.25, 1);
+    place(ball, -0.75, -0.7, 1, 1, 0.25);
+    place(ball, 0.75, -0.7, 1, 0.25, 1);
+    batch.setVisibleAt(place(ball, 2.2, -0.7, 0.25, 1, 1), false);
+    const sun = new DirectionalLight(0xffffff, 2.5);
+    sun.position.set(3, 4, 5);
+    target.add(batch, sun, new AmbientLight(0xffffff, 0.4));
+  },
   /** A camera-facing card: its positionNode spans cameraWorldMatrix's right and up axes. */
   async "shadow-billboard"({ target }) {
     const right = cameraWorldMatrix.mul(vec4(1, 0, 0, 0)).xyz;

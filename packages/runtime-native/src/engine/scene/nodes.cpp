@@ -3,7 +3,11 @@
 
 #include "engine/scene/nodes.h"
 
+#include <algorithm>
 #include <array>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include "engine/scene/geometries.h"
 #include "engine/scene/material.h"
 
@@ -141,6 +145,124 @@ void InstancedMesh::computeBoundingSphere() {
         world.copy(*geometry->boundingSphere).applyMatrix4(instance);
         boundingSphere->unionWith(world);
     }
+}
+
+// three's BatchedMesh (r185 objects/BatchedMesh.js): its refusals by its own messages.
+BatchedMesh::BatchedMesh(uint32_t instances, uint32_t vertices, uint32_t indices, std::shared_ptr<Material> m)
+    : Mesh(nullptr, std::move(m)), maxInstanceCount(instances), maxVertexCount(vertices), maxIndexCount(indices) {}
+
+uint32_t BatchedMesh::addGeometry(const BufferGeometry& geometry, int64_t reservedVertexCount, int64_t reservedIndexCount) {
+    const auto position = geometry.attributes.find("position");
+    if (position == geometry.attributes.end() || !position->second)
+        throw std::runtime_error("THREE.BatchedMesh: Added geometry missing \"position\". All geometries must have consistent attributes.");
+    if (!geometries_.empty() && (geometries_.front()->index != nullptr) != (geometry.index != nullptr))
+        throw std::runtime_error("THREE.BatchedMesh: All geometries must consistently have \"index\".");
+    const uint64_t vertices = reservedVertexCount < 0 ? position->second->count() : uint64_t(reservedVertexCount);
+    const uint64_t indices = !geometry.index ? 0 : reservedIndexCount < 0 ? geometry.index->count() : uint64_t(reservedIndexCount);
+    if ((geometry.index && nextIndex_ + indices > maxIndexCount) || nextVertex_ + vertices > maxVertexCount)
+        throw std::runtime_error("THREE.BatchedMesh: Reserved space request exceeds the maximum buffer size.");
+    if (position->second->count() > vertices || (geometry.index && geometry.index->count() > indices))
+        throw std::runtime_error("THREE.BatchedMesh: Reserved space not large enough for provided geometry.");
+    nextVertex_ += vertices;
+    nextIndex_ += indices;
+    geometries_.push_back(geometry.clone());
+    return uint32_t(geometries_.size() - 1);
+}
+
+uint32_t BatchedMesh::addInstance(uint32_t geometryId) {
+    if (geometryId >= geometries_.size())
+        throw std::runtime_error("THREE.BatchedMesh: Invalid geometryId " + std::to_string(geometryId) +
+                                 ". Geometry is either out of range or has been deleted.");
+    if (instances_.size() >= maxInstanceCount && freeInstances_.empty())
+        throw std::runtime_error("THREE.BatchedMesh: Maximum item count reached.");
+    Instance added;
+    added.geometry = geometryId;
+    dirty_ = true;
+    if (!freeInstances_.empty()) {
+        const auto lowest = std::min_element(freeInstances_.begin(), freeInstances_.end());
+        const uint32_t id = *lowest;
+        freeInstances_.erase(lowest);
+        instances_[id] = added;
+        return id;
+    }
+    instances_.push_back(added);
+    return uint32_t(instances_.size() - 1);
+}
+
+BatchedMesh::Instance& BatchedMesh::instance(uint32_t id) {
+    return const_cast<Instance&>(std::as_const(*this).instance(id));
+}
+
+const BatchedMesh::Instance& BatchedMesh::instance(uint32_t id) const {
+    if (id >= instances_.size() || !instances_[id].active)
+        throw std::runtime_error("THREE.BatchedMesh: Invalid instanceId " + std::to_string(id) +
+                                 ". Instance is either out of range or has been deleted.");
+    return instances_[id];
+}
+
+void BatchedMesh::deleteInstance(uint32_t id) {
+    instance(id).active = false;
+    freeInstances_.push_back(id);
+    dirty_ = true;
+}
+
+BatchedMesh& BatchedMesh::setMatrixAt(uint32_t id, const Matrix4& matrix) {
+    instance(id).matrix.copy(matrix);
+    dirty_ = true;
+    return *this;
+}
+
+Matrix4& BatchedMesh::getMatrixAt(uint32_t id, Matrix4& target) const { return target.copy(instance(id).matrix); }
+
+BatchedMesh& BatchedMesh::setColorAt(uint32_t id, const Color& color) {
+    instance(id).color = color;
+    colored_ = true;  // three makes the colour texture on the first setColorAt
+    dirty_ = true;
+    return *this;
+}
+
+Color& BatchedMesh::getColorAt(uint32_t id, Color& target) const { return target = instance(id).color; }
+
+BatchedMesh& BatchedMesh::setVisibleAt(uint32_t id, bool visible) {
+    instance(id).visible = visible;
+    dirty_ = true;
+    return *this;
+}
+
+bool BatchedMesh::getVisibleAt(uint32_t id) const { return instance(id).visible; }
+
+uint32_t BatchedMesh::instanceCount() const {
+    return uint32_t(instances_.size() - freeInstances_.size());
+}
+
+const std::vector<std::shared_ptr<InstancedMesh>>& BatchedMesh::drawBatches() {
+    if (dirty_) {
+        // One instanced mesh per geometry, sized to its drawn instances; rebuilt only after a change.
+        std::vector<std::vector<const Instance*>> drawn(geometries_.size());
+        for (const Instance& each : instances_)
+            if (each.active && each.visible) drawn[each.geometry].push_back(&each);
+        batches_.clear();
+        for (std::size_t g = 0; g < geometries_.size(); ++g) {
+            if (drawn[g].empty()) continue;
+            auto batch = std::make_shared<InstancedMesh>(geometries_[g], material, uint32_t(drawn[g].size()));
+            for (std::size_t i = 0; i < drawn[g].size(); ++i) {
+                batch->setMatrixAt(uint32_t(i), drawn[g][i]->matrix);
+                if (colored_) batch->setColorAt(uint32_t(i), drawn[g][i]->color);
+            }
+            batches_.push_back(std::move(batch));
+        }
+        dirty_ = false;
+    }
+    for (const auto& batch : batches_) {
+        batch->material = material;
+        batch->matrixWorld = matrixWorld;
+        batch->frustumCulled = false;
+        batch->setCastShadow(castShadow());
+        batch->setReceiveShadow(receiveShadow());
+        batch->setRenderOrder(renderOrder());
+        batch->setLayerMask(layers().mask);
+    }
+    return batches_;
 }
 
 } // namespace tn::engine

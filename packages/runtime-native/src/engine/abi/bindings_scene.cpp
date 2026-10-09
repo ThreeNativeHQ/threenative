@@ -1379,6 +1379,73 @@ void registerInstancedMesh(ClassBinding& b) {
     };
 }
 
+// three's BatchedMesh(maxInstanceCount, maxVertexCount, maxIndexCount = maxVertexCount * 2, material):
+// the members core's projection uses, with three's refusals by three's messages.
+void registerBatchedMesh(ClassBinding& b) {
+    registerMesh(b);
+    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
+        const auto count = [&](std::size_t i, double fallback) {
+            const double value = i < a.size() && a.at(i).kind == Value::Kind::Number ? a.at(i).number : fallback;
+            if (!(value >= 0 && value <= 4294967295.0) || value != std::floor(value))
+                throw Unsupported{"BatchedMesh sizes must be whole numbers"};
+            return static_cast<uint32_t>(value);
+        };
+        const uint32_t instances = count(0, 0), vertices = count(1, 0), indices = count(2, double(vertices) * 2);
+        std::shared_ptr<Material> material;
+        if (a.size() >= 4 && a.at(3).kind == Value::Kind::Ref) material = materialArg(store, a.at(3));
+        return std::static_pointer_cast<void>(detail::makeShared<BatchedMesh>(instances, vertices, indices, material));
+    };
+    const auto id = [](const Value& v) {
+        const double i = number(v);
+        if (!(i >= 0 && i <= 4294967295.0) || i != std::floor(i)) throw Unsupported{"BatchedMesh ids are whole numbers"};
+        return static_cast<uint32_t>(i);
+    };
+    b.methods["addGeometry"] = [](void* self, const Args& a, Store& store) {
+        const auto reserved = [&](std::size_t i) {
+            return i < a.size() && a.at(i).kind == Value::Kind::Number ? int64_t(a.at(i).number) : int64_t{-1};
+        };
+        const auto geometry = geometryArg(store, a.at(0));
+        return Value::of(double(as<BatchedMesh>(self)->addGeometry(*geometry, reserved(1), reserved(2))));
+    };
+    b.methods["addInstance"] = [id](void* self, const Args& a, Store&) {
+        return Value::of(double(as<BatchedMesh>(self)->addInstance(id(a.at(0)))));
+    };
+    b.methods["deleteInstance"] = [id](void* self, const Args& a, Store&) {
+        as<BatchedMesh>(self)->deleteInstance(id(a.at(0)));
+        return chain();
+    };
+    b.methods["setMatrixAt"] = [id](void* self, const Args& a, Store& store) {
+        as<BatchedMesh>(self)->setMatrixAt(id(a.at(0)), store.ref<Matrix4>(a.at(1), "Matrix4"));
+        return chain();
+    };
+    b.methods["getMatrixAt"] = [id](void* self, const Args& a, Store& store) {
+        as<BatchedMesh>(self)->getMatrixAt(id(a.at(0)), store.ref<Matrix4>(a.at(1), "Matrix4"));
+        return a.at(1);
+    };
+    b.methods["setColorAt"] = [id](void* self, const Args& a, Store& store) {
+        as<BatchedMesh>(self)->setColorAt(id(a.at(0)), store.ref<Color>(a.at(1), "Color"));
+        return chain();
+    };
+    b.methods["getColorAt"] = [id](void* self, const Args& a, Store& store) {
+        as<BatchedMesh>(self)->getColorAt(id(a.at(0)), store.ref<Color>(a.at(1), "Color"));
+        return a.at(1);
+    };
+    b.methods["setVisibleAt"] = [id](void* self, const Args& a, Store&) {
+        as<BatchedMesh>(self)->setVisibleAt(id(a.at(0)), flag(a.at(1)));
+        return chain();
+    };
+    b.methods["getVisibleAt"] = [id](void* self, const Args& a, Store&) {
+        return Value::of(as<BatchedMesh>(self)->getVisibleAt(id(a.at(0))));
+    };
+    b.getters["instanceCount"] = [](void* self) { return Value::of(double(as<BatchedMesh>(self)->instanceCount())); };
+    b.getters["maxInstanceCount"] = [](void* self) { return Value::of(double(as<BatchedMesh>(self)->maxInstanceCount)); };
+    for (const auto& [name, field] : {std::pair{"perObjectFrustumCulled", &BatchedMesh::perObjectFrustumCulled},
+                                      std::pair{"sortObjects", &BatchedMesh::sortObjects}}) {
+        b.getters[name] = [field](void* self) { return Value::of(as<BatchedMesh>(self)->*field); };
+        b.setters[name] = [field](void* self, const Value& v) { as<BatchedMesh>(self)->*field = flag(v); };
+    }
+}
+
 }  // namespace
 
 /**
@@ -1428,6 +1495,7 @@ void registerSceneBindings(Registry& classes) {
     registerLOD(classes["LOD"]);
     registerMesh(classes["Mesh"]);
     registerInstancedMesh(classes["InstancedMesh"]);
+    registerBatchedMesh(classes["BatchedMesh"]);
     for (const char* name : {"Line", "LineSegments"}) {
         auto& line = classes[name];
         registerMesh(line);

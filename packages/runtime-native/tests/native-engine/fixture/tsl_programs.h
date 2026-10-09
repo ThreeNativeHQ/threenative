@@ -382,6 +382,40 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         quads->material->needsUpdate();
         return "";
     }
+    if (program == "batched-mesh") {
+        // The JS program's BatchedMesh through the engine class: two geometries, five instances.
+        if (object.cls != "Scene") return "TN_FIXTURE_BATCHED_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto material = std::make_shared<engine::Material>(engine::MaterialType::Standard);
+        material->roughness = 0.5;
+        auto batch = std::make_shared<engine::BatchedMesh>(8, 2000, 4000, material);
+        // Non-indexed, as the JS program: r185's WebGPU BatchedMesh draws a second indexed geometry from
+        // index 0 (its golden showed the box inside each sphere), so the comparison avoids that path.
+        const uint32_t box = batch->addGeometry(*engine::makeBoxGeometry(0.8, 0.8, 0.8)->toNonIndexed());
+        const uint32_t ball = batch->addGeometry(*engine::makeSphereGeometry(0.5, 16, 8)->toNonIndexed());
+        const auto place = [&](uint32_t geometry, double x, double y, double r, double g, double b) {
+            const uint32_t id = batch->addInstance(geometry);
+            engine::Matrix4 matrix;
+            matrix.makeRotationZ(x * 0.3).setPosition(engine::Vector3(x, y, 0));
+            batch->setMatrixAt(id, matrix);
+            batch->setColorAt(id, engine::Color().setRGB(r, g, b));
+            return id;
+        };
+        place(box, -1.5, 0.6, 1, 0.25, 0.25);
+        place(box, 0, 0.6, 0.25, 1, 0.25);
+        place(box, 1.5, 0.6, 0.25, 0.25, 1);
+        place(ball, -0.75, -0.7, 1, 1, 0.25);
+        place(ball, 0.75, -0.7, 1, 0.25, 1);
+        batch->setVisibleAt(place(ball, 2.2, -0.7, 0.25, 1, 1), false);
+        auto sun = std::make_shared<engine::DirectionalLight>(engine::Color(1, 1, 1), 2.5);
+        sun->position.set(3, 4, 5);
+        auto ambient = std::make_shared<engine::AmbientLight>(engine::Color(1, 1, 1), 0.4);
+        scene.add(*batch);
+        scene.add(*sun);
+        scene.add(*ambient);
+        resources.insert(resources.end(), {batch, sun, ambient});
+        return "";
+    }
     if (program == "shadow-billboard") {
         // A camera-facing card through the shared TSL table: cameraWorldMatrix's right and up axes.
         if (object.cls != "Scene") return "TN_FIXTURE_BILLBOARD_INVALID: requires scene";

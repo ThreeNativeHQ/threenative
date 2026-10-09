@@ -1,6 +1,6 @@
 # PRD-552 — BatchedMesh on the native engine
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P1 — the V8 bundler refuses every `@threenative/core` game, because core's projection retains `BatchedMesh`, so PRD-531's last box (the `minimal` journey on desktop) cannot start
 **Complexity:** 5 (MEDIUM) — one scene class, one render-database path over the existing instanced draw, one binding; no new module
 **Owner:** João
@@ -30,10 +30,10 @@ draw, over the `InstancedMesh` path. One binding serves V8 and Wasm; the catalog
 ## Execution Phases
 
 #### Phase 1: The engine draws a BatchedMesh as r185 does
-**Status:** NOT STARTED
+**Status:** DONE
 
-- [ ] A `BatchedMesh` with two geometries and several instances (moved, recoloured, one hidden) draws as r185 draws it. proof: fixture `batched-mesh` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_batched`
-- [ ] `getMatrixAt`, `getColorAt` and `getVisibleAt` read back what was set, and `addInstance` past `maxInstanceCount` refuses as three does. proof: a scene test case in `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene`
+- [x] A `BatchedMesh` with two geometries and several instances (moved, recoloured, one hidden) draws as r185 draws it. proof: fixture `batched-mesh` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_batched` — 2026-10-09: `batched-mesh` (a box and a sphere, five drawn instances with matrices and colours, a sixth hidden) matches the r185 golden, 2/2 observations. The geometries are non-indexed: r185's WebGPU path draws a second indexed geometry from index 0 (its golden showed the box inside each sphere), so that path is not compared.
+- [x] `getMatrixAt`, `getColorAt` and `getVisibleAt` read back what was set, and `addInstance` past `maxInstanceCount` refuses as three does. proof: a scene test case in `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene` — 2026-10-09: `native_engine_scene_batched_mesh` passes: read-back, a freed id reused first, and three's messages for the instance cap, the reserved space and a deleted id.
 
 #### Phase 2: Both back ends bind it, and a core game bundles on V8
 **Status:** NOT STARTED

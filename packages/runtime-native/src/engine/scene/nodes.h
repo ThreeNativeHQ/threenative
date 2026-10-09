@@ -7,6 +7,7 @@
 // expose them as three's single background property.
 
 #include <memory>
+#include <vector>
 #include <string_view>
 
 #include "engine/foundation/math/Color.h"
@@ -156,6 +157,61 @@ class InstancedMesh : public Mesh {
 
   protected:
     const Box3& cachedBounds() override;
+};
+
+/**
+ * three's BatchedMesh: geometries added once (copied, as three copies them into its own buffers) and
+ * instances of them, each with its own matrix, colour and visibility. The engine draws each geometry's
+ * visible instances as one instanced draw (`drawBatches`), so nothing is merged into one vertex buffer.
+ * ponytail: three's per-instance frustum culling and sorting save draws; the engine draws every visible
+ * instance, which gives the same frame.
+ */
+class BatchedMesh : public Mesh {
+  public:
+    BatchedMesh(uint32_t maxInstanceCount, uint32_t maxVertexCount, uint32_t maxIndexCount,
+                std::shared_ptr<Material> material);
+
+    [[nodiscard]] std::string_view type() const override { return "BatchedMesh"; }
+
+    /** three's addGeometry: the geometry's id; refuses a geometry past the reserved buffer sizes. */
+    uint32_t addGeometry(const BufferGeometry& geometry, int64_t reservedVertexCount = -1,
+                         int64_t reservedIndexCount = -1);
+    /** three's addInstance: an identity-matrix, white, visible instance of `geometryId`, a freed id first. */
+    uint32_t addInstance(uint32_t geometryId);
+    void deleteInstance(uint32_t instanceId);
+    BatchedMesh& setMatrixAt(uint32_t instanceId, const Matrix4& matrix);
+    Matrix4& getMatrixAt(uint32_t instanceId, Matrix4& target) const;
+    BatchedMesh& setColorAt(uint32_t instanceId, const Color& color);
+    Color& getColorAt(uint32_t instanceId, Color& target) const;
+    BatchedMesh& setVisibleAt(uint32_t instanceId, bool visible);
+    [[nodiscard]] bool getVisibleAt(uint32_t instanceId) const;
+    /** three's instanceCount: the active instances. */
+    [[nodiscard]] uint32_t instanceCount() const;
+
+    /** The per-geometry instanced meshes the renderer draws, rebuilt after an instance changed. */
+    const std::vector<std::shared_ptr<InstancedMesh>>& drawBatches();
+
+    const uint32_t maxInstanceCount, maxVertexCount, maxIndexCount;
+    bool perObjectFrustumCulled = true;
+    bool sortObjects = true;
+
+  private:
+    struct Instance {
+        uint32_t geometry = 0;
+        Matrix4 matrix;
+        Color color{1, 1, 1};
+        bool visible = true;
+        bool active = true;
+    };
+    Instance& instance(uint32_t instanceId);
+    [[nodiscard]] const Instance& instance(uint32_t instanceId) const;
+
+    std::vector<std::shared_ptr<BufferGeometry>> geometries_;
+    std::vector<Instance> instances_;
+    std::vector<uint32_t> freeInstances_;
+    uint64_t nextVertex_ = 0, nextIndex_ = 0;
+    bool colored_ = false, dirty_ = true;
+    std::vector<std::shared_ptr<InstancedMesh>> batches_;
 };
 
 } // namespace tn::engine

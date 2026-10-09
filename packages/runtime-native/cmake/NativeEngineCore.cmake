@@ -336,7 +336,8 @@ tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hier
     native_engine_scene_revision=revision
     native_engine_scene_hierarchy_upstream=upstream
     native_engine_scene_rotation_sync=rotation_sync
-    native_engine_scene_teardown=teardown)
+    native_engine_scene_teardown=teardown
+    native_engine_scene_batched_mesh=batched_mesh)
 # The alias case drives the fixture driver's Store as well, which is the other implementor of it.
 target_link_libraries(tn-native-engine-scene-test PRIVATE tn_engine_scene tn_fixture_driver)
 
