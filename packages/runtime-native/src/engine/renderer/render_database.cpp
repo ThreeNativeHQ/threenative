@@ -1131,6 +1131,10 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
+    if (const auto* perspective = dynamic_cast<const PerspectiveCamera*>(&camera))
+        std::tie(state.near, state.far) = std::pair{perspective->near, perspective->far};
+    else if (const auto* orthographic = dynamic_cast<const OrthographicCamera*>(&camera))
+        std::tie(state.near, state.far) = std::pair{orthographic->near, orthographic->far};
     if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
         clear = {world->background->r, world->background->g, world->background->b, 1};
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};

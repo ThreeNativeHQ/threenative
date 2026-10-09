@@ -125,6 +125,8 @@ struct CameraState {
     // In three's WebGPUCoordinateSystem (clip z 0..1): WebGPURenderer.render switches a camera to it
     // and recomputes projectionMatrix, so the render database does the same before it fills this.
     Matrix projectionMatrix{};
+    /** The camera's near and far planes (TSL's cameraNear / cameraFar). */
+    double near = 0.1, far = 2000;
 };
 
 /** One direct light, world space and linear colour with its intensity folded in. */
@@ -342,7 +344,8 @@ private:
         kRoughnessMapUvTransform, kMetalnessMapUvTransform, kAoMapUvTransform, kEmissiveMapUvTransform, kSpecularColorMapUvTransform,
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale,
-        kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kSlotCount
+        kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
+        kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,

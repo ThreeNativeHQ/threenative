@@ -15,7 +15,18 @@ import {
   Scene,
   SphereGeometry,
 } from "three";
-import { Fn, float, positionLocal, texture, uniform, uv, vec3, vec4 } from "three/tsl";
+import {
+  Fn,
+  cameraFar,
+  cameraNear,
+  float,
+  positionLocal,
+  texture,
+  uniform,
+  uv,
+  vec3,
+  vec4,
+} from "three/tsl";
 import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
 
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
@@ -99,6 +110,8 @@ try {
     green.addAssign(tint.mul(0.5));
     // Midway's ocean takes screen-space derivatives; zero-weighted so the colour is unchanged.
     green.addAssign(uv().dFdx().x.add(uv().dFdy().lengthSq()).mul(0));
+    // Midway's fog reads the camera planes; zero-weighted too.
+    green.addAssign(cameraFar.sub(cameraNear).mul(0));
     const blue = tint.toVar();
     blue.mulAssign(1.6);
     return vec4(tint.mul(0.2), green, blue, 1);

@@ -129,7 +129,7 @@ constexpr const char* kSlotNames[] = {
     "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform", "specularColorMapUvTransform",
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale",
-    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize"};
+    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -1772,6 +1772,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             put(frameUniforms_, base, slots[kCameraPosition], cameraPosition);
             put(frameUniforms_, base, slots[kCameraProjectionMatrix], camera.projectionMatrix);
             put(frameUniforms_, base, slots[kCameraWorldMatrix], camera.matrixWorld);
+            put(frameUniforms_, base, slots[kCameraNear], std::array<double, 1>{camera.near});
+            put(frameUniforms_, base, slots[kCameraFar], std::array<double, 1>{camera.far});
         }
         put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
         // NodeMaterial forces alpha to 1 only on an opaque NormalBlending material.

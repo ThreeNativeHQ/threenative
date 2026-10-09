@@ -314,6 +314,10 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     // r185's camera accessors (accessors/Camera.js) for a single camera: render-group uniforms by
     // their upstream names, which the renderer fills per draw (kSlotNames).
+    if (name == "cameraNear" || name == "cameraFar") {
+        arity(0);
+        return g::uniform(name, Type::f32());
+    }
     if (name == "cameraPosition" || name == "cameraProjectionMatrix" || name == "cameraWorldMatrix") {
         arity(0);
         return g::uniform(name, name == "cameraPosition" ? Type::vec(3) : Type::mat(4, 4));
@@ -476,7 +480,8 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"materialRoughness", g::uniform("roughness", Type::f32())}};
     // The node constants tslCall also answers by name; neither takes a serial.
     uint64_t serial = 0;
-    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "positionGeometry", "normalWorld"})
+    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar",
+                             "positionGeometry", "normalWorld"})
         constants.emplace_back(name, tslCall(name, nullptr, {}, serial));
     return constants;
 }

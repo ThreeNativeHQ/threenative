@@ -98,6 +98,8 @@ const FUNCTIONS = [
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
   "cameraPosition",
+  "cameraNear",
+  "cameraFar",
   "cameraProjectionMatrix",
   "cameraWorldMatrix",
   "positionGeometry",
