@@ -66106,11 +66106,11 @@
         "type": "flatten",
         "params": {
           "at": [
-            65,
-            80
+            24,
+            -120
           ],
-          "radius": 30,
-          "height": 27,
+          "radius": 34,
+          "height": 24,
           "falloff": 0.65
         }
       },
@@ -66121,11 +66121,11 @@
         "type": "flatten",
         "params": {
           "at": [
-            -65,
-            -50
+            -96,
+            24
           ],
-          "radius": 42,
-          "height": 28,
+          "radius": 34,
+          "height": 24,
           "falloff": 0.65
         }
       },
@@ -66245,11 +66245,11 @@
         "params": {
           "kind": "lake",
           "at": [
-            65,
-            80
+            24,
+            -120
           ],
           "radius": 34,
-          "level": 28.8
+          "level": 27.34
         }
       },
       {
@@ -66260,11 +66260,11 @@
         "params": {
           "kind": "lake",
           "at": [
-            -65,
-            -50
+            -96,
+            24
           ],
-          "radius": 46,
-          "level": 30
+          "radius": 36,
+          "level": 31.22
         }
       },
       {
