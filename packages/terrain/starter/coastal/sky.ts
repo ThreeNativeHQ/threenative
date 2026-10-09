@@ -2,7 +2,6 @@
 // Edit any number here to change the look. Nothing in a package decides it.
 import { Daylight } from "@threenative/core";
 import { ACESFilmicToneMapping, Color, type Object3D, Vector3 } from "three";
-import { SKY_REFLECTION_LAYER } from "./sea.js";
 
 export function coastalDaylight(follow: Object3D): Daylight {
   const daylight = new Daylight({
@@ -21,7 +20,5 @@ export function coastalDaylight(follow: Object3D): Daylight {
     // The box's corners must stay inside the camera's far plane (5000 m in the kit's example scene).
     skySize: 5000,
   });
-  // The sea's mirror shows the sky only on this layer (see `sea.ts`), so the sky joins it.
-  daylight.sky.layers.enable(SKY_REFLECTION_LAYER);
   return daylight;
 }

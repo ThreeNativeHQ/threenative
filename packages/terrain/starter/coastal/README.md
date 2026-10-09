@@ -12,7 +12,7 @@ water. It is game source: once copied, every file is yours to edit.
 | `bake.mjs` | Writes the world package and `world/water.json` from the three files above. |
 | `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the firs near the player, and the sky as the props' light. |
 | `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
-| `sea.ts` | The sea: a flat sheet of water at the level the bake wrote, drawn with the lakes' water material. |
+| `sea.ts` | The sea: the installed spectral simulation drives a lit water surface at the level the bake wrote. |
 
 Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-assets/credits.json`.
 
@@ -25,8 +25,8 @@ ocean is written to `water.json` as the one entry in `lakes`, with no `at`: the 
 ## Status
 
 The kit bakes, streams and draws its sea. The kit ships no scene: the game writes one. The sea is a
-flat sheet at the baked level, so its look (the sky's mirror, the body colour, the shore fade) is in
-`sea.ts`. It has no waves yet. The close-up view is named `boulders` in the shared captures, although
+lit surface at the baked level: the simulation's waves, the surf from the bake's shoreline, and the depth
+tint. Its colours and sea state are in `sea.ts`. The close-up view is named `boulders` in the shared captures, although
 it frames a fir.
 
 ## Steps

@@ -18,6 +18,7 @@ import {
   MeshStandardMaterial,
 } from "three";
 import {
+  attribute,
   cameraPosition,
   clamp,
   dot,
@@ -60,16 +61,20 @@ export interface ITundraWater {
 export const SKY_REFLECTION_LAYER = 3;
 /** The ribbon sits this far above its profile, clear of the carved bed. */
 const RIVER_LIFT = 0.05;
-/** Metres of water over the bed at which the lake is fully opaque; thinner water fades into the shore. */
-const SHORE_DEPTH = 0.3;
+/**
+ * Metres of water over the bed at which the lake is fully opaque. The shore is wide enough to hide the
+ * flood grid's stepped outline, which reads as a jagged edge when the fade is narrow.
+ */
+const SHORE_DEPTH = 0.8;
 /**
  * The colour the mirrored sky takes at grazing angles, in linear light. The kettles are frozen, so the tint
  * is pale ice; the mirror keeps the sky's gradient.
  */
-const SHEEN = new Color(0xd3e7f0);
-/** Deep water's own colour; the bed shows through where the lake is shallow. */
-const BODY = new Color(0x1c3d3f);
-const RIVER = new Color(0x2a4b4c);
+const SHEEN = new Color(0xeaf4f8);
+/** The ice's own colour: a pale, milky blue-white. The bed is hidden under it, as frozen water hides it. */
+const BODY = new Color(0xbcd6e0);
+/** Meltwater: a blue-grey that reads as running water rather than a dark road. */
+const RIVER = new Color(0x9fb9c4);
 
 /** The heightfield's sample grid in world metres: one node per column and row, the first at (x0, z0). */
 function gridOf(field: Heightfield): { stepX: number; stepZ: number; x0: number; z0: number } {
@@ -124,23 +129,30 @@ function floodedNodes(field: Heightfield, lake: ILake): Uint8Array {
  * The lake's surface: a level sheet over every grid cell that touches a flooded node. The sheet runs a
  * cell past the flood, so the shore is where `lakeMaterial` thins the water, not the sheet's edge.
  */
+/**
+ * The lake's surface, cut where the water level crosses the ground. Each flooded grid cell is two triangles,
+ * and each triangle keeps only the part where the ground is under the level. The shoreline therefore follows
+ * the terrain's contour, not the grid's steps.
+ */
 function lakeGeometry(field: Heightfield, lake: ILake, flooded: Uint8Array): BufferGeometry {
   const { columns, rows } = field;
   const { stepX, stepZ, x0, z0 } = gridOf(field);
   const positions: number[] = [];
   const indices: number[] = [];
-  const vertexOf = new Map<number, number>();
-  const vertex = (node: number): number => {
-    const known = vertexOf.get(node);
-    if (known !== undefined) return known;
-    const index = positions.length / 3;
-    positions.push(
-      x0 + (node % columns) * stepX,
-      lake.level,
-      z0 + Math.floor(node / columns) * stepZ,
-    );
-    vertexOf.set(node, index);
-    return index;
+  // Each vertex's distance from the kettle's centre, in radii: the sheet fades out toward its circular edge.
+  const radial: number[] = [];
+  const corner = (node: number): ICorner => {
+    const x = x0 + (node % columns) * stepX;
+    const z = z0 + Math.floor(node / columns) * stepZ;
+    return { x, z, h: field.heightAt(x, z) };
+  };
+  const emit = (polygon: readonly { readonly x: number; readonly z: number }[]): void => {
+    const first = positions.length / 3;
+    for (const point of polygon) {
+      positions.push(point.x, lake.level, point.z);
+      radial.push(Math.hypot(point.x - lake.at[0], point.z - lake.at[1]) / lake.radius);
+    }
+    for (let k = 1; k + 1 < polygon.length; k += 1) indices.push(first, first + k, first + k + 1);
   };
   for (let j = 0; j < rows - 1; j += 1)
     for (let i = 0; i < columns - 1; i += 1) {
@@ -149,16 +161,50 @@ function lakeGeometry(field: Heightfield, lake: ILake, flooded: Uint8Array): Buf
       const c = a + columns;
       const d = c + 1;
       if (!(flooded[a] || flooded[b] || flooded[c] || flooded[d])) continue;
-      const va = vertex(a);
-      const vb = vertex(b);
-      const vc = vertex(c);
-      const vd = vertex(d);
-      indices.push(va, vc, vb, vb, vc, vd);
+      for (const triangle of [
+        [a, c, b],
+        [b, c, d],
+      ]) {
+        const clipped = clipBelow(triangle.map(corner), lake.level);
+        if (clipped.length >= 3) emit(clipped);
+      }
     }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+  geometry.setAttribute("radial", new BufferAttribute(new Float32Array(radial), 1));
   geometry.setIndex(indices);
   return geometry;
+}
+
+/** A grid corner: its place on the ground and the terrain height there. */
+interface ICorner {
+  readonly x: number;
+  readonly z: number;
+  readonly h: number;
+}
+
+/**
+ * The part of a triangle where the ground is under `level`, by Sutherland–Hodgman on the height difference.
+ * The ground is linear across a triangle, so the crossing points lie on the level's contour.
+ */
+function clipBelow(
+  corners: readonly ICorner[],
+  level: number,
+): readonly { readonly x: number; readonly z: number }[] {
+  const out: { x: number; z: number }[] = [];
+  for (let k = 0; k < corners.length; k += 1) {
+    const p = corners[k];
+    const q = corners[(k + 1) % corners.length];
+    if (p === undefined || q === undefined) continue;
+    const fp = level - p.h;
+    const fq = level - q.h;
+    if (fp >= 0) out.push({ x: p.x, z: p.z });
+    if (fp * fq < 0) {
+      const t = fp / (fp - fq);
+      out.push({ x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t });
+    }
+  }
+  return out;
 }
 
 /**
@@ -173,13 +219,20 @@ function lakeMaterial(surface: WaterSurface3D): MeshBasicNodeMaterial {
   const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
   const thickness = surface.thicknessAt();
   const body = vec3(BODY.r, BODY.g, BODY.b);
-  const submerged = mix(surface.refractionAt(), body, smoothstep(float(0.4), float(3), thickness));
+  // Ice hides the bed: the body colour takes over from the refraction within a fraction of a metre.
+  const submerged = mix(
+    surface.refractionAt(),
+    body,
+    smoothstep(float(0.1), float(0.6), thickness),
+  );
   const material = new MeshBasicNodeMaterial({ transparent: true, side: DoubleSide });
   // The HDR mirror is compressed, then tinted: its horizon is neutral, the water should not be.
   const mirror = surface.reflectionAt();
   const compressed = mirror.div(mirror.add(vec3(1, 1, 1)));
   material.colorNode = mix(submerged, compressed.mul(vec3(SHEEN.r, SHEEN.g, SHEEN.b)), fresnel);
-  material.opacityNode = smoothstep(float(0), float(SHORE_DEPTH), thickness);
+  // The sheet ends at the kettle's circle, where the ground beyond is still under the level. It fades there.
+  const edge = float(1).sub(smoothstep(float(0.8), float(1), attribute("radial", "float")));
+  material.opacityNode = smoothstep(float(0), float(SHORE_DEPTH), thickness).mul(edge);
   return material;
 }
 

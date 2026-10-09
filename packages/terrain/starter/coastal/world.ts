@@ -24,7 +24,7 @@ import {
   Vector3,
 } from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
-import { type ICoastalSea, addCoastalSea } from "./sea.js";
+import { type ICoastalSea, type ICoastalSeaData, addCoastalSea } from "./sea.js";
 
 /** Where the game's asset source holds the baked `world/` folder. */
 export const COASTAL_URL = "terrain/coastal/world.json";
@@ -148,7 +148,7 @@ export async function addCoastal(
     assertCurrent();
     const seaLevel = waterFile.lakes[0]?.level;
     if (seaLevel === undefined) throw new Error("Coastal world: water.json names no sea level.");
-    const ocean = addCoastalSea(ctx, seaLevel, manifest.extent);
+    const ocean = addCoastalSea(ctx, coastalSeaData(manifest, heightmap, seaLevel));
     sea = ocean;
     const props = new Float32Array(records);
     colliders = new PropColliders(ctx, follow, manifest, props);
@@ -352,6 +352,23 @@ export class PropColliders extends Object3D implements IComputeDriven {
         this.#live.delete(i);
       }
   }
+}
+
+/**
+ * The bake's heights on the world's grid, in metres, row-major by Z then X. The sea's shoreline, surf and
+ * depth tint are read from these, so they match the terrain the player stands on.
+ */
+function coastalSeaData(
+  manifest: IWorldPackage,
+  heightmap: Uint16Array,
+  seaLevel: number,
+): ICoastalSeaData {
+  const { terrain, extent } = manifest;
+  const heights = Float32Array.from(
+    heightmap,
+    (value) => terrain.heightMin + (value / 65535) * (terrain.heightMax - terrain.heightMin),
+  );
+  return { heights, resolution: terrain.columns, size: extent.sizeX, waterLevel: seaLevel };
 }
 
 async function fetchAsset(
