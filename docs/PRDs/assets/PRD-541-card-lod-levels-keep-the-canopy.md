@@ -41,7 +41,7 @@ Layer: the cook (`packages/assets/`). The game sets nothing; the scale is the ke
 ## Acceptance Criteria
 
 - [x] AC-1: every ratio card level ships ≥ 0.95 of LOD0's card area, read back from the cooked bytes; the terminal level ships min(1, 4 × keep). proof: `foliage-lod.spec.ts` — 8 passed; red before the change: `expected 0.5162100266415837 to be greater than or equal to 0.95`
-- [ ] AC-2: Machinefall `map-walk` route GPU p95 passes the pooled walking bound (≤ 5 % of walking frames over 8.3 ms) on 3 quiet runs. proof: `TN_FRAME_BUDGET` windows, quiet desktop RTX 2080
+- [x] AC-2: Machinefall `map-walk` route GPU p95 passes the pooled walking bound (≤ 5 % of walking frames over 8.3 ms) on 3 quiet runs. proof: `TN_FRAME_BUDGET` windows, quiet desktop RTX 2080 — **passed 2026-10-09** on the clamp build (`lodfix11`), 3 quiet runs: 5/911, 3/1186, 4/988 walking GPU frames over 8.3 ms, pooled 12/3085 = 0.39 %.
 - [ ] AC-3: no visual loss against PRD-478's tip. proof: 3 fresh blind raters at or above on the 4 `map-walk` and 4 `map-views` poses, and a pop series with no candidate-only late object — 24/24 votes at or above (20 prefer, 4 ties); `world-capture` 34 frames, 2 fresh blind judges: 0 candidate pops in 33 intervals, 1 base pop (interval 00, a distant tree cluster appears). Laptop Intel GPU, 2026-10-08. Sheets: PR 463.
   - Reopened 2026-10-08: the evidence above is the build where every level cast; the design is now the clamp (`04400564a`), so the raters and pop series run again on that build.
 
@@ -67,5 +67,5 @@ Layer: the cook (`packages/assets/`). The game sets nothing; the scale is the ke
 **Status:** NOT STARTED
 **Files:** none in the engine
 
-- [ ] Re-cook and time it. proof: AC-2's quiet runs
+- [x] Re-cook and time it. proof: AC-2's quiet runs — re-cooked into `lodfix11`; timed by AC-2 (0.39 % pooled).
 - [ ] Blind raters and the pop series. proof: AC-3's sheets on the PR — rerun on the clamp build
