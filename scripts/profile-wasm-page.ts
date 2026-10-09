@@ -4,7 +4,8 @@
  * Profiles a running game page the way a Wasm-engine performance question needs: frame time from
  * requestAnimationFrame, a Chrome CPU profile grouped into engine Wasm, JavaScript and WebGPU calls
  * (with the top inclusive functions), and with `--calls` the JS->Wasm engine calls per frame by name
- * (three-native's opt-in census, `__tnCallCounts`). `--control` runs a second page, the same game on
+ * (three-native's opt-in census, `__tnCallCounts`), and with `--gpu-calls` the WebGPU API calls per
+ * frame on both pages (render passes, draws, bind groups, buffer writes). `--control` runs a second page, the same game on
  * three.js, through the same measurement, so the verdict is a ratio on one lane, never an absolute.
  *
  * It refuses a software WebGPU adapter (`--allow-software` overrides) and needs a display: run it as
@@ -24,6 +25,7 @@ interface IOptions {
   seconds: number;
   warmupMs: number;
   calls: boolean;
+  gpuCalls: boolean;
   json: boolean;
   allowSoftware: boolean;
 }
@@ -49,6 +51,7 @@ function options(argv: readonly string[]): IOptions {
     seconds,
     warmupMs,
     calls: argv.includes("--calls"),
+    gpuCalls: argv.includes("--gpu-calls"),
     json: argv.includes("--json"),
     allowSoftware: argv.includes("--allow-software"),
   };
@@ -175,6 +178,51 @@ async function calls(page: Page) {
   );
 }
 
+// Wraps the WebGPU prototypes' methods so that, while `__tnGpuCounts` is a Map, each call counts as
+// "<Interface>.<method>". Installed before the page's scripts; off, a wrapper costs one global read.
+const GPU_CENSUS = `(() => {
+  for (const name of ["GPUDevice", "GPUQueue", "GPUCommandEncoder", "GPURenderPassEncoder", "GPUComputePassEncoder", "GPURenderBundleEncoder"]) {
+    const proto = globalThis[name]?.prototype;
+    if (!proto) continue;
+    for (const key of Object.getOwnPropertyNames(proto)) {
+      const d = Object.getOwnPropertyDescriptor(proto, key);
+      if (!d || typeof d.value !== "function" || key === "constructor") continue;
+      const original = d.value;
+      Object.defineProperty(proto, key, { ...d, value: function (...args) {
+        const counts = globalThis.__tnGpuCounts;
+        if (counts) counts.set(name + "." + key, (counts.get(name + "." + key) ?? 0) + 1);
+        return original.apply(this, args);
+      } });
+    }
+  }
+})();`;
+
+async function gpuCalls(page: Page) {
+  return page.evaluate(
+    () =>
+      new Promise<{ name: string; perFrame: number }[]>((resolve) => {
+        const g = globalThis as { __tnGpuCounts?: Map<string, number> };
+        g.__tnGpuCounts = new Map();
+        let frames = 0;
+        const step = () => {
+          if (++frames < 121) {
+            requestAnimationFrame(step);
+            return;
+          }
+          const counts = g.__tnGpuCounts as Map<string, number>;
+          g.__tnGpuCounts = undefined;
+          resolve(
+            [...counts]
+              .map(([name, n]) => ({ name, perFrame: n / 120 }))
+              .sort((a, b) => b.perFrame - a.perFrame)
+              .slice(0, 25),
+          );
+        };
+        requestAnimationFrame(step);
+      }),
+  );
+}
+
 async function measure(url: string, o: IOptions) {
   const browser = await chromium.launch({
     headless: false,
@@ -186,6 +234,7 @@ async function measure(url: string, o: IOptions) {
     page.on("pageerror", (error) => errors.push(error.message));
     // tsx keeps function names with an `__name` helper that the evaluated page functions call.
     await page.addInitScript("globalThis.__name = (fn) => fn;");
+    if (o.gpuCalls) await page.addInitScript(GPU_CENSUS);
     await page.goto(url);
     const adapter = await page.evaluate(async () => {
       const gpu = (
@@ -208,8 +257,16 @@ async function measure(url: string, o: IOptions) {
     const frame = await frames(page);
     const profile = await cpu(page, o.seconds);
     const census = o.calls ? await calls(page) : undefined;
+    const gpu = o.gpuCalls ? await gpuCalls(page) : undefined;
     if (errors.length > 0) throw new Error(`TN_PROFILE_PAGE_ERROR: ${errors[0]}`);
-    return { url, adapter, frame, profile, ...(census ? { calls: census } : {}) };
+    return {
+      url,
+      adapter,
+      frame,
+      profile,
+      ...(census ? { calls: census } : {}),
+      ...(gpu ? { gpu } : {}),
+    };
   } finally {
     await browser.close();
   }
@@ -225,6 +282,12 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   );
   for (const row of r.profile.inclusive)
     console.log(`  ${String(row.percent).padStart(5)}%  ${row.name}`);
+  if (r.gpu) {
+    console.log(
+      `webgpu calls per frame: ${r.gpu.reduce((sum, row) => sum + row.perFrame, 0).toFixed(1)}`,
+    );
+    for (const row of r.gpu) console.log(`  ${row.perFrame.toFixed(1).padStart(8)}  ${row.name}`);
+  }
   if (r.calls) {
     console.log(`engine calls per frame: ${r.calls.perFrame.toFixed(1)}`);
     for (const row of r.calls.top)
