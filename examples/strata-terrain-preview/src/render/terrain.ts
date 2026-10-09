@@ -1038,6 +1038,16 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
       level: levels[index] as number,
     }));
   });
+  // River stations bucketed at their 13 m wet reach, so a vertex tests only the 3x3 cells around it.
+  // Testing every station for every vertex cost 2.3 s of the tundra's synchronous scene entry.
+  const RIVER_REACH = 13;
+  const stationCells = new Map<string, typeof rivers>();
+  for (const station of rivers) {
+    const key = `${Math.floor(station.x / RIVER_REACH)}:${Math.floor(station.z / RIVER_REACH)}`;
+    const list = stationCells.get(key) ?? [];
+    list.push(station);
+    stationCells.set(key, list);
+  }
   // Both channels share one sampler: measured concavity and the water's actual wet margin.
   const transport = data.erosion;
   if (transport) {
@@ -1079,10 +1089,14 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
         const distance = Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0));
         if (distance <= lake.reach + 3) wet = Math.max(wet, margin(lake.level));
       }
-      for (const station of rivers) {
-        if (Math.hypot(x - station.x, z - station.z) <= 13)
-          wet = Math.max(wet, margin(station.level));
-      }
+      const cellX = Math.floor(x / RIVER_REACH);
+      const cellZ = Math.floor(z / RIVER_REACH);
+      for (let dz = -1; dz <= 1; dz++)
+        for (let dx = -1; dx <= 1; dx++)
+          for (const station of stationCells.get(`${cellX + dx}:${cellZ + dz}`) ?? []) {
+            if (Math.hypot(x - station.x, z - station.z) <= RIVER_REACH)
+              wet = Math.max(wet, margin(station.level));
+          }
       pixels[index + 1] = DataUtils.toHalfFloat(wet);
       pixels[index + 2] = DataUtils.toHalfFloat(
         Math.max(
