@@ -1428,6 +1428,7 @@ aoMapIntensity: number;
 emissive: Color;
 emissiveIntensity: number;
 emissiveMap: Texture | null;
+bumpMap: Texture | null;
 bumpScale: number;
 normalMap: Texture | null;
 normalMapType: NormalMapTypes;
@@ -1501,6 +1502,8 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 vertexNode: Node | null;
+bumpScale: number;
+bumpMap: Texture | null;
 
   clone(): this;
 }

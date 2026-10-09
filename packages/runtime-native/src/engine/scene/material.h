@@ -80,6 +80,7 @@ public:
     bool flatShading = false;
     Vector2 normalScale{1, 1};
     double aoMapIntensity = 1;
+    double bumpScale = 1;  // Standard, Physical (Lambert and Phong declare it too; their programs do not read it yet)
     // Texture slots by three's property name (`map`, `normalMap`, ...); empty slots are absent.
     std::map<std::string, std::shared_ptr<const Texture>> maps;
 

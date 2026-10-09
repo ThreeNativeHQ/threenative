@@ -48,6 +48,8 @@ struct StandardMaterial {
     // when VertexVariant::clearcoat is set: three's useClearcoat, clearcoat > 0.
     float clearcoat = 0;
     float clearcoatRoughness = 0;
+    /** MeshStandardMaterial.bumpScale: the bumpMap's height scale (three's BumpMapNode). */
+    float bumpScale = 1;
     std::array<float, 2> clearcoatNormalScale{1, 1};
     // MeshPhysicalMaterial: any non-default value is a feature in use.
     float sheen = 0;
@@ -65,11 +67,11 @@ struct StandardMaterial {
  */
 /** The scalar and emissive maps MeshStandardMaterial reads besides map and normalMap, as bits of
  *  VertexVariant::pbrMaps. Each is sampled at `<name>UvTransform * vec3(uv, 1)` from texture `<name>`. */
-enum PbrMap : uint8_t { kRoughnessMap, kMetalnessMap, kAoMap, kEmissiveMap, kSpecularColorMap, kSpecularIntensityMap,
-                        kClearcoatMap, kClearcoatRoughnessMap, kClearcoatNormalMap, kPbrMapCount };
+enum PbrMap : uint8_t { kRoughnessMap, kMetalnessMap, kAoMap, kEmissiveMap, kBumpMap, kSpecularColorMap,
+                        kSpecularIntensityMap, kClearcoatMap, kClearcoatRoughnessMap, kClearcoatNormalMap, kPbrMapCount };
 inline constexpr const char* kPbrMapNames[kPbrMapCount] = {"roughnessMap", "metalnessMap", "aoMap", "emissiveMap",
-                                                           "specularColorMap", "specularIntensityMap", "clearcoatMap",
-                                                           "clearcoatRoughnessMap", "clearcoatNormalMap"};
+                                                           "bumpMap", "specularColorMap", "specularIntensityMap",
+                                                           "clearcoatMap", "clearcoatRoughnessMap", "clearcoatNormalMap"};
 /** MeshStandardMaterial's PbrMaps; the ones after it are MeshPhysicalMaterial's own. */
 inline constexpr int kStandardPbrMapCount = kSpecularColorMap;
 

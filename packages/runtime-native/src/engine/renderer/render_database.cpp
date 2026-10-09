@@ -237,6 +237,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.specularColor = {float(m.specularColor.r), float(m.specularColor.g), float(m.specularColor.b)};
     p.clearcoat = float(m.clearcoat);
     p.clearcoatRoughness = float(m.clearcoatRoughness);
+    p.bumpScale = float(m.bumpScale);
     p.clearcoatNormalScale = {float(m.clearcoatNormalScale.x), float(m.clearcoatNormalScale.y)};
     p.sheen = float(m.sheen);
     p.transmission = float(m.transmission);

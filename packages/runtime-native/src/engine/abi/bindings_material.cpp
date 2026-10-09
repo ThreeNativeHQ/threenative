@@ -210,6 +210,7 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     // The standard program's scalar and emissive maps (shader::kPbrMapNames) and the occlusion strength.
     for (int k = 0; k < shader::kStandardPbrMapCount; ++k) materialMapSlot(b, shader::kPbrMapNames[k]);
     materialNumber(b, "aoMapIntensity", &Material::aoMapIntensity);
+    materialNumber(b, "bumpScale", &Material::bumpScale);
     if (type == MaterialType::Standard) return;
     materialNumber(b, "ior", &Material::ior);
     materialNumber(b, "specularIntensity", &Material::specularIntensity);

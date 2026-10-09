@@ -116,7 +116,7 @@ inline bool sameUniforms(const Material& a, const Material& b) {
             (a.sheen == b.sheen) & (a.transmission == b.transmission) &
             (a.iridescence == b.iridescence) & (a.anisotropy == b.anisotropy) & (a.dispersion == b.dispersion) &
             (a.envMapIntensity == b.envMapIntensity) & (a.normalScale.x == b.normalScale.x) &
-            (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity)) &&
+            (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity) & (a.bumpScale == b.bumpScale)) &&
            a.positionNode == b.positionNode && a.nodes == b.nodes &&
            a.vertexColors == b.vertexColors && a.flatShading == b.flatShading &&
            a.maps == b.maps;
@@ -169,7 +169,8 @@ inline std::size_t uniformHash(const Material& m) {
                      double(m.flatShading),
                      m.normalScale.x,
                      m.normalScale.y,
-                     m.aoMapIntensity}) {
+                     m.aoMapIntensity,
+                     m.bumpScale}) {
         const auto bits = std::bit_cast<uint64_t>(v == 0 ? 0.0 : v); // +0 and -0 compare equal
         mix(bits ^ (bits >> 32));                                    // both halves matter on wasm32
     }
