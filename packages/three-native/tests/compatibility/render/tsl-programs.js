@@ -16,6 +16,7 @@ import {
   RepeatWrapping,
   SRGBColorSpace,
   Scene,
+  StorageBufferAttribute,
   Vector3,
 } from "three";
 import {
@@ -52,6 +53,7 @@ import {
   screenUV,
   sin,
   smoothstep,
+  storage,
   texture,
   texture3D,
   uint,
@@ -822,6 +824,20 @@ export const programs = {
     const slice = texture3D(volume, vec3(uv().x, uv().y, 0.25));
     const drift = texture3D(volume).sample(vec3(uv().y, uv().x, uv().x.mul(2).add(0.6)));
     target.colorNode = vec4(slice.r, slice.g, drift.b, 1);
+  },
+  async "storage-attribute"({ target }) {
+    const base = new PlaneGeometry(0.5, 0.5);
+    const geometry = new InstancedBufferGeometry();
+    geometry.setIndex(base.index);
+    geometry.setAttribute("position", base.getAttribute("position"));
+    geometry.instanceCount = 5;
+    const offsets = [-1, 0.5, 0, 0, 0, 0.5, 0, 0, 1, 0.5, 0, 0, -1, -0.5, 0, 0, 0, -0.5, 0, 0];
+    const palette = storage(new StorageBufferAttribute(new Float32Array(offsets), 4), "vec4", 5);
+    target.geometry = geometry;
+    target.material.positionNode = positionLocal.add(
+      palette.toReadOnly().element(instanceIndex).xyz,
+    );
+    target.material.colorNode = vec4(1, 0.6, 0.2, 1);
   },
   async "texture-object"({ target }) {
     const bands = equirectSky();

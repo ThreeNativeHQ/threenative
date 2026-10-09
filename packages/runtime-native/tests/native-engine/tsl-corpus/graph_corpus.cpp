@@ -153,6 +153,17 @@ int main() {
     });
     shaderGraph("hash", "color", [] { return vec4({hashOf(u()), float_(0), float_(0), float_(1)}); });
     shaderGraph("time", "color", [] { return vec4({time(), float_(0), float_(0), float_(1)}); });
+    shaderGraph("normal-local", "position",
+          [] { return vec4({add(positionLocal(), mul(attribute("normal", Type::vec(3)), u())), float_(1)}); });
+    shaderGraph("tangent-local", "position", [] {
+        return vec4({add(positionLocal(), mul(swizzle(attribute("tangent", Type::vec(4)), "xyz"), u())), float_(1)});
+    });
+    shaderGraph("position-previous", "color",
+          [] { return vec4({varying(attribute("position", Type::vec(3)), "positionPrevious"), float_(1)}); });
+    shaderGraph("storage-attribute", "position", [] {
+        return vec4({add(positionLocal(), swizzle(storage("palette", Type::vec(4)).element(instanceIndex()), "xyz")),
+                     float_(1)});
+    });
 
     compute("fn-if-store", [](Block& b, Storage positions) {
         const Var acc = b.var(float_(0));

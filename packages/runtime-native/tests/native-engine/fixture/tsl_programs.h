@@ -464,6 +464,31 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         water->material->needsUpdate();
         return "";
     }
+    if (program == "storage-attribute") {
+        if (object.cls != "Mesh") return "TN_FIXTURE_STORAGE_INVALID: requires mesh";
+        auto& mesh = *static_cast<engine::Mesh*>(object.ptr.get());
+        if (!mesh.material) return "TN_FIXTURE_STORAGE_INVALID: material";
+        namespace g = engine::shader::graph;
+        auto geometry = std::make_shared<engine::BufferGeometry>();  // an InstancedBufferGeometry
+        geometry->type = "InstancedBufferGeometry";
+        geometry->instanced = true;
+        geometry->setAttribute("position", engine::BufferAttribute::fromFloats(
+            {-0.25, 0.25, 0, 0.25, 0.25, 0, -0.25, -0.25, 0, 0.25, -0.25, 0}, 3));
+        geometry->setIndexFromArray({0, 2, 1, 2, 3, 1});
+        geometry->instanceCount = 5;
+        mesh.geometry = geometry;
+        auto palette = engine::BufferAttribute::fromFloats(
+            {-1, 0.5, 0, 0, 0, 0.5, 0, 0, 1, 0.5, 0, 0, -1, -0.5, 0, 0, 0, -0.5, 0, 0}, 4);
+        resources.push_back(palette);
+        uint64_t serial = 0;
+        const auto offset = abi::tslCall("storage:object", nullptr,
+            {abi::TslArg::objectOf("BufferAttribute", palette), abi::TslArg::of(std::string("vec4")),
+             abi::TslArg::of(std::string()), abi::TslArg::of(g::instanceIndex())}, serial);
+        mesh.material->nodes.positionNode = g::add(g::positionLocal(), g::swizzle(offset, "xyz"));
+        mesh.material->nodes.colorNode = g::vec4({g::float_(1), g::float_(0.6), g::float_(0.2), g::float_(1)});
+        mesh.material->needsUpdate();
+        return "";
+    }
     if (program == "reflector-plane") {
         if (object.cls != "Scene") return "TN_FIXTURE_REFLECTOR_INVALID: requires scene";
         auto& scene = *static_cast<engine::Scene*>(object.ptr.get());

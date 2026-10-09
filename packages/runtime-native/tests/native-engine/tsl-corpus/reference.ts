@@ -42,10 +42,12 @@ import {
   min,
   mix,
   mod,
+  normalLocal,
   normalWorld,
   normalize,
   positionGeometry,
   positionLocal,
+  positionPrevious,
   pow,
   saturation,
   select,
@@ -54,6 +56,8 @@ import {
   smoothstep,
   sqrt,
   step,
+  storage,
+  tangentLocal,
   texture,
   uint,
   uniform,
@@ -63,7 +67,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { NodeBuilder, StackNode } from "three/webgpu";
+import { NodeBuilder, StackNode, StorageBufferAttribute } from "three/webgpu";
 
 type TslNode = {
   isNode?: boolean;
@@ -158,6 +162,8 @@ const accessorBuilder = {
   isFlatShading: () => false,
   material: { side: FrontSide },
   context: {},
+  // r185's normalLocal reads normalGeometry when the geometry has a normal (Normal.js).
+  geometry: { hasAttribute: () => true },
 };
 
 /** Upstream names the native renderer binds under its own: the view matrix and the normal varying. */
@@ -291,6 +297,10 @@ albedo.name = "albedo";
 const u = uniform(0.5).setName("u");
 const tint = uniform(vec3(1, 0.5, 0.25)).setName("tint");
 const time = uniform(0).setName("time");
+// core's projection-skinned palette: storage() over a StorageBufferAttribute, read per instance.
+const palette = storage(new StorageBufferAttribute(16, 4), "vec4", 16)
+  .setName("palette")
+  .toReadOnly();
 
 /** name -> the output it writes and the expression; the C++ twin builds the same, in order. */
 export const CORPUS: [string, string, unknown][] = [
@@ -333,6 +343,10 @@ export const CORPUS: [string, string, unknown][] = [
   ["mat2", "color", vec4(mat2(vec2(1, 0), vec2(0, 1)).mul(vec2(u, time)), 0, 1)],
   ["hash", "color", vec4(hash(u), 0, 0, 1)],
   ["time", "color", vec4(frameTime, 0, 0, 1)],
+  ["normal-local", "position", vec4(positionLocal.add(normalLocal.mul(u)), 1)],
+  ["tangent-local", "position", vec4(positionLocal.add(tangentLocal.mul(u)), 1)],
+  ["position-previous", "color", vec4(positionPrevious, 1)],
+  ["storage-attribute", "position", vec4(positionLocal.add(palette.element(instanceIndex).xyz), 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

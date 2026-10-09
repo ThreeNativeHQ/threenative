@@ -78,6 +78,7 @@ class RenderDatabase {
         const Texture* texture = nullptr;
         std::shared_ptr<const void> reflector;  // an engine::Reflector
         std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples
+        std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads
     };
     std::unordered_map<const Material*, GraphSources> graphSources_;
     const GraphSources& graphSources(const Material& material);

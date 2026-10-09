@@ -181,6 +181,9 @@ struct Var {
 struct Storage {
     std::string name;
     Type elementType;
+    /** TSL storage(attribute, ...): the engine BufferAttribute the renderer binds under `name`; null
+     *  for a buffer the renderer owns (instancedArray). */
+    std::shared_ptr<const void> object;
 
     Node element(Node index) const;
 };

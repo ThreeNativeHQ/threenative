@@ -27,6 +27,7 @@ struct GraphFind {
     const Texture* texture = nullptr;
     std::shared_ptr<const void> reflector;
     std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples, by binding
+    std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads, by binding
 };
 
 GraphFind findGraphSources(const Material& material) {
@@ -44,6 +45,10 @@ GraphFind findGraphSources(const Material& material) {
             if (std::none_of(found.textures.begin(), found.textures.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
                 found.textures.emplace_back(node->name, texture);
+        } else if (node->kind == shader::graph::Kind::StorageElement && node->object) {
+            if (std::none_of(found.storages.begin(), found.storages.end(),
+                             [&](const auto& entry) { return entry.first == node->name; }))
+                found.storages.emplace_back(node->name, static_cast<const BufferAttribute*>(node->object.get()));
         } else if (node->kind == shader::graph::Kind::Reflector) {
             if (found.reflector && found.reflector != node->object)
                 throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: one material samples two reflectors");
@@ -287,7 +292,12 @@ void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& 
         if (attribute->perInstance) held = std::min(held, attribute->count());
     }
     if (!geometry.instanced) return;
-    const double count = std::min(geometry.instanceCount, held == std::numeric_limits<uint64_t>::max() ? 0.0 : double(held));
+    // three draws geometry.instanceCount instances. Per-instance attributes cap it (WebGPU refuses a
+    // draw past a vertex buffer); a geometry with none (core's projection-skinned reads a storage
+    // palette by instanceIndex) draws instanceCount as set. ponytail: Infinity with none draws once.
+    double count = geometry.instanceCount;
+    if (held != std::numeric_limits<uint64_t>::max()) count = std::min(count, double(held));
+    else if (!std::isfinite(count)) count = 1;
     d.instanceCount = static_cast<uint32_t>(std::min(count, double(std::numeric_limits<uint32_t>::max())));
 }
 
@@ -471,7 +481,7 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
     if (cached.roots != roots || cached.version != material.version()) {
         GraphFind found = findGraphSources(material);
         cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
-                              std::move(found.textures)};
+                              std::move(found.textures), std::move(found.storages)};
     }
     return cached;
 }
@@ -1103,6 +1113,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
         item.pmremMap = sources.texture;
         item.reflector = sources.reflector.get();
         item.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
+        item.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
         if (item.pmremMap) {
             Matrix4 rotation;
             if (world && world->environment && source.maps.find("envMap") == source.maps.end())

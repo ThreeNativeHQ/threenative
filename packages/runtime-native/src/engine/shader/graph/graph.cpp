@@ -579,6 +579,7 @@ Node Storage::element(Node index) const {
     data->kind = Kind::StorageElement;
     data->name = name;
     data->type = elementType;
+    data->object = object;
     data->args = {std::move(index)};
     return data;
 }

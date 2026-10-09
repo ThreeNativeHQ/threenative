@@ -1547,6 +1547,25 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     sweepTextures();    // ...and of textures that no longer exist
     diagnostics_.clear();
     frameTime_ = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
+    // storage(attribute) reads: each attribute's data is the storage buffer its name binds, synced
+    // like a vertex buffer. A new or regrown buffer rebinds the programs' groups before any draw.
+    bool storagesMoved = false;
+    for (const DrawItem& item : items) {
+        if (!item.nodeStorages) continue;
+        for (const auto& [name, attribute] : *item.nodeStorages) {
+            const Handle buffer = geometry_.sync(*attribute->store, WGPUBufferUsage_Storage);
+            const std::pair<Handle, uint64_t> bound{buffer, attribute->store->byteLength()};
+            if (const auto found = externalStorage_.find(name); found != externalStorage_.end()) {
+                const Handle& was = found->second.first;
+                if (was.type == buffer.type && was.context == buffer.context && was.index == buffer.index &&
+                    was.generation == buffer.generation && found->second.second == bound.second)
+                    continue;
+            }
+            setStorage(name, bound.first, bound.second);
+            storagesMoved = true;
+        }
+    }
+    if (storagesMoved && uniformCapacity_ != 0) rebuildGroups();
 
     WGPUCommandEncoderDescriptor encoderDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);

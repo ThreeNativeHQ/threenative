@@ -36,6 +36,8 @@ Type type(const std::string& name) {
     if (name == "vec2") return Type::vec(2);
     if (name == "vec3") return Type::vec(3);
     if (name == "vec4") return Type::vec(4);
+    if (name == "mat3") return Type::mat(3, 3);
+    if (name == "mat4") return Type::mat(4, 4);
     throw std::runtime_error("unsupported TSL type: " + name);
 }
 
@@ -74,6 +76,19 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         for (auto& [label, node] : tslConstants())
             if (label == name.substr(9)) return node;
         return {};
+    }
+    // TSL storage(attribute, type, count).element(index): the attribute's own data, bound under the
+    // label setName gave it or, unnamed, one derived from the attribute (StorageBufferNode r185).
+    if (!method && name == "storage:object") {
+        arity(4);
+        if (args[0].kind != TslArg::Kind::Object || args[0].cls.find("BufferAttribute") == std::string::npos ||
+            !args[0].object)
+            throw std::runtime_error("storage needs an engine BufferAttribute");
+        std::string label = text(args[2]);
+        if (label.empty()) label = "nodeStorage" + std::to_string(reinterpret_cast<uintptr_t>(args[0].object.get()));
+        g::Storage buffer = g::storage(label, type(text(args[1])));
+        buffer.object = args[0].object;
+        return buffer.element(arg(3));
     }
     if (!method && name == "storage:element") {  // instancedArray(n, type).setName(name).element(index)
         arity(3);
@@ -360,6 +375,22 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return g::attribute("position", Type::vec(3));
     }
+    // r185's local accessors as they read: normalLocal = normalGeometry.toVar('normalLocal'),
+    // tangentLocal = tangentGeometry.xyz.toVar('tangentLocal') and positionPrevious =
+    // positionGeometry.toVarying('positionPrevious'). Assigning one (core's projection-skinned
+    // writes them in a positionNode) is refused by name: the standard program does not read it back.
+    if (name == "normalLocal") {
+        arity(0);
+        return g::attribute("normal", Type::vec(3));
+    }
+    if (name == "tangentLocal") {
+        arity(0);
+        return g::swizzle(g::attribute("tangent", Type::vec(4)), "xyz");
+    }
+    if (name == "positionPrevious") {
+        arity(0);
+        return g::varying(g::attribute("position", Type::vec(3)), "positionPrevious");
+    }
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix):
     // normalize((vec4(normalView, 0) * viewMatrix).xyz). In a material slot the material supplies
     // normalView (standard.cpp nodeValue: back-face flip, normalNode, normal map).
@@ -599,7 +630,7 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
     uint64_t serial = 0;
     for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar",
                              "positionGeometry", "normalWorld", "normalView", "positionViewDirection", "screenCoordinate",
-                             "normalGeometry", "tangentGeometry"})
+                             "normalGeometry", "tangentGeometry", "normalLocal", "tangentLocal", "positionPrevious"})
         constants.emplace_back(name, tslCall(name, nullptr, {}, serial));
     // viewportLinearDepth = linearDepth(viewportDepthTexture()).
     constants.emplace_back("viewportLinearDepth",
@@ -680,7 +711,10 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         auto& statements = open().back().statements;
         const auto target = self();
         if (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement)
-            throw std::runtime_error(name + " requires a variable or storage element");
+            throw std::runtime_error(target->kind == g::Kind::Attribute || target->kind == g::Kind::Varying
+                ? name + " requires a variable or storage element: " + target->name +
+                      " is a read here (normalLocal, tangentLocal and positionPrevious are not written back)"
+                : name + " requires a variable or storage element");
         const g::Node value = input(args[0]);
         g::Block block;
         block.assign(target, value);

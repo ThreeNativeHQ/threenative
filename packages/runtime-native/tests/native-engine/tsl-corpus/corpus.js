@@ -29,17 +29,21 @@ const {
   min,
   mix,
   mod,
+  normalLocal,
   normalWorld,
   normalize,
   positionGeometry,
   positionLocal,
+  positionPrevious,
   pow,
   saturation,
   select,
   sin,
   smoothstep,
+  storage,
   sqrt,
   step,
+  tangentLocal,
   texture,
   time: frameTime,
   uint,
@@ -55,6 +59,8 @@ albedo.name = "albedo";
 const u = uniform(0.5).setName("u");
 const tint = uniform(vec3(1, 0.5, 0.25)).setName("tint");
 const time = uniform(0).setName("time");
+// storage() over an engine BufferAttribute: the runner installs the classes (V8) or passes them (Wasm).
+const palette = storage(new BufferAttribute(new Float32Array(64), 4), "vec4", 16).setName("palette").toReadOnly();
 
 /** name -> the output it writes and the expression; the C++ twin builds the same, in order. */
 const CORPUS = [
@@ -97,6 +103,10 @@ const CORPUS = [
   ["mat2", "color", vec4(mat2(vec2(1, 0), vec2(0, 1)).mul(vec2(u, time)), 0, 1)],
   ["hash", "color", vec4(hash(u), 0, 0, 1)],
   ["time", "color", vec4(frameTime, 0, 0, 1)],
+  ["normal-local", "position", vec4(positionLocal.add(normalLocal.mul(u)), 1)],
+  ["tangent-local", "position", vec4(positionLocal.add(tangentLocal.mul(u)), 1)],
+  ["position-previous", "color", vec4(positionPrevious, 1)],
+  ["storage-attribute", "position", vec4(positionLocal.add(palette.element(instanceIndex).xyz), 1)],
 ];
 
 const positions = instancedArray(16, "vec4").setName("positions");

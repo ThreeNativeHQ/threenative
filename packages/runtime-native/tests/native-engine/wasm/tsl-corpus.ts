@@ -8,9 +8,11 @@ import path from "node:path";
 import { runInNewContext } from "node:vm";
 
 import {
+  type IRegistryDump,
   TSL_NODE,
   type TnAbiModule,
   createWasmRuntime,
+  defineBrowserClasses,
 } from "../../../../three-native/src/browser-backend.js";
 import { defineTsl } from "../../../../three-native/src/browser-tsl.js";
 
@@ -34,13 +36,21 @@ const source = readFileSync(
   path.join(import.meta.dirname, "..", "tsl-corpus", "corpus.js"),
   "utf8",
 );
-const rows = runInNewContext(source, { tsl: defineTsl(runtime.tsl).exports }) as [
+// storage() reads an engine BufferAttribute, as the V8 runner's installed classes give it.
+const registry = JSON.parse(
+  readFileSync(
+    path.join(import.meta.dirname, "../../../../three-native/api/native-registry.json"),
+    "utf8",
+  ),
+) as IRegistryDump;
+const { BufferAttribute } = defineBrowserClasses(registry, runtime).classes;
+const rows = runInNewContext(source, { tsl: defineTsl(runtime.tsl).exports, BufferAttribute }) as [
   string,
   string,
   Record<symbol, number>,
 ][];
-if (!Array.isArray(rows) || rows.length !== 39)
-  throw new Error("TN_TSL_CORPUS: corpus must return 39 graphs");
+if (!Array.isArray(rows) || rows.length !== 43)
+  throw new Error("TN_TSL_CORPUS: corpus must return 43 graphs");
 const { _tnw_tsl_dump: dump } = abi as unknown as {
   _tnw_tsl_dump(context: number, node: bigint, stage: number): number;
 };

@@ -132,6 +132,9 @@ const CONSTANTS = [
   "screenCoordinate",
   "normalGeometry",
   "tangentGeometry",
+  "normalLocal",
+  "tangentLocal",
+  "positionPrevious",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
@@ -205,12 +208,14 @@ export function isTslNode(value: unknown): value is ITslNode {
 }
 
 /**
- * Arguments that cross as the engine object itself: pmremTexture prefilters its texture and texture3D
- * samples it (not a map the material names), and reflector takes its target and virtual camera.
+ * Arguments that cross as the engine object itself: pmremTexture prefilters its texture, texture3D
+ * samples it and storage reads an attribute's buffer (not a map the material names), and reflector
+ * takes its target and virtual camera.
  */
 function takesEngineObject(name: string, index: number): boolean {
   return (
-    (index === 0 && (name === "pmremTexture" || name === "texture3D")) ||
+    (index === 0 &&
+      (name === "pmremTexture" || name === "texture3D" || name === "storage:object")) ||
     (index < 2 && name === "reflector")
   );
 }
@@ -381,6 +386,22 @@ export function defineTsl(
         return buffer;
       },
       element: (index: unknown) => wrap(call("storage:element", null, [label, type, index])),
+    };
+    return buffer;
+  };
+  // storage(attribute, type, count): a storage buffer over an engine BufferAttribute's data; setName
+  // labels it, element(index) reads one element (StorageBufferNode r185).
+  exports.storage = (attribute: unknown, type: unknown) => {
+    let label = "";
+    const buffer = {
+      setName(name: unknown) {
+        label = String(name);
+        return buffer;
+      },
+      toReadOnly: () => buffer,
+      toReadWrite: () => buffer,
+      element: (index: unknown) =>
+        wrap(call("storage:object", null, [attribute, type, label, index])),
     };
     return buffer;
   };
