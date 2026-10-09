@@ -336,7 +336,12 @@ export class ResolutionScaler {
     // game that hitches more often than once every `cooldownWindows + upWindows` windows: one
     // 400 ms frame every third window pinned a scaler at 0.44 through seventeen minutes of
     // otherwise perfect 60 fps, which is a forest streaming its next hillside.
-    if (this.#stalled(window)) return undefined;
+    //
+    // Unless the stalls are not what makes the frame slow: a weak GPU whose shadow redraws stall
+    // every window and whose ordinary frame still misses the budget is judged on that frame,
+    // downward only (see `#slowUnderStalls`).
+    const stalled = this.#stalled(window);
+    if (stalled && !this.#slowUnderStalls(window)) return undefined;
     const gpuMs = this.#freshGpuMs(window);
     this.#noteGpuObservation(window, gpuMs);
     if (this.#insensitiveHold > 0) this.#insensitiveHold -= 1;
@@ -389,6 +394,8 @@ export class ResolutionScaler {
       return stepped;
     }
     this.#atFloor = false;
+    // A stalled window is never grounds to climb.
+    if (stalled) return undefined;
     if (this.#scaleSource === "auto-pinned") return undefined;
     const nextScale = RESOLUTION_SCALER.rungs[Math.max(0, this.#index - 1)] ?? 1;
     const canClimb =
@@ -530,6 +537,20 @@ export class ResolutionScaler {
    * window: jitter from the compositor, a GC, an input burst, an audio callback. None of that is
    * bought back with pixels, and spending a rung on it is how the picture walks to the floor.
    */
+  /**
+   * Whether a stalled window's ordinary frame misses the budget on its own: the median present is
+   * over it and fresh GPU timing alone exceeds it, so setting the stalls aside still leaves a slow
+   * frame that fewer pixels can speed up. A game whose median meets the target keeps the stall
+   * deferral; a weak GPU does not stay at full resolution forever because its hitches recur. On an
+   * Intel Iris Xe, Machinefall's shadow redraws (120-350 ms) put presented p99 at 15-63x p50 in
+   * all but one judged window, p50 sat at 9-12 ms against 8.33, and the scale held 1.0 for the
+   * whole walk (PRD-549).
+   */
+  #slowUnderStalls(window: IScalerWindow): boolean {
+    const gpuMs = this.#freshGpuMs(window);
+    return window.presented.p50 > this.budgetMs && gpuMs !== undefined && gpuMs > this.budgetMs;
+  }
+
   #overBudget(window: IScalerWindow): boolean {
     return window.presented.p50 > this.budgetMs || window.presented.p95 > this.tailMs;
   }
