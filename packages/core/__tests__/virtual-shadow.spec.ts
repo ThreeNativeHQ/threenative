@@ -2887,3 +2887,200 @@ describe("VirtualShadowNode adaptive caster gate", () => {
     expect(adapted.smallHidden).toBe(false);
   });
 });
+
+/**
+ * PRD-572: casters sort themselves into static and moving. The node measures each layer-0 caster
+ * every frame, so a game that never calls `trackCaster` still gets a shadow that follows a mover.
+ */
+describe("VirtualShadowNode automatic movers", () => {
+  const OPTIONS = { clipExtents: [8, 32], mapSize: 64, staticAfterFrames: 3 };
+
+  function scene20(): ReturnType<typeof world> & { node: VirtualShadowNode; mesh: Mesh } {
+    const built = world();
+    built.camera.position.set(0, 5, 0);
+    const node = setupNode(built.light, OPTIONS);
+    // Beyond the fine level's extent, inside the coarse one: a redraw that names the right
+    // region asks one level, and a blanket invalidation asks both.
+    const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    mesh.castShadow = true;
+    mesh.position.set(20, 0.5, 0);
+    built.scene.add(mesh);
+    return { ...built, mesh, node };
+  }
+
+  /** What the renderer does before a frame: compose the world matrices, then run the node. */
+  function step(built: ReturnType<typeof scene20>): void {
+    built.scene.updateMatrixWorld(true);
+    built.node.updateBefore(frameFor(built.camera));
+  }
+
+  function steady(built: ReturnType<typeof scene20>): void {
+    step(built);
+    for (let i = 0; i < 4; i += 1) step(built);
+    expect(built.node.stats).toMatchObject({ autoMovers: 0, autoTransitions: 0, rendered: 0 });
+  }
+
+  it("should make a moved caster a mover in that frame and redraw only where it stood", () => {
+    const built = scene20();
+    steady(built);
+    built.mesh.position.x = 21;
+    step(built);
+    expect(built.node.stats).toMatchObject({
+      autoMovers: 1,
+      autoTransitions: 1,
+      invalidated: 1,
+      moverRenders: 2,
+      movers: 0,
+      rendered: 1,
+    });
+    // Only the coarse level covers x = 20; the fine one keeps its map.
+    expect(built.node.stats.perLevel.map((level) => level.invalidated)).toEqual([0, 1]);
+    expect(built.mesh.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(true);
+    expect(built.mesh.castShadow).toBe(true);
+  });
+
+  it("should keep a mover out of the cached level render while it moves", () => {
+    const built = scene20();
+    steady(built);
+    const seen: boolean[] = [];
+    const coarse = built.node.levelNodes[1] as unknown as { updateShadow(frame: NodeFrame): void };
+    vi.spyOn(coarse, "updateShadow").mockImplementation(() => seen.push(built.mesh.castShadow));
+    built.mesh.position.x = 21;
+    step(built);
+    expect(seen).toEqual([false]);
+  });
+
+  it("should send a quiet mover back to static with one redraw of where it stands", () => {
+    const built = scene20();
+    steady(built);
+    built.mesh.position.x = 21;
+    step(built);
+    const quiet: number[] = [];
+    for (let frame = 0; frame < 3; frame += 1) {
+      step(built);
+      quiet.push(built.node.stats.invalidated);
+    }
+    expect(built.node.stats).toMatchObject({ autoMovers: 0, autoTransitions: 2 });
+    // The return asks the one level around x = 21 once, on the third quiet frame.
+    expect(quiet).toEqual([0, 0, 1]);
+    expect(built.node.stats.perLevel.map((level) => level.invalidated)).toEqual([0, 1]);
+    // Its mover draw ended only once that redraw had taken it.
+    expect(built.mesh.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(false);
+    step(built);
+    expect(built.node.stats).toMatchObject({ invalidated: 0, moverRenders: 0, rendered: 0 });
+  });
+
+  it("should draw a returning caster into the cached level that is asked for it", () => {
+    const built = scene20();
+    steady(built);
+    built.mesh.position.x = 21;
+    step(built);
+    step(built);
+    step(built);
+    const seen: boolean[] = [];
+    const coarse = built.node.levelNodes[1] as unknown as { updateShadow(frame: NodeFrame): void };
+    vi.spyOn(coarse, "updateShadow").mockImplementation(() => seen.push(built.mesh.castShadow));
+    step(built);
+    expect(seen).toEqual([true]);
+  });
+
+  it("should make a caster that moves again while returning a mover in that frame", () => {
+    const built = scene20();
+    steady(built);
+    built.mesh.position.x = 21;
+    step(built);
+    for (let frame = 0; frame < 3; frame += 1) step(built);
+    built.mesh.position.x = 22;
+    step(built);
+    expect(built.node.stats).toMatchObject({ autoMovers: 1, autoTransitions: 3 });
+  });
+
+  it("should leave a pinned caster, a tracked caster and a non-casting one alone", () => {
+    const built = scene20();
+    const pinned = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    pinned.castShadow = true;
+    pinned.position.set(-20, 0.5, 0);
+    const tracked = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    tracked.castShadow = true;
+    tracked.position.set(0, 0.5, 20);
+    const quiet = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    quiet.castShadow = false;
+    quiet.position.set(0, 0.5, -20);
+    built.scene.add(pinned, tracked, quiet);
+    built.node.pinStatic(pinned);
+    built.node.trackCaster(tracked);
+    steady(built);
+    expect(built.node.stats).toMatchObject({ movers: 1 });
+    for (const mesh of [pinned, tracked, quiet]) mesh.position.y += 1;
+    step(built);
+    expect(built.node.stats).toMatchObject({ autoMovers: 0, autoTransitions: 0, movers: 1 });
+    expect(pinned.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(false);
+    expect(quiet.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(false);
+  });
+
+  it("should treat a deforming mesh as moving every frame it is visible", () => {
+    const built = scene20();
+    steady(built);
+    built.mesh.morphTargetInfluences = [0.5];
+    for (let frame = 0; frame < 6; frame += 1) step(built);
+    expect(built.node.stats).toMatchObject({ autoMovers: 1, autoTransitions: 1 });
+    built.mesh.morphTargetInfluences = [0];
+    for (let frame = 0; frame < 3; frame += 1) step(built);
+    expect(built.node.stats).toMatchObject({ autoMovers: 0, autoTransitions: 2 });
+  });
+
+  it("should read an instance matrix change as movement and ask every level", () => {
+    const built = scene20();
+    const crowd = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(), 2);
+    crowd.castShadow = true;
+    built.scene.add(crowd);
+    steady(built);
+    crowd.setMatrixAt(0, new Matrix4().makeTranslation(1, 0, 0));
+    crowd.instanceMatrix.needsUpdate = true;
+    step(built);
+    expect(built.node.stats).toMatchObject({ autoMovers: 1, invalidated: 2 });
+  });
+
+  it("should not call an arriving caster a mover", () => {
+    const built = scene20();
+    steady(built);
+    const arrival = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    arrival.castShadow = true;
+    arrival.position.set(20, 0.5, 5);
+    built.scene.add(arrival);
+    step(built);
+    expect(built.node.stats).toMatchObject({ autoMovers: 0, autoTransitions: 0 });
+  });
+
+  it("should ask only the levels around a tracked caster, not all of them", () => {
+    const built = scene20();
+    steady(built);
+    built.node.trackCaster(built.mesh);
+    step(built);
+    expect(built.node.stats.perLevel.map((level) => level.invalidated)).toEqual([0, 1]);
+    built.node.untrackCaster(built.mesh);
+    step(built);
+    expect(built.node.stats.perLevel.map((level) => level.invalidated)).toEqual([0, 1]);
+  });
+
+  it("should reject a staticAfterFrames that is not a positive integer", () => {
+    const { light } = world();
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      expect(() => new VirtualShadowNode(light, { staticAfterFrames: bad })).toThrow(
+        /TN_VIRTUAL_SHADOW_INVALID: staticAfterFrames/,
+      );
+    }
+  });
+
+  it("should carry the automatic counters through the marker", () => {
+    const built = scene20();
+    steady(built);
+    built.mesh.position.x = 21;
+    step(built);
+    const parsed = readVirtualShadowMarker(
+      `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify(built.node.stats)}`,
+    );
+    expect(parsed).toMatchObject({ autoMovers: 1, autoTransitions: 1 });
+    expect(built.node.stats.autoScanMs).toBeGreaterThanOrEqual(0);
+  });
+});
