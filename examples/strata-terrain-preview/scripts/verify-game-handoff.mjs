@@ -127,7 +127,8 @@ export async function verifyGameHandoff({ repo, temporary, polished, withPage })
   // The scaffold's own game.ts/state.ts are the game's source; the handoff replaces them
   // deliberately, which is this proof's one explicit overwrite, so it removes them first.
   for (const replaced of ["src/game.ts", "src/state.ts"]) rmSync(join(game, replaced));
-  for (const old of ["src/scenes/Play.ts", "src/scenes/Boot.ts"]) rmSync(join(game, old));
+  // The minimal template ships only Play.ts; Boot.ts was removed from it (f2d5ad732).
+  rmSync(join(game, "src/scenes/Play.ts"));
   for (const old of readdirSync(join(game, "playtests"))) rmSync(join(game, "playtests", old));
   writeHandoff(game, files);
   // A second handoff to the same destination is a conflict and leaves every byte as it was.

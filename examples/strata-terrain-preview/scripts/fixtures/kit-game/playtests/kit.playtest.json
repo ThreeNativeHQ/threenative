@@ -104,6 +104,18 @@
       },
       {
         "id": "GameState",
+        "path": "waterLakes",
+        "gte": 1,
+        "allowTrivial": "The lake is drawn when addForest resolves, before the first scenario step; the drawn count is the claim, and the lake view and the judge read the water itself."
+      },
+      {
+        "id": "GameState",
+        "path": "waterRivers",
+        "gte": 1,
+        "allowTrivial": "The river is drawn when addForest resolves, before the first scenario step; the drawn count is the claim, and the lake view and the judge read the water itself."
+      },
+      {
+        "id": "GameState",
         "path": "groundError",
         "gte": 0,
         "lte": 0.15,

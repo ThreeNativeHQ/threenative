@@ -4477,6 +4477,56 @@
       {
         "enabled": true,
         "opacity": 1,
+        "id": "lake-bed",
+        "type": "flatten",
+        "params": {
+          "at": [-70, 25],
+          "radius": 105,
+          "height": 11.4,
+          "falloff": 0.1
+        },
+        "mask": {
+          "type": "height",
+          "min": 12.8,
+          "max": 13.3,
+          "fade": 0.1
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "river",
+        "type": "river",
+        "params": {
+          "followTerrain": true,
+          "points": [
+            [-120, null, -220],
+            [-110, null, -175],
+            [-120, null, -130],
+            [-100, null, -95],
+            [-70, null, -60]
+          ],
+          "width": 7,
+          "depth": 1.8,
+          "shoulder": 10,
+          "enforceDownhill": true
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "lake",
+        "type": "water",
+        "params": {
+          "kind": "lake",
+          "at": [-70, 25],
+          "radius": 105,
+          "level": 13.3
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
         "id": "firs",
         "type": "scatter",
         "params": {

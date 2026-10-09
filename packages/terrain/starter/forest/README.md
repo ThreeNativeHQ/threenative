@@ -8,8 +8,9 @@ stands, young firs and boulder fields. It is game source: once copied, every fil
 | `recipe.json` | The terrain and the scatter: seed, size, erosion, `count`, `minDistance`, slope limits, `scale`, masks. |
 | `assets.json` | Each prop's models, LOD distance, draw distance and bounds. |
 | `surface.json` | The ground: texture layers, tiles, tints, far tiles and blend thresholds. |
-| `bake.mjs` | Writes the world package from the three files above. |
+| `bake.mjs` | Writes the world package and `world/water.json` (the lake and river) from the three files above. |
 | `world.ts` | `addForest(ctx, follow)`: terrain, props, shadows, collision; `COLLIDERS` per prop. |
+| `water.ts` | `addForestWater(ctx, water, field)`: the lake's surface (`WaterSurface3D`) and the river's ribbon, from `water.json`. |
 | `sky.ts` | `forestDaylight(follow)`: sun, sky, fill, haze, exposure and tone curve. |
 
 Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-assets/credits.json`.
@@ -39,5 +40,7 @@ world before it returns. Set the camera's `far` to at least the sky size in `sky
 - **A prop's collider:** edit its row in `COLLIDERS` in `world.ts` (`capsule`, `sphere` or `null`).
 - **A prop's model:** point `assets.json` at another glTF with its bounds, then re-bake.
 - **The layout:** edit `recipe.json` (or open it in the terrain editor), then re-bake.
+- **The water:** the recipe's `lake-bed`, `river` and `lake` layers set where it lies and how deep;
+  `water.ts` sets how it looks.
 - **The look:** `surface.json` for the ground, `sky.ts` for the light, `PROP_SKY_LIGHT` in
   `world.ts` for how strongly the sky lights the props.

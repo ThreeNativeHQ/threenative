@@ -94,16 +94,59 @@ function readProps(world) {
 
 function chooseStand(game, world) {
   const props = readProps(world);
-  const firs = props.filter((prop) => prop.asset === "fir");
-  assert(firs.length > 0, "the bake placed no fir to stand next to");
+  // A baseline run frames the cameras of the run it is compared with (KIT_STAND, JSON).
+  if (process.env.KIT_STAND) return standFrom(JSON.parse(process.env.KIT_STAND), props);
+  // The lake floods the low ground inside its radius, so the stand, its spawn and the edge camera stay
+  // out of that radius plus a margin.
+  const lakes = JSON.parse(readFileSync(join(world, "water.json"), "utf8")).lakes;
+  const dry = (x, z, margin) =>
+    lakes.every((lake) => Math.hypot(x - lake.at[0], z - lake.at[1]) >= lake.radius + margin);
+  const firs = props.filter((prop) => prop.asset === "fir" && dry(prop.x, prop.z, 15));
+  assert(firs.length > 0, "the bake placed no dry fir to stand next to");
   const layers = JSON.parse(readFileSync(join(game, "src/terrain/forest/recipe.json"), "utf8"))
     .recipe.layers;
   const pad = layers.find((layer) => layer.id === "building-pad")?.params.at ?? [0, 0];
   const fir = nearestTo(firs, pad);
   const others = props.filter((prop) => prop !== fir);
   const { spawn, clearance } = chooseSpawn(fir, others);
-  const { edge, edgeClear } = chooseEdge(fir, props);
+  const { edge, edgeClear } = chooseEdge(fir, props, dry);
   return { fir, spawn, clearance, edge, edgeClear };
+}
+
+/**
+ * The before-state kit: the recipe as it stood before the lake and river were restored, so a baseline
+ * renders the same ground without water. Only the game's own copy changes.
+ */
+function stripWaterLayers(recipePath) {
+  const json = JSON.parse(readFileSync(recipePath, "utf8"));
+  json.recipe.layers = json.recipe.layers.filter(
+    (layer) => !["lake-bed", "river", "lake"].includes(layer.id),
+  );
+  writeFileSync(recipePath, `${JSON.stringify(json, null, 2)}\n`);
+}
+
+/** A baseline has no water to count, so its playtest drops the water rows. */
+function stripWaterRows(playtestPath) {
+  const json = JSON.parse(readFileSync(playtestPath, "utf8"));
+  json.assert.resources = json.assert.resources.filter(
+    (row) => !["waterLakes", "waterRivers"].includes(row.path),
+  );
+  writeFileSync(playtestPath, `${JSON.stringify(json, null, 2)}\n`);
+}
+
+/**
+ * A stand given by hand. The fir keeps the given point and takes the height of the placement nearest
+ * it, so the cameras keep their eye heights.
+ */
+function standFrom(given, props) {
+  const nearest = nearestTo(props, [given.fir.x, given.fir.z]);
+  return {
+    fir: { x: given.fir.x, y: nearest.y, z: given.fir.z },
+    spawn: given.spawn,
+    clearance: 0,
+    edge: given.edge,
+    edgeClear: 0,
+  };
 }
 
 /** The prop nearest `point` in the ground plane; the first one wins a tie. */
@@ -138,10 +181,10 @@ function chooseSpawn(fir, others) {
  * The edge camera stands back from the stand in the clearest spot 25-40 m out, so it frames the
  * trees instead of sitting inside a crown (crowns reach ~4 m; stands are 4 m apart).
  */
-function chooseEdge(fir, props) {
+function chooseEdge(fir, props, dry) {
   let edge = { x: fir.x + 30, z: fir.z };
   let edgeClear = -1;
-  for (const candidate of edgeCandidates(fir)) {
+  for (const candidate of edgeCandidates(fir, dry)) {
     const clear = Math.min(
       ...props.map((prop) => Math.hypot(prop.x - candidate.x, prop.z - candidate.z)),
     );
@@ -158,7 +201,7 @@ function chooseEdge(fir, props) {
  * kept to the sun's side of the stand (the kit's sun azimuth is atan2(0.56, 0.55)) so the view is
  * front-lit like a beauty shot rather than always looking into the light, and inside 250 m.
  */
-function edgeCandidates(fir) {
+function edgeCandidates(fir, dry) {
   const sunAzimuth = Math.atan2(0.56, 0.55);
   const candidates = [];
   for (let step = 0; step < 24; step += 1)
@@ -168,6 +211,7 @@ function edgeCandidates(fir) {
       if (off > Math.PI / 3) continue;
       const candidate = { x: fir.x + reach * Math.cos(angle), z: fir.z + reach * Math.sin(angle) };
       if (Math.abs(candidate.x) > 250 || Math.abs(candidate.z) > 250) continue;
+      if (!dry(candidate.x, candidate.z, 5)) continue;
       candidates.push(candidate);
     }
   return candidates;
@@ -214,6 +258,9 @@ async function main() {
       recursive: true,
     },
   );
+  // A baseline run (KIT_BEFORE=1) bakes the kit as it stood before the lake and river were restored.
+  if (process.env.KIT_BEFORE === "1")
+    stripWaterLayers(join(game, "src/terrain/forest/recipe.json"));
   const world = join(game, "assets/terrain/forest");
   say(
     `bake: ${run("node", ["src/terrain/forest/bake.mjs", "--out", "assets/terrain/forest"], { cwd: game }).trim()}`,
@@ -245,6 +292,7 @@ export const stand = {
   for (const name of readdirSync(join(game, "playtests"))) rmSync(join(game, "playtests", name));
   for (const name of ["game.ts", "state.ts"]) cpSync(join(FIXTURES, name), join(game, "src", name));
   cpSync(join(FIXTURES, "playtests/kit.playtest.json"), join(game, "playtests/kit.playtest.json"));
+  if (process.env.KIT_BEFORE === "1") stripWaterRows(join(game, "playtests/kit.playtest.json"));
   mkdirSync(join(game, "src/scenes"), { recursive: true });
   cpSync(join(FIXTURES, "Forest.ts"), join(game, "src/scenes/Forest.ts"));
   cpSync(
@@ -341,6 +389,8 @@ export const stand = {
     adapter: `${capture.adapter.vendor}/${capture.adapter.architecture}`,
     pass: true,
     propColliders: value("propColliders"),
+    waterLakes: value("waterLakes"),
+    waterRivers: value("waterRivers"),
     views: {
       edge: {
         frameP95: perView("viewFrameP95").edge,

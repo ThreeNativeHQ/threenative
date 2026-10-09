@@ -17,6 +17,9 @@ export type GameState = {
   driveMetres: number;
   /** One collider per placed fir and boulder, from `addForest`'s result. */
   propColliders: number;
+  /** The lake and the river the bake wrote, as `addForest` drew them. */
+  waterLakes: number;
+  waterRivers: number;
   /** Instances the renderer is drawing in the fir batches. */
   firInstancesDrawn: number;
   /** The walk finished. */
@@ -43,6 +46,8 @@ export const initialState: GameState = {
   groundError: -1,
   propColliders: -1,
   view: "ground",
+  waterLakes: -1,
+  waterRivers: -1,
   viewFrameP95: { edge: -1, ground: -1, lake: -1, overview: -1 },
   viewGpuP50: { edge: -1, ground: -1, lake: -1, overview: -1 },
   viewGpuP95: { edge: -1, ground: -1, lake: -1, overview: -1 },

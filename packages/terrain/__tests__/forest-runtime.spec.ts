@@ -36,6 +36,20 @@ const manifest: IWorldPackage = {
     heightMax: 10,
   },
 };
+const water = {
+  lakes: [{ id: "lake", at: [0, 0], radius: 200, level: 1.5 }],
+  rivers: [
+    {
+      id: "river",
+      width: 6,
+      points: [
+        [-100, 0.5, 0],
+        [0, 0.5, 0],
+        [100, 0.5, 0],
+      ],
+    },
+  ],
+};
 const records = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 130, 0, 0, 0, 0, 0, 1, 1]);
 const heightmap = new Uint16Array([0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000]);
 let requests: string[];
@@ -93,6 +107,7 @@ beforeEach(() => {
     if (input.endsWith("world.json")) return new Response(JSON.stringify(manifest));
     if (input.endsWith("placements.bin")) return new Response(records.slice().buffer);
     if (input.endsWith("heightmap.u16")) return new Response(heightmap.slice().buffer);
+    if (input.endsWith("water.json")) return new Response(JSON.stringify(water));
     throw new Error(`Unexpected forest request: ${input}`);
   });
 });
@@ -123,6 +138,22 @@ describe("forest runtime", () => {
     expect(hit(130)).toBeDefined();
     expect(hit(0)).toBeUndefined();
     colliders.detach();
+  });
+
+  it("draws the lake and river the bake wrote, and counts them in the result", async () => {
+    const { ctx } = await context();
+    const forest = await addForest(ctx, new Object3D());
+    expect(requests).toContain("terrain/forest/water.json");
+    expect(forest.water).toMatchObject({ lakes: 1, rivers: 1 });
+    // The lake's sheet is the one mesh whose material fades at the shore; it must cover the flooded ground.
+    const scene = (ctx as unknown as { scene: Group }).scene;
+    const lake = scene.children.find(
+      (child): child is Mesh =>
+        child instanceof Mesh &&
+        (child.material as { opacityNode?: unknown }).opacityNode !== undefined,
+    );
+    expect(lake?.geometry.index?.count ?? 0).toBeGreaterThan(0);
+    forest.water.dispose();
   });
 
   it("measures its four metre refresh threshold in the same world coordinates", async () => {

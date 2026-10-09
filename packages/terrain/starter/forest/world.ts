@@ -25,6 +25,7 @@ import {
   Vector3,
 } from "three";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
+import { type IForestWater, type IForestWaterFile, addForestWater } from "./water.js";
 
 /** Where the game's asset source holds the baked `world/` folder. */
 export const FOREST_URL = "terrain/forest/world.json";
@@ -53,6 +54,8 @@ export interface IForestWorld {
   readonly ground: RigidBody3D;
   /** The prop colliders near `follow`; they stream with it (see `PROP_COLLIDER_REACH`). */
   readonly colliders: PropColliders;
+  /** The lake and river the bake wrote, drawn beside the ground (see `water.ts`). */
+  readonly water: IForestWater;
 }
 
 /** Metres around `follow` within which props collide; beyond it they only draw. */
@@ -80,12 +83,14 @@ export async function addForest(
   let world: WorldCells | undefined;
   let ground: RigidBody3D | undefined;
   let colliders: PropColliders | undefined;
+  let water: IForestWater | undefined;
   let released = false;
   const dispose = () => {
     if (released) return;
     released = true;
     colliders?.detach();
     colliders?.removeFromParent();
+    water?.dispose();
     ground?.dispose();
     ground?.object?.removeFromParent();
     world?.dispose();
@@ -128,13 +133,20 @@ export async function addForest(
       terrain: { streamRadius: 6 },
     });
     assertCurrent();
-    ground = groundCollider(ctx, manifest, heightmap);
+    const field = forestField(manifest, heightmap);
+    ground = groundCollider(ctx, manifest, field);
+    const waterFile = (await (
+      await fetchAsset(ctx, `${base}water.json`, assertCurrent)
+    ).json()) as IForestWaterFile;
+    assertCurrent();
+    const forestWater = addForestWater(ctx, waterFile, field);
+    water = forestWater;
     colliders = new PropColliders(ctx, follow, manifest, new Float32Array(records));
     ctx.add(world);
     if (ground.object !== undefined) ctx.add(ground.object);
     ctx.add(colliders);
     ctx.entities.add(`forest-world.${world.uuid}`, { dispose });
-    return { world, ground, colliders };
+    return { world, ground, colliders, water: forestWater };
   } catch (error) {
     dispose();
     throw error;
@@ -227,13 +239,10 @@ function bendCrownNormals(geometry: BufferGeometry, bend: number): void {
 
 // The streamed terrain tiles arrive over several frames; a player spawned before its tile would fall
 // through. One heightfield for the whole package (a few hundred kilobytes of samples) avoids that.
-function groundCollider(
-  ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
-  manifest: IWorldPackage,
-  heightmap: Uint16Array,
-): RigidBody3D {
+/** The kit's one heightfield: the collider stands on it and the water's shore reads it. */
+function forestField(manifest: IWorldPackage, heightmap: Uint16Array): Heightfield {
   const { extent, terrain } = manifest;
-  const field = Heightfield.fromSampler({
+  return Heightfield.fromSampler({
     columns: terrain.columns,
     rows: terrain.rows,
     width: extent.sizeX,
@@ -241,6 +250,14 @@ function groundCollider(
     origin: { x: extent.minX + extent.sizeX / 2, z: extent.minZ + extent.sizeZ / 2 },
     sampleHeight: heightSamplerFromHeightmap(terrain, extent, heightmap),
   });
+}
+
+function groundCollider(
+  ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
+  manifest: IWorldPackage,
+  field: Heightfield,
+): RigidBody3D {
+  const { extent } = manifest;
   const anchor = new Object3D();
   anchor.position.set(extent.minX + extent.sizeX / 2, 0, extent.minZ + extent.sizeZ / 2);
   return new RigidBody3D({

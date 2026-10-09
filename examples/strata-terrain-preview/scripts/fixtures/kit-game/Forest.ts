@@ -142,7 +142,12 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
     }
     this.#forest = forest;
     this.#player = player;
-    ctx.state.set({ propColliders: forest.colliders.active, worldReady: 0 });
+    ctx.state.set({
+      propColliders: forest.colliders.active,
+      waterLakes: forest.water.lakes,
+      waterRivers: forest.water.rivers,
+      worldReady: 0,
+    });
   }
 
   override enter(ctx: Ctx): void {

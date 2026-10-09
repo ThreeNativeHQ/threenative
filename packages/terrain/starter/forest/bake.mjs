@@ -65,6 +65,28 @@ async function copy(from, to) {
 }
 
 await write("world.json", `${JSON.stringify(manifest, null, 2)}\n`);
+// The lake and river the generator evaluated, so the game draws the water the bake shaped.
+const round = (value) => Math.round(value * 1_000) / 1_000;
+await write(
+  "water.json",
+  `${JSON.stringify(
+    {
+      lakes: state.waters.map((lake) => ({
+        id: lake.id,
+        at: lake.at,
+        radius: lake.radius,
+        level: lake.level,
+      })),
+      rivers: state.rivers.map((river) => ({
+        id: river.id,
+        width: round(river.width),
+        points: river.points.map((point) => point.map(round)),
+      })),
+    },
+    null,
+    2,
+  )}\n`,
+);
 for (const [name, bytes] of Object.entries(files)) await write(name, bytes);
 for (const spec of Object.values(assetTable)) {
   await copy(spec.near, `models/${spec.near.split("/").at(-1)}`);
