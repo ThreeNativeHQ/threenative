@@ -4119,3 +4119,11 @@ not frustum-culled): 70.9M, of which spruce about 40M and grass about 24M. Outli
 variant 0 reaches 14%, because variant 2 is disconnected foliage cards that edge collapse cannot merge.
 Next: card decimation or sloppy simplification for that variant in `prep-fab-temperate.mjs`, then a
 recook. The recook needs the imported Fab library (`FAB_TEMPERATE`), which is not on this machine.
+
+Rejected the same day: load-time card thinning of far spruce crowns (whole two-triangle quads kept by
+a deterministic hash, no new assets). Thinning every far level above 45% of near to 30% cut buffered
+triangles 70.9M → 60.7M, but a fresh judge scored both views 7.5 → 7.0 (sparser, speckled far rings).
+Thinning only variant 2 (far above 80% of near) to 45% cut 70.9M → 61.8M, but the overview went 7 →
+6.5 (flatter, speckled mid-distance crowns). Perf wins never cost visuals, so both are reverted. The
+variant 2 far level needs a proper reduced cook (sloppy simplification or an impostor) from the Fab
+library; that re-import needs the owner's Fab EULA acknowledgement.
