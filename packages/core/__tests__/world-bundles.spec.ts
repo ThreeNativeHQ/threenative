@@ -312,19 +312,16 @@ function watchVisible(meshes: readonly InstancedMesh[]): Map<string, { count: nu
   return writes;
 }
 
-/**
- * The world's one `BundleGroup` for the GPU-dressed main meshes, or `undefined` when it has not
- * dressed a mesh into one. Found by what it holds, because a chunk's own groups hold chunks too.
- */
-function bundleGroup(world: WorldCells): BundleGroup | undefined {
+/** Every `BundleGroup` that holds a main batch: the main record's shards, never a chunk's group. */
+function mainBundleGroups(world: WorldCells): BundleGroup[] {
   const dressed = new Set(mainKeys(world));
-  let found: BundleGroup | undefined;
+  const found: BundleGroup[] = [];
   world.traverse((object: Object3D) => {
     if (
       object instanceof BundleGroup &&
       object.children.some((child) => dressed.has(child as never))
     )
-      found = object;
+      found.push(object);
   });
   return found;
 }
@@ -507,24 +504,24 @@ afterEach(() => {
 });
 
 describe("the main pass's draw bundles", () => {
-  it("parents every GPU-dressed main mesh under one group and never re-records a settled frame", async () => {
+  it("parents every GPU-dressed main mesh under a main record shard and never re-records a settled frame", async () => {
     const { renderer, world: cells } = await world({ bundles: true });
     cells.update(renderer, playerCamera());
     await flushed(cells, renderer, playerCamera());
 
-    const group = bundleGroup(cells);
-    expect(group).toBeDefined();
+    const groups = mainBundleGroups(cells);
+    expect(groups.length).toBeGreaterThan(0);
     const dressed = mainKeys(cells);
     expect(dressed.length).toBeGreaterThan(0);
-    // One group, and every dressed main mesh in it — the whole point of the thing, since a mesh left
-    // outside is a mesh whose per-object path still runs every frame.
-    for (const mesh of dressed) expect(mesh.parent).toBe(group);
-    expect(group?.children.length).toBe(dressed.length);
-    // The casters are not in it: a bundle is recorded per pass, and the shadow levels are not this
-    // group. A caster parented here would be drawn by the main pass too.
+    // Every dressed main mesh in a shard, and the shards hold nothing else — the whole point of the
+    // thing, since a mesh left outside is a mesh whose per-object path still runs every frame.
+    for (const mesh of dressed) expect(groups).toContain(mesh.parent);
+    expect(groups.reduce((sum, group) => sum + group.children.length, 0)).toBe(dressed.length);
+    // The casters are not in them: a bundle is recorded per pass, and the shadow levels are not these
+    // groups. A caster parented here would be drawn by the main pass too.
     const casters = worldMeshes(cells).filter((one) => one.name.includes("@"));
     expect(casters.length).toBeGreaterThan(0);
-    for (const mesh of casters) expect(mesh.parent).not.toBe(group);
+    for (const mesh of casters) expect(groups).not.toContain(mesh.parent);
 
     const settled = cells.stats().bundle;
     expect(settled.on).toBe(true);
@@ -581,6 +578,31 @@ describe("the main pass's draw bundles", () => {
     cells.dispose();
   });
 
+  it("re-records a mint's share of the main pass, not the whole of it", async () => {
+    // Machinefall's map-walk, 30-frame windows: for ~90 frames after the overlay drops the world is
+    // still streaming, and every key it mints re-records the one main group, so three walks ~200
+    // draws in that frame (traversed p95 257–291 against 31–78 settled). A record is per group, so
+    // the cost of a mint is the size of the group it lands in, and the main pass must be split.
+    const { follow, renderer, world: cells } = await world({ bundles: true, rockInWest: true });
+    cells.update(renderer, playerCamera([0, 1]));
+    await flushed(cells, renderer, playerCamera([0, 1]));
+    const groups = mainBundleGroups(cells);
+    expect(groups.length).toBeGreaterThan(1);
+    const before = new Map(groups.map((group) => [group, group.version]));
+    // Two cells east: `rock`'s keys leave the ring and others are dressed.
+    const at = cellCentre(3, 1);
+    follow.position.x = at.x;
+    follow.position.z = at.z;
+    cells.update(renderer, playerCamera([0, 1]));
+    await flushed(cells, renderer, playerCamera([0, 1]));
+    const touched = [...before].filter(([group, version]) => group.version !== version);
+    expect(touched.length).toBeGreaterThan(0);
+    // The mint re-recorded its own group; the rest of the main pass replayed what it had.
+    expect(touched.length).toBeLessThan(before.size);
+    expect(cells.stats().failures).toBe(0);
+    cells.dispose();
+  });
+
   it("never writes `visible` on a bundled mesh, so a bundle is never re-recorded to hide one", async () => {
     const { renderer, world: cells } = await world({ bundles: true });
     cells.update(renderer, playerCamera());
@@ -595,9 +617,9 @@ describe("the main pass's draw bundles", () => {
     for (const held of watched.values()) expect(held.count).toBe(0);
     // The bundle is still whole, and still the whole of the main pass. The meshes are the ones that
     // were watched, so "never written" is about the meshes that are actually drawing.
-    const group = bundleGroup(cells);
-    for (const mesh of meshes) expect(mesh.parent).toBe(group);
-    expect(group?.children.length).toBe(watched.size);
+    const groups = mainBundleGroups(cells);
+    for (const mesh of meshes) expect(groups).toContain(mesh.parent);
+    expect(groups.reduce((sum, group) => sum + group.children.length, 0)).toBe(watched.size);
     // And the stat counts every recorded object: the dressed main meshes plus one entry per chunk,
     // because a cell's own record holds whole chunks where every draw in them is recordable — and
     // the individual draws of a chunk that is not, one entry each. See `bundleSafe`.
@@ -612,7 +634,7 @@ describe("the main pass's draw bundles", () => {
     await flushed(cells, renderer, playerCamera());
 
     // No group, and the marker and the stats say so.
-    expect(bundleGroup(cells)).toBeUndefined();
+    expect(mainBundleGroups(cells)).toEqual([]);
     expect(cells.stats().bundle).toEqual({ children: 0, on: false, reason: "option", records: 0 });
     const dressed = mainKeys(cells);
     expect(dressed.length).toBeGreaterThan(0);
@@ -801,7 +823,7 @@ describe("the main pass's draw bundles", () => {
     // Its sibling is recorded, so the group is the whole of what a bundle can hold rather than a
     // world that gave up on recording.
     for (const mesh of recorded) expect(drawn.bundled).toContain(mesh);
-    expect(bundleGroup(cells)?.children.length).toBeGreaterThan(0);
+    expect(mainBundleGroups(cells).length).toBeGreaterThan(0);
     // And a refused draw keeps the coarse gate that hides it, because that is the CPU path's answer:
     // a record's render list is fixed when it was recorded and never reads `visible` again.
     const watched = watchVisible(refused);
@@ -867,10 +889,10 @@ describe("the main pass's draw bundles", () => {
     expect(cells.stats().bundle.on).toBe(true);
     expect(cells.stats().bundle.reason).toBe("default");
     expect(bundleMarker(lines)).toContain("TN_WORLD_BUNDLE on reason=default");
-    // And the walk really is replaying: every main batch hangs in the one group.
-    const group = bundleGroup(cells);
-    expect(group).toBeDefined();
-    for (const mesh of mainKeys(cells)) expect(mesh.parent).toBe(group);
+    // And the walk really is replaying: every main batch hangs in a main record shard.
+    const groups = mainBundleGroups(cells);
+    expect(groups.length).toBeGreaterThan(0);
+    for (const mesh of mainKeys(cells)) expect(groups).toContain(mesh.parent);
     cells.dispose();
   });
 
@@ -892,7 +914,7 @@ describe("the main pass's draw bundles", () => {
     expect(cells.stats().bundle.on).toBe(false);
     expect(cells.stats().bundle.reason).toBe("option");
     expect(bundleMarker(lines)).toContain("TN_WORLD_BUNDLE off reason=option");
-    expect(bundleGroup(cells)).toBeUndefined();
+    expect(mainBundleGroups(cells)).toEqual([]);
     cells.dispose();
   });
 
@@ -911,7 +933,7 @@ describe("the main pass's draw bundles", () => {
     expect(cells.stats().bundle.on).toBe(false);
     expect(cells.stats().bundle.reason).toBe("launch");
     expect(bundleMarker(lines)).toContain("TN_WORLD_BUNDLE off reason=launch");
-    expect(bundleGroup(cells)).toBeUndefined();
+    expect(mainBundleGroups(cells)).toEqual([]);
     cells.dispose();
   });
 
@@ -969,7 +991,9 @@ describe("the main pass's draw bundles", () => {
     expect(chunkBundles(cells)).toEqual([]);
     expect(chunkMeshes(cells)).toEqual([]);
     // And the stat gives the chunks back rather than counting records nothing owns any more.
-    expect(cells.stats().bundle.children).toBe(bundleGroup(cells)?.children.length ?? 0);
+    expect(cells.stats().bundle.children).toBe(
+      mainBundleGroups(cells).reduce((sum, group) => sum + group.children.length, 0),
+    );
     expect(cells.stats().bundle.records).toBeGreaterThan(settled.records);
     cells.dispose();
   });
