@@ -1,6 +1,6 @@
 # PRD-541 — The terrain generator owns water queries and slope thresholds; core owns spawn readiness
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — every game built on the terrain generator repeats the slow water loops and the playtest spawn deadlock that PRD-466 fixed only in its preview example
 **Depends on:** PRD-466 (the preview fixes this lifts into packages)
 
@@ -38,9 +38,11 @@ The generator should expose the mechanism once; the density rules and looks stay
 
 ### Phase 3 — Spawn readiness without simulation ticks, in core
 
-- [ ] `ctx.startup.hold` accepts a readiness predicate that core evaluates every rendered frame, so
+- [x] `ctx.startup.hold` accepts a readiness predicate that core evaluates every rendered frame, so
   a hold cannot depend on fixed steps the playtest clock withholds. proof: core spec with a
-  fixed-step stub that never ticks while the hold is pending (red before, green after)
+  fixed-step stub that never ticks while the hold is pending (red before, green after) — PASS:
+  `startup-readiness.spec.ts` "releases a predicate hold on the first frame it reads true" red
+  (released at once) → green; startup and game specs 99/99; core tsc clean.
 - [ ] The preview's spawn gate uses it and drops its `beforeRender` duplicate. proof:
   `pnpm --filter strata-terrain-preview test:terrain:web` reaches its assertions
 
