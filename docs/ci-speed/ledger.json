@@ -309,6 +309,52 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": 4,
+      "at": "2026-10-09T08:09:52.392Z",
+      "commit": "6ec34f52c",
+      "label": "PR 476 green on phase 1 head",
+      "notes": "Same window: 0 PRs merged, 12 merge-group runs. PR 476 head 6ec34f52c is green: 69 checks pass and 12 skip, and merge state is CLEAN. integration / velocity passes on that head, and the iOS simulator job passes there too, so the iOS red from iteration 3 did not recur. Merge-group metrics do not move until phase 1 reaches develop. Named costs still on develop: integration / velocity and test-unit (3/4), each first in 2 red merge groups. The compile-spec budget change (a47851026) targets the test-unit timeouts. Re-measure after the merge.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": null,
+        "lastPushToMergeP90Min": null,
+        "firstAttemptSuccessPct": null,
+        "boardWallMedianMin": 113.3,
+        "queueWaitP90Min": 46.9
+      },
+      "extra": {
+        "prCount": 0,
+        "mergeGroupRuns": 12,
+        "mergeGroupRunSuccessPct": 33.3,
+        "enqueueToMergeMedianMin": null,
+        "queueWaitJobs": 774
+      },
+      "prs": [],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 2
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 2
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
     }
   ]
 }
