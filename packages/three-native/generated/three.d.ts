@@ -406,6 +406,11 @@ readonly projectionMatrix: Matrix4;
 readonly projectionMatrixInverse: Matrix4;
 }
 
+/** Catalog supported: three/CapsuleGeometry. */
+export declare class CapsuleGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog supported: three/CatmullRomCurve3. */
 export declare class CatmullRomCurve3 {
 constructor();
@@ -645,6 +650,11 @@ target: Object3D;
 readonly shadow: DirectionalLightShadow;
 }
 
+/** Catalog supported: three/DodecahedronGeometry. */
+export declare class DodecahedronGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog supported: three/DoubleSide. */
 export declare const DoubleSide: 2;
 
@@ -833,6 +843,11 @@ constructor();
 intensity: number;
 color: Color;
 groundColor: Color;
+}
+
+/** Catalog supported: three/webgpu/IcosahedronGeometry. */
+export declare class IcosahedronGeometry extends BufferGeometry {
+constructor();
 }
 
 /** Catalog partial (native-not-implemented): three/IncrementStencilOp. */
@@ -1725,6 +1740,11 @@ readonly revision: number;
 /** Catalog partial (native-not-implemented): three/ObjectSpaceNormalMap. */
 export declare const ObjectSpaceNormalMap: 1;
 
+/** Catalog supported: three/OctahedronGeometry. */
+export declare class OctahedronGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog partial (native-not-implemented): three/OneFactor. */
 export declare const OneFactor: 201;
 
@@ -2464,6 +2484,11 @@ readonly source: Source;
 
 /** Catalog supported: three/webgpu/TorusGeometry. */
 export declare class TorusGeometry extends BufferGeometry {
+constructor();
+}
+
+/** Catalog supported: three/TorusKnotGeometry. */
+export declare class TorusKnotGeometry extends BufferGeometry {
 constructor();
 }
 

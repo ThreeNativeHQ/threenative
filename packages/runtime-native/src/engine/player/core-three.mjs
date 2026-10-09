@@ -3,14 +3,14 @@ import { audio } from "./core-audio.mjs";
 import { Material, defineObjectSurface } from "../../../../three-native/src/object-surface.ts";
 export const {
   AmbientLight, AnimationAction, AnimationClip, AnimationMixer, Bone, Box3, BoxGeometry,
-  BufferAttribute, BufferGeometry, Camera, CatmullRomCurve3, CircleGeometry, Color, ConeGeometry, CylinderGeometry,
-  DirectionalLight, Euler, Float32BufferAttribute, Fog, FogExp2, Frustum, Group,
+  BufferAttribute, BufferGeometry, Camera, CapsuleGeometry, CatmullRomCurve3, CircleGeometry, Color, ConeGeometry, CylinderGeometry,
+  DirectionalLight, DodecahedronGeometry, Euler, Float32BufferAttribute, Fog, FogExp2, Frustum, Group,
   HemisphereLight, InstancedBufferAttribute, InstancedMesh, LatheGeometry, LOD, Layers, Matrix3, Matrix4, Mesh,
-  MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshPhysicalMaterial,
-  MeshStandardMaterial, NumberKeyframeTrack, Object3D, OrthographicCamera, Path, PerspectiveCamera, Plane, PlaneGeometry,
+  MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshPhysicalMaterial, IcosahedronGeometry,
+  MeshStandardMaterial, NumberKeyframeTrack, Object3D, OctahedronGeometry, OrthographicCamera, Path, PerspectiveCamera, Plane, PlaneGeometry,
   QuaternionKeyframeTrack, VectorKeyframeTrack, Shape, ShapeGeometry, ExtrudeGeometry,
   PointLight, Quaternion, Ray, Raycaster, RingGeometry, RoundedBoxGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
-  SphereGeometry, SpotLight, Sprite, SpriteMaterial, TorusGeometry, TubeGeometry, Vector2, Vector3,
+  SphereGeometry, SpotLight, Sprite, SpriteMaterial, TorusGeometry, TorusKnotGeometry, TubeGeometry, Vector2, Vector3,
   Vector4, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, PCFSoftShadowMap,
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
   NearestFilter, LinearFilter, LinearMipmapLinearFilter, UnsignedByteType, FloatType, RGBAFormat,
@@ -60,7 +60,7 @@ for (const name of ["Object3D", "Scene", "Mesh", "Group", "SkinnedMesh", "Instan
 }
 const geometries = [BoxGeometry, CircleGeometry, ConeGeometry, CylinderGeometry, PlaneGeometry,
   RingGeometry, RoundedBoxGeometry, SphereGeometry, TorusGeometry, LatheGeometry, TubeGeometry, ShapeGeometry,
-  ExtrudeGeometry];
+  ExtrudeGeometry, IcosahedronGeometry, CapsuleGeometry, DodecahedronGeometry, OctahedronGeometry, TorusKnotGeometry];
 // Adapt wrapper inheritance only; native classes continue to own every scene operation.
 for (const [base, names] of [
   [Object3D, [Scene, Mesh, Group, Camera, Bone, LOD, Sprite, AmbientLight, DirectionalLight,

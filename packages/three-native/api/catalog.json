@@ -3209,10 +3209,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_CAPSULEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -5234,10 +5233,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_DODECAHEDRONGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -6499,10 +6497,9 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_ICOSAHEDRONGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -14140,10 +14137,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_OCTAHEDRONGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -19643,10 +19639,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_TORUSKNOTGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []

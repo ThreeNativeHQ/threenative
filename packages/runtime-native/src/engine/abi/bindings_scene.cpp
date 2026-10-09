@@ -638,7 +638,8 @@ std::shared_ptr<BufferGeometry> geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
         "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry", "LatheGeometry",
-        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry"};
+        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry", "IcosahedronGeometry", "CapsuleGeometry",
+        "DodecahedronGeometry", "OctahedronGeometry", "TorusKnotGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
