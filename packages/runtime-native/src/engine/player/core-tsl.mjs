@@ -25,12 +25,12 @@ export const {
   mx_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
-  cameraNear, cameraFar, screenSize, viewportSharedTexture, viewportDepthTexture, linearDepth, viewportLinearDepth,
+  cameraNear, cameraFar, screenSize, depth, viewportSharedTexture, viewportDepthTexture, linearDepth, viewportLinearDepth,
 } = globalThis.tsl;
 export const {
   oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection, dFdx, dFdy, lengthSq,
   normalLocal, tangentLocal, positionPrevious, storage,
-  atan, mod, fwidth, saturation, mat2, hash, time, transformDirection,
+  atan, mod, fwidth, saturation, mat2, hash, time, transformDirection, normalWorldGeometry,
 } = globalThis.tsl;
 
 // three's pass(), mrt() and MRT slots over the player's one scene pass (shared with the Wasm back

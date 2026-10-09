@@ -12,6 +12,7 @@ const {
   clamp,
   cos,
   cross,
+  depth,
   distance,
   dot,
   exp2,
@@ -31,6 +32,7 @@ const {
   mod,
   normalLocal,
   normalWorld,
+  normalWorldGeometry,
   normalize,
   positionViewDirection,
   positionGeometry,
@@ -113,6 +115,8 @@ const CORPUS = [
   ["screen-coordinate", "color", vec4(screenCoordinate, 0, 1)],
   ["position-view-direction", "color", vec4(positionViewDirection, 1)],
   ["screen-size", "color", vec4(screenSize, 0, 1)],
+  ["depth", "color", vec4(depth, 0, 0, 1)],
+  ["normal-world-geometry", "color", vec4(normalWorldGeometry, 1)],
 ];
 
 const positions = instancedArray(16, "vec4").setName("positions");

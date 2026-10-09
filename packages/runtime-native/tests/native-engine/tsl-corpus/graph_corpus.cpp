@@ -169,6 +169,13 @@ int main() {
     shaderGraph("position-view-direction", "color",
           [] { return vec4({normalize(varying("positionViewDirection", Type::vec(3))), float_(1)}); });
     shaderGraph("screen-size", "color", [] { return vec4({uniform("screenSize", Type::vec(2)), float_(0), float_(1)}); });
+    shaderGraph("depth", "color", [] {
+        const Node near = uniform("cameraNear", Type::f32()), far = uniform("cameraFar", Type::f32());
+        const Node viewZ = swizzle(varying("positionView", Type::vec(3)), "z");
+        return vec4({div(mul(add(near, viewZ), far), mul(sub(far, near), viewZ)), float_(0), float_(0), float_(1)});
+    });
+    shaderGraph("normal-world-geometry", "color",
+          [] { return vec4({normalize(varying("normalWorldGeometry", Type::vec(3))), float_(1)}); });
 
     compute("fn-if-store", [](Block& b, Storage positions) {
         const Var acc = b.var(float_(0));

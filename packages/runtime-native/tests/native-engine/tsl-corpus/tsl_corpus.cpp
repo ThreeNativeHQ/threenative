@@ -125,6 +125,13 @@ int main() {
     graph("position-view-direction", "color",
           [] { return vec4({normalize(Node(program().varying("positionViewDirection", Type::vec(3)))), 1}); });
     graph("screen-size", "color", [] { return vec4({uniform("screenSize", Type::vec(2)), 0, 1}); });
+    graph("depth", "color", [] {
+        const Node near = uniform("cameraNear", Type::f32()), far = uniform("cameraFar", Type::f32());
+        const Node viewZ = Node(program().varying("positionView", Type::vec(3))).z();
+        return vec4({near.add(viewZ).mul(far).div(far.sub(near).mul(viewZ)), 0, 0, 1});
+    });
+    graph("normal-world-geometry", "color",
+          [] { return vec4({normalize(Node(program().varying("normalWorldGeometry", Type::vec(3)))), 1}); });
 
     compute("fn-if-store", [](Storage positions) {
         const Var acc = toVar(float_(0));

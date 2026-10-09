@@ -23,6 +23,7 @@ import {
   clamp,
   cos,
   cross,
+  depth,
   distance,
   dot,
   exp2,
@@ -44,6 +45,7 @@ import {
   mod,
   normalLocal,
   normalWorld,
+  normalWorldGeometry,
   normalize,
   positionGeometry,
   positionLocal,
@@ -164,7 +166,9 @@ const accessorBuilder = {
   subBuildFn: "NORMAL",
   isFlatShading: () => false,
   material: { side: FrontSide },
-  context: {},
+  context: {
+    setupPositionView: () => varying(vec3(0), "v_positionView"),
+  },
   // r185's normalLocal reads normalGeometry when the geometry has a normal (Normal.js).
   geometry: { hasAttribute: () => true },
 };
@@ -174,6 +178,8 @@ const RENAMES: Record<string, string> = {
   cameraViewMatrix: "viewMatrix",
   v_normalViewGeometry: "normalView",
   v_positionViewDirection: "positionViewDirection",
+  v_normalWorldGeometry: "normalWorldGeometry",
+  v_positionView: "positionView",
 };
 const renamed = (name: string) => RENAMES[name] ?? name;
 /** Upstream builtins that are unnamed uniforms the renderer fills each frame, bound by these names. */
@@ -295,6 +301,13 @@ function canon(node: TslNode, fragment: boolean): string {
       const name = (node.value as { name: string }).name;
       return `sample:${name}(${child("uvNode")}):${typeOf(node)}`;
     }
+    case "ViewportDepthNode":
+      if (node.scope === "depth")
+        return canon(
+          (node as unknown as { setup(b: unknown): TslNode }).setup(accessorBuilder),
+          fragment,
+        );
+      return `UNMAPPED_DEPTH:${node.scope}`;
     default:
       return `UNMAPPED:${kind}`;
   }
@@ -358,6 +371,8 @@ export const CORPUS: [string, string, unknown][] = [
   ["screen-coordinate", "color", vec4(screenCoordinate, 0, 1)],
   ["position-view-direction", "color", vec4(positionViewDirection, 1)],
   ["screen-size", "color", vec4(screenSize, 0, 1)],
+  ["depth", "color", vec4(depth, 0, 0, 1)],
+  ["normal-world-geometry", "color", vec4(normalWorldGeometry, 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

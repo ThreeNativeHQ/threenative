@@ -370,6 +370,19 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return g::uniform("screenSize", Type::vec(2));
     }
+    // r185's depth (ViewportDepthNode): viewZToPerspectiveDepth(positionView.z, cameraNear, cameraFar)
+    // = (cameraNear + positionView.z) * cameraFar / ((cameraFar - cameraNear) * positionView.z).
+    if (name == "depth") {
+        arity(0);
+        const auto near = g::uniform("cameraNear", Type::f32()), far = g::uniform("cameraFar", Type::f32());
+        const auto viewZ = g::swizzle(g::varying("positionView", Type::vec(3)), "z");
+        return g::div(g::mul(g::add(near, viewZ), far), g::mul(g::sub(far, near), viewZ));
+    }
+    // normalWorldGeometry: the interpolated world-space normal before normalNode or normalMap.
+    if (name == "normalWorldGeometry") {
+        arity(0);
+        return g::normalize(g::varying("normalWorldGeometry", Type::vec(3)));
+    }
     if (name == "cameraPosition" || name == "cameraProjectionMatrix" || name == "cameraWorldMatrix") {
         arity(0);
         return g::uniform(name, name == "cameraPosition" ? Type::vec(3) : Type::mat(4, 4));
@@ -632,9 +645,10 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"time", g::uniform("time", Type::f32())}};
     // The node constants tslCall also answers by name; neither takes a serial.
     uint64_t serial = 0;
-    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar", "screenSize",
+    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar", "screenSize", "depth",
                              "positionGeometry", "normalWorld", "normalView", "positionViewDirection", "screenCoordinate",
-                             "normalGeometry", "tangentGeometry", "normalLocal", "tangentLocal", "positionPrevious"})
+                             "normalGeometry", "tangentGeometry", "normalLocal", "tangentLocal", "positionPrevious",
+                             "normalWorldGeometry"})
         constants.emplace_back(name, tslCall(name, nullptr, {}, serial));
     // viewportLinearDepth = linearDepth(viewportDepthTexture()).
     constants.emplace_back("viewportLinearDepth",

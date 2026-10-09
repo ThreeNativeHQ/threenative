@@ -113,6 +113,7 @@ const CONSTANTS = [
   "cameraNear",
   "cameraFar",
   "screenSize",
+  "depth",
   "cameraProjectionMatrix",
   "cameraWorldMatrix",
   "positionGeometry",
@@ -136,6 +137,7 @@ const CONSTANTS = [
   "normalLocal",
   "tangentLocal",
   "positionPrevious",
+  "normalWorldGeometry",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
