@@ -1,3 +1,4 @@
+import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import {
   Material,
   defineObjectSurface,
@@ -135,17 +136,15 @@ export const MathUtils = new globalThis.MathUtils();
 const skeletonUtils = new globalThis.SkeletonUtils();
 export const clone = (root) => skeletonUtils.clone(root);
 
-export function unsupported() {
-  throw new Error("TN_CORE_NATIVE_UNSUPPORTED: this native profile does not provide this import");
-}
 
 // three's BatchedMesh: an engine class (PRD-552), each geometry's instances drawn as one instanced mesh.
 export const { BatchedMesh } = globalThis;
 // three's InstancedBufferGeometry: an engine class, drawn instanceCount times.
 export const { InstancedBufferGeometry } = globalThis;
-export const LineLoop = unsupported;
-export const Points = unsupported;
-export const WebGLRenderer = unsupported;
+// three exports the engine does not provide: refused at use, by name, as on Wasm (unsupportedExport).
+export const LineLoop = unsupportedExport("LineLoop");
+export const Points = unsupportedExport("Points");
+export const WebGLRenderer = unsupportedExport("WebGLRenderer");
 export const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
 
 // Native traversal and child enumeration are host callbacks, not a second JS scene graph.

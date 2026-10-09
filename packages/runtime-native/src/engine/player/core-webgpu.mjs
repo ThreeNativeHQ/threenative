@@ -1,5 +1,6 @@
 export * from "./core-three.mjs";
-import { BufferAttribute, Color, unsupported } from "./core-three.mjs";
+import { BufferAttribute, Color } from "./core-three.mjs";
+import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import { syncUniforms } from "./core-tsl.mjs";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
@@ -104,9 +105,9 @@ export class StorageBufferAttribute extends BufferAttribute {
   }
 }
 StorageBufferAttribute.prototype.isStorageBufferAttribute = true;
-export const MeshLambertNodeMaterial = unsupported;
-export const MeshMatcapNodeMaterial = unsupported;
-export const MeshNormalNodeMaterial = unsupported;
-export const MeshPhongNodeMaterial = unsupported;
-export const MeshPhysicalNodeMaterial = unsupported;
-export const MeshToonNodeMaterial = unsupported;
+export const MeshLambertNodeMaterial = unsupportedExport("MeshLambertNodeMaterial");
+export const MeshMatcapNodeMaterial = unsupportedExport("MeshMatcapNodeMaterial");
+export const MeshNormalNodeMaterial = unsupportedExport("MeshNormalNodeMaterial");
+export const MeshPhongNodeMaterial = unsupportedExport("MeshPhongNodeMaterial");
+export const MeshPhysicalNodeMaterial = unsupportedExport("MeshPhysicalNodeMaterial");
+export const MeshToonNodeMaterial = unsupportedExport("MeshToonNodeMaterial");

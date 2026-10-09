@@ -581,13 +581,19 @@ class Play extends GameScene {
 export default defineGame({ scenes: { play: Play }, start: "play", frameBudget: false,
   render: { projection: false, matrixWorld: "all" } });
 `);
-// Native assets avoid browser codecs. Picking's MeshBVH and core's TSL context nodes are bound
-// (normalLocal, tangentLocal, positionPrevious, storage); core still retains an import the profile
-// refuses (its BatchedMesh velocity patch), so the game is refused, and not for three/tsl.
-await assert.rejects(bundleNativeEngine({ entry, outfile }), (error) =>
-  /TN_NATIVE_ENGINE_UNBOUND: the game retains an unsupported core import/.test(error.message) &&
-  !/three\/tsl:|three-mesh-bvh/.test(error.message));
+// A core game bundles (PRD-552): picking's MeshBVH, core's TSL context nodes and BatchedMesh are bound,
+// and the exports the engine does not provide (core's WebGL2 fallback, Points) are refused at use, by
+// name, as on Wasm (owner decision 2026-10-09).
+await bundleNativeEngine({ entry, outfile });
 const accepted = await readFile(outfile, "utf8");
+// Refused at use: constructing Points fails at that call with the catalog's diagnostic.
+const pointsEntry = resolve(work, "points.ts");
+const pointsOut = resolve(work, "points.js");
+await writeFile(pointsEntry, 'import { Points, Scene } from "three"; try { new Points(); globalThis.tn.__startupError = "Points constructed"; } catch (error) { globalThis.tn.__startupError = String(error.message); } globalThis.tn.scene = new Scene();');
+await bundleNativeEngine({ entry: pointsEntry, outfile: pointsOut, boot: false });
+const points = spawnSync(resolve(executable), ["--check-game", pointsOut], { encoding: "utf8" });
+assert.equal(points.status, 1);
+assert.match(points.stderr, /TN_NATIVE_UNSUPPORTED_POINTS: Points is not available on the native engine/);
 await writeFile(entry, 'import { NativeBindingThatDoesNotExist } from "three"; globalThis.tn.scene = new NativeBindingThatDoesNotExist();');
 await assert.rejects(bundleNativeEngine({ entry, outfile, boot: false }), /TN_NATIVE_ENGINE_UNBOUND: three:NativeBindingThatDoesNotExist/);
 assert.equal(await readFile(outfile, "utf8"), accepted, "failed build must preserve the prior artifact");

@@ -190,8 +190,6 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
   const output = bundled.outputFiles[0].text;
   const missing = [...new Set(output.match(/TN_NATIVE_ENGINE_UNBOUND: [^"\n]+/g) ?? [])].sort();
   if (missing.length) throw new Error(missing.join("\n"));
-  if (output.includes("TN_CORE_NATIVE_UNSUPPORTED"))
-    throw new Error("TN_NATIVE_ENGINE_UNBOUND: the game retains an unsupported core import");
   rejectUpstream(bundled.metafile);
   await mkdir(dirname(outfile), { recursive: true });
   const temporary = `${outfile}.${randomUUID()}.tmp`;

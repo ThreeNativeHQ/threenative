@@ -221,13 +221,13 @@ describe("createWebEnginePlugin", () => {
   it("bundles the Wasm engine binding instead of upstream three; legacy still bundles three", async () => {
     const root = await project(true);
     const native = await bundle(root, true);
-    expect(native).toContain("is not available on the Wasm engine");
+    expect(native).toContain("is not available on the native engine");
     expect(native).toContain("createModule");
     expect(native).toContain("__tnTsl");
     expect(native).not.toContain(UPSTREAM_VECTOR3);
     await rm(path.join(root, "dist"), { recursive: true });
     const legacy = await bundle(root, false);
     expect(legacy).toContain(UPSTREAM_VECTOR3);
-    expect(legacy).not.toContain("is not available on the Wasm engine");
+    expect(legacy).not.toContain("is not available on the native engine");
   }, 120_000);
 });

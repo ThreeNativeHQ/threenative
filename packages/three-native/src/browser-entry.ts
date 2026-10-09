@@ -27,28 +27,10 @@ import { definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
+import { refused } from "./refused.js";
 import { defineTextureSources } from "./texture-sources.js";
 
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
-
-/** A value that throws `diagnostic` on any call, construction or property access. */
-function refused(name: string, diagnostic: string): unknown {
-  const fail = (): never => {
-    throw new Error(`${diagnostic}: ${name} is not available on the Wasm engine.`);
-  };
-  return new Proxy(function refusedExport() {}, {
-    apply: fail,
-    construct: fail,
-    get: fail,
-    set: fail,
-    has: fail,
-    ownKeys: fail,
-    getPrototypeOf: fail,
-    defineProperty: fail,
-    deleteProperty: fail,
-    getOwnPropertyDescriptor: fail,
-  });
-}
 
 function constantValue(entry: CatalogEntry): unknown {
   if (entry.kind !== "constant" || entry.status.kind === "unsupported") return undefined;
