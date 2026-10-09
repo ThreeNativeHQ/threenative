@@ -215,9 +215,12 @@ const UNDECLARED_FIELDS: Record<string, string> = {
   "SpriteNodeMaterial.metalnessNode": "Node | null",
 };
 
+/** A `__` member is engine-internal (a back end calls it, as `__walk`); three's surface never has it. */
+const published = (member: string): boolean => !member.startsWith("__");
+
 function registryMembers(binding: IRegistryClass): Set<string> {
   return new Set([
-    ...binding.methods,
+    ...binding.methods.filter(published),
     ...binding.getters.filter((name) => !name.includes(".")),
     ...binding.members.filter((name) => !name.includes(".")),
     ...binding.callbacks,
@@ -614,7 +617,7 @@ function addMissingMembers(dump: IRegistryDump, byName: Map<string, MutableClass
     const binding = dump.classes[name];
     if (entry === undefined || binding === undefined) continue;
     const covered = effectiveSupported(entry, byName);
-    for (const member of binding.methods) {
+    for (const member of binding.methods.filter(published)) {
       if (covered.has(member)) continue;
       const method = methodFor(name, member);
       if (method === null) continue;

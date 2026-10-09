@@ -457,6 +457,54 @@ engine.collect();
     "SkeletonUtils.clone remaps the skin",
   );
 }
+// traverse and traverseVisible are one engine walk (`__walk`), in three's order: a frame's scene walks
+// cost one crossing each, not two per object (the minimal template made 330 such calls a frame).
+{
+  type Node3D = Record<string, unknown> & {
+    name: string;
+    visible: boolean;
+    add(...children: object[]): void;
+    traverse(callback: (object: Node3D) => void): void;
+    traverseVisible(callback: (object: Node3D) => void): void;
+  };
+  const web = (await bindWebEngine(createTnAbi, ["Group", "Object3D"])) as Record<
+    string,
+    new () => Node3D
+  >;
+  const made = (name: string) => {
+    const node = new (web.Object3D as new () => Node3D)();
+    node.name = name;
+    return node;
+  };
+  const root = new (web.Group as new () => Node3D)();
+  root.name = "root";
+  const a = made("a");
+  const b = made("b");
+  const a1 = made("a1");
+  const b1 = made("b1");
+  root.add(a, b);
+  a.add(a1);
+  b.add(b1);
+  b.visible = false;
+  const counts = new Map<string, number>();
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = counts;
+  const order: string[] = [];
+  root.traverse((object) => order.push(object.name));
+  const visible: string[] = [];
+  root.traverseVisible((object) => visible.push(object.name));
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = undefined;
+  const crossings = [...counts.values()].reduce((sum, n) => sum + n, 0);
+  check(order.join() === "root,a,a1,b,b1", `traverse order: ${order.join()}`);
+  check(
+    visible.join() === "root,a,a1",
+    `traverseVisible skips a hidden subtree: ${visible.join()}`,
+  );
+  // Two walks, and the callbacks read `name` (a crossing each): 2 + 8 names.
+  check(
+    crossings === 10,
+    `two walks cost two engine calls plus the names read: ${crossings} (${[...counts.keys()].join(", ")})`,
+  );
+}
 // three's type flags on the scene classes (PRD-540): a game, three's own code and the playtest
 // bridge find lights, cameras and bones by `isLight`, `isCamera`, `isBone`, never by class.
 {

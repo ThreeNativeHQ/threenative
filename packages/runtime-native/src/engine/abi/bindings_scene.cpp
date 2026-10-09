@@ -153,6 +153,21 @@ void registerObject3D(ClassBinding& b) {
         for (Object3D* child : as<Object3D>(self)->children) children.push_back(foundObject(store, child));
         return Value::array(std::move(children));
     };
+    // Engine-internal (`__`: never three's surface): the subtree in three's traverse order, or only its
+    // visible part, as one array. Both back ends' `traverse`/`traverseVisible` call their callback
+    // over it, so a walk costs one crossing, not two per object (children and visible).
+    // ponytail: a snapshot; an object a callback adds or removes mid-walk is not revisited, as three's
+    // live walk would. Walk live if a game depends on it.
+    b.methods["__walk"] = [](void* self, const Args& a, Store& store) {
+        std::vector<Object3D*> objects;
+        const auto collect = [](Object3D& object, void* out) { static_cast<std::vector<Object3D*>*>(out)->push_back(&object); };
+        if (boolean(a, 0, false)) as<Object3D>(self)->traverseVisible(collect, &objects);
+        else as<Object3D>(self)->traverse(collect, &objects);
+        Args walked;
+        walked.reserve(objects.size());
+        for (Object3D* object : objects) walked.push_back(foundObject(store, object));
+        return Value::array(std::move(walked));
+    };
     b.callbacks["onBeforeRender"] = [](void* self, RenderCallback callback) {
         as<Object3D>(self)->onBeforeRender = std::move(callback);
     };

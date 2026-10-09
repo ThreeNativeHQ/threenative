@@ -207,18 +207,30 @@ function defineTraversal(
   prototype: Record<string, unknown>,
   className: string,
   hasChildren: boolean,
+  walks: boolean,
 ) {
   const childrenOf = (object: object): object[] => {
     if (!hasChildren) throw new TypeError(`TN_BROWSER_UNBOUND: ${className}.children`);
     return (object as { children: object[] }).children;
   };
+  // The engine's walk: one crossing for the whole subtree, in three's order (`__walk`).
+  const walk = (object: object, visibleOnly: boolean): object[] =>
+    (object as { __walk(visibleOnly: boolean): object[] }).__walk(visibleOnly);
   const methods: Record<string, (this: object, callback: TraverseCallback) => void> = {
     traverse(callback) {
+      if (walks) {
+        for (const object of walk(this, false)) callback(object);
+        return;
+      }
       callback(this);
       for (const child of childrenOf(this))
         (child as { traverse(c: TraverseCallback): void }).traverse(callback);
     },
     traverseVisible(callback) {
+      if (walks) {
+        for (const object of walk(this, true)) callback(object);
+        return;
+      }
       if ((this as { visible: boolean }).visible === false) return;
       callback(this);
       for (const child of childrenOf(this))
@@ -633,6 +645,7 @@ export function defineBrowserClasses(
         prototype,
         name,
         binding.members.includes("children") || binding.getters.includes("children"),
+        binding.methods.includes("__walk"),
       );
     }
     classes[name] = cls;
