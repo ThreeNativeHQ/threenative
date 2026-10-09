@@ -13,6 +13,10 @@ export type GameState = {
   groundError: number;
   /** Smallest horizontal distance from the player's centre to the fir's axis while it walked. */
   closestToTrunk: number;
+  /** Smallest horizontal distance from the player's centre to the anchor boulder's origin while it walked. */
+  closestToBoulder: number;
+  /** Placement instances the streamed cells hold, as the world reports them. */
+  boulderInstances: number;
   /** Ground the player actually covered; without it a tree that never moved could pass the row above. */
   driveMetres: number;
   /** One collider per placed fir and boulder, from `addForest`'s result. */
@@ -39,6 +43,8 @@ export const initialState: GameState = {
   spawnTerrainLoaded: 0,
   spawnTerrainRequired: 0,
   closestToTrunk: -1,
+  closestToBoulder: -1,
+  boulderInstances: -1,
   driveDone: 0,
   driveMetres: 0,
   firInstancesDrawn: -1,
@@ -48,8 +54,8 @@ export const initialState: GameState = {
   view: "ground",
   waterLakes: -1,
   waterRivers: -1,
-  viewFrameP95: { edge: -1, ground: -1, lake: -1, overview: -1 },
-  viewGpuP50: { edge: -1, ground: -1, lake: -1, overview: -1 },
-  viewGpuP95: { edge: -1, ground: -1, lake: -1, overview: -1 },
+  viewFrameP95: { boulders: -1, edge: -1, ground: -1, lake: -1, overview: -1 },
+  viewGpuP50: { boulders: -1, edge: -1, ground: -1, lake: -1, overview: -1 },
+  viewGpuP95: { boulders: -1, edge: -1, ground: -1, lake: -1, overview: -1 },
   worldReady: 0,
 };

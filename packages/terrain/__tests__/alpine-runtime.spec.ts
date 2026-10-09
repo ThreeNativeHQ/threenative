@@ -152,6 +152,10 @@ describe("alpine runtime", () => {
     expect(data.heightmap).toEqual(heightmap);
     expect(alpine.ground.shape.descriptor.heights).toHaveLength(9);
     expect(alpine.ground.shape.descriptor.heights?.[4]).toBeCloseTo((8000 / 65535) * 10);
+    // The scene picks its spawn and cameras from these, so they must read the same terrain and placements.
+    expect(alpine.field.heightAt(0, 0)).toBeCloseTo((8000 / 65535) * 10);
+    expect(alpine.placements).toHaveLength(records.length);
+    expect(alpine.extent).toEqual(manifest.extent);
   });
 
   it("does not attach a world after cancellation during its async load", async () => {

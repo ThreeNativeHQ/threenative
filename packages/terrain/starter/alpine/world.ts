@@ -48,6 +48,12 @@ export interface IAlpineWorld {
   readonly ground: RigidBody3D;
   /** The prop colliders near `follow`. They stream with it (see `PROP_COLLIDER_REACH`). */
   readonly colliders: PropColliders;
+  /** The heightfield the ground stands on: `heightAt(x, z)` reads the terrain under any point. */
+  readonly field: Heightfield;
+  /** Every placed prop's record, eight floats each, as the bake wrote it. */
+  readonly placements: Float32Array;
+  /** The world's extent in metres, as the bake wrote it. */
+  readonly extent: IWorldPackage["extent"];
 }
 
 /**
@@ -119,12 +125,13 @@ export async function addAlpine(
     assertCurrent();
     const field = alpineField(manifest, heightmap);
     ground = groundCollider(ctx, manifest, field);
-    colliders = new PropColliders(ctx, follow, manifest, new Float32Array(records));
+    const props = new Float32Array(records);
+    colliders = new PropColliders(ctx, follow, manifest, props);
     ctx.add(world);
     if (ground.object !== undefined) ctx.add(ground.object);
     ctx.add(colliders);
     ctx.entities.add(`alpine-world.${world.uuid}`, { dispose });
-    return { world, ground, colliders };
+    return { world, ground, colliders, field, placements: props, extent: manifest.extent };
   } catch (error) {
     dispose();
     throw error;

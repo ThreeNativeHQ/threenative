@@ -1,11 +1,12 @@
-// PRD-466 Phase 4 (box K1): the forest starter kit, adopted the way an agent would adopt it.
+// PRD-466 Phase 4 (box K1) and K4: a starter kit, adopted the way an agent would adopt it. `KIT` picks
+// the kit: `forest` (the default) or `alpine`.
 //
 // A real `minimal` game is scaffolded from this checkout's built dist and installed with the locally
 // packed framework tarballs. The kit is then added the way its README says an agent adds it —
-// `pnpm add -D` the terrain tarball, copy `starter/forest` into `src/terrain/forest/`, run its bake
+// `pnpm add -D` the terrain tarball, copy `starter/<kit>` into `src/terrain/<kit>/`, run its bake
 // into the game's own asset source — and the game is written around the copied kit. The game
 // typechecks, builds for the web, ships a bundle with no authoring package in it, and its own
-// playtest scenario walks a player into a fir in a real WebGPU browser.
+// playtest scenario walks a player into a prop in a real WebGPU browser.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -19,6 +20,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -36,6 +38,39 @@ const PORT = 5187;
 const REPO = join(import.meta.dirname, "../../..");
 const ARTIFACTS = join(import.meta.dirname, "../artifacts/playtest/starter-kit");
 const FIXTURES = join(import.meta.dirname, "fixtures/kit-game");
+
+/**
+ * What differs between the starter kits the proof runs. `forest` is the kit K1 proves; `alpine` is the
+ * boulder world K4 proves. A kit that lacks something (the forest's lake, the alpine's generated stand)
+ * says so here rather than defaulting it.
+ */
+const KITS = {
+  forest: {
+    scene: "Forest.ts",
+    playtest: "kit.playtest.json",
+    generatedStand: true,
+    water: true,
+    cooked: "cookedForestBytes",
+    captures: ["edge", "ground", "lake", "overview"],
+    views: ["edge", "ground", "lake", "overview"],
+  },
+  alpine: {
+    scene: "Alpine.ts",
+    playtest: "alpine.playtest.json",
+    generatedStand: false,
+    water: false,
+    cooked: "cookedAlpineBytes",
+    captures: ["boulders", "edge", "ground", "overview"],
+    views: ["boulders", "edge", "ground", "overview"],
+  },
+};
+/** The kit this run proves: `forest` by default, or `KIT=alpine`. Any other name fails closed. */
+const KIT = process.env.KIT ?? "forest";
+assert(
+  Object.hasOwn(KITS, KIT),
+  `KIT must be one of ${Object.keys(KITS).join(", ")}; got '${KIT}'`,
+);
+const CONFIG = KITS[KIT];
 
 const say = (line) => process.stderr.write(`${line}\n`);
 
@@ -65,6 +100,23 @@ function bytesUnder(directory) {
 }
 
 const round = (value) => Math.round(value * 1_000) / 1_000;
+
+/**
+ * Fails closed when something already answers on the playtest port. The runner would then test that
+ * server rather than the bundle this run built, so a green result could describe another game.
+ */
+function assertPortFree(port) {
+  return new Promise((resolve, reject) => {
+    const probe = createConnection({ host: "127.0.0.1", port });
+    probe.once("connect", () => {
+      probe.destroy();
+      reject(
+        new Error(`port ${String(port)} already answers; stop that server before a kit proof`),
+      );
+    });
+    probe.once("error", () => resolve());
+  });
+}
 
 /**
  * The fir the game stands next to, and four metres of clear ground from its trunk.
@@ -219,7 +271,7 @@ function edgeCandidates(fir, dry) {
 
 async function main() {
   const temporary = mkdtempSync(join(tmpdir(), "threenative-kit-"));
-  say(`kit proof in ${temporary}`);
+  say(`kit proof (${KIT}) in ${temporary}`);
 
   // --- pack every package the game needs from this checkout's built output ------------------------
   const packs = join(temporary, "packs");
@@ -252,24 +304,29 @@ async function main() {
   // --- the agent's own three steps, from the kit's README --------------------------------------------
   run("pnpm", ["add", "-D", archives[TERRAIN]], { cwd: game });
   cpSync(
-    join(game, "node_modules", ...TERRAIN.split("/"), "starter/forest"),
-    join(game, "src/terrain/forest"),
+    join(game, "node_modules", ...TERRAIN.split("/"), "starter", KIT),
+    join(game, "src/terrain", KIT),
     {
       recursive: true,
     },
   );
   // A baseline run (KIT_BEFORE=1) bakes the kit as it stood before the lake and river were restored.
-  if (process.env.KIT_BEFORE === "1")
-    stripWaterLayers(join(game, "src/terrain/forest/recipe.json"));
-  const world = join(game, "assets/terrain/forest");
+  if (process.env.KIT_BEFORE === "1") {
+    assert(CONFIG.water, "KIT_BEFORE strips the water layers, and only the forest kit has water");
+    stripWaterLayers(join(game, "src/terrain", KIT, "recipe.json"));
+  }
+  const world = join(game, "assets/terrain", KIT);
   say(
-    `bake: ${run("node", ["src/terrain/forest/bake.mjs", "--out", "assets/terrain/forest"], { cwd: game }).trim()}`,
+    `bake: ${run("node", [`src/terrain/${KIT}/bake.mjs`, "--out", `assets/terrain/${KIT}`], { cwd: game }).trim()}`,
   );
 
-  const { fir, spawn, clearance, edge, edgeClear } = chooseStand(game, world);
-  writeFileSync(
-    join(game, "src/terrain/forest/stand.ts"),
-    `// Written by the kit's proof from the placements this bake wrote: the fir the scene stands
+  // The forest scene is written around a stand the proof reads from its bake. The alpine scene picks
+  // its own spawn and views from the loaded heightfield, so the alpine kit has no generated stand.
+  if (CONFIG.generatedStand) {
+    const { fir, spawn, clearance, edge, edgeClear } = chooseStand(game, world);
+    writeFileSync(
+      join(game, "src/terrain/forest/stand.ts"),
+      `// Written by the kit's proof from the placements this bake wrote: the fir the scene stands
 // next to, four metres of clear ground from its trunk, and the ground it sits on. The scene imports
 // this, so no coordinate in the game is one the recipe no longer produces.
 export const stand = {
@@ -279,10 +336,11 @@ export const stand = {
   edge: { x: ${round(edge.x)}, z: ${round(edge.z)} },
 } as const;
 `,
-  );
-  say(
-    `stand: fir ${round(fir.x)},${round(fir.z)} spawn ${round(spawn.x)},${round(spawn.z)} (${round(clearance)} m clear) edge ${round(edge.x)},${round(edge.z)} (${round(edgeClear)} m clear)`,
-  );
+    );
+    say(
+      `stand: fir ${round(fir.x)},${round(fir.z)} spawn ${round(spawn.x)},${round(spawn.z)} (${round(clearance)} m clear) edge ${round(edge.x)},${round(edge.z)} (${round(edgeClear)} m clear)`,
+    );
+  }
 
   // --- the game, written around the copied kit -------------------------------------------------------
   // The scaffold's own arena and its player are the template's files, not this game's; they are the
@@ -291,10 +349,15 @@ export const stand = {
   rmSync(join(game, "src/entities"), { force: true, recursive: true });
   for (const name of readdirSync(join(game, "playtests"))) rmSync(join(game, "playtests", name));
   for (const name of ["game.ts", "state.ts"]) cpSync(join(FIXTURES, name), join(game, "src", name));
-  cpSync(join(FIXTURES, "playtests/kit.playtest.json"), join(game, "playtests/kit.playtest.json"));
+  cpSync(join(FIXTURES, "playtests", CONFIG.playtest), join(game, "playtests/kit.playtest.json"));
   if (process.env.KIT_BEFORE === "1") stripWaterRows(join(game, "playtests/kit.playtest.json"));
   mkdirSync(join(game, "src/scenes"), { recursive: true });
-  cpSync(join(FIXTURES, "Forest.ts"), join(game, "src/scenes/Forest.ts"));
+  cpSync(join(FIXTURES, CONFIG.scene), join(game, "src/scenes", CONFIG.scene));
+  // game.ts imports the kit's scene through this one re-export, so the game itself is the same for each kit.
+  writeFileSync(
+    join(game, "src/scenes/KitScene.ts"),
+    `export { ${CONFIG.scene.replace(/\.ts$/u, "")} as KitScene, noteFrameBudget } from "./${CONFIG.scene.replace(/\.ts$/u, ".js")}";\n`,
+  );
   cpSync(
     join(import.meta.dirname, "../src/render/loading.ts"),
     join(game, "src/render/loading.ts"),
@@ -317,11 +380,12 @@ export const stand = {
     .join("\n");
   for (const forbidden of ["@threenative/terrain", "bakeWorldPackage", "terrain-editor"])
     assert(!shipped.includes(forbidden), `the shipped bundle contains '${forbidden}'`);
-  const cooked = bytesUnder(join(game, "public/terrain/forest"));
-  assert(cooked > 0, "the asset pipeline published nothing under public/terrain/forest");
-  say(`built; cooked ${String(cooked)} B under public/terrain/forest`);
+  const cooked = bytesUnder(join(game, "public/terrain", KIT));
+  assert(cooked > 0, `the asset pipeline published nothing under public/terrain/${KIT}`);
+  say(`built; cooked ${String(cooked)} B under public/terrain/${KIT}`);
 
   // --- the game's own playtest, against the built bundle, in a real WebGPU browser -------------------
+  await assertPortFree(PORT);
   rmSync(ARTIFACTS, { force: true, recursive: true });
   mkdirSync(ARTIFACTS, { recursive: true });
   const playtest = run(
@@ -370,49 +434,40 @@ export const stand = {
     assert(after !== undefined, `the playtest asserted nothing at GameState.${path}`);
     return after;
   };
-  const perView = (path) => ({
-    edge: value(`${path}.edge`),
-    ground: value(`${path}.ground`),
-    overview: value(`${path}.overview`),
-    lake: value(`${path}.lake`),
-  });
+  // Each kit reports the numbers its own scene defines. A name with no playtest row fails in value().
+  const kitNumbers =
+    KIT === "forest"
+      ? {
+          closestToTrunk: value("closestToTrunk"),
+          firInstancesDrawn: value("firInstancesDrawn"),
+          waterLakes: value("waterLakes"),
+          waterRivers: value("waterRivers"),
+        }
+      : {
+          boulderInstances: value("boulderInstances"),
+          closestToBoulder: value("closestToBoulder"),
+        };
+  const views = Object.fromEntries(
+    CONFIG.views.map((view) => [
+      view,
+      {
+        frameP95: value(`viewFrameP95.${view}`),
+        gpuP50: value(`viewGpuP50.${view}`),
+        gpuP95: value(`viewGpuP95.${view}`),
+      },
+    ]),
+  );
   const summary = {
-    captures: ["edge.png", "ground.png", "lake.png", "overview.png"].map((file) =>
-      join("artifacts/playtest/starter-kit", file),
-    ),
-    closestToTrunk: value("closestToTrunk"),
-    cookedForestBytes: cooked,
+    captures: CONFIG.captures.map((file) => join("artifacts/playtest/starter-kit", `${file}.png`)),
+    [CONFIG.cooked]: cooked,
     driveMetres: value("driveMetres"),
-    firInstancesDrawn: value("firInstancesDrawn"),
     frames: value("frames"),
     groundError: value("groundError"),
+    ...kitNumbers,
     adapter: `${capture.adapter.vendor}/${capture.adapter.architecture}`,
     pass: true,
     propColliders: value("propColliders"),
-    waterLakes: value("waterLakes"),
-    waterRivers: value("waterRivers"),
-    views: {
-      edge: {
-        frameP95: perView("viewFrameP95").edge,
-        gpuP50: perView("viewGpuP50").edge,
-        gpuP95: perView("viewGpuP95").edge,
-      },
-      ground: {
-        frameP95: perView("viewFrameP95").ground,
-        gpuP50: perView("viewGpuP50").ground,
-        gpuP95: perView("viewGpuP95").ground,
-      },
-      overview: {
-        frameP95: perView("viewFrameP95").overview,
-        gpuP50: perView("viewGpuP50").overview,
-        gpuP95: perView("viewGpuP95").overview,
-      },
-      lake: {
-        frameP95: perView("viewFrameP95").lake,
-        gpuP50: perView("viewGpuP50").lake,
-        gpuP95: perView("viewGpuP95").lake,
-      },
-    },
+    views,
   };
   console.log(JSON.stringify(summary));
   // /tmp is RAM here and the scaffold is ~700 MB; a failed run keeps it for inspection.
