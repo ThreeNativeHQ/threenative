@@ -150,7 +150,8 @@ try {
     new SphereGeometry(0.45, 32, 16),
     new MeshStandardMaterial({ color: 0xf0e0c0, map: checker }),
   );
-  ball.position.set(0.15, -0.9, 0.6);
+  // three's copy reads x, y and z: a plain object places it, as Midway's audio cues do.
+  ball.position.copy({ x: 0.15, y: -0.9, z: 0.6 } as never);
   // texture(textureObject, uv) on an unnamed DataTexture, as Midway's ocean: a level-0 vertex read
   // at the local xz (Midway's positionWorld.xz swizzle) displaces the slab and a fragment read
   // colours it.
