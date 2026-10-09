@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
@@ -20,9 +20,16 @@ const SHIPPED = path.resolve("packages/create-threenative/templates/starter/publ
 
 /** Run the shipped generator, exactly as the template's `package.json` would. */
 function writeTable(...flags: readonly string[]): string {
-  const out = path.join(makeTempDirSync("tn-grade-"), "grade.cube");
-  execFileSync(process.execPath, [GENERATOR, ...flags, "--out", out]);
-  return readFileSync(out, "utf8");
+  // Removed here, not on test finish: the identity table is written at module load, outside any
+  // test, where the helper's fallback is a process-exit hook a vitest worker never runs.
+  const directory = makeTempDirSync("tn-grade-");
+  try {
+    const out = path.join(directory, "grade.cube");
+    execFileSync(process.execPath, [GENERATOR, ...flags, "--out", out]);
+    return readFileSync(out, "utf8");
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
 }
 
 /**
