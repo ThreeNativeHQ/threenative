@@ -944,14 +944,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
   // scope rewinds, a stack as nested calls (a callback inside an invoke) need; a scope that outgrows
   // it falls back to malloc and frees on exit. Every engine call crosses here, many per frame.
-  const ARENA = 64 * 1024;
-  const arenaBase = abi._malloc(ARENA);
+  const arenaSize = 64 * 1024;
+  const arenaBase = abi._malloc(arenaSize);
   let arenaTop = arenaBase;
   const allocations: number[] = [];
   const alloc = (size: number): number => {
     const aligned = (size + 7) & ~7;
     let pointer: number;
-    if (arenaTop + aligned <= arenaBase + ARENA) {
+    if (arenaTop + aligned <= arenaBase + arenaSize) {
       pointer = arenaTop;
       arenaTop += aligned;
     } else {
