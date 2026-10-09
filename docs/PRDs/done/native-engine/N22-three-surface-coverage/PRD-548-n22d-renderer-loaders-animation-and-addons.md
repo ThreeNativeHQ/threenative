@@ -1,15 +1,15 @@
 # PRD-548 — Corpus gaps in renderer passes, loaders, animation and addons (N22d)
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-09)
 **Priority:** P1 — 13 templates write post-node parameters and uniforms that the engine reads only once at lowering, and Midway's water reads scene depth and colour the engine does not expose, so their journeys cannot pass on the native engine
 **Complexity:** 5 (MEDIUM) — 6–10 engine files across post effects, the render graph, glTF and geometry utilities; no new module
 **Owner:** João
-**Work package:** N22d, layers 6–9 — [three.js surface coverage](README.md)
-**Depends on:** [PRD-547](PRD-547-n22c-tsl-and-shader-nodes.md) for its layers; [PRD-523 (N14a)](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md), [PRD-524 (N14b)](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md), [PRD-526 (N14d)](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md), [PRD-515 (N10)](../../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) and [PRD-518 (N11c)](../../done/native-engine/N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) (done); [PRD-531](../PRD-531-n18-v8-game-runtime-adapter.md) and [PRD-540](../PRD-540-web-games-boot-on-the-wasm-engine.md) carry the result to each game
+**Work package:** N22d, layers 6–9 — [three.js surface coverage](../../../native-engine/N22-three-surface-coverage/README.md)
+**Depends on:** [PRD-547](../../../native-engine/N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) for its layers; [PRD-523 (N14a)](../N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md), [PRD-524 (N14b)](../N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md), [PRD-526 (N14d)](../N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md), [PRD-515 (N10)](../PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) and [PRD-518 (N11c)](../N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) (done); [PRD-531](../../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md) and [PRD-540](../../../native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md) carry the result to each game
 
 ## Context
 
-These are the four highest engine layers in the [N22 layer map](README.md#the-catalog-by-engine-layer):
+These are the four highest engine layers in the [N22 layer map](../../../native-engine/N22-three-surface-coverage/README.md#the-catalog-by-engine-layer):
 renderer passes, post and render targets (5 of 45 entries supported), loaders and assets (0 of 1),
 animation (12 of 27) and addons (1 of 6). The post chain binding itself — `pass`, `mrt`,
 `RenderPipeline`, `RenderTarget`, `QuadMesh`, `TempNode`, `RendererUtils`, `NodeUpdateType` and the
@@ -38,7 +38,7 @@ transparent material samples after the opaque pass, as in r185.
 ## Execution Phases
 
 #### Phase 1: Renderer passes, post and render targets
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/runtime-native/src/engine/renderer/post_effects.cpp`, `packages/runtime-native/src/engine/renderer/render_texture_pass.h`, `packages/runtime-native/src/engine/renderer/effects.cpp`, `packages/runtime-native/src/engine/renderer/graph/`, `packages/runtime-native/src/engine/renderer/renderer.cpp`
 - [x] Post-node parameters set after the first render take effect: `resolutionScale` on the AO pass (`rawPass` copies it at lowering, `post_effects.cpp:281`; resize must read `source.effect->resolutionScale`), and `bloom()` strength, radius and threshold as uniforms. Users: 13 templates and Midway set `resolutionScale`; 13 templates and Bayview call `bloom`. Extends PRD-526. proof: fixture `tsl-post-live-parameters` added to the `render_post_addons` list, through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_post_addons`
   Moved from PRD-531 open items (2026-10-08).
@@ -52,13 +52,13 @@ transparent material samples after the opaque pass, as in r185.
   Moved from PRD-540 phase 3 (2026-10-08).
 
 #### Phase 2: Loaders and assets
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/runtime-native/src/engine/assets/gltf/`, `packages/runtime-native/src/engine/renderer/` (PMREM input)
 - [x] A glTF material with `KHR_materials_clearcoat` loads into the clearcoat layer (f6c846377) instead of being refused. Users: Midway (imported aircraft). Extends PRD-515. proof: fixture `gltf-model-clearcoat` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_gltf` — **done 2026-10-09** (`24c9f626e`): `gltf-model-clearcoat` (a factor-only coat and a texture-driven one) was refused with `TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED` before and matches the r185 golden after, 2/2 observations, in `native_engine_render_gltf`. The coat-roughness map changes too few pixels for the 1% frame gate, so `native_engine_gltf_hierarchy` also checks the loaded type, factors and both maps; a control that drops the roughness map fails it.
-- [ ] `HDRLoader` loads Midway's equirectangular environment into a texture that PMREM filters as r185 does. Users: Midway (`src/render/environment.ts`). Extends PRD-515 and [PRD-525](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md). proof: fixture `pmrem-hdr-equirect` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_pmrem`
+- [x] `HDRLoader` loads Midway's equirectangular environment into a texture that PMREM filters as r185 does. Users: Midway (`src/render/environment.ts`). Extends PRD-515 and [PRD-525](../N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md). proof: fixture `pmrem-hdr-equirect` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_pmrem` — **done 2026-10-09** (`8fb6d6a3c`): two halves. The decode: `parseHDR` (shared by both back ends' HDRLoader) equals three's `HDRLoader.parse` texel for texel in `packages/three-native/__tests__/addons.spec.ts` (pass), and the V8 player loads an `.hdr` from a package in `player-textures.mjs`. The filtering: `pmrem-hdr-equirect` (a half-float equirect with a sun at 24 and HDRLoader's settings, as environment and background) matches the r185 golden, 2/2 observations, in `native_engine_render_pmrem`; negative control (the upload ignoring flipY) fails it at 99.99%.
 
 #### Phase 3: Animation and addons
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/runtime-native/src/engine/scene/geometry.cpp`, `packages/runtime-native/src/engine/animation/skinning/`, the binding registry
 - [x] `mergeGeometries` and `mergeVertices` (`BufferGeometryUtils`) build the same buffers as r185 over engine geometry on V8 and Wasm. Users: action-rpg, puzzle, racing, sailing, shooter, snow, starter, Midway, Bayview; core. Extends PRD-508. proof: fixture `geometry-derived-merge` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_geometry_derived`, and `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend` — **done 2026-10-09** (`8a1b20d8f`): both live in the shared `merge-geometries.ts`, a JS addon the C++ fixture driver cannot run, so the proof runs them over engine geometry on each back end against three r185's own output: `native_engine_wasm_browser_backend` (mergeGeometries and mergeVertices) and the new `native_engine_player_geometry_utils` on V8, both pass; negative control (mergeVertices dropping morph values) fails both.
 - [x] `SkeletonUtils.clone` on an engine `SkinnedMesh` gives a clone whose bones drive its own skin. Users: shooter, Bayview; core. Extends PRD-518. proof: fixture `skinned-clone` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_skinned` — **done 2026-10-09** (`3f8cac8da`; the `SkeletonUtils.clone` binding landed earlier this session): `skinned-clone` (the clone bends bones 2 and 3, the original keeps its pose) matches the r185 golden in `native_engine_render_skinned`; negative control (the clone sharing the source skeleton) fails it at 10.5% pixel mismatch.
@@ -66,3 +66,7 @@ transparent material samples after the opaque pass, as in r185.
 New render groups need a line in the render-case list in `packages/runtime-native/cmake/NativeEngine.cmake`:
 `render_viewport:tsl-viewport-*`, and the two post fixtures in the `render_post_addons` list. The
 `shadows-*`, `gltf-model-*`, `pmrem-*`, `skinned-*` and `geometry-derived-*` globs already exist.
+
+## Acceptance criteria
+
+- [x] Every renderer, loader, animation and addon gap above holds on one tree, on desktop and Wasm. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -L native-engine -R "render|gltf|player|post"` and `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm` — 2026-10-09: 75/75 and 3/3.
