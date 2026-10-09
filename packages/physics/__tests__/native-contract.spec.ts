@@ -1006,4 +1006,110 @@ describe("native physics contract", () => {
     const goneId = gone.createVehicle?.(vehicleOptions) as number;
     expect(() => gone.readVehicleState?.(goneId)).toThrow(/TN_VEHICLE_UNKNOWN/);
   });
+
+  it("returns decoded hit for native numeric ray query and rejects invalid codes", () => {
+    const rayOutputMock = (bodyId: number, status = 1, dist = 5) => {
+      return vi.fn((_query: unknown, out: Float32Array) => {
+        out[0] = bodyId;
+        out[1] = 1;
+        out[2] = 2;
+        out[3] = 3; // pos
+        out[4] = 0;
+        out[5] = 1;
+        out[6] = 0; // normal
+        out[7] = dist; // dist
+        return status;
+      });
+    };
+
+    // Status 1 with valid body id -> decoded hit returned
+    const rawSuccess = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: rayOutputMock(0, 1, 4.5),
+    };
+    const nativeSuccess = createNativePhysicsSimulation(
+      rawSuccess as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    nativeSuccess.createBody({ ...bodyOptions(), entity: "target" });
+    const hit = nativeSuccess.intersectRay({
+      collisionMask: 1,
+      from: { x: 0, y: 0, z: 0 },
+      to: { x: 0, y: 10, z: 0 },
+    });
+    expect(hit).toBeDefined();
+    expect(hit?.distance).toBe(4.5);
+    expect(hit?.normal).toEqual({ x: 0, y: 1, z: 0 });
+    expect(hit?.position).toEqual({ x: 1, y: 2, z: 3 });
+    expect(hit?.body.entity).toBe("target");
+
+    // Status 0 -> miss (returns undefined)
+    const rawMiss = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: vi.fn().mockReturnValue(0),
+    };
+    const nativeMiss = createNativePhysicsSimulation(
+      rawMiss as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    expect(
+      nativeMiss.intersectRay({
+        collisionMask: 1,
+        from: { x: 0, y: 0, z: 0 },
+        to: { x: 0, y: 10, z: 0 },
+      }),
+    ).toBeUndefined();
+
+    // Status 2 -> TN_NATIVE_PHYSICS_INVALID: ray query returned an invalid status
+    const rawInvalidStatus = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: vi.fn().mockReturnValue(2),
+    };
+    const nativeInvalidStatus = createNativePhysicsSimulation(
+      rawInvalidStatus as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    expect(() =>
+      nativeInvalidStatus.intersectRay({
+        collisionMask: 1,
+        from: { x: 0, y: 0, z: 0 },
+        to: { x: 0, y: 10, z: 0 },
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_INVALID: ray query returned an invalid status/);
+
+    // Invalid bodyId (< 0 or NaN) in output -> TN_NATIVE_PHYSICS_INVALID: ray output is malformed
+    const rawBadBody = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: rayOutputMock(-1, 1),
+    };
+    const nativeBadBody = createNativePhysicsSimulation(
+      rawBadBody as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    expect(() =>
+      nativeBadBody.intersectRay({
+        collisionMask: 1,
+        from: { x: 0, y: 0, z: 0 },
+        to: { x: 0, y: 10, z: 0 },
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_INVALID: ray output is malformed/);
+
+    // Negative distance in output -> TN_NATIVE_PHYSICS_INVALID: ray output distance is invalid
+    const rawBadDist = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: rayOutputMock(0, 1, -1),
+    };
+    const nativeBadDist = createNativePhysicsSimulation(
+      rawBadDist as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    nativeBadDist.createBody(bodyOptions());
+    expect(() =>
+      nativeBadDist.intersectRay({
+        collisionMask: 1,
+        from: { x: 0, y: 0, z: 0 },
+        to: { x: 0, y: 10, z: 0 },
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_INVALID: ray output distance is invalid/);
+  });
 });

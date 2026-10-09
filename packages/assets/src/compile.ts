@@ -16,12 +16,22 @@ import path from "node:path";
 import { assertBudget, measureBudget, parseBudget } from "./budget.js";
 import type { IAssetBudget, IAssetRuntimeDecoderCapabilities } from "./budget.js";
 import {
+  ASSETS_CONFIG_KEYS,
+  LIGHTMAP_CONFIG_KEYS,
+  MODELS_CONFIG_KEYS,
+  MODEL_PASS_KEYS,
+  MODEL_QUANTIZE_KEYS,
+  MODEL_VIRTUAL_COUNT_KEYS,
+  MODEL_VIRTUAL_KEYS,
+} from "./config-keys.js";
+import {
   type IModelDedupeSummary,
   formatModelDedupe,
   groupModelSources,
 } from "./content/model-dedupe.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
+import { readTextureQuality, resolveImageQualityFloor } from "./image-quality.js";
 import {
   type IModelLodOptions,
   type IModelLodOverride,
@@ -49,6 +59,7 @@ import type {
 import { globMatch } from "./passes/glob.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
+import { TEXTURE_SIZE_SLOTS, type TextureMaxSize } from "./passes/model-textures.js";
 import { modelPass } from "./passes/model.js";
 import type {
   IModelPassOptions,
@@ -68,6 +79,8 @@ import {
   formatModelSizes,
   formatPassCosts,
   formatSkippedCompression,
+  formatTextureQualityTotals,
+  formatTextureRungs,
   formatTextureSizes,
 } from "./report.js";
 import type {
@@ -239,7 +252,8 @@ export interface IAudioConfig {
 }
 
 export interface ITexturesConfig {
-  readonly maxSize?: number;
+  readonly floor?: ITexturePassOptions["floor"];
+  readonly maxSize?: TextureMaxSize;
   readonly overrides?: readonly ITextureOverride[];
   readonly quality?: number;
 }
@@ -330,6 +344,7 @@ export interface IBakeReceipt {
 }
 
 interface IAssetManifestEntry {
+  readonly quality?: import("./image-quality.js").ITextureQuality;
   readonly compressionSkipped?: TextureSkipReason;
   /** What the audio pass measured and did to one clip. */
   readonly audio?: IAudioRow;
@@ -759,6 +774,18 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
       )
     : undefined;
   return {
+    ...(isRecord(value.quality)
+      ? {
+          quality: Object.fromEntries(
+            Object.entries(value.quality).map(([key, score]) => {
+              const parsed = readTextureQuality(score);
+              if (parsed === undefined)
+                throw new Error(`TN_ASSETS_QUALITY_MISSING: invalid score for '${key}'.`);
+              return [key, parsed];
+            }),
+          ),
+        }
+      : {}),
     bytesAfter: value.bytesAfter as number,
     bytesBefore: value.bytesBefore as number,
     count: value.count as number,
@@ -767,7 +794,8 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
       ? {
           skippedCompression: Object.fromEntries(
             Object.entries(value.skippedCompression).filter(
-              ([, reason]) => reason === "block-size" || reason === "not-smaller",
+              ([, reason]) =>
+                reason === "block-size" || reason === "not-smaller" || reason === "below-floor",
             ),
           ) as Record<string, TextureSkipReason>,
         }
@@ -942,19 +970,39 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.textures must be "none" or an object.');
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "maxSize" && key !== "quality" && key !== "overrides") {
+    if (key !== "maxSize" && key !== "quality" && key !== "overrides" && key !== "floor") {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.textures.${key} is not recognised.`);
     }
   }
   return {
+    ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
     ...(raw.maxSize === undefined
       ? {}
-      : { maxSize: positiveTextureSize(raw.maxSize, "assets.textures.maxSize") }),
+      : {
+          maxSize: parseTextureMaxSize(raw.maxSize, "assets.textures.maxSize", positiveTextureSize),
+        }),
     ...(raw.quality === undefined
       ? {}
       : { quality: textureQuality(raw.quality, "assets.textures.quality") }),
     ...(raw.overrides === undefined ? {} : { overrides: validateTextureOverrides(raw.overrides) }),
   };
+}
+
+function parseTextureMaxSize(
+  value: unknown,
+  label: string,
+  validate: (value: unknown, label: string) => number,
+): TextureMaxSize {
+  if (!isRecord(value)) return validate(value, label);
+  return Object.fromEntries(
+    Object.entries(value).map(([slot, cap]) => {
+      if (!TEXTURE_SIZE_SLOTS.has(slot))
+        throw new Error(
+          `TN_ASSETS_CONFIG_INVALID: ${label}.${slot} must name a glTF texture slot.`,
+        );
+      return [slot, validate(cap, `${label}.${slot}`)];
+    }),
+  );
 }
 
 function positiveTextureSize(value: unknown, label: string): number {
@@ -975,18 +1023,8 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
-  const allowed = [
-    "compact",
-    "lightmap",
-    "passes",
-    "quantize",
-    "sharedImages",
-    "simplify",
-    "textures",
-    "virtual",
-  ];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!MODELS_CONFIG_KEYS.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.${key} is not recognised.`);
     }
   }
@@ -1109,7 +1147,7 @@ function parseModelCompact(raw: unknown): boolean | IModelCompactOptions {
   };
 }
 
-const MODEL_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality"];
+const MODEL_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality", "floor"];
 
 function positiveInteger(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -1136,7 +1174,10 @@ function parseModelTextures(raw: unknown): IModelTexturesOptions | "none" {
     }
   }
   return {
-    ...(raw.maxSize === undefined ? {} : { maxSize: positiveInteger(raw.maxSize, "maxSize") }),
+    ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
+    ...(raw.maxSize === undefined
+      ? {}
+      : { maxSize: parseTextureMaxSize(raw.maxSize, "maxSize", positiveInteger) }),
     ...(raw.overrides === undefined
       ? {}
       : { overrides: validateModelTextureOverrides(raw.overrides) }),
@@ -1211,16 +1252,15 @@ function parseModelVirtual(raw: unknown): IModelVirtualOptions | "none" {
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models.virtual must be "none" or an object.');
   }
-  const counts = ["groupSize", "maxTriangles", "minSourceTriangles", "minTriangles"] as const;
   for (const key of Object.keys(raw)) {
-    if (key !== "simplifyRatio" && !(counts as readonly string[]).includes(key)) {
+    if (!MODEL_VIRTUAL_KEYS.includes(key)) {
       throw new Error(
         `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.virtual.${key} is not recognised.`,
       );
     }
   }
   const parsed: Record<string, number> = {};
-  for (const key of counts) {
+  for (const key of MODEL_VIRTUAL_COUNT_KEYS) {
     const value = raw[key];
     if (value === undefined) continue;
     if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -1441,7 +1481,7 @@ function parseLightmap(raw: unknown): ILightmapPassOptions {
     throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.lightmap must be an object.");
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "atlasSize" && key !== "padding") {
+    if (!LIGHTMAP_CONFIG_KEYS.includes(key)) {
       throw new Error(
         `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.lightmap.${key} is not recognised.`,
       );
@@ -1452,6 +1492,11 @@ function parseLightmap(raw: unknown): ILightmapPassOptions {
       "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.atlasSize must be a positive integer.",
     );
   }
+  if ((raw.atlasSize as number) % 4 !== 0) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.atlasSize must be a multiple of 4.",
+    );
+  }
   if (!Number.isSafeInteger(raw.padding) || (raw.padding as number) <= 0) {
     throw new Error(
       "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.padding must be a positive integer.",
@@ -1459,8 +1504,6 @@ function parseLightmap(raw: unknown): ILightmapPassOptions {
   }
   return { atlasSize: raw.atlasSize as number, padding: raw.padding as number };
 }
-
-const MODEL_PASS_KEYS: readonly string[] = ["dedup", "meshopt", "prune", "quantize", "reorder"];
 
 function parseModelPasses(raw: unknown): IModelPassesOptions {
   if (!isRecord(raw)) {
@@ -1478,8 +1521,6 @@ function parseModelPasses(raw: unknown): IModelPassesOptions {
   }
   return raw as IModelPassesOptions;
 }
-
-const MODEL_QUANTIZE_KEYS: readonly string[] = ["normalBits", "positionBits", "uvBits"];
 
 function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
   if (!isRecord(raw)) {
@@ -1540,20 +1581,9 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     throw new Error("TN_ASSETS_CONFIG_INVALID: assets must be an object when declared.");
   }
   for (const key of Object.keys(config)) {
-    if (
-      key !== "audio" &&
-      key !== "budget" &&
-      key !== "exclude" &&
-      key !== "concurrency" &&
-      // `assets.lod` is validated and resolved by the project config loader; this package accepts
-      // it so the resolved config crosses the seam intact. Phase 2 consumes it for generation.
-      key !== "lod" &&
-      key !== "source" &&
-      key !== "output" &&
-      key !== "targets" &&
-      key !== "textures" &&
-      key !== "models"
-    ) {
+    // `assets.lod` is validated and resolved by the project config loader; this package accepts
+    // it so the resolved config crosses the seam intact. Phase 2 consumes it for generation.
+    if (!ASSETS_CONFIG_KEYS.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.${key} is not recognised.`);
     }
   }
@@ -1863,6 +1893,7 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
     JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
+    JSON.stringify(existing.quality) === JSON.stringify(entry.quality) &&
     JSON.stringify(existing.simplify) === JSON.stringify(entry.simplify) &&
     JSON.stringify(existing.lod) === JSON.stringify(entry.lod) &&
     existing.bytes === entry.bytes &&
@@ -2656,6 +2687,7 @@ export async function compileAssets(
       });
     } else {
       textureRows.push({
+        ...(entry.quality === undefined ? {} : { quality: entry.quality }),
         after: entry.bytes,
         before: entry.bytesBefore,
         // Read off the manifest entry, not off the pass: a cache hit reuses the previous entry
@@ -2740,12 +2772,14 @@ export async function compileAssets(
             bytesBefore: input.length,
             audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
+            quality: readTextureQuality(applied.entry.quality),
             compact: compactRow(applied.entry.compact),
             simplify: simplifyRow(applied.entry.simplify),
             lod: lodRow(applied.entry.lod),
             materials: materialRow(applied.entry.materials),
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
             ...(applied.entry.compressionSkipped === "block-size" ||
+            applied.entry.compressionSkipped === "below-floor" ||
             applied.entry.compressionSkipped === "not-smaller"
               ? { compressionSkipped: applied.entry.compressionSkipped }
               : {}),
@@ -2941,6 +2975,16 @@ export async function compileAssets(
   for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  const rungs = [
+    ...textureRows.map((row) => row.format ?? "none"),
+    ...modelRows.flatMap((row) => Object.values(row.embeddedTextures?.formats ?? {})),
+  ];
+  if (rungs.length > 0) console.log(formatTextureRungs(rungs));
+  const qualityScores = [
+    ...textureRows.flatMap((row) => (row.quality === undefined ? [] : [row.quality])),
+    ...modelRows.flatMap((row) => Object.values(row.embeddedTextures?.quality ?? {})),
+  ];
+  if (qualityScores.length > 0) console.log(formatTextureQualityTotals(qualityScores));
   const dedupe: IModelDedupeSummary | undefined =
     modelSources.length === 0
       ? undefined

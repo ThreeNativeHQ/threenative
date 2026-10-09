@@ -1,10 +1,10 @@
 # PRD-538 — Shadow maps redraw only what streamed in
 
 **Status:** NOT STARTED
-**Priority:** P1 — Open: streaming invalidations re-render a whole shadow map several times a second, which keeps PRD-478's walking GPU p95 above 8.3 ms.
+**Priority:** P2 — Open: streaming invalidations re-render a whole 4096² shadow map 68–79 times per walk; each render costs 4–6 ms of GPU.
 **Complexity:** 6 (MEDIUM) — one engine module family (`render/virtual-shadow*.ts`), a partial render path through three's shadow pass, and a pixel-equivalence proof
 **Owner:** João
-**Depends on:** none. PRD-478's AC-2 depends on this PRD.
+**Depends on:** none.
 
 ## Context
 
@@ -19,6 +19,8 @@ Measured on Machinefall `map-walk`, desktop RTX 2080, live clock, PRD-478 branch
 | Shadow GPU p95 in those windows | 3.9–6.6 ms |
 
 A streamed cell changes a small part of the map, but `VirtualShadowNode` redraws the whole level for it. `invalidateRegion(region)` already says which part changed; today it only chooses *which levels* redraw.
+
+**Correction, 2026-10-08:** quiet-desktop runs show that PRD-478's early-route GPU p95 (9.2–9.8 ms) is the main pass, not this shadow map: `gpuMain` p50 is 8.6 ms there, drawing 8.2 M triangles of single-level trees that the asset cook gave no LOD chain (fixed in [PRD-541](../assets/PRD-541-card-lod-levels-keep-the-canopy.md)). This PRD still removes a 4–6 ms spike from each redraw frame, but PRD-478's AC-2 no longer depends on it.
 
 A longer delay is not the fix. It cuts renders but lets a newly streamed caster's shadow arrive late near the player, which PRD-478's AC-3 forbids.
 

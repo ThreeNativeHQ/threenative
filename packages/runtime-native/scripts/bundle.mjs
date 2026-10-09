@@ -149,8 +149,9 @@ function generateVFSHeader(files, outputPath) {
 
 /**
  * Decoder-free targets retain loader configuration/lifecycle but refuse actual decoding.
- * Android V8 still lacks a qualified packaged decoder path; its engine is not the reason to
- * enable one. Desktop QuickJS and an unknown desktop artifact use the same refusing stubs.
+ * A mobile bundle keeps the real loader only for a codec `--decoders` admits — the list
+ * `threenative build` resolves per engine (Android V8: ktx2,meshopt). Desktop QuickJS and an
+ * unknown desktop artifact use the same refusing stubs.
  */
 const MOBILE_KTX2_MESSAGE =
   // Never spell the WASM host global: the bundle guard must not mistake diagnostics for code.
@@ -160,6 +161,7 @@ const MOBILE_MESH_MESSAGE =
 
 const MOBILE_DECODER_STUBS = [
   {
+    codec: 'ktx2',
     endsWith: '/examples/jsm/loaders/KTX2Loader.js',
     source: `const message = "${MOBILE_KTX2_MESSAGE}";
 export class KTX2Loader {
@@ -181,6 +183,7 @@ export class KTX2Loader {
 `,
   },
   {
+    codec: 'meshopt',
     endsWith: '/examples/jsm/libs/meshopt_decoder.module.js',
     source: `const message = "${MOBILE_MESH_MESSAGE}";
 function refuse() { throw new Error(message); }
@@ -197,6 +200,7 @@ export const MeshoptDecoder = {
 `,
   },
   {
+    codec: 'draco',
     endsWith: '/examples/jsm/loaders/DRACOLoader.js',
     source: `const message = "${MOBILE_MESH_MESSAGE}";
 export class DRACOLoader {
@@ -222,15 +226,17 @@ export class DRACOLoader {
  * the same file — `three/addons/...`, `three/examples/jsm/...`, or a relative import from
  * inside three — lands on the same replacement.
  */
-function mobileDecoderStub(id) {
+function mobileDecoderStub(id, admitted) {
   const normalized = id.split('\\').join('/');
-  return MOBILE_DECODER_STUBS.find((stub) => normalized.endsWith(stub.endsWith))?.source;
+  return MOBILE_DECODER_STUBS.find(
+    (stub) => normalized.endsWith(stub.endsWith) && !admitted.includes(stub.codec),
+  )?.source;
 }
 
 /**
  * Main
  */
-async function bundleProject(project, entryPoint, outputPath, target, nativeBackend) {
+async function bundleProject(project, entryPoint, outputPath, target, nativeBackend, decoders = []) {
   const absoluteProject = resolve(project);
   const absoluteEntry = resolve(absoluteProject, entryPoint);
   const absoluteOutput = resolve(outputPath);
@@ -298,7 +304,7 @@ if (typeof globalThis.requestAnimationFrame === "function") {
     name: 'threenative-mobile-decoders',
     enforce: 'pre',
     load(id) {
-      const stub = mobileDecoderStub(id);
+      const stub = mobileDecoderStub(id, decoders);
       return stub === undefined ? null : stub;
     },
   };
@@ -398,6 +404,7 @@ async function main() {
   let project = null;
   let target = null;
   let nativeBackend = false;
+  let decoders = [];
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--entry' && args[i + 1]) {
@@ -412,6 +419,10 @@ async function main() {
       target = args[++i];
     } else if (args[i] === '--native-backend') {
       nativeBackend = true;
+    } else if (args[i] === '--decoders' && args[i + 1] !== undefined) {
+      decoders = args[++i].split(',').filter((codec) => codec.length > 0);
+      const unknown = decoders.filter((codec) => !MOBILE_DECODER_STUBS.some((stub) => stub.codec === codec));
+      if (unknown.length > 0) throw new Error(`--decoders names unknown codec(s): ${unknown.join(', ')}`);
     }
   }
 
@@ -420,7 +431,7 @@ async function main() {
     if (!['android', 'desktop', 'ios'].includes(target)) {
       throw new Error('--project requires --target android|desktop|ios.');
     }
-    await bundleProject(project, entryPoint, outputDir, target, nativeBackend);
+    await bundleProject(project, entryPoint, outputDir, target, nativeBackend, decoders);
     return;
   }
 

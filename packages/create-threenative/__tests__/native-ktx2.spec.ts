@@ -4,7 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets, modelPass } from "@threenative/assets";
 import { encodeToKTX2 } from "ktx2-encoder";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
@@ -24,6 +24,14 @@ const desktopV8 = () =>
     path.resolve("packages/create-threenative/src/build.ts"),
     (() => ({ status: 0, stdout: "+ v8 build" })) as never,
   );
+const androidV8 = () =>
+  resolveRuntimeAssetCapabilities("android", undefined, undefined, {
+    THREENATIVE_GRADLE_ARGS: "-PthreenativeJsEngine=v8",
+  });
+const androidQuickJs = () =>
+  resolveRuntimeAssetCapabilities("android", undefined, undefined, {
+    THREENATIVE_GRADLE_ARGS: "-PthreenativeJsEngine=quickjs",
+  });
 const viteInstall = path.resolve(import.meta.dirname, "../node_modules/vite");
 
 afterEach(async () => {
@@ -168,9 +176,16 @@ export default defineGame({ scenes: {} });
 
     const output = await bundle(project, "android");
     expect(await readFile(output, "utf8")).toMatch(/\bWebAssembly\b/u);
-    await expect(assertNativeBundleCompatible(output, "android")).rejects.toThrow(
+    await expect(assertNativeBundleCompatible(output, "android", androidQuickJs())).rejects.toThrow(
       /TN_NATIVE_WASM_ON_MOBILE/u,
     );
+    await expect(assertNativeBundleCompatible(output, "ios")).rejects.toThrow(
+      /TN_NATIVE_WASM_ON_MOBILE/u,
+    );
+    // Android V8 runs WebAssembly for its admitted decoders; Rapier and Recast stay refused.
+    await expect(
+      assertNativeBundleCompatible(output, "android", androidV8()),
+    ).resolves.toBeUndefined();
   }, 180_000);
 
   it("refuses a mobile build whose compiled assets include KTX2, by name", async () => {
@@ -188,10 +203,13 @@ export default defineGame({ scenes: {} });
     await writeFile(path.join(project, "assets", "textures", "rock.ktx2"), ktx2);
 
     let failure: unknown;
+    vi.stubEnv("THREENATIVE_GRADLE_ARGS", "-PthreenativeJsEngine=quickjs");
     try {
       await build({ cwd: project, target: "android" });
     } catch (error) {
       failure = error;
+    } finally {
+      vi.unstubAllEnvs();
     }
     expect(failure).toBeInstanceOf(Error);
     const message = failure instanceof Error ? failure.message : String(failure);

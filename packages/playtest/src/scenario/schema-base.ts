@@ -683,7 +683,8 @@ export interface IPlaytestArtifactRequest {
   effectLog?: "focused" | boolean;
   network?: boolean;
   runtimeTrace?: boolean;
-  screenshots?: "before-after" | "after" | false;
+  /** `true` captures like `"after"`; only `false` and `"before-after"` change the runner. */
+  screenshots?: "before-after" | "after" | boolean;
 }
 
 export interface IPlaytestSetupEntityTransform {

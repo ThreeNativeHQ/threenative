@@ -656,6 +656,46 @@ describe("capability manifest generator", () => {
     ).resolves.toEqual(expect.objectContaining({ problems: [] }));
   });
 
+  it("checks each template closure on its own, so another template's install does not count", async () => {
+    const root = await makeTempDir("threenative-capability-per-template-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    const uiLayer = (requires: string): string =>
+      [
+        "/**",
+        " * A fixture UI layer.",
+        " * @situation render a React HUD over the game",
+        " * @example const layer = new UiLayer();",
+        requires,
+        " */",
+        "export class UiLayer {}",
+        "",
+      ].join("\n");
+    await writePackage(root, "ui", "@threenative/ui", uiLayer(" *"));
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", "@threenative/ui": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
+    await writeTemplatePackage(root, "minimal", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/- minimal: UiLayer -> @threenative\/ui/u);
+
+    await writePackage(
+      root,
+      "ui",
+      "@threenative/ui",
+      uiLayer(" * @requires npm i @threenative/ui"),
+    );
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).resolves.toEqual(expect.objectContaining({ problems: [] }));
+  });
+
   it("maps every authored alias to a named predecessor corpus row", async () => {
     const manifest = await checkCapabilityManifest(process.cwd());
     const aliases = manifest.entries.flatMap((entry) => entry.aliases ?? []);

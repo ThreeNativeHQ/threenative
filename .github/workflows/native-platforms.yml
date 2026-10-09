@@ -472,7 +472,15 @@ jobs:
           path: packages/runtime-native/third_party/v8-android
       - name: Install Android build prerequisites
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"
+          # The NDK zip is a large download, and one corrupted transfer ("Error reading Zip content
+          # from a SeekableByteChannel") failed this 27-minute job before the emulator was reached.
+          # Retry the download; a third failure still fails the step.
+          for attempt in 1 2 3; do
+            sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358" && break
+            [ "$attempt" -lt 3 ] || exit 1
+            echo "sdkmanager failed on attempt $attempt; retrying" >&2
+            sleep 15
+          done
           export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
           # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs

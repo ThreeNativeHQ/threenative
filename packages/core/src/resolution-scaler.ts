@@ -89,6 +89,8 @@ export const RESOLUTION_SCALER = {
   upWindows: 4,
   /** Eight frames for the sampled GPU reading plus eight for asynchronous query resolution. */
   maxGpuAgeFrames: 16,
+  /** Window GPU samples that make the window's own median fresh evidence; see `IScalerWindow.gpu`. */
+  minWindowGpuSamples: 4,
   /** The resize frame is itself a hitch and must never feed the controller. */
   cooldownWindows: 1,
   /**
@@ -189,6 +191,11 @@ export interface IScalerWindow {
   /** The last resolved GPU duration and its age; absent/old observations may only probe. */
   readonly gpuMs?: number;
   readonly gpuAgeFrames?: number;
+  /**
+   * This window's own GPU samples. When the last resolve is past `maxGpuAgeFrames` but the window
+   * holds `minWindowGpuSamples` of them, their median stands in: they were drawn in this window.
+   */
+  readonly gpu?: { readonly p50: number; readonly samples: number };
   /** Frames per second this window achieved, from the mean presented interval. */
   readonly fps: number;
   /**
@@ -336,7 +343,12 @@ export class ResolutionScaler {
     // game that hitches more often than once every `cooldownWindows + upWindows` windows: one
     // 400 ms frame every third window pinned a scaler at 0.44 through seventeen minutes of
     // otherwise perfect 60 fps, which is a forest streaming its next hillside.
-    if (this.#stalled(window)) return undefined;
+    //
+    // Unless the stalls are not what makes the frame slow: a weak GPU whose shadow redraws stall
+    // every window and whose ordinary frame still misses the budget is judged on that frame,
+    // downward only (see `#slowUnderStalls`).
+    const stalled = this.#stalled(window);
+    if (stalled && !this.#slowUnderStalls(window)) return undefined;
     const gpuMs = this.#freshGpuMs(window);
     this.#noteGpuObservation(window, gpuMs);
     if (this.#insensitiveHold > 0) this.#insensitiveHold -= 1;
@@ -389,6 +401,8 @@ export class ResolutionScaler {
       return stepped;
     }
     this.#atFloor = false;
+    // A stalled window is never grounds to climb.
+    if (stalled) return undefined;
     if (this.#scaleSource === "auto-pinned") return undefined;
     const nextScale = RESOLUTION_SCALER.rungs[Math.max(0, this.#index - 1)] ?? 1;
     const canClimb =
@@ -530,19 +544,44 @@ export class ResolutionScaler {
    * window: jitter from the compositor, a GC, an input burst, an audio callback. None of that is
    * bought back with pixels, and spending a rung on it is how the picture walks to the floor.
    */
+  /**
+   * Whether a stalled window's ordinary frame misses the budget on its own: the window is under
+   * target and fresh GPU timing alone exceeds the budget, so setting the stalls aside still leaves
+   * a slow frame that fewer pixels can speed up. A game whose GPU meets the budget keeps the stall
+   * deferral; a weak GPU does not stay at full resolution forever because its hitches recur. On an
+   * Intel Iris Xe, Machinefall's shadow redraws (120-350 ms) put presented p99 at 15-63x p50 in
+   * all but one judged window, p50 sat at 9-12 ms against 8.33, and the scale held 1.0 for the
+   * whole walk (PRD-549).
+   */
+  #slowUnderStalls(window: IScalerWindow): boolean {
+    const gpuMs = this.#freshGpuMs(window);
+    // Fresh GPU over budget in a window under target. Not the present median: on the Iris Xe it
+    // read 7 ms while the main pass took 30 ms and the window ran at 35 fps (PRD-549, live11).
+    return window.fps < this.targetFps && gpuMs !== undefined && gpuMs > this.budgetMs;
+  }
+
   #overBudget(window: IScalerWindow): boolean {
     return window.presented.p50 > this.budgetMs || window.presented.p95 > this.tailMs;
   }
 
-  #freshGpuMs({ gpuMs, gpuAgeFrames }: IScalerWindow): number | undefined {
-    return gpuMs !== undefined &&
+  #freshGpuMs({ gpu, gpuMs, gpuAgeFrames }: IScalerWindow): number | undefined {
+    if (
+      gpuMs !== undefined &&
       Number.isFinite(gpuMs) &&
       gpuMs > 0 &&
       gpuAgeFrames !== undefined &&
       Number.isInteger(gpuAgeFrames) &&
       gpuAgeFrames >= 0 &&
       gpuAgeFrames <= RESOLUTION_SCALER.maxGpuAgeFrames
-      ? gpuMs
+    )
+      return gpuMs;
+    // An integrated GPU resolves timestamps hundreds of frames late (Iris Xe: 233-593, PRD-549),
+    // so the last reading is always old while the window is full of its own samples.
+    return gpu !== undefined &&
+      gpu.samples >= RESOLUTION_SCALER.minWindowGpuSamples &&
+      Number.isFinite(gpu.p50) &&
+      gpu.p50 > 0
+      ? gpu.p50
       : undefined;
   }
 

@@ -44,17 +44,58 @@ function ktx2Magic(bytes: Buffer): boolean {
 
 /** Enough distinct pixels for compression to save bytes, so codec assertions reach encoding. */
 function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
-  return rgbaPng({
-    alpha,
-    width: 64,
-    height: 64,
-    red: (x, y) => (x * 37 + y * 41) % 256,
-    green: (x, y) => (x * 29 + y * 31) % 256,
-    blue: (x, y) => (x * 19 + y * 23) % 256,
-  });
+  return PNG.sync.write(
+    PNG.sync.read(
+      rgbaPng({
+        alpha,
+        width: 64,
+        height: 64,
+        red: (x, y) => 100 + ((x * 37 + y * 41) % 8),
+        green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
+        blue: (x, y) => 100 + ((x * 21 + y * 21) % 8),
+      }),
+    ),
+  );
 }
 
 describe("the ktx2 texture pass", () => {
+  it("preserves pure noise when every compressed rung falls below the quality floor", async () => {
+    const channel = (x: number, y: number, shift: number): number => {
+      let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
+      value ^= value >>> 16;
+      return value >>> shift;
+    };
+    const input = rgbaPng({
+      blue: (x, y) => channel(x, y, 16),
+      green: (x, y) => channel(x, y, 8),
+      height: 128,
+      red: (x, y) => channel(x, y, 0),
+      width: 128,
+    });
+    const { entry, outputBytes } = await compileOne(
+      "threenative-tex-scaffold-codec-",
+      "web-codec-proof.png",
+      input,
+    );
+    expect(entry.output).toMatch(/\.png$/u);
+    expect(outputBytes).toEqual(input);
+    expect(entry).toMatchObject({
+      format: "none",
+      compressionSkipped: "below-floor",
+      quality: { codec: "none", rung: "none", compressionSkipped: "below-floor" },
+    });
+  });
+
+  it("measures standalone output without changing bytes", async () => {
+    const input = compressiblePng();
+    const options = { overrides: [{ glob: "flat.png", codec: "etc1s" as const }] };
+    const on = await texturePass(options).apply(input, "flat.png");
+    const off = await texturePass({ ...options, measureQuality: false }).apply(input, "flat.png");
+    if (Buffer.isBuffer(on) || Buffer.isBuffer(off)) throw new Error("fixture was not encoded");
+    expect(on.buffer).toEqual(off.buffer);
+    expect(on.entry?.quality).toMatchObject({ version: expect.any(String), width: 64, height: 64 });
+    expect(off.entry?.quality).toBeUndefined();
+  });
   it("should preserve the upstream supercompression default and its explicit false override", async () => {
     const data = new Uint8Array(16 * 16 * 4).fill(128);
     const options = { imageDecoder: async () => ({ data, height: 16, width: 16 }) };
@@ -64,7 +105,24 @@ describe("the ktx2 texture pass", () => {
     expect(implicit).toEqual(explicit);
     expect(readKTX2(implicit).supercompressionScheme).toBe(2);
     expect(readKTX2(disabled).supercompressionScheme).toBe(0);
+    expect(() => expect(readKTX2(disabled).supercompressionScheme).toBe(2)).toThrow();
     expect(texturePass().configuration?.encoder).toBe(KTX2_ENCODER_VERSION);
+  });
+
+  it("rejects a capped image and oversize input at the retained-4K encoder gate", async () => {
+    const source = rgbaPng({ height: 4096, width: 4096 });
+    const capped = await texturePass({ maxSize: 2048 }).apply(source, "capped_normal.png");
+    if (Buffer.isBuffer(capped)) throw new Error("4K control was not capped");
+    const dimensions = readKTX2(capped.buffer);
+    expect([dimensions.pixelWidth, dimensions.pixelHeight]).toEqual([2048, 2048]);
+    expect(() =>
+      expect([dimensions.pixelWidth, dimensions.pixelHeight]).toEqual([4096, 4096]),
+    ).toThrow();
+    await expect(
+      encodeToKTX2(source, {
+        imageDecoder: async () => ({ data: new Uint8Array(), width: 4096, height: 4100 }),
+      }),
+    ).rejects.toThrow(/TN_ASSETS_KTX2_SOURCE_SIZE/u);
   });
 
   it("should not grow the starter's 150-byte source image unless its codec is overridden", async () => {
@@ -144,22 +202,39 @@ describe("the ktx2 texture pass", () => {
     ).toEqual(source);
   });
 
-  it("should encode to UASTC when the source has an alpha channel", async () => {
-    // Alpha varies across the row, so stripping it changes the codec choice — that is the
-    // negative control for this test.
+  it("resolves standalone caps from the existing colour and normal semantics", async () => {
+    const input = rgbaPng({ height: 16, width: 16 });
+    const pass = texturePass({ maxSize: { baseColorTexture: 12, normalTexture: 8 } });
+    for (const [name, size] of [
+      ["cliff.png", 12],
+      ["cliff_normal.png", 8],
+    ] as const) {
+      const result = await pass.apply(input, name);
+      if (Buffer.isBuffer(result)) throw new Error("texture was not capped");
+      const ktx2 = readKTX2(result.buffer);
+      expect([ktx2.pixelWidth, ktx2.pixelHeight]).toEqual([size, size]);
+    }
+  });
+
+  it("should preserve cutout alpha on a passing ETC1S candidate", async () => {
+    // Alpha is judged independently; binary cutouts can pass on the ETC1S rung.
     const { entry, outputBytes } = await compileOne(
       "threenative-tex-uastc-",
       "decal.png",
       compressiblePng((x) => (x % 2 === 0 ? 255 : 0)),
+      { textures: { overrides: [{ glob: "decal.png", codec: "etc1s" }] } },
     );
 
-    expect(entry.format).toBe("uastc");
-    expect(entry.transcodeTargets).toEqual(["astc4x4", "bc7"]);
+    expect(entry.format).toBe("etc1s");
+    expect(entry.transcodeTargets).toEqual(["bc1", "etc2"]);
     expect(String(entry.output)).toMatch(/^decal\.[0-9a-f]{8}\.ktx2$/u);
     expect(ktx2Magic(outputBytes)).toBe(true);
-    // ktx2-encoder@0.6.0 defaults omitted needSupercompression to true (Zstandard).
-    // Replacing its 4K guard must not silently change that existing compression policy.
-    expect(readKTX2(outputBytes).supercompressionScheme).toBe(2);
+    // ETC1S uses BasisLZ; UASTC rungs retain the default Zstd compression.
+    expect(readKTX2(outputBytes).supercompressionScheme).toBe(1);
+    expect(entry.quality).toMatchObject({
+      status: "pass",
+      alpha: { ssim: 1, meanAbsoluteError: 0 },
+    });
   });
 
   it("should honour a config override over the heuristic", async () => {
@@ -204,10 +279,19 @@ describe("the ktx2 texture pass", () => {
 
     // 64x64 encodes with every level down to 1x1: log2(64) + 1 = 7.
     expect(readKTX2(compiled).levelCount).toBe(7);
+    const input = compressiblePng();
+    const decoded = PNG.sync.read(input);
+    const noMips = await encodeToKTX2(input, {
+      imageDecoder: async () => decoded,
+      generateMipmap: false,
+    });
+    expect(() => expect(readKTX2(noMips).levelCount).toBe(7)).toThrow();
   });
 
-  it("should fall back to ETC1S for an opaque texture without the normal-map convention", async () => {
-    const { entry } = await compileOne("threenative-tex-etc1s-", "wall.jpg", compressiblePng());
+  it("should permit ETC1S for an opaque texture without the normal-map convention", async () => {
+    const { entry } = await compileOne("threenative-tex-etc1s-", "wall.jpg", compressiblePng(), {
+      textures: { overrides: [{ glob: "wall.jpg", codec: "etc1s" }] },
+    });
     expect(entry.format).toBe("etc1s");
   });
 
