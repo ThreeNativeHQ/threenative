@@ -375,7 +375,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
                              "flipX", "flipY", "flipZ", "flipW", "addAssign", "subAssign", "mulAssign",
-                             "divAssign", "dFdx", "dFdy", "sign", "cbrt"})
+                             "divAssign", "dFdx", "dFdy", "sign", "cbrt", "atan", "mod", "fwidth"})
         node->Set(str(isolate_, name), function(context, name, true));
     // three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, read as xyzw lanes.
     const std::function<void(const char*, const std::string&, const std::string&)> swizzles =
@@ -396,7 +396,8 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",     "instancedArray",
                              "add",        "sub",   "mul",     "div",       "negate", "lessThan", "greaterThan",
                              "equal",      "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
-                             "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
+                             "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",
+                             "mod", "fwidth", "saturation", "mat2", "hash",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
                              "ao", "denoise", "smaa", "bloom", "oneMinus", "varying", "setUniform",

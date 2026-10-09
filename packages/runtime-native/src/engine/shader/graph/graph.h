@@ -35,7 +35,7 @@ enum class Kind : uint8_t {
 };
 
 enum class UnOp : uint8_t { Negate };
-enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal };
+enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal, ShiftRight, BitXor };
 
 struct NodeData {
     Kind kind = Kind::Constant;
@@ -82,11 +82,18 @@ Node instanceIndex();
 Node vec2(std::initializer_list<Node> parts);
 Node vec3(std::initializer_list<Node> parts);
 Node vec4(std::initializer_list<Node> parts);
+/** A scalar widened to `lanes` as a generator's operand splat: one constructor part, constant or not. */
+Node splat(Node scalar, uint8_t lanes);
+/** TSL's mat2 over two column vectors, or four scalars in column-major order. */
+Node mat2(std::initializer_list<Node> parts);
 
 Node add(Node a, Node b);
 Node sub(Node a, Node b);
 Node mul(Node a, Node b);
 Node div(Node a, Node b);
+/** TSL's `>>` and `^` on one integer type (r185's OperatorNode). */
+Node shiftRight(Node a, Node b);
+Node bitXor(Node a, Node b);
 Node negate(Node a);
 Node lessThan(Node a, Node b);
 Node greaterThan(Node a, Node b);
@@ -128,6 +135,8 @@ TN_GRAPH_UNARY(length)
 TN_GRAPH_UNARY(dFdx)
 TN_GRAPH_UNARY(dFdy)
 TN_GRAPH_UNARY(sign)
+TN_GRAPH_UNARY(atan)
+TN_GRAPH_UNARY(fwidth)
 TN_GRAPH_BINARY(min)
 TN_GRAPH_BINARY(max)
 TN_GRAPH_BINARY(pow)
@@ -135,6 +144,8 @@ TN_GRAPH_BINARY(step)
 TN_GRAPH_BINARY(dot)
 TN_GRAPH_BINARY(distance)
 TN_GRAPH_BINARY(cross)
+TN_GRAPH_BINARY(atan2)
+TN_GRAPH_BINARY(mod)
 TN_GRAPH_TERNARY(mix)
 TN_GRAPH_TERNARY(clamp)
 TN_GRAPH_TERNARY(smoothstep)

@@ -15,6 +15,14 @@ namespace tsl = tn::engine::shader::tsl;
 
 namespace {
 
+/** three's hash(seed) (math/Hash.js), spelled with the graph's integer operations. */
+Node hashOf(Node seed) {
+    const Node state = add(mul(uint_(seed), uint_(747796405u)), uint_(2891336453u));
+    const Node shifted = shiftRight(state, add(shiftRight(state, uint_(28u)), uint_(4u)));
+    const Node word = mul(bitXor(shifted, state), uint_(277803737u));
+    return mul(float_(bitXor(shiftRight(word, uint_(22u)), word)), float_(1.0 / 4294967296.0));
+}
+
 void shaderGraph(const char* name, const char* output, const std::function<Node()>& make) {
     Program p(std::string(output) == "color" ? Stage::Fragment : Stage::Vertex);
     const Node root = make();
@@ -131,6 +139,20 @@ int main() {
           [] { return vec4({varying(mul(attribute("position", Type::vec(3)), u()), "scaled"), float_(1)}); });
     shaderGraph("varying-vertex", "position",
           [] { return vec4({varying(mul(attribute("position", Type::vec(3)), u()), "scaled"), float_(1)}); });
+    shaderGraph("atan", "color", [] { return vec4({atan(u()), atan2(time(), u()), float_(0), float_(1)}); });
+    shaderGraph("mod", "color", [] { return vec4({mod(positionLocal(), tint()), mod(u(), time())}); });
+    shaderGraph("fwidth", "color", [] { return vec4({fwidth(uv()), fwidth(u()), float_(1)}); });
+    shaderGraph("saturation", "color", [] {
+        const Node rgb = swizzle(tint(), "xyz");
+        const Node luminance = dot(rgb, vec3({float_(0.2126), float_(0.7152), float_(0.0722)}));
+        return vec4({max(mix(splat(luminance, 3), rgb, u()), splat(float_(0), 3)), float_(1)});
+    });
+    shaderGraph("mat2", "color", [] {
+        return vec4({mul(mat2({vec2({float_(1), float_(0)}), vec2({float_(0), float_(1)})}), vec2({u(), time()})),
+                     float_(0), float_(1)});
+    });
+    shaderGraph("hash", "color", [] { return vec4({hashOf(u()), float_(0), float_(0), float_(1)}); });
+    shaderGraph("time", "color", [] { return vec4({time(), float_(0), float_(0), float_(1)}); });
 
     compute("fn-if-store", [](Block& b, Storage positions) {
         const Var acc = b.var(float_(0));

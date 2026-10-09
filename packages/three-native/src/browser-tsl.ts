@@ -63,6 +63,12 @@ const FUNCTIONS = [
   "log2",
   "normalize",
   "length",
+  "atan",
+  "mod",
+  "fwidth",
+  "saturation",
+  "mat2",
+  "hash",
   "min",
   "max",
   "pow",
@@ -109,6 +115,7 @@ const CONSTANTS = [
   "materialEmissive",
   "materialMetalness",
   "materialRoughness",
+  "time",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
@@ -135,6 +142,9 @@ const METHODS = [
   "dFdy",
   "sign",
   "cbrt",
+  "atan",
+  "mod",
+  "fwidth",
   "min",
   "max",
   "pow",

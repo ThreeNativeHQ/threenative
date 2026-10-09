@@ -29,12 +29,21 @@ const char* wgslBuiltin(const std::string& ir) {
     return nullptr;
 }
 
+// r185's mod (WGSLNodeBuilder.js mod_float, mod_vec2..4): WGSL's % truncates, so the floored form is a helper.
+constexpr const char* kTslMod =
+    "fn tsl_mod_float(x : f32, y : f32) -> f32 { return x - y * floor(x / y); }\n"
+    "fn tsl_mod_vec2(x : vec2<f32>, y : vec2<f32>) -> vec2<f32> { return x - y * floor(x / y); }\n"
+    "fn tsl_mod_vec3(x : vec3<f32>, y : vec3<f32>) -> vec3<f32> { return x - y * floor(x / y); }\n"
+    "fn tsl_mod_vec4(x : vec4<f32>, y : vec4<f32>) -> vec4<f32> { return x - y * floor(x / y); }\n";
+
 const char* binaryOperator(Op op) {
     switch (op) {
         case Op::Add: return " + ";
         case Op::Sub: return " - ";
         case Op::Mul: return " * ";
         case Op::Div: return " / ";
+        case Op::ShiftRight: return " >> ";
+        case Op::BitXor: return " ^ ";
         case Op::Less: return " < ";
         case Op::Equal: return " == ";
         default: return nullptr;
@@ -118,6 +127,7 @@ std::string WgslEmitter::expr(ExprId id) const {
             }
             std::string out = e.op == Op::Call ? p_.names_[e.immediate] : type(e.type);
             if (out == "dFdx") out = "dpdx";
+            if (out == "mod") out = "tsl_mod_" + (e.type.isVector() ? "vec" + std::to_string(e.type.rows) : std::string("float"));
             // WGSL's dpdy grows downward the framebuffer; three emits `- dpdy` so dFdy grows upward.
             if (out == "dFdy") out = "-dpdy";
             // TSL lets clamp and smoothstep take scalar bounds on a vector; WGSL has no such overload.
@@ -278,6 +288,14 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         const Expr& x = program.exprs_[id];
         if (x.op == Op::Call && program.names_[x.immediate].rfind("mx_", 0) == 0) {
             out += kMaterialXNoise;
+            break;
+        }
+    }
+    // A call to mod brings its floored helpers, once.
+    for (ExprId id = 1; id < program.exprs_.size(); ++id) {
+        const Expr& x = program.exprs_[id];
+        if (x.op == Op::Call && program.names_[x.immediate] == "mod") {
+            out += kTslMod;
             break;
         }
     }

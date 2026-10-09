@@ -195,6 +195,8 @@ ExprId Lowerer::emit(Node node) {
                 case BinOp::Less: return program_.less(a, b);
                 case BinOp::Greater: return program_.less(b, a);
                 case BinOp::Equal: return program_.equal(a, b);
+                case BinOp::ShiftRight: return program_.shiftRight(a, b);
+                case BinOp::BitXor: return program_.bitXor(a, b);
             }
             return kInvalid;
         }
@@ -390,6 +392,8 @@ Node add(Node a, Node b) { return makeBinary(BinOp::Add, std::move(a), std::move
 Node sub(Node a, Node b) { return makeBinary(BinOp::Sub, std::move(a), std::move(b)); }
 Node mul(Node a, Node b) { return makeBinary(BinOp::Mul, std::move(a), std::move(b)); }
 Node div(Node a, Node b) { return makeBinary(BinOp::Div, std::move(a), std::move(b)); }
+Node shiftRight(Node a, Node b) { return makeBinary(BinOp::ShiftRight, std::move(a), std::move(b)); }
+Node bitXor(Node a, Node b) { return makeBinary(BinOp::BitXor, std::move(a), std::move(b)); }
 Node lessThan(Node a, Node b) { return makeBinary(BinOp::Less, std::move(a), std::move(b)); }
 Node greaterThan(Node a, Node b) { return makeBinary(BinOp::Greater, std::move(a), std::move(b)); }
 Node equal(Node a, Node b) { return makeBinary(BinOp::Equal, std::move(a), std::move(b)); }
@@ -491,6 +495,16 @@ Node instanceIndex() { return builtin("instanceIndex"); }
 
 Node vec2(std::initializer_list<Node> parts) { return makeJoin(2, parts); }
 Node vec3(std::initializer_list<Node> parts) { return makeJoin(3, parts); }
+Node splat(Node scalar, uint8_t lanes) {
+    auto data = makeNode(Kind::Convert, Type::vec(lanes));
+    data->args = {std::move(scalar)};
+    return data;
+}
+Node mat2(std::initializer_list<Node> parts) {
+    auto data = makeJoin(2, parts);
+    data->type = Type::mat(2, 2);
+    return data;
+}
 Node vec4(std::initializer_list<Node> parts) { return makeJoin(4, parts); }
 
 #define TN_GRAPH_UNARY(name) Node name(Node a) { return makeMath(#name, {std::move(a)}); }
@@ -511,6 +525,8 @@ TN_GRAPH_UNARY(length)
 TN_GRAPH_UNARY(dFdx)
 TN_GRAPH_UNARY(dFdy)
 TN_GRAPH_UNARY(sign)
+TN_GRAPH_UNARY(atan)
+TN_GRAPH_UNARY(fwidth)
 TN_GRAPH_BINARY(min)
 TN_GRAPH_BINARY(max)
 TN_GRAPH_BINARY(pow)
@@ -518,6 +534,8 @@ TN_GRAPH_BINARY(step)
 TN_GRAPH_BINARY(dot)
 TN_GRAPH_BINARY(distance)
 TN_GRAPH_BINARY(cross)
+TN_GRAPH_BINARY(atan2)
+TN_GRAPH_BINARY(mod)
 TN_GRAPH_TERNARY(mix)
 TN_GRAPH_TERNARY(clamp)
 TN_GRAPH_TERNARY(smoothstep)

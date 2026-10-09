@@ -363,6 +363,12 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         node->args = {arg(0)};
         return node;
     }
+    // r185's mat2 (ConvertType): two column vectors, or four scalars in column-major order.
+    if (name == "mat2") {
+        if (args.size() != 2 && args.size() != 4) throw std::runtime_error("mat2 takes two columns or four scalars");
+        if (args.size() == 2) return g::mat2({arg(0), arg(1)});
+        return g::mat2({arg(0), arg(1), arg(2), arg(3)});
+    }
     if (name == "vec2" || name == "vec3" || name == "vec4") {
         const size_t lanes = static_cast<size_t>(name.back() - '0');
         if (args.empty() || args.size() > lanes)
@@ -399,7 +405,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     BINARY(add)
     BINARY(sub)
     BINARY(mul) BINARY(div) BINARY(lessThan) BINARY(greaterThan) BINARY(equal) BINARY(min) BINARY(max) BINARY(pow)
-        BINARY(step) BINARY(dot) BINARY(distance) BINARY(cross)
+        BINARY(step) BINARY(dot) BINARY(distance) BINARY(cross) BINARY(mod)
 #undef BINARY
 #define UNARY(symbol)                                                                                                  \
     if (name == #symbol) {                                                                                             \
@@ -407,7 +413,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         return g::symbol(lhs());                                                                                       \
     }
             UNARY(negate) UNARY(abs) UNARY(sin) UNARY(cos) UNARY(floor) UNARY(fract) UNARY(sqrt) UNARY(exp) UNARY(exp2)
-                UNARY(log2) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign)
+                UNARY(log2) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign) UNARY(fwidth)
 #undef UNARY
     // r185's cbrt (MathNode.js): sign(a) * pow(abs(a), 1 / 3).
     if (name == "cbrt") {
@@ -415,6 +421,31 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const g::Node a = lhs();
         const TslArg magnitude = TslArg::of(g::abs(a));
         return g::mul(g::sign(a), tslCall("pow", &magnitude, {TslArg::of(1.0 / 3.0)}, serial));
+    }
+    // r185's atan(y, x) (MathNode.js): one operand is atan(y); two are WebGPU's atan2(y, x).
+    if (name == "atan") {
+        const size_t operands = args.size() + (method ? 1 : 0);
+        if (operands == 0 || operands > 2) throw std::runtime_error("expected 1 or 2 arguments");
+        return operands == 1 ? g::atan(lhs()) : g::atan2(lhs(), rhs());
+    }
+    // r185's saturation(color, adjustment = 1) (ColorAdjustment.js): mix(luminance, color.rgb, adjustment),
+    // then max(_, 0). The luminance is dot(color.rgb, the linear working space's coefficients).
+    if (!method && name == "saturation") {
+        if (args.empty() || args.size() > 2) throw std::runtime_error("expected a color and an optional adjustment");
+        const g::Node rgb = g::swizzle(arg(0), "xyz");
+        const g::Node luminance = g::dot(rgb, g::vec3({g::float_(0.2126), g::float_(0.7152), g::float_(0.0722)}));
+        const g::Node adjustment = args.size() == 2 ? arg(1) : g::float_(1);
+        return g::max(g::mix(g::splat(luminance, 3), rgb, adjustment), g::splat(g::float_(0), 3));
+    }
+    // r185's hash(seed) (math/Hash.js): integer mixing of seed.toUint(), converted to [0, 1). Each
+    // number is a u32, as OperatorNode.generate converts a constant to its operand's integer type.
+    if (!method && name == "hash") {
+        arity(1);
+        const auto u = [](uint32_t n) { return g::uint_(n); };
+        const g::Node state = g::add(g::mul(g::uint_(arg(0)), u(747796405u)), u(2891336453u));
+        const g::Node shifted = g::shiftRight(state, g::add(g::shiftRight(state, u(28u)), u(4u)));
+        const g::Node word = g::mul(g::bitXor(shifted, state), u(277803737u));
+        return g::mul(g::float_(g::bitXor(g::shiftRight(word, u(22u)), word)), g::float_(1.0 / 4294967296.0));
     }
     // r185's fluent mix/smoothstep also place the receiver last.
     if (method && (name == "mix" || name == "smoothstep")) {
@@ -474,7 +505,9 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"materialColor", g::uniform("diffuse", Type::vec(4))},
             {"materialEmissive", g::uniform("emissive", Type::vec(3))},
             {"materialMetalness", g::uniform("metalness", Type::f32())},
-            {"materialRoughness", g::uniform("roughness", Type::f32())}};
+            {"materialRoughness", g::uniform("roughness", Type::f32())},
+            // three's time (utils/Timer.js): the frame's elapsed seconds, a uniform the renderer fills.
+            {"time", g::uniform("time", Type::f32())}};
     // The node constants tslCall also answers by name; neither takes a serial.
     uint64_t serial = 0;
     for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "positionGeometry", "normalWorld"})

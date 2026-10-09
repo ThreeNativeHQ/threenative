@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <array>
 #include <map>
 #include <cstdint>
@@ -483,6 +484,9 @@ private:
     std::unique_ptr<TraaPass> traa_;
     std::unique_ptr<PostEffects> postEffects_;
     std::map<std::string, std::vector<float>> postUniforms_;
+    /** three's `time` (its NodeFrame clock): seconds since this renderer was made, read once a frame. */
+    std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
+    float frameTime_ = 0;
     shader::StageModule blitVertex_, blitFragment_;  // blitTo's pass-through copy
     shader::StageModule outputVertex_;
     shader::StageModule outputFragment_;
