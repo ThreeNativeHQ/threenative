@@ -1687,6 +1687,61 @@ void gpuTimerCoversShadows() {
     }
 }
 
+// PRD-554: blitTo draws a UI overlay's premultiplied frame "over" the world, a steady overlay (the
+// same version) uploads nothing, and removing it gives the world back.
+void overlayOverFrame() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    LitScene s;
+    RenderDatabase database;
+    const Handle target = renderer.gpu().createTexture(
+        16, 16, WGPUTextureFormat_RGBA8Unorm, WGPUTextureUsage(WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc));
+    WGPUTextureViewDescriptor viewDesc = {};
+    viewDesc.dimension = WGPUTextureViewDimension_2D;
+    viewDesc.mipLevelCount = 1;
+    viewDesc.arrayLayerCount = 1;
+    WGPUTextureView view = wgpuTextureCreateView(renderer.gpu().texture(target), &viewDesc);
+    const auto frame = [&] {
+        database.render(renderer, s.scene, s.camera);
+        CHECK(renderer.blitTo(context.getQueue(), view, WGPUTextureFormat_RGBA8Unorm));
+        const std::vector<uint8_t> pixels = readTexture(renderer, events, target);
+        CHECK(pixels.size() == 16 * 16 * 4);
+        const size_t at = (8 * 16 + 8) * 4;  // the centre: the lit sphere
+        return std::array<int, 4>{pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]};
+    };
+    const auto world = frame();
+    std::vector<uint8_t> page(4 * 4 * 4);
+    for (size_t i = 0; i < page.size(); i += 4) page[i] = page[i + 3] = 128;  // half-covering red, premultiplied
+    renderer.setOverlay(page.data(), 4, 4, 1);
+    const auto over = frame();
+    const auto blend = [](int overlay, int below) { return overlay + below * (255 - 128) / 255; };
+    std::fprintf(stderr, "overlay: world %d,%d,%d,%d -> %d,%d,%d,%d\n", world[0], world[1], world[2], world[3], over[0],
+                 over[1], over[2], over[3]);
+    CHECK(std::abs(over[0] - blend(128, world[0])) <= 2);
+    CHECK(std::abs(over[1] - blend(0, world[1])) <= 2);
+    CHECK(std::abs(over[2] - blend(0, world[2])) <= 2);
+    // A desktop web view's B,G,R,A rows with padding are the same page.
+    std::vector<uint8_t> padded(4 * (4 * 4 + 8));
+    for (size_t y = 0; y < 4; ++y)
+        for (size_t x = 0; x < 4; ++x) padded[y * 24 + x * 4 + 2] = padded[y * 24 + x * 4 + 3] = 128;
+    renderer.setOverlay(padded.data(), 4, 4, 7, 24, true);
+    CHECK(frame() == over);
+    renderer.setOverlay(page.data(), 4, 4, 1);
+    const uint64_t uploads = renderer.overlayUploads();
+    renderer.setOverlay(page.data(), 4, 4, 1);
+    frame();
+    CHECK(renderer.overlayUploads() == uploads);  // the same version: no copy
+    renderer.setOverlay(page.data(), 4, 4, 2);
+    CHECK(renderer.overlayUploads() == uploads + 1);
+    renderer.setOverlay(nullptr, 0, 0, 0);
+    const auto back = frame();
+    CHECK(back == world);
+    wgpuTextureViewRelease(view);
+}
+
 // A timed frame resolves its query set and reads it back; only a caller of lastGpuMs wants that, so
 // a renderer times nothing until it is asked.
 void gpuTimerIsOptIn() {
@@ -1724,4 +1779,4 @@ void gpuTimerIsOptIn() {
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn})

@@ -46,9 +46,9 @@ nothing new.
 - [x] Game state reaches the page: core's `publishUiState` posts `tn:state` frames the page receives. proof: the same ctest reads a state value back through the page — 2026-10-09: the game posts `tn:state` with `score: 7` through `__tnUiPost` each frame, the page's `__tnUiReceive` reads it and echoes it in an intent, and the game receives `"score":7`; green.
 
 #### Phase 2: The page is drawn into the frame
-**Status:** NOT STARTED
+**Status:** PARTIAL
 
-- [ ] The engine renderer composites the overlay's newest premultiplied frame over the world before present, uploading only when the frame changed. proof: a render test comparing a known overlay frame over a known scene, and a counter that a steady frame uploads nothing
+- [x] The engine renderer composites the overlay's newest premultiplied frame over the world before present, uploading only when the frame changed. proof: a render test comparing a known overlay frame over a known scene, and a counter that a steady frame uploads nothing — 2026-10-09: `native_engine_renderer_overlay_over_frame`: a half-covering premultiplied red page over the lit sphere reads 180,126,97 -> 218,63,48 (premultiplied "over" gives 217.6, 62.8, 48.3), a padded B,G,R,A page gives the same pixels, the same version uploads nothing (`overlayUploads`), and removing the overlay gives the world back. `Renderer::setOverlay` keeps one texture and `blitTo` draws it in its own pass with the new premultiplied blend mode 3; the player hands it `uiOverlayFrame` each frame.
 - [ ] A Midway screenshot on the player shows its briefing UI. proof: `native-playtests/boot.playtest.json` capture on a private copy, judged against the legacy host's capture
 
 #### Phase 3: Input reaches the UI first

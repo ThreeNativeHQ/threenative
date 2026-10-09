@@ -147,10 +147,12 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     WGPUColorTargetState color = {};
     color.format = target.color;
     color.writeMask = WGPUColorWriteMask_All;
-    // WebGPUPipelineUtils._getBlending without premultiplied alpha: NormalBlending, or AdditiveBlending.
+    // WebGPUPipelineUtils._getBlending without premultiplied alpha: NormalBlending, or AdditiveBlending;
+    // 3 is premultiplied "over", a UI overlay's frame whose colour already carries its alpha.
     const WGPUBlendFactor dst = target.blend == 2 ? WGPUBlendFactor_One : WGPUBlendFactor_OneMinusSrcAlpha;
+    const WGPUBlendFactor src = target.blend == 3 ? WGPUBlendFactor_One : WGPUBlendFactor_SrcAlpha;
     WGPUBlendState blend = {};
-    blend.color = {WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, dst};
+    blend.color = {WGPUBlendOperation_Add, src, dst};
     blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_One, dst};
     if (target.blend) color.blend = &blend;
     WGPUFragmentState fragmentState = {};

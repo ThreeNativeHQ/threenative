@@ -559,6 +559,7 @@ Renderer::~Renderer() {
     }
     releaseTargets();
     releaseOutputGroup();
+    if (overlayView_) wgpuTextureViewRelease(overlayView_);
     wgpuSamplerRelease(outputSampler_);
     if (outputPipelineLayout_) wgpuPipelineLayoutRelease(outputPipelineLayout_);
     if (outputLayout_) wgpuBindGroupLayoutRelease(outputLayout_);
@@ -2665,13 +2666,71 @@ bool Renderer::blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat
     wgpuRenderPassEncoderSetVertexBuffer(pass, blitVertex_.attributes.at(0).location,
                                          gpu_.buffer(outputTriangle_), 0, 24);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+    // The UI overlay's frame over the world, in the same pass: the same copy program samples it, and
+    // premultiplied "over" blending keeps whatever the page left transparent.
+    WGPUBindGroup overlayGroup = nullptr;
+    if (overlayView_) {
+        WGPURenderPipeline over = pipelines_.get(
+            blitVertex_, &blitFragment_, PipelineTarget{format, WGPUTextureFormat_Undefined, WGPUCullMode_None, 3});
+        if (over) {
+            WGPUBindGroupLayout overLayout = wgpuRenderPipelineGetBindGroupLayout(over, 0);
+            overlayGroup = bindGroup(overLayout, blitFragment_, outputUniforms_, overlayView_, outputSampler_);
+            wgpuBindGroupLayoutRelease(overLayout);
+        }
+        if (overlayGroup) {
+            wgpuRenderPassEncoderSetPipeline(pass, over);
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, overlayGroup, 0, nullptr);
+            wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+        }
+    }
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     WGPUCommandBufferDescriptor commandDesc = {};
     gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
     wgpuBindGroupRelease(group);
+    if (overlayGroup) wgpuBindGroupRelease(overlayGroup);
     return true;
+}
+
+void Renderer::setOverlay(const uint8_t* pixels, uint32_t width, uint32_t height, uint64_t version, uint32_t stride,
+                          bool bgra) {
+    // overlayView_ is set exactly while overlay_ names a live texture.
+    const auto release = [this] {
+        if (!overlayView_) return;
+        wgpuTextureViewRelease(overlayView_);
+        overlayView_ = nullptr;
+        gpu_.destroy(overlay_);
+        overlay_ = {};
+    };
+    if (!pixels || width == 0 || height == 0) {
+        release();
+        overlayWidth_ = overlayHeight_ = 0;
+        overlayVersion_ = 0;
+        return;
+    }
+    if (overlayView_ && version == overlayVersion_ && width == overlayWidth_ && height == overlayHeight_ &&
+        bgra == overlayBgra_)
+        return;
+    // The texture's own format reads B,G,R,A as colour, so the shared copy program needs no swizzle.
+    const WGPUTextureFormat format = bgra ? WGPUTextureFormat_BGRA8Unorm : WGPUTextureFormat_RGBA8Unorm;
+    if (!overlayView_ || width != overlayWidth_ || height != overlayHeight_ || bgra != overlayBgra_) {
+        release();
+        overlay_ = gpu_.createTexture(width, height, format, WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
+        overlayView_ = view2d(gpu_.texture(overlay_), format);
+        overlayWidth_ = width;
+        overlayHeight_ = height;
+        overlayBgra_ = bgra;
+    }
+    const uint32_t row = width * 4;
+    if (stride != 0 && stride != row) {
+        overlayRows_.resize(size_t(row) * height);
+        for (uint32_t y = 0; y < height; ++y) std::memcpy(overlayRows_.data() + size_t(y) * row, pixels + size_t(y) * stride, row);
+        pixels = overlayRows_.data();
+    }
+    gpu_.writeTexture(overlay_, pixels, uint64_t(row) * height);
+    overlayVersion_ = version;
+    ++overlayUploads_;
 }
 
 }  // namespace tn::engine

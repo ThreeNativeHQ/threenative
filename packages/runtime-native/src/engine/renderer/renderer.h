@@ -284,6 +284,16 @@ public:
      */
     bool blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat format);
     /**
+     * PRD-554: a UI overlay's newest frame, premultiplied 8-bit rows from the top (`bgra` for a desktop
+     * web view's B,G,R,A; `stride` bytes per row, 0 for tight), which blitTo draws "over" the frame,
+     * stretched to the target. `version` names the pixels: the same version uploads nothing, so a
+     * steady UI costs one draw and no copy. A null `pixels` removes the overlay.
+     */
+    void setOverlay(const uint8_t* pixels, uint32_t width, uint32_t height, uint64_t version, uint32_t stride = 0,
+                    bool bgra = false);
+    /** How many overlay frames setOverlay uploaded: a steady UI adds none. */
+    uint64_t overlayUploads() const { return overlayUploads_; }
+    /**
      * The next render() draws its output pass straight into `target`, a view of `format`, in place
      * of the intermediate RGBA8 frame and the blitTo that copies it: a presented frame costs one
      * pass, one encoder and one submission fewer. The pixels are the same bytes. That frame is not
@@ -501,6 +511,12 @@ private:
     WGPUTextureView viewportColorView_ = nullptr, viewportDepthView_ = nullptr;
     WGPUSampler linearClampSampler_ = nullptr;
     Handle color_;
+    Handle overlay_;  // setOverlay's texture, recreated when the page's size changes
+    WGPUTextureView overlayView_ = nullptr;
+    uint32_t overlayWidth_ = 0, overlayHeight_ = 0;
+    uint64_t overlayVersion_ = 0, overlayUploads_ = 0;
+    bool overlayBgra_ = false;
+    std::vector<uint8_t> overlayRows_;  // a padded frame's rows, packed for the upload
     WGPUTexture depth_ = nullptr;
     WGPUTextureView colorView_ = nullptr;
     WGPUTextureView depthView_ = nullptr;

@@ -309,6 +309,7 @@ int run(const Game& game) {
         if (presenter && (presenter->width() != window.width || presenter->height() != window.height)) {
             presenter->resize(window.width, window.height);
             renderer.setSize(presenter->width(), presenter->height());
+            if (!game.uiRoot.empty()) mystral::platform::uiOverlaySetSize(int(window.width), int(window.height));
         }
         // Nothing is drawn until the game publishes its view, as a page's canvas stays blank while it loads.
         if (scene == nullptr || camera == nullptr) {
@@ -326,6 +327,12 @@ int run(const Game& game) {
         if (presenter) {
             Presenter::Frame target;
             if (firstFrame) startupStage("first-acquire-begin");
+            // The page's newest frame goes over the world in the same blit (PRD-554).
+            if (!game.uiRoot.empty()) {
+                mystral::platform::UiOverlayFrame ui;
+                if (mystral::platform::uiOverlayFrame(ui))
+                    renderer.setOverlay(ui.pixels, ui.width, ui.height, ui.counter, ui.stride, !ui.isRgba);
+            }
             if (presenter->begin(target)) {
                 // The window carries the very frame the render database just built.
                 renderer.blitTo(context->getQueue(), target.color,
