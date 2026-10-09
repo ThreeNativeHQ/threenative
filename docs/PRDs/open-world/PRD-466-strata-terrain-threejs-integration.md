@@ -4067,3 +4067,7 @@ or mud, no tint in open meadow, meadow view unchanged
 ([elevated](../../benchmark/strata-loading-2026-10-06/forest-floor-canopy-player.jpg),
 [meadow](../../benchmark/strata-loading-2026-10-06/forest-floor-canopy-meadow.jpg)). Remaining gaps the
 judges name: no understory at range, the flat yellow-green open ground, and dappled light.
+
+Rejected the same day: a cooler meadow turf multiplier (`MEADOW` 0.47/0.72/0.40 → 0.41/0.68/0.43). A
+fresh judge scored the elevated view 6 → 6.5 but the meadow 7 → 6.5, with speckle between the blades
+and the ochre patches more conspicuous, so the turf colour stays.
