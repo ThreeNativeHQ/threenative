@@ -47,6 +47,9 @@ public:
     // BufferAttribute semantics, as three@0.185.1 records them.
     void needsUpdate() { ++version_; }
     uint32_t version() const { return version_; }
+    /** three's `geometry.dispose()`: the GPU copy goes now, and comes back only if the store is drawn again. */
+    void releaseGpuCopy() { ++gpuReleases_; }
+    uint32_t gpuReleases() const { return gpuReleases_; }
     void addUpdateRange(uint64_t start, uint64_t count) { ranges_.push_back({start, count}); }
     void clearUpdateRanges() { ranges_.clear(); }
     std::span<const UpdateRange> updateRanges() const { return ranges_; }
@@ -67,6 +70,7 @@ private:
     bool resizePending_ = false;
     uint32_t leases_ = 0;
     uint32_t version_ = 0;
+    uint32_t gpuReleases_ = 0;
     std::vector<UpdateRange> ranges_;
 };
 

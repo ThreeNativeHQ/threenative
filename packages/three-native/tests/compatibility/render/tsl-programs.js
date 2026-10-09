@@ -25,14 +25,18 @@ import {
   max,
   metalness,
   mrt,
+  mx_noise_float,
+  mx_worley_noise_vec2,
   normalView,
   normalViewGeometry,
   normalWorld,
   normalize,
   output,
   pass,
+  pmremTexture,
   positionLocal,
   positionWorld,
+  reflector,
   roughness,
   screenUV,
   sin,
@@ -492,26 +496,31 @@ async function temporalFixture({ renderer, scene, camera, traaDump }, firstCutFr
   return { render: draw };
 }
 
+/** Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity. */
+function equirectSky() {
+  const width = 128;
+  const height = 64;
+  const pixels = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; ++y)
+    for (let x = 0; x < width; ++x) {
+      const at = (y * width + x) * 4;
+      pixels[at] = 20 + ((x * 160) % 220);
+      pixels[at + 1] = 30 + Math.floor((y * 180) / height);
+      pixels[at + 2] = 220 - Math.floor((x * 150) / width);
+      pixels[at + 3] = 255;
+    }
+  const sky = new DataTexture(pixels, width, height);
+  sky.mapping = EquirectangularReflectionMapping;
+  sky.colorSpace = SRGBColorSpace;
+  sky.magFilter = LinearFilter;
+  sky.minFilter = LinearMipmapLinearFilter;
+  sky.needsUpdate = true;
+  return sky;
+}
+
 export const programs = {
   "sky-equirect"({ target }) {
-    // Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity.
-    const width = 128;
-    const height = 64;
-    const pixels = new Uint8Array(width * height * 4);
-    for (let y = 0; y < height; ++y)
-      for (let x = 0; x < width; ++x) {
-        const at = (y * width + x) * 4;
-        pixels[at] = 20 + ((x * 160) % 220);
-        pixels[at + 1] = 30 + Math.floor((y * 180) / height);
-        pixels[at + 2] = 220 - Math.floor((x * 150) / width);
-        pixels[at + 3] = 255;
-      }
-    const sky = new DataTexture(pixels, width, height);
-    sky.mapping = EquirectangularReflectionMapping;
-    sky.colorSpace = SRGBColorSpace;
-    sky.magFilter = LinearFilter;
-    sky.minFilter = LinearMipmapLinearFilter;
-    sky.needsUpdate = true;
+    const sky = equirectSky();
     target.background = target.environment = sky;
     target.backgroundIntensity = target.environmentIntensity = 2.5;
     target.backgroundRotation.set(0.1, 0.4, 0);
@@ -613,6 +622,35 @@ export const programs = {
   },
   async "nodemat-color-uv"({ target }) {
     target.colorNode = vec4(uv(), uniform(0.35).setName("nodeTint"), 1);
+  },
+  /** MaterialX noise: 3D and 2D Perlin through mx_noise_float, 2D and 3D Worley cells. */
+  async "materialx-noise"({ target }) {
+    const perlin3 = mx_noise_float(positionWorld.mul(1.8)).mul(0.5).add(0.5);
+    const perlin2 = mx_noise_float(uv().mul(6), 0.8, 0.1);
+    const cells = mx_worley_noise_vec2(uv().mul(5), 0.9);
+    const cells3 = mx_worley_noise_vec2(positionWorld.mul(2));
+    target.colorNode = vec4(
+      perlin3,
+      perlin2.add(cells.x.mul(0.3)),
+      cells.y.add(cells3.x).mul(0.4),
+      1,
+    );
+  },
+  async "reflector-plane"({ target }) {
+    const floor = target.getObjectByName("mirror");
+    const mirror = reflector();
+    mirror.target.rotateX(-Math.PI / 2);
+    target.add(mirror.target);
+    floor.material.colorNode = vec4(mirror.rgb.mul(vec3(0.75, 0.85, 1)), 1);
+  },
+  async "screen-uv"({ target }) {
+    target.colorNode = vec4(screenUV.flipX(), screenUV.x.mul(screenUV.y), 1);
+  },
+  async "pmrem-texture"({ target }) {
+    target.colorNode = vec4(
+      pmremTexture(equirectSky(), normalize(positionWorld), uv().x.mul(0.9)),
+      1,
+    );
   },
   async "nodemat-standard-nodes"({ target }) {
     target.roughnessNode = uv().x.mul(0.7).add(0.2);

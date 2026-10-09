@@ -142,6 +142,7 @@ function argument(arg: FixtureArg, bound: ReadonlyMap<string, unknown>): unknown
       return found;
     }
     if ("refs" in arg) return arg.refs.map((id) => argument({ ref: id }, bound));
+    if ("record" in arg) return { ...arg.record };
     if ("array" in arg) return new globalThis[arg.type](arg.array);
     return namedNumber(arg.num);
   }

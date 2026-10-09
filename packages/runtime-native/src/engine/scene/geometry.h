@@ -13,10 +13,9 @@
 //     (PRD-508 phase 3).
 //   - `onUpload`/`onUploadCallback`, `toJSON`, `clone` and `dispose`: a callback, a serializer and a
 //     GPU lifecycle that belong to the renderer (PRD-514), not the object model.
-//   - BufferGeometry's `morphAttributes`, `morphTargetsRelative`, `setFromPoints`, `computeTangents`,
-//     `setIndirect`/`getIndirect`, `lookAt`, `applyQuaternion`, `toJSON`, `clone`, `copy`, `dispose`:
-//     morph targets, tangents and the indirect draw buffer are later work; the rest is a serializer
-//     or a copy the caller can write.
+//   - BufferGeometry's `setFromPoints`, `computeTangents`, `setIndirect`/`getIndirect`, `lookAt`,
+//     `applyQuaternion`, `toJSON`: tangents and the indirect draw buffer are later work; the rest is
+//     a serializer or a call the caller can write.
 
 #include "engine/foundation/buffers.h"
 #include "engine/foundation/math/Matrix.h"
@@ -159,6 +158,12 @@ public:
     void computeVertexNormals();
     void normalizeNormals();
     [[nodiscard]] std::shared_ptr<BufferGeometry> toNonIndexed() const;
+    /** three's `clone()`: `copy` into a new geometry of the same type and parameters. */
+    [[nodiscard]] std::shared_ptr<BufferGeometry> clone() const;
+    /** three's `copy(source)`: every attribute, index and morph target copied, groups, bounds and draw range. */
+    BufferGeometry& copy(const BufferGeometry& source);
+    /** three's `dispose()`: the renderer lets the GPU copies go; the CPU data stays usable. */
+    void dispose();
 
     BufferGeometry& applyMatrix4(const Matrix4& matrix);
     BufferGeometry& translate(double x, double y, double z);

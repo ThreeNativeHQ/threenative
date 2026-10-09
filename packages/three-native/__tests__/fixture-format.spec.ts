@@ -149,6 +149,19 @@ describe("fixture format", () => {
     );
   });
 
+  it("accepts a record of scalars and rejects a nested value or a key that is no identifier", () => {
+    const at = (record: unknown) =>
+      messages(withOp({ op: "new", id: "m", class: "ExtrudeGeometry", args: [{ record }] }));
+    expect(at({ depth: 2, bevelEnabled: false, name: "x", path: null })).toEqual([]);
+    expect(at({ shape: { ref: "s" } }).join("\n")).toMatch(
+      /record\.shape: must be a finite number/u,
+    );
+    expect(at({ depth: Number.POSITIVE_INFINITY }).join("\n")).toMatch(
+      /record\.depth: must be a finite/u,
+    );
+    expect(at({ "bad key": 1 }).join("\n")).toMatch(/keys must match/u);
+  });
+
   it("rejects an observation that reads both a path and a method", () => {
     expect(
       messages(withObservation({ id: "m", path: "x", method: "det", kind: "number" })),

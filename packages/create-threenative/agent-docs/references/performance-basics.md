@@ -86,7 +86,7 @@ A GPU that is idle with a slow `render` phase is an object-count problem, not a 
 | A sprite that faces the camera | `Billboard3D` | No hand-written per-frame orientation |
 | One directional shadow over an open world | `VirtualShadowNode` | Camera-centred, texel-snapped clip levels; `trackCaster` for movers |
 | Distance detail swaps | three's `LOD` | Standard, and the engine can still batch it |
-| Raycasts over a large static scene | `GPUSceneBVH` / `ScenePicker` | Built once, queried many times |
+| Raycasts over a large static scene | `GPUSceneBVH` (`@threenative/core/gpu-scene-bvh`) / `ScenePicker` | Built once, queried many times |
 
 ## The shortcuts that cost a frame
 

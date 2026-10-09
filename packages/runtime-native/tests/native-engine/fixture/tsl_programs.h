@@ -4,6 +4,7 @@
 // material (and any GPU work it needs) just before the frame is drawn.
 
 #include "engine/abi/binding.h"
+#include "engine/abi/tsl_call.h"
 #include "probes.h"
 #include "engine/renderer/compute.h"
 #include "engine/renderer/renderer.h"
@@ -32,6 +33,24 @@ inline constexpr uint32_t kGridCount = 10000;
 inline engine::Material* materialOf(binding::Object& object) {
     if (!binding::isMaterialClass(object.cls)) return nullptr;
     return static_cast<engine::Material*>(object.ptr.get());
+}
+
+/** The equirectangular sky of the JS programs' equirectSky(): asymmetric bands. */
+inline std::shared_ptr<engine::DataTexture> equirectSky() {
+    auto sky = std::make_shared<engine::DataTexture>();
+    sky->width = 128; sky->height = 64; sky->data.resize(128 * 64 * 4);
+    for (uint32_t y = 0; y < 64; ++y) for (uint32_t x = 0; x < 128; ++x) {
+        const auto at = (y * 128 + x) * 4;
+        sky->data[at] = 20 + (x * 160) % 220;
+        sky->data[at + 1] = 30 + y * 180 / 64;
+        sky->data[at + 2] = 220 - x * 150 / 128;
+        sky->data[at + 3] = 255;
+    }
+    sky->mapping = 303; sky->colorSpace = engine::TextureColorSpace::SRGB;
+    sky->magFilter = static_cast<uint16_t>(engine::TextureFilter::Linear);
+    sky->minFilter = static_cast<uint16_t>(engine::TextureFilter::LinearMipmapLinear);
+    sky->needsUpdate();
+    return sky;
 }
 
 /** PRD-513: a compute pass writes the grid; the positionNode places instance i at entry i. */
@@ -245,22 +264,32 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
     if (program == "sky-equirect") {
         if (object.cls != "Scene") return "TN_FIXTURE_SKY_INVALID: requires scene";
         auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
-        auto sky = std::make_shared<engine::DataTexture>();
-        sky->width = 128; sky->height = 64; sky->data.resize(128 * 64 * 4);
-        for (uint32_t y = 0; y < 64; ++y) for (uint32_t x = 0; x < 128; ++x) {
-            const auto at = (y * 128 + x) * 4;
-            sky->data[at] = 20 + (x * 160) % 220;
-            sky->data[at + 1] = 30 + y * 180 / 64;
-            sky->data[at + 2] = 220 - x * 150 / 128;
-            sky->data[at + 3] = 255;
-        }
-        sky->mapping = 303; sky->colorSpace = engine::TextureColorSpace::SRGB;
-        sky->magFilter = static_cast<uint16_t>(engine::TextureFilter::Linear);
-        sky->minFilter = static_cast<uint16_t>(engine::TextureFilter::LinearMipmapLinear);
-        sky->needsUpdate();
+        auto sky = tsl_detail::equirectSky();
         scene.backgroundTexture = scene.environment = sky;
         scene.backgroundIntensity = scene.environmentIntensity = 2.5;
         scene.backgroundRotation.set(0.1, 0.4, 0); scene.environmentRotation.set(0.1, 0.4, 0);
+        return "";
+    }
+    if (program == "reflector-plane") {
+        if (object.cls != "Scene") return "TN_FIXTURE_REFLECTOR_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto* floor = dynamic_cast<engine::Mesh*>(scene.getObjectByName("mirror"));
+        if (!floor || !floor->material) return "TN_FIXTURE_REFLECTOR_INVALID: mirror/material";
+        namespace g = engine::shader::graph;
+        auto target = std::make_shared<engine::Object3D>();
+        auto camera = std::make_shared<engine::PerspectiveCamera>();
+        target->rotateX(-3.141592653589793 / 2);
+        scene.add(*target);
+        resources.push_back(target);
+        resources.push_back(camera);
+        uint64_t serial = 0;
+        const auto mirror = abi::tslCall("reflector", nullptr,
+            {abi::TslArg::objectOf("Object3D", target), abi::TslArg::objectOf("PerspectiveCamera", camera),
+             abi::TslArg::of(1.0), abi::TslArg::of(1.0), abi::TslArg::of(0.0), abi::TslArg::of(0.0), abi::TslArg::of(0.0)},
+            serial);
+        floor->material->nodes.colorNode = g::vec4({g::mul(g::swizzle(mirror, "xyz"),
+            g::vec3({g::float_(0.75), g::float_(0.85), g::float_(1)})), g::float_(1)});
+        floor->material->needsUpdate();
         return "";
     }
     if (program == "traa-history" || program == "history-cut") {
@@ -349,6 +378,34 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
             g::vec3({g::float_(0), g::float_(0), g::mul(g::sin(g::mul(g::swizzle(g::positionLocal(), "x"), g::float_(2))), g::float_(0.4))}));
     } else if (program == "nodemat-color-uv") {
         material->nodes.colorNode = g::vec4({g::uv(), g::uniform("nodeTint", Type::f32(), {0.35f}), g::float_(1)});
+    } else if (program == "materialx-noise") {
+        // Through the shared TSL table, as V8 and Wasm build it (engine/abi/tsl_call.cpp).
+        uint64_t serial = 0;
+        const auto tsl = [&serial](const char* name, std::vector<abi::TslArg> args) {
+            return abi::tslCall(name, nullptr, args, serial);
+        };
+        const auto node = [](g::Node value) { return abi::TslArg::of(std::move(value)); };
+        const auto positionWorld = g::varying("positionWorld", Type::vec(3));
+        const auto perlin3 = g::add(g::mul(tsl("mx_noise_float", {node(g::mul(positionWorld, g::float_(1.8)))}),
+                                           g::float_(0.5)), g::float_(0.5));
+        const auto perlin2 = tsl("mx_noise_float", {node(g::mul(g::uv(), g::float_(6))), abi::TslArg::of(0.8),
+                                                    abi::TslArg::of(0.1)});
+        const auto cells = tsl("mx_worley_noise_vec2", {node(g::mul(g::uv(), g::float_(5))), abi::TslArg::of(0.9)});
+        const auto cells3 = tsl("mx_worley_noise_vec2", {node(g::mul(positionWorld, g::float_(2)))});
+        material->nodes.colorNode = g::vec4({perlin3, g::add(perlin2, g::mul(g::swizzle(cells, "x"), g::float_(0.3))),
+            g::mul(g::add(g::swizzle(cells, "y"), g::swizzle(cells3, "x")), g::float_(0.4)), g::float_(1)});
+    } else if (program == "screen-uv") {
+        uint64_t serial = 0;
+        const auto screen = abi::tslCall("screenUV", nullptr, {}, serial);
+        const abi::TslArg receiver = abi::TslArg::of(screen);
+        const auto flipped = abi::tslCall("flipX", &receiver, {}, serial);
+        material->nodes.colorNode = g::vec4({flipped, g::mul(g::swizzle(screen, "x"), g::swizzle(screen, "y")), g::float_(1)});
+    } else if (program == "pmrem-texture") {
+        uint64_t serial = 0;
+        const auto positionWorld = g::varying("positionWorld", Type::vec(3));
+        const std::vector<abi::TslArg> args = {abi::TslArg::objectOf("DataTexture", tsl_detail::equirectSky()),
+            abi::TslArg::of(g::normalize(positionWorld)), abi::TslArg::of(g::mul(x, g::float_(0.9)))};
+        material->nodes.colorNode = g::vec4({abi::tslCall("pmremTexture", nullptr, args, serial), g::float_(1)});
     } else if (program == "nodemat-standard-nodes") {
         material->nodes.roughnessNode = g::add(g::mul(x, g::float_(0.7)), g::float_(0.2));
         material->nodes.metalnessNode = g::mul(y, g::float_(0.8));

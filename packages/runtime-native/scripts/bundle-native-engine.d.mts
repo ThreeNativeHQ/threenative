@@ -6,4 +6,7 @@ export function bundleNativeEngine(options: {
 }): Promise<{ outfile: string; bytes: number; profile: { engine: "native"; gameRuntime: "v8" } }>;
 
 /** Cooks a project's assets decoder-free into `<bundle dir>/native/assets.tnpk`; returns that path. */
-export function cookNativeEngineAssets(options: { project: string; outfile: string }): Promise<string>;
+export function cookNativeEngineAssets(options: {
+  project: string;
+  outfile: string;
+}): Promise<string>;

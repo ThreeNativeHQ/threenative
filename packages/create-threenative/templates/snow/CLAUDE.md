@@ -68,7 +68,7 @@ state; from a frame function `goto` and then `return`; `ctx.state.set({ /* copy 
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
-`src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
+`src/render/quality.ts` owns `low`, `medium`, `high` (`effects` there imports only the post nodes they turn on); `isMobile()` chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
 the source. The bridge flushes about 100 ms; keep readouts in state and frame feedback in Three.js.
 
 When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a

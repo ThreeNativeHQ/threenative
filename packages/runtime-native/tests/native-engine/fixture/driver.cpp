@@ -78,6 +78,20 @@ Value parseArg(const std::string& token) {
         }
         return v;
     }
+    if (token.rfind("o:", 0) == 0) {
+        // o:<key>=<scalar>;...: an options object, as `new ExtrudeGeometry(shape, { depth })` takes.
+        std::vector<std::pair<std::string, Value>> fields;
+        for (std::size_t at = 2; at < token.size();) {
+            std::size_t end = token.find(';', at);
+            if (end == std::string::npos) end = token.size();
+            const std::string pair = token.substr(at, end - at);
+            const std::size_t equals = pair.find('=');
+            if (equals == 0 || equals == std::string::npos) throw Unsupported{"unknown argument token " + token};
+            fields.emplace_back(pair.substr(0, equals), parseArg(pair.substr(equals + 1)));
+            at = end + 1;
+        }
+        return Value::record(std::move(fields));
+    }
     throw Unsupported{"unknown argument token " + token};
 }
 

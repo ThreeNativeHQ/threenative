@@ -35,6 +35,7 @@
     "@threenative/core": {
       "exports": [
         ".",
+        "./gpu-scene-bvh",
         "./hot",
         "./net",
         "./package.json",
@@ -45,6 +46,8 @@
         "./world"
       ],
       "symbols": {
+        "@threenative/core/gpu-scene-bvh#bvhIntersectFirstHit": "bvhIntersectFirstHit = upstream.bvhIntersectFirstHit",
+        "@threenative/core/gpu-scene-bvh#GPUSceneBVH": "export class GPUSceneBVH extends Group implements IComputeDriven { … }",
         "@threenative/core/hot#acceptHotUpdate": "export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics>( game: IGame<TState, TPhysics>, hot: IImportMeta[\"hot\"], ): void { … }",
         "@threenative/core/hot#assertPortableState": "export function assertPortableState(state: unknown): void { … }",
         "@threenative/core/net#connect": "export function connect(url: string, options: INetworkOptions): Promise<INetworkConnection> { … }",
@@ -96,7 +99,6 @@
         "@threenative/core#boneContact": "export function boneContact( root: Object3D, boneName: string, target: Object3D, ): IBoneContactReport { … }",
         "@threenative/core#boneLengthDeviations": "export function boneLengthDeviations( root: Object3D, bind: IBoneLengthSnapshot, options: IBoneLengthDeviationsOptions = { … }",
         "@threenative/core#boneLengths": "export function boneLengths(root: Object3D): IBoneLengthSnapshot { … }",
-        "@threenative/core#bvhIntersectFirstHit": "bvhIntersectFirstHit = upstream.bvhIntersectFirstHit",
         "@threenative/core#CameraShake": "export class CameraShake { … }",
         "@threenative/core#CanvasLayer": "export class CanvasLayer { … }",
         "@threenative/core#captureMouse": "export function captureMouse(target: EventTarget): Promise<void> | undefined { … }",
@@ -134,7 +136,6 @@
         "@threenative/core#getPlatform": "export function getPlatform(): Readonly<IPlatformInfo> { … }",
         "@threenative/core#GPUParticles3D": "export class GPUParticles3D extends Sprite implements IComputeDriven { … }",
         "@threenative/core#GPUReadback": "export class GPUReadback { … }",
-        "@threenative/core#GPUSceneBVH": "export class GPUSceneBVH extends Group implements IComputeDriven { … }",
         "@threenative/core#GroundSnap": "export class GroundSnap { … }",
         "@threenative/core#InputMap": "export class InputMap { … }",
         "@threenative/core#installSpanProbes": "export function installSpanProbes(target: ISpanProbeTarget, root: Object3D): () => void { … }",
@@ -152,6 +153,7 @@
         "@threenative/core#measureThreePose": "export function measureThreePose( object: Object3D, options: IMeasureThreePoseOptions = { … }",
         "@threenative/core#mergeByMaterial": "export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }",
         "@threenative/core#mergeParts": "export function mergeParts( parts: Iterable<IMergePart>, options: IMergePartsOptions, ): BufferGeometry { … }",
+        "@threenative/core#mrtVelocity": "export function mrtVelocity(): IVelocityProvision { … }",
         "@threenative/core#normaliseToMetres": "export function normaliseToMetres(object: Object3D, options: INormaliseToMetresOptions): number { … }",
         "@threenative/core#onLaunchFailure": "export function onLaunchFailure(listener: (failure: ILaunchFailure) => void): () => void { … }",
         "@threenative/core#parseReplayRecording": "export function parseReplayRecording(value: unknown): IReplayRecording { … }",

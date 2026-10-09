@@ -10,6 +10,10 @@ import {
   presetLiteralsIn,
   templateNames,
 } from "../../../scripts/template-quality.js";
+import {
+  type IWorldEnvironmentOptions,
+  WorldEnvironment,
+} from "../template-assets/worldEnvironment.js";
 
 const templatesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "templates");
 
@@ -264,6 +268,30 @@ describe("template quality tiers", () => {
     for (const tier of QUALITY_TIERS) {
       expect(qualityPreset(tier).ssrEnabled, `sailing ${tier}`).toBe(false);
       expect(qualityPreset(tier).ssgiEnabled, `sailing ${tier}`).toBe(false);
+    }
+  });
+
+  // A post node reaches a game's bundle only through `effects`, so this is the bundle's contents:
+  // a missing node throws at `apply`, and a node no tier turns on is dead weight on every target,
+  // which the native engine would otherwise have to bind or refuse.
+  it("should import exactly the post effects its tiers can turn on", async () => {
+    for (const name of names) {
+      const { qualityPreset } = await load(name);
+      const needed = new Set<string>();
+      const supplied = new Set<string>();
+      for (const tier of QUALITY_TIERS) {
+        const preset = qualityPreset(tier) as IWorldEnvironmentOptions;
+        const effects = Object.keys(preset.effects ?? {});
+        for (const effect of WorldEnvironment.requiredEffects(preset)) {
+          needed.add(effect);
+          expect(effects, `${name} ${tier}: needs ${effect}`).toContain(effect);
+        }
+        for (const effect of effects) supplied.add(effect);
+      }
+      expect(
+        [...supplied].filter((effect) => !needed.has(effect)),
+        `${name}: imports effects no tier turns on`,
+      ).toEqual([]);
     }
   });
 

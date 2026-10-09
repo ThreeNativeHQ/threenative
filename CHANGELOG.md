@@ -25,6 +25,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `GPUSceneBVH`, `bvhIntersectFirstHit` and `rayStruct` moved from `@threenative/core` to the
+  `@threenative/core/gpu-scene-bvh` subpath. `three-mesh-bvh/webgpu` subclasses TSL nodes at
+  import time, so the main entry made every game load it, and the native and Wasm engines refuse
+  it. Change the import path; nothing else changes.
 - `@threenative/core`'s `renderer.projection` now also accepts
   `{ materialChecks: "spread" | "everyFrame" }` and not only a boolean (PRD-462). This widens the
   accepted values rather than removing one, so a game that passed `true` or `false` needs no

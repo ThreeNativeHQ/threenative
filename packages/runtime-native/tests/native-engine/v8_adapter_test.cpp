@@ -632,7 +632,7 @@ void tslApi() {
         {"tsl.float(0.25).mix(1,2)", g::mix(g::float_(1), g::float_(2), g::float_(0.25))},
         {"tsl.float(0.25).smoothstep(0,1)", g::smoothstep(g::float_(0), g::float_(1), g::float_(0.25))},
         {"tsl.float(0.25).clamp(0,1)", g::clamp(g::float_(0.25), g::float_(0), g::float_(1))},
-        {"tsl.screenUV", g::uv()},
+        {"tsl.screenUV", g::screenUV()},
         {"tsl.materialColor", g::uniform("diffuse", tn::engine::shader::Type::vec(4))},
         {"tsl.materialEmissive", g::uniform("emissive", tn::engine::shader::Type::vec(3))},
         {"tsl.materialMetalness", g::uniform("metalness", tn::engine::shader::Type::f32())},
@@ -1107,6 +1107,51 @@ void skeletal() {
     if (!ran) { v8::String::Utf8Value error(rt.isolate, caught.Exception()); std::fprintf(stderr, "skeletal: %s\n", *error); }
 }
 
+// three's attribute.array is the attribute's own typed array: one object per attribute, of the
+// attribute's scalar type, and an element write is what the attribute (and every engine read) holds.
+void attributeArrays() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const g = new BufferGeometry();
+        g.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
+        const p = g.getAttribute("position");
+        const a = p.array;
+        a[3] = 5;
+        g.computeBoundingBox();
+        const index = new BoxGeometry().getIndex();
+        const wide = new BufferAttribute(new Uint32Array([7, 8]), 1);
+        wide.array[1] = 9;
+        [a instanceof Float32Array, p.array === a, p.getX(1), g.boundingBox.max.x,
+         index.array instanceof Uint16Array, index.array.length, wide.array instanceof Uint32Array, wide.getX(1)].join()
+    )JS");
+    CHECK(got == "true,true,5,5,true,36,true,9");
+    if (got != "true,true,5,5,true,36,true,9") std::fprintf(stderr, "attribute arrays: %s\n", got.c_str());
+}
+
+// three's geometry.clone() is a deep copy of the same class, dispose() leaves the CPU data usable,
+// and morphAttributes reads back the attributes it was given.
+void geometryLifecycle() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const box = new BoxGeometry(2, 1, 1);
+        const target = new Float32BufferAttribute(new Float32Array(72), 3);
+        box.morphAttributes.position = [target];
+        const copy = box.clone();
+        copy.getAttribute("position").setX(0, 9);
+        box.dispose();
+        const morphs = box.morphAttributes;
+        [copy instanceof BoxGeometry, copy.type, copy !== box, box.getAttribute("position").getX(0),
+         copy.getAttribute("position").getX(0), copy.getIndex().count, morphs.position.length, morphs.position[0] === target,
+         copy.morphAttributes.position.length, copy.morphAttributes.position[0] !== target, morphs.normal.length].join()
+    )JS");
+    CHECK(got == "true,BoxGeometry,true,1,9,36,1,true,1,true,0");
+    if (got != "true,BoxGeometry,true,1,9,36,1,true,1,true,0") std::fprintf(stderr, "geometry lifecycle: %s\n", got.c_str());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", unsupported}, {"gc_release", gcRelease},
@@ -1114,4 +1159,5 @@ TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"unsupported", un
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD},
              {"catalog_coverage", catalogCoverage},
-             {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal})
+             {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
+             {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle})

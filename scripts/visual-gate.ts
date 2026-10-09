@@ -221,10 +221,14 @@ export function inspectTemplate(
       if (!lighting.includes(marker)) errors.push(`${template}: lighting.ts is missing ${marker}`);
     }
   }
-  for (const marker of ["toneMapping", "toneMappingExposure", "createRenderChain", "bloom("]) {
+  for (const marker of ["toneMapping", "toneMappingExposure", "createRenderChain"]) {
     if (!postPipeline.includes(marker))
       errors.push(`${template}: render pipeline is missing ${marker}`);
   }
+  // The bloom node arrives through `effects` (quality.ts imports it), so the stage calls it as
+  // `effect("bloom")(...)` rather than by its import name.
+  if (!/\bbloom\(|effect\("bloom"\)\(/u.test(postPipeline))
+    errors.push(`${template}: render pipeline is missing bloom(`);
 
   return { errors, files, template };
 }

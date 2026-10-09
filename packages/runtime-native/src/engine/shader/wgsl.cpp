@@ -1,5 +1,6 @@
 #include <atomic>
 #include "wgsl.h"
+#include "materialx_noise.h"
 
 #include <bit>
 #include <charconv>
@@ -272,6 +273,14 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         out += "}\n";
     }
 
+    // A call into the MaterialX noise library brings the library, once.
+    for (ExprId id = 1; id < program.exprs_.size(); ++id) {
+        const Expr& x = program.exprs_[id];
+        if (x.op == Op::Call && program.names_[x.immediate].rfind("mx_", 0) == 0) {
+            out += kMaterialXNoise;
+            break;
+        }
+    }
     out += stage == Stage::Compute ? "@compute @workgroup_size(64)\n" : stage == Stage::Vertex ? "@vertex\n" : "@fragment\n";
     out += "fn main(";
     bool first = true;

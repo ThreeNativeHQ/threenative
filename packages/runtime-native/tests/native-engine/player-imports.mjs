@@ -5,7 +5,7 @@ import { rmSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleNativeEngine } from "../../scripts/bundle-native-engine.mjs";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -49,7 +49,7 @@ import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { Material } from "three";
-import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix } from "three/tsl";
+import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
 const camera = new THREE.PerspectiveCamera();
@@ -177,6 +177,23 @@ basic.colorNode = color(new THREE.Color(0.1, 0.2, 0.3));
 basic.colorNode = color(0.1, 0.2, 0.3);
 basic.colorNode = reflect(vec3(1, -1, 0), vec3(0, 1, 0));
 basic.colorNode = textureLoad(source, ivec2(0, 0)).rgb;
+basic.colorNode = vec3(mx_noise_float(uv().mul(4), 0.5, 0.5), mx_worley_noise_vec2(uv().mul(3), 0.9).x, 0);
+const sky = new THREE.DataTexture(new Uint8Array(64 * 32 * 4), 64, 32);
+sky.mapping = THREE.EquirectangularReflectionMapping;
+basic.colorNode = pmremTexture(sky, vec3(0, 1, 0), float(0.5));
+// reflector(): WaterSurface3D's layered mirror. A wrapper over getVirtualCamera runs once, against
+// the one engine virtual camera; updateBefore is refused by name, since nothing would call it.
+const mirror = reflector({ resolutionScale: 0.5, bounces: false });
+mirror.target.rotateX(-Math.PI / 2);
+check(mirror.target instanceof THREE.Object3D, "reflector target");
+const reflection = mirror._reflectorBaseNode;
+const mint = reflection.getVirtualCamera.bind(reflection);
+reflection.getVirtualCamera = (viewer) => { const virtual = mint(viewer); virtual.layers.mask = 2; return virtual; };
+check(reflection.getVirtualCamera(camera).layers.mask === 2, "reflector virtual camera layers");
+let hook = "";
+try { reflection.updateBefore.bind(reflection); } catch (error) { hook = String(error); }
+check(hook.includes("TN_NATIVE_REFLECTOR_UPDATE_HOOK"), "reflector refuses updateBefore: " + hook);
+basic.colorNode = mirror.sample(screenUV.flipX()).rgb.add(mirror.rgb);
 check(cameraViewMatrix !== undefined, "camera view uniform");
 check(NodeUpdateType.FRAME === "frame" && NodeUpdateType.RENDER === "render", "NodeUpdateType");
 basic.colorNode = vec3(screenCoordinate.mul(0.001), positionViewDirection.z);
@@ -258,6 +275,43 @@ const run = spawnSync(resolve(executable), ["--check-game", outfile], {
   encoding: "utf8", env: { ...process.env, SDL_AUDIO_DRIVER: "dummy" } });
 assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
 assert.match(run.stdout, /engine=native gameRuntime=v8 startup=passed shadowMap=on:2/);
+// BufferGeometryUtils.mergeGeometries over engine geometries equals three's over its own: indexed
+// parts with groups and morph targets, the arrays' types included; then core's mergeParts on it.
+{
+  const fromNative = createRequire(resolve(native, "package.json"));
+  const T = await import(pathToFileURL(fromNative.resolve("three/webgpu")).href);
+  const { mergeGeometries } = await import(pathToFileURL(fromNative.resolve("three/addons/utils/BufferGeometryUtils.js")).href);
+  const parts = (K) => {
+    const box = new K.BoxGeometry(1, 2, 3);
+    const sphere = new K.SphereGeometry(1, 5, 4);
+    for (const g of [box, sphere]) {
+      const p = g.getAttribute("position");
+      g.morphAttributes.position = [new K.Float32BufferAttribute(new Float32Array(p.count * 3).map((_, i) => i / 9), 3)];
+    }
+    return [box, sphere];
+  };
+  const dump = (g) => JSON.stringify([g.index.array.constructor.name, ...["position", "normal", "uv"].map((n) =>
+    [g.getAttribute(n).array.constructor.name, Array.from(g.getAttribute(n).array)]), Array.from(g.index.array),
+    g.morphAttributes.position.map((a) => Array.from(a.array)), g.groups]);
+  const expected = dump(mergeGeometries(parts(T), true));
+  await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { BoxGeometry, SphereGeometry, Float32BufferAttribute, Scene, PerspectiveCamera, Color } from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { mergeParts } from "@threenative/core";
+function check(value, name) { if (!value) throw Error("MERGE_CHECK: " + name); }
+const parts = ${parts.toString()};
+const merged = mergeGeometries(parts({ BoxGeometry, SphereGeometry, Float32BufferAttribute }), true);
+check((${dump.toString()})(merged) === ${JSON.stringify(expected)}, "mergeGeometries equals three's");
+const baked = mergeParts([{ geometry: new BoxGeometry(), color: new Color(1, 0, 0) },
+  { geometry: new SphereGeometry(1, 5, 4), color: new Color(0, 0, 1), position: [2, 0, 0] }], { label: "probe" });
+check(baked.getAttribute("color").count === baked.getAttribute("position").count, "mergeParts paints every vertex");
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+  await bundleNativeEngine({ entry, outfile, boot: false });
+  const merged = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+  assert.equal(merged.status, 0, `${merged.stdout}\n${merged.stderr}`);
+}
 const { build } = createRequire(resolve(native, "package.json"))("esbuild");
 const writer = resolve(work, "package-writer.mjs");
 await build({ entryPoints: [resolve(native, "../assets/src/native-package.ts")], outfile: writer,

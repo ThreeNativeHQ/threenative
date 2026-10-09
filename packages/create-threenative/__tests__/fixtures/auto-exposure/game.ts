@@ -13,7 +13,7 @@ import { pass } from "three/tsl";
 import type { WebGPURenderer } from "three/webgpu";
 import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
 import { playtest } from "../../../../core/dist/playtest.js";
-import { applyExposure } from "../../../template-assets/autoExposure.js";
+import * as autoExposure from "../../../template-assets/autoExposure.js";
 import { exposureSettings } from "../../../template-assets/exposure.js";
 import { WorldEnvironment } from "../../../template-assets/worldEnvironment.js";
 import { createFixedExposureRooms } from "./fixedRooms.js";
@@ -135,6 +135,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
           ? new WorldEnvironment({
               autoExposureEnabled: true,
               bloomEnabled: false,
+              effects: { autoExposure },
               exposurePolicy: policy,
               screenSpaceAA: "disabled",
               exposure: 1,
@@ -220,7 +221,10 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         }
       };
       if (installation?.exposure === undefined)
-        ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
+        ctx.renderer.setOutputNode(
+          autoExposure.applyExposure(colour, exposure.exposureNode),
+          worldPass,
+        );
       ctx.entities.add("exposure", {
         debug: () => ({
           ...exposure.getObservation(),
@@ -282,7 +286,10 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
             `TN_EXPOSURE_REBUILD:${JSON.stringify({ ...exposure.timing, ...exposure.getObservation() })}`,
           );
           exposure.beginCut();
-          ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
+          ctx.renderer.setOutputNode(
+            autoExposure.applyExposure(colour, exposure.exposureNode),
+            worldPass,
+          );
         }
       };
     }

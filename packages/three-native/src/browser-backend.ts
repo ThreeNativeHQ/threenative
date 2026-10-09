@@ -52,6 +52,11 @@ export interface IBrowserRuntime {
   get(self: IEngineRef, path: string): EngineValue;
   set(self: IEngineRef, path: string, value: EngineValue): void;
   release(self: IEngineRef): void;
+  /**
+   * three's `attribute.array`: a typed array over the attribute's own storage, so an element write
+   * is a write to the attribute (see createWasmRuntime). Absent where no memory is shared.
+   */
+  attributeArray?(self: IEngineRef): TypedArray;
   /** Sets (or, with null, clears) a callback the engine runs; `handler` gets the engine's arguments. */
   setCallback(
     self: IEngineRef,
@@ -77,6 +82,36 @@ export interface IBrowserEngine {
 }
 
 const REF = Symbol("tn.engineRef");
+
+type TypedArray =
+  | Float32Array
+  | Float64Array
+  | Int8Array
+  | Uint8Array
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array;
+/** A number list that came from a typed array names it, so the engine keeps three's storage type. */
+const TYPED = Symbol("tn.typedArray");
+// The engine's Scalar order: F32, F64, I8, U8, I16, U16, I32, U32.
+const SCALARS = [
+  Float32Array,
+  Float64Array,
+  Int8Array,
+  Uint8Array,
+  Int16Array,
+  Uint16Array,
+  Int32Array,
+  Uint32Array,
+];
+const ATTRIBUTE_CLASSES = new Set([
+  "BufferAttribute",
+  "Float32BufferAttribute",
+  "Uint16BufferAttribute",
+  "Uint32BufferAttribute",
+  "InstancedBufferAttribute",
+]);
 
 interface IWrapped {
   [REF]: IEngineRef;
@@ -254,12 +289,30 @@ export function defineBrowserClasses(
     if (value === null || value === undefined) return null;
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
-    if (Array.isArray(value) || ArrayBuffer.isView(value))
-      return Array.from(value as ArrayLike<unknown>, toEngine);
+    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      const list = Array.from(value as unknown as ArrayLike<number>);
+      Object.defineProperty(list, TYPED, { value: value.constructor.name });
+      return list;
+    }
+    if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
     if (typeof value === "object" && REF in value) {
       // An object with callbacks passed into the engine is held until the next safe point.
       if (callbackNames.has((value as IWrapped)[REF].key)) held.add(value);
       return (value as IWrapped)[REF];
+    }
+    // An options object (`new ExtrudeGeometry(shape, { depth })`) crosses as a record of scalars and
+    // engine objects, as the V8 adapter passes it; an undefined value is left out, as three reads it.
+    if (isPlainObject(value)) {
+      const fields: Record<string, EngineValue> = {};
+      for (const [key, item] of Object.entries(value as object)) {
+        if (item === undefined) continue;
+        if (item !== null && typeof item === "object" && !(REF in item))
+          throw new TypeError(
+            `TN_BROWSER_ARGUMENT_UNSUPPORTED: option ${key} cannot cross to the engine`,
+          );
+        fields[key] = toEngine(item);
+      }
+      return fields;
     }
     throw new TypeError(
       `TN_BROWSER_ARGUMENT_UNSUPPORTED: ${typeof value} cannot cross to the engine`,
@@ -280,8 +333,12 @@ export function defineBrowserClasses(
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
         // three's parameters object (`new MeshStandardMaterial({ color })`) is construct, then
-        // setValues. The engine takes no records, so the wrapper applies each key itself.
-        const parameters = isPlainObject(args.at(-1)) ? (args.at(-1) as object) : undefined;
+        // setValues, which the wrapper applies key by key. Other classes take an options object as
+        // a record argument (ExtrudeGeometry).
+        const parameters =
+          name.endsWith("Material") && isPlainObject(args.at(-1))
+            ? (args.at(-1) as object)
+            : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
         if (parameters !== undefined) setValues(this, name, parameters);
@@ -358,6 +415,38 @@ export function defineBrowserClasses(
           : {}),
       });
     }
+    // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
+    // a holder made per read, as the V8 adapter makes it: each tail reads and writes the full path.
+    const holders = new Map<string, string[]>();
+    for (const path of binding.setters) {
+      const dot = path.indexOf(".");
+      if (dot < 0) continue;
+      const head = path.slice(0, dot);
+      if (binding.members.includes(head) || binding.getters.includes(head)) continue;
+      const tails = holders.get(head) ?? [];
+      if (!tails.includes(path)) tails.push(path);
+      holders.set(head, tails);
+    }
+    for (const [head, paths] of holders) {
+      Object.defineProperty(prototype, head, {
+        configurable: true,
+        get(this: object) {
+          const ref = refOf(this);
+          const holder = {};
+          for (const path of paths) {
+            const readable = binding.members.includes(path) || binding.getters.includes(path);
+            Object.defineProperty(holder, path.slice(head.length + 1), {
+              enumerable: true,
+              ...(readable ? { get: () => fromEngine(runtime.get(ref, path)) } : {}),
+              ...(setters.has(path)
+                ? { set: (value: unknown) => runtime.set(ref, path, toEngine(value)) }
+                : {}),
+            });
+          }
+          return holder;
+        },
+      });
+    }
     // A write-only setter (three's `texture.needsUpdate`) is a property too: without an accessor
     // the write lands on a plain JS property and never reaches the engine.
     for (const property of binding.setters) {
@@ -421,6 +510,26 @@ export function defineBrowserClasses(
     classes[name] = cls;
     byType.set(runtime.typeId(name), cls);
   }
+  // three's `attribute.array` is the attribute's own typed array: one per attribute, viewed again
+  // only when Wasm memory growth detached the last one.
+  const attributeArray = runtime.attributeArray;
+  if (attributeArray !== undefined) {
+    const arrays = new WeakMap<object, TypedArray>();
+    for (const name of ATTRIBUTE_CLASSES) {
+      const cls = classes[name];
+      if (cls === undefined) continue;
+      Object.defineProperty(cls.prototype, "array", {
+        configurable: true,
+        get(this: object) {
+          const cached = arrays.get(this);
+          if (cached !== undefined && cached.buffer.byteLength !== 0) return cached;
+          const array = attributeArray.call(runtime, refOf(this));
+          arrays.set(this, array);
+          return array;
+        },
+      });
+    }
+  }
   const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
   const isFlag = (field: { name: string; type: string; mutable?: boolean }) =>
     /^is[A-Z]/u.test(field.name) &&
@@ -469,6 +578,9 @@ type AbiCall =
   | "_tn_set_callback"
   | "_tn_diagnostic_release";
 export type TnAbiModule = Record<AbiCall, (...args: number[]) => number> &
+  Partial<
+    Record<"_tnw_attribute_view" | "_tnw_attribute_view_release", (...args: number[]) => number>
+  > &
   Record<"HEAPU8", Uint8Array> &
   Record<"HEAPF64", Float64Array> &
   Record<"UTF8ToString", (pointer: number, maxBytes?: number) => string> &
@@ -498,9 +610,18 @@ const KIND = {
 } as const;
 
 // wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, lanes 4, node 8 (u64), number 16, text 24,
-// numbers 32 (four f64); 64 bytes.
+// numbers 32 (four f64); 64 bytes. A handle argument's 12 bytes start at lanes (4) and run through node.
 const TSL_ARG = 64;
-const TSL_KIND = { node: 0, number: 1, string: 2, named: 3, rgb: 4, vector: 5, other: 6 } as const;
+const TSL_KIND = {
+  node: 0,
+  number: 1,
+  string: 2,
+  named: 3,
+  rgb: 4,
+  vector: 5,
+  other: 6,
+  handle: 7,
+} as const;
 type TslCall =
   | "_tn_tsl_call"
   | "_tn_tsl_release"
@@ -516,6 +637,7 @@ interface IAbiHelpers {
   diagnostic(): number;
   check(status: number, diag: number, what: string): void;
   handleOf(ref: IEngineRef): number;
+  writeHandle(pointer: number, ref: IEngineRef): void;
   view(): DataView;
 }
 
@@ -558,7 +680,8 @@ function tslOf(
       else if (arg.kind === "rgb" || arg.kind === "vector") {
         v.setUint32(at + 4, arg.numbers.length, true);
         arg.numbers.forEach((c, j) => v.setFloat64(at + 32 + j * 8, c, true));
-      } else v.setUint32(at + 24, text, true);
+      } else if (arg.kind === "handle") h.writeHandle(at + 4, arg.ref);
+      else v.setUint32(at + 24, text, true);
     });
     return pointer;
   };
@@ -716,12 +839,23 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       v.setUint32(pointer, KIND.handle, true);
       return writeHandle(pointer + 16, value);
     }
-    if (!Array.isArray(value)) throw new TypeError("TN_ABI_VALUE: input record unsupported");
+    if (!Array.isArray(value)) {
+      // A record: count key/value pairs, each key a string value, as the engine returns one.
+      const entries = Object.entries(value as Record<string, EngineValue>);
+      const children = values(entries.flat());
+      const w = view();
+      w.setUint32(pointer, KIND.record, true);
+      w.setUint32(pointer + 48, children, true);
+      return w.setBigUint64(pointer + 40, BigInt(entries.length), true);
+    }
     if (value.every((item) => typeof item === "number")) {
       const numbers = alloc(Math.max(8, value.length * 8));
       abi.HEAPF64.set(value as number[], numbers / 8);
+      const typed = (value as { [TYPED]?: string })[TYPED];
+      const name = typed === undefined ? 0 : string(typed).pointer;
       const w = view();
       w.setUint32(pointer, KIND.numbers, true);
+      w.setUint32(pointer + 32, name, true);
       w.setUint32(pointer + 48, numbers, true);
       w.setBigUint64(pointer + 40, BigInt(value.length), true);
     } else {
@@ -811,6 +945,35 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     }, "vi");
   };
 
+  // A view over the attribute's storage, leased so it cannot reallocate under the view; the lease
+  // goes back when the collector takes the view. Memory growth detaches a view over a fixed-size
+  // heap, and every later read of a kept array would be silently empty, so the getter refuses by
+  // name. The modules are not built with -sGROWABLE_ARRAYBUFFERS: Chromium's GPUQueue.writeTexture
+  // and writeBuffer reject a view of a resizable buffer, so every upload would fail instead.
+  const viewAttribute = (handle: number, out: number): number => {
+    if ((abi.HEAPU8.buffer as { resizable?: boolean }).resizable !== true)
+      throw new TypeError(
+        "TN_WASM_ATTRIBUTE_VIEW_UNSAFE: attribute.array would be a view of the engine's Wasm memory, which memory growth detaches, so a kept array would read as empty; read the attribute (getX, count) instead",
+      );
+    const call = abi._tnw_attribute_view;
+    if (call === undefined)
+      throw new TypeError("TN_WASM_MODULE: this module exports no attribute views");
+    return call(handle, out);
+  };
+  const leases = new FinalizationRegistry<number>((lease) =>
+    abi._tnw_attribute_view_release?.(lease),
+  );
+  const attributeView = (
+    Typed: (typeof SCALARS)[number],
+    address: number,
+    count: number,
+    lease: number,
+  ): TypedArray => {
+    const array = new Typed(abi.HEAPU8.buffer as ArrayBuffer, address, count);
+    leases.register(array, lease);
+    return array;
+  };
+
   const context = scoped(() => {
     const version = alloc(32);
     abi._tn_engine_version(version);
@@ -821,7 +984,16 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   });
 
   return {
-    ...(tslOf(abi, context, { scoped, alloc, string, diagnostic, check, handleOf, view }) ?? {}),
+    ...(tslOf(abi, context, {
+      scoped,
+      alloc,
+      string,
+      diagnostic,
+      check,
+      handleOf,
+      writeHandle,
+      view,
+    }) ?? {}),
     typeId: (className) => scoped(() => abi._tn_type_id(string(className).pointer)),
     construct: (className, args) =>
       scoped(() => {
@@ -881,6 +1053,20 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         const diag = diagnostic();
         abi._tn_object_release(handleOf(self), diag);
         abi._tn_diagnostic_release(diag);
+      }),
+    attributeArray: (self) =>
+      scoped(() => {
+        const out = alloc(24);
+        const lease = viewAttribute(handleOf(self), out);
+        if (lease === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
+        const v = view();
+        const [address, count, scalar] = [0, 8, 16].map((at) =>
+          Number(v.getBigUint64(out + at, true)),
+        );
+        const Typed = SCALARS[scalar ?? -1];
+        if (Typed === undefined)
+          throw new TypeError(`TN_NATIVE_UNSUPPORTED array: scalar ${String(scalar)}`);
+        return attributeView(Typed, address ?? 0, count ?? 0, lease);
       }),
     setCallback: (self, name, handler) =>
       scoped(() => {
