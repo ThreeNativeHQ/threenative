@@ -121,6 +121,9 @@ export async function bindWebEngine(
     ...tsl?.exports,
   };
   bound.Material = Material;
+  // three's MathUtils is a namespace of functions; the engine binds them as one class's methods, so
+  // the export is an instance of it, as on the V8 player (core-three.mjs).
+  if (classes.MathUtils !== undefined) bound.MathUtils = new classes.MathUtils();
   // three's PropertyBinding statics and console hook over the engine's binding (property-binding.ts).
   if (classes.PropertyBinding !== undefined && classes.Object3D !== undefined)
     Object.assign(

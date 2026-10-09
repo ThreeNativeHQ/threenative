@@ -11,6 +11,7 @@ import {
   DataTexture,
   DirectionalLight,
   LoopOnce,
+  MathUtils,
   Mesh,
   MeshStandardMaterial,
   NumberKeyframeTrack,
@@ -192,7 +193,12 @@ try {
   const nudge = new AnimationClip("nudge", 0.5, [
     new NumberKeyframeTrack("box.position[y]", [0, 0.5], [0, 0]),
   ]);
-  mixer.clipAction(nudge).setLoop(LoopOnce, 1).play();
+  // MathUtils as Midway calls it, on the namespace: clamp keeps the weight inside 0..1.
+  mixer
+    .clipAction(nudge)
+    .setLoop(LoopOnce, 1)
+    .setEffectiveWeight(MathUtils.clamp(2, 0, 1))
+    .play();
   mixer.addEventListener("finished", () => {
     probe.finished += 1;
   });
