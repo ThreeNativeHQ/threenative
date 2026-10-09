@@ -6,14 +6,11 @@
 
 type Constructor = new (...args: unknown[]) => object;
 
-interface IEngineClasses {
-  readonly Mesh: Constructor;
-  readonly BufferGeometry: Constructor;
-  readonly Float32BufferAttribute: Constructor;
-  readonly OrthographicCamera: Constructor;
-}
+type EngineClasses = Readonly<
+  Record<"Mesh" | "BufferGeometry" | "Float32BufferAttribute" | "OrthographicCamera", Constructor>
+>;
 
-export function defineQuadMesh(classes: IEngineClasses) {
+export function defineQuadMesh(classes: EngineClasses) {
   // Built on first use, as three builds its module-level geometry and camera once.
   let shared: { geometry: object; camera: object } | undefined;
   const quad = () => {
