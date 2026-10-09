@@ -76,6 +76,37 @@ describe("createRenderer", () => {
     }
   });
 
+  it("keeps reading its own frame id when three's animation loop overwrites info.frame", async () => {
+    // Three's Renderer.init starts its own rAF loop, which writes `info.frame = nodeFrame.frameId`
+    // every animation frame. The timestamp queries are keyed by the engine's counter, so a sample
+    // must stay readable when that loop has just written a smaller number.
+    const canvas = testCanvas();
+    const info = { frame: 0, render: { timestamp: 4.5 } };
+    let timestampFrames: number[] = [];
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        info,
+        backend: { getTimestampFrames: () => timestampFrames },
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const scene = new Scene();
+      const camera = new PerspectiveCamera();
+      for (let frame = 0; frame < 20; frame += 1) renderer.render(scene, camera);
+      timestampFrames = [16];
+      info.frame = 9;
+      expect(renderer.gpuFrameSample?.()).toEqual({ frame: 16, ms: 4.5 });
+      expect(renderer.gpuFrameAge?.()).toBe(3);
+    } finally {
+      renderer.dispose();
+    }
+  });
+
   it("smooths the main-pass GPU time and reports it absent once the samples go stale", async () => {
     const canvas = testCanvas();
     const renderer = await createRenderer({

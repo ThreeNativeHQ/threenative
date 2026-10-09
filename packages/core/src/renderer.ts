@@ -478,8 +478,15 @@ function wrapRenderer(
    * same lagged sample every frame. `backend.getTimestampFrames("render")` is Three's tracked
    * resolved-frame list; its last entry is the sample, matching `gpuFrameAge`.
    */
+  /**
+   * The engine's own frame id once it has rendered. Three's `init()` starts its own rAF loop, which
+   * writes `info.frame = nodeFrame.frameId` every animation frame, so `info.frame` read between
+   * renders can be that smaller counter while the timestamp queries carry this one.
+   */
+  const currentFrame = (): number | undefined =>
+    timestampFrame >= 0 ? timestampFrame : raw.info?.frame;
   const gpuFrameSample = (): { frame: number; ms: number } | undefined => {
-    const frame = raw.info?.frame;
+    const frame = currentFrame();
     const frames = raw.backend?.getTimestampFrames?.("render");
     const sampled = frames?.[frames.length - 1];
     const timestamp = raw.info?.render?.timestamp;
@@ -573,7 +580,7 @@ function wrapRenderer(
     gpuFrameMs: () => gpuFrameSample()?.ms,
     gpuFrameAge: () => {
       const sample = gpuFrameSample();
-      const frame = raw.info?.frame;
+      const frame = currentFrame();
       if (sample === undefined || frame === undefined || !Number.isInteger(frame)) return undefined;
       // A fulfilled resolve may return the pool's lastValue on failure. The successful query's
       // frame ID, not the promise or a changed duration, is the evidence of freshness.
