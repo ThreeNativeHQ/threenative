@@ -459,19 +459,18 @@ void BufferGeometry::normalizeNormals() {
     }
 }
 
-namespace {
-
-// three's BufferAttribute.clone: a new array of the same type holding the same elements, and the
-// attribute's settings (name, usage, gpuType).
-std::shared_ptr<BufferAttribute> cloneAttribute(const BufferAttribute& source) {
-    auto copy = std::make_shared<BufferAttribute>(source.store->scalar(), source.store->count(), source.itemSize,
-                                                  source.normalized);
-    copy->store->write(0, source.store->data(), source.store->byteLength());
-    copy->name = source.name;
-    copy->usage = source.usage;
-    copy->gpuType = source.gpuType;
+std::shared_ptr<BufferAttribute> BufferAttribute::clone() const {
+    auto copy = std::make_shared<BufferAttribute>(store->scalar(), store->count(), itemSize, normalized);
+    copy->store->write(0, store->data(), store->byteLength());
+    copy->name = name;
+    copy->usage = usage;
+    copy->gpuType = gpuType;
     return copy;
 }
+
+namespace {
+
+std::shared_ptr<BufferAttribute> cloneAttribute(const BufferAttribute& source) { return source.clone(); }
 
 }  // namespace
 

@@ -130,6 +130,15 @@ check(orm.roughnessMap === paramTexture && orm.metalnessMap === paramTexture && 
   orm.emissiveMap === paramTexture && orm.aoMapIntensity === 0.6, "packed ORM and emissive map parameters");
 const twin = painted.clone();
 check(twin instanceof THREE.MeshStandardMaterial && twin !== painted && twin.map === painted.map && twin.roughness === painted.roughness, "material clone");
+// Midway's WaterEffects: base.index.clone() and attributes.position.clone() into a new geometry.
+const cloneSource = new THREE.BufferAttribute(new Float32Array([1, 2, 3, 4]), 2).setUsage(THREE.DynamicDrawUsage);
+const cloneCopy = cloneSource.clone();
+check(cloneCopy instanceof THREE.BufferAttribute && cloneCopy !== cloneSource && cloneCopy.itemSize === 2 && cloneCopy.count === 2 &&
+  cloneCopy.getX(1) === 3 && cloneCopy.usage === THREE.DynamicDrawUsage, "attribute clone");
+cloneCopy.setX(0, 9);
+check(cloneSource.getX(0) === 1, "attribute clone owns its array");
+const plane = new THREE.PlaneGeometry(1, 1);
+check(plane.index.clone().count === 6 && plane.attributes.position.clone().count === 4, "index and position clone");
 twin.roughness = 0.95;
 check(painted.roughness !== 0.95, "a clone is independent");
 const sprite = new THREE.SpriteMaterial({ transparent: false });
