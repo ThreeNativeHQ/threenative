@@ -416,6 +416,47 @@ engine.collect();
   check(web.MathUtils.euclideanModulo(-1, 3) === 2, "MathUtils.euclideanModulo");
   check(web.MathUtils.clamp(5, 0, 1) === 1, "MathUtils.clamp");
 }
+// three's SkeletonUtils.clone through the engine's namespace (the minimal template's mannequin): a
+// cloned skin is bound to the cloned bones, never to its source's.
+{
+  // biome-ignore lint/suspicious/noExplicitAny: engine objects typed as three's at runtime only
+  type Obj = Record<string, any>;
+  const web = (await bindWebEngine(createTnAbi, [
+    "SkeletonUtils",
+    "Group",
+    "Bone",
+    "SkinnedMesh",
+    "Skeleton",
+    "BoxGeometry",
+    "MeshStandardMaterial",
+  ])) as Record<
+    "Group" | "Bone" | "SkinnedMesh" | "Skeleton" | "BoxGeometry" | "MeshStandardMaterial",
+    new (
+      ...args: unknown[]
+    ) => Obj
+  > & { SkeletonUtils: Obj };
+  const root: Obj = new web.Group();
+  const hip: Obj = new web.Bone();
+  hip.name = "hip";
+  root.add(hip);
+  const mesh: Obj = new web.SkinnedMesh(new web.BoxGeometry(), new web.MeshStandardMaterial());
+  mesh.name = "skin";
+  root.add(mesh);
+  root.updateMatrixWorld(true);
+  mesh.bind(new web.Skeleton([hip]));
+  check(typeof web.SkeletonUtils === "object", "SkeletonUtils is a namespace object");
+  const copy: Obj = web.SkeletonUtils.clone(root);
+  const copyHip = copy.getObjectByName("hip");
+  const copyMesh = copy.getObjectByName("skin");
+  check(
+    copy !== root && copyHip !== hip && copyMesh !== mesh,
+    "SkeletonUtils.clone copies the hierarchy",
+  );
+  check(
+    copyMesh.skeleton.bones[0] === copyHip && mesh.skeleton.bones[0] === hip,
+    "SkeletonUtils.clone remaps the skin",
+  );
+}
 // three's type flags on the scene classes (PRD-540): a game, three's own code and the playtest
 // bridge find lights, cameras and bones by `isLight`, `isCamera`, `isBone`, never by class.
 {

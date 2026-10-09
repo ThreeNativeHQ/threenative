@@ -174,6 +174,18 @@ describe("createWebEnginePlugin", () => {
     ).toBeNull();
   });
 
+  it("resolves three's SkeletonUtils addon to the engine's SkeletonUtils namespace", async () => {
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    const resolved = plugin.resolveId("three/addons/utils/SkeletonUtils.js");
+    expect(resolved).toBe("\0threenative:web-engine-skeleton-utils");
+    expect(await plugin.load(resolved as string)).toBe(
+      'import { SkeletonUtils } from "three";\nexport const clone = (source) => SkeletonUtils.clone(source);\n',
+    );
+    expect(
+      createWebEnginePlugin({ root: "/game" }).resolveId("three/addons/utils/SkeletonUtils.js"),
+    ).toBeNull();
+  });
+
   it("resolves three's HDRLoader addon to the engine's own loader, never upstream", () => {
     const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
       "three/addons/loaders/HDRLoader.js",

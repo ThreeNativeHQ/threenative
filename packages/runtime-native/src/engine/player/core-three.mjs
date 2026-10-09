@@ -129,10 +129,10 @@ export {
   TextureLoader,
 } from "./core-textures.mjs";
 
-export const clone = globalThis.__tnCloneSkeleton;
-
-// The binding registry represents the stateless namespace as a native object.
+// The binding registry represents the stateless namespaces as native objects.
 export const MathUtils = new globalThis.MathUtils();
+const skeletonUtils = new globalThis.SkeletonUtils();
+export const clone = (root) => skeletonUtils.clone(root);
 
 export function unsupported() {
   throw new Error("TN_CORE_NATIVE_UNSUPPORTED: this native profile does not provide this import");

@@ -1170,31 +1170,6 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
     }
     // PropertyBinding is a registry class; its statics and three's console function are the shared
     // facade (three-native/src/property-binding.ts), as on the Wasm back end.
-    target->Set(context, str(isolate_, "__tnCloneSkeleton"), v8::Function::New(context,
-        [](const v8::FunctionCallbackInfo<v8::Value>& info) {
-            auto& a = *adapterOf(info);
-            tn_handle_t handle{};
-            tn_value_t parent{};
-            tn_diagnostic_t diagnostic{nullptr, 0};
-            if (info.Length() != 1 || !a.unwrap(info[0], handle) || tn_get(handle, "parent", &parent, &diagnostic) != TN_OK) {
-                tn_diagnostic_release(&diagnostic);
-                info.GetIsolate()->ThrowException(v8::Exception::TypeError(str(info.GetIsolate(), "TN_NATIVE_SKELETON_CLONE: expected a native Object3D")));
-                return;
-            }
-            tn_diagnostic_release(&diagnostic);
-            try {
-                const auto* object = tn::abi::objectOf(handle);
-                std::string error;
-                auto clone = engine::cloneSkeleton(*static_cast<engine::Object3D*>(object->ptr.get()), error);
-                if (!clone) throw tn::binding::Unsupported{error};
-                const auto cls = std::string(clone->type());
-                info.GetReturnValue().Set(a.wrap(tn::abi::shareObject(a.context(), cls, std::move(clone))));
-            } catch (const tn::binding::Unsupported& error) {
-                info.GetIsolate()->ThrowException(v8::Exception::TypeError(str(info.GetIsolate(), error.reason)));
-            } catch (const std::exception& error) {
-                info.GetIsolate()->ThrowException(v8::Exception::Error(str(info.GetIsolate(), error.what())));
-            }
-        }, v8::External::New(isolate_, this)).ToLocalChecked()).Check();
     // Every attribute class answers `array` with its typed array view (see arrayView), one per
     // attribute while the wrapper lives, so `attribute.array === attribute.array` as in three.
     for (const auto& [name, binding] : registry()) {

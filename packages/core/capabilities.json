@@ -8011,6 +8011,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "SkeletonUtils",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "SkinnedMesh",
         "kind": "class",
         "source": "three/webgpu"

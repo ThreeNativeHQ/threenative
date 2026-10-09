@@ -630,6 +630,15 @@
       "callbacks": [],
       "events": []
     },
+    "SkeletonUtils": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": [],
+      "setters": [],
+      "members": [],
+      "callbacks": [],
+      "events": []
+    },
     "SkinnedMesh": {
       "constructor": true,
       "methods": ["add", "applyMatrix4", "applyQuaternion", "attach", "bind", "clear", "clone", "computeBoundingBox", "copy", "getObjectById", "getObjectByName", "getVertexPosition", "getWorldDirection", "getWorldPosition", "getWorldQuaternion", "getWorldScale", "localToWorld", "lookAt", "pose", "remove", "removeFromParent", "rotateOnAxis", "rotateOnWorldAxis", "rotateX", "rotateY", "rotateZ", "setRotationFromAxisAngle", "setRotationFromEuler", "setRotationFromMatrix", "setRotationFromQuaternion", "translateOnAxis", "translateX", "translateY", "translateZ", "updateMatrix", "updateMatrixWorld", "updateMorphTargets", "updateWorldMatrix", "worldToLocal"],

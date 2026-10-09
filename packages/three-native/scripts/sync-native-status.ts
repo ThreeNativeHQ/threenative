@@ -105,6 +105,10 @@ const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns
         "{ nodeName: string; objectName: string; objectIndex: string; propertyName: string; propertyIndex: string }",
     },
   ],
+  // three's addon namespace utils/SkeletonUtils (not in @types/three's class chain).
+  "SkeletonUtils.clone": [
+    { parameters: [{ name: "source", type: "Object3D", optional: false }], returns: "Object3D" },
+  ],
   "PropertyBinding.findNode": [
     {
       parameters: [

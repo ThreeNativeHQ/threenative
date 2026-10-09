@@ -1441,6 +1441,17 @@ void registerSceneBindings(Registry& classes) {
     }
     registerBone(classes["Bone"]);
     registerSkeleton(classes["Skeleton"]);
+    // three's SkeletonUtils namespace: clone(root) copies the hierarchy, shares mesh resources and
+    // remaps each skin to the cloned bones. A namespace class, exported as its one instance.
+    ClassBinding& skeletonUtils = classes["SkeletonUtils"];
+    skeletonUtils.ctor = [](const Args&, Store&) { return std::make_shared<int>(0); };
+    skeletonUtils.methods["clone"] = [](void*, const Args& a, Store& store) {
+        std::string error;
+        std::shared_ptr<Object3D> copy = cloneSkeleton(objectArg(store, a.at(0)), error);
+        if (!copy) throw Unsupported{error};
+        const std::string type(copy->type());
+        return store.adopt(type, std::static_pointer_cast<void>(copy));
+    };
     registerSkinnedMesh(classes["SkinnedMesh"]);
     registerAnimationMixer(classes["AnimationMixer"]);
     registerAnimationAction(classes["AnimationAction"]);

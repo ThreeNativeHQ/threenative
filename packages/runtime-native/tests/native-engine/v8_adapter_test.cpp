@@ -1075,7 +1075,7 @@ void skeletal() {
         const mesh = new SkinnedMesh(new BoxGeometry(), new MeshStandardMaterial());
         mesh.name='skin'; root.add(mesh); root.updateMatrixWorld(true);
         mesh.bind(new Skeleton([hip])); mesh.bindMode='detached';
-        const copy = __tnCloneSkeleton(root);
+        const copy = new SkeletonUtils().clone(root);
         const copyHip = copy.getObjectByName('hip');
         const copyMesh = copy.getObjectByName('skin');
         check(copy instanceof Group && copy !== root, 'clone root');
@@ -1104,9 +1104,9 @@ void skeletal() {
         const unsupportedBinding=new PropertyBinding(root, 'hip.noSuchProperty');
         check(unsupportedBinding.bind().includes('TN_NATIVE_ANIMATION_PATH_UNSUPPORTED') && unsupportedBinding.targetObject()===null, 'unsupported path diagnostic');
         const external = new Bone(); external.name='external'; mesh.bind(new Skeleton([external]));
-        let refused=false; try { __tnCloneSkeleton(root); } catch(e) { refused=e.message.includes('TN_NATIVE_SKELETON_CLONE_EXTERNAL_BONE: external'); }
+        let refused=false; try { new SkeletonUtils().clone(root); } catch(e) { refused=e.message.includes('TN_NATIVE_SKELETON_CLONE_EXTERNAL_BONE: external'); }
         check(refused, 'external bone refusal');
-        refused=false; try { __tnCloneSkeleton(tsl.float(1)); } catch(e) { refused=e instanceof TypeError; }
+        refused=false; try { new SkeletonUtils().clone(tsl.float(1)); } catch(e) { refused=e instanceof TypeError; }
         check(refused, 'non-scene wrapper refusal');
         check(nativeClip.name==='walk' && nativeClip.duration===1, 'native clip');
         const track=nativeClip.tracks[0];

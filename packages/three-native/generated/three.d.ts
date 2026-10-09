@@ -3365,3 +3365,10 @@ readonly path: string;
 
   unbind(): void;
 }
+
+/** Catalog supported: three/SkeletonUtils. */
+export declare class SkeletonUtils {
+constructor();
+
+  clone(source: Object3D): Object3D;
+}

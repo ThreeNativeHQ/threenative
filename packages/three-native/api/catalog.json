@@ -28368,6 +28368,38 @@
           }
         }
       ]
+    },
+    {
+      "name": "SkeletonUtils",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": null,
+      "constructor": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Object3D",
+                  "optional": false
+                }
+              ],
+              "returns": "Object3D"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     }
   ]
 }

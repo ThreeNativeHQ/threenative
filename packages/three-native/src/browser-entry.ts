@@ -54,6 +54,8 @@ function constantValue(entry: CatalogEntry): unknown {
   return typeof entry.value === "string" ? JSON.parse(entry.value) : entry.value;
 }
 
+const NAMESPACES = new Set(["MathUtils", "SkeletonUtils"]);
+
 /** Binds each upstream export name to an engine class, a catalog constant, or a refusal. */
 export function bindUpstreamExports(
   names: readonly string[],
@@ -68,11 +70,12 @@ export function bindUpstreamExports(
   const bound: Record<string, unknown> = {};
   for (const name of names) {
     const entry = entries.get(name);
-    // three's MathUtils is a namespace object: the engine binds it as a class, exported as its one
-    // instance (as the V8 player's core-three.mjs does).
+    // three's MathUtils and SkeletonUtils are namespace objects: the engine binds each as a class,
+    // exported as its one instance (as the V8 player's core-three.mjs does).
     if (Object.hasOwn(classes, name))
-      bound[name] =
-        name === "MathUtils" ? new (classes[name] as new () => object)() : classes[name];
+      bound[name] = NAMESPACES.has(name)
+        ? new (classes[name] as new () => object)()
+        : classes[name];
     else if (entry !== undefined && constantValue(entry) !== undefined)
       bound[name] = constantValue(entry);
     else
