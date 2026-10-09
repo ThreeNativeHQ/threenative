@@ -241,6 +241,17 @@ const vertex = new THREE.Vector3();
 check(new THREE.Mesh(rounded, lit).getVertexPosition(0, vertex) === vertex && vertex.equals(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0)), "getVertexPosition");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);
+// Midway's ocean and whitewater: += on a variable, screen derivatives, sign and cbrt.
+const summed = Fn(() => {
+  const height = float(0).toVar();
+  height.addAssign(float(0.25));
+  height.subAssign(0.05);
+  height.mulAssign(2);
+  height.divAssign(float(4));
+  return height.add(uv().x.dFdx().abs()).add(uv().y.dFdy().sign()).add(float(-8).cbrt());
+})();
+check(summed && typeof summed.addAssign === "function" && typeof summed.cbrt === "function", "assign forms, dFdx, sign, cbrt");
+basic.alphaTestNode = summed;
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
   check(THREE[name] === expected, name + " differs from pinned Three.js");
 // three's audio classes are engine objects over the player's WebAudio, and the native tick pushes

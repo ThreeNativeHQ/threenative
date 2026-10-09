@@ -131,6 +131,10 @@ const METHODS = [
   "log2",
   "normalize",
   "length",
+  "dFdx",
+  "dFdy",
+  "sign",
+  "cbrt",
   "min",
   "max",
   "pow",
@@ -269,6 +273,13 @@ export function defineTsl(runtime: ITslRuntime): {
     runtime.release(call("assign", this[TSL_NODE], [value]));
     return this;
   };
+  // r185's `<op>Assign`: the shared scopes assign op(this, value) to the variable.
+  for (const form of ["addAssign", "subAssign", "mulAssign", "divAssign"]) {
+    prototype[form] = function (this: ITslNode, value: unknown) {
+      runtime.release(call(form, this[TSL_NODE], [value]));
+      return this;
+    };
+  }
   prototype.Else = function (this: ITslNode, callback: unknown) {
     statement("Else");
     return wrap(runtime.call("Else", this[TSL_NODE], [node(capture("Else", callback))]));
