@@ -54,6 +54,7 @@ import {
   positionPrevious,
   positionViewDirection,
   pow,
+  property,
   saturation,
   screenCoordinate,
   screenSize,
@@ -233,6 +234,15 @@ function canon(node: TslNode, fragment: boolean): string {
       return child("node");
     case "StorageArrayElementNode":
       return `load:${storageName(node)}[${canon(node.indexNode as TslNode, fragment)}]`;
+    // An unassigned property is a WGSL var's zero value, the engine's zero constructor.
+    case "PropertyNode": {
+      const type = typeOf(node);
+      const lanes = { f32: 1, "vec2<f32>": 2, "vec3<f32>": 3, "vec4<f32>": 4 }[type];
+      if (lanes === undefined) return `UNMAPPED_PROPERTY:${type}`;
+      return lanes === 1
+        ? "0f:f32"
+        : `construct<${type}>(${Array(lanes).fill("0f:f32").join(", ")}):${type}`;
+    }
     case "ScreenNode":
       if (node.scope === "coordinate") return "builtin:position:vec4<f32>.xy:vec2<f32>";
       if (node.scope === "size") return "uniform:screenSize:vec2<f32>";
@@ -391,6 +401,7 @@ export const CORPUS: [string, string, unknown][] = [
   ["get-view-position", "color", vec4(getViewPosition(uv(), u, cameraProjectionMatrix), 1)],
   ["set-group", "color", vec4(uniform(0.25).setName("grouped").setGroup(frameGroup), 0, 0, 1)],
   ["transform-normal-to-view", "color", vec4(transformNormalToView(tint), 1)],
+  ["property", "color", vec4(property("vec3").add(tint), 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

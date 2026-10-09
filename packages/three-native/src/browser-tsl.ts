@@ -107,6 +107,7 @@ const FUNCTIONS = [
   "transformDirection",
   "getViewPosition",
   "transformNormalToView",
+  "property",
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [

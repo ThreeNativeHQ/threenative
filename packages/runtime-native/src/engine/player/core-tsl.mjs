@@ -31,7 +31,7 @@ export const {
   oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection, dFdx, dFdy, lengthSq,
   normalLocal, tangentLocal, positionPrevious, storage,
   atan, mod, fwidth, saturation, mat2, hash, time, transformDirection, normalWorldGeometry,
-  getViewPosition, frameGroup, renderGroup, objectGroup, transformNormalToView,
+  getViewPosition, frameGroup, renderGroup, objectGroup, transformNormalToView, property,
 } = globalThis.tsl;
 
 // three's pass(), mrt() and MRT slots over the player's one scene pass (shared with the Wasm back

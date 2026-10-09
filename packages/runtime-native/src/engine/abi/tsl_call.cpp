@@ -114,6 +114,18 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (!receiver->node || receiver->node->kind != g::Kind::Uniform) throw std::runtime_error("setGroup requires a uniform");
         return receiver->node;
     }
+    // r185's property(type, name): a declared variable with no value of its own, which WGSL starts at
+    // zero; `.toVar()` then names it. A float or float vector only.
+    if (!method && name == "property") {
+        if (args.empty() || args.size() > 2) throw std::runtime_error("property takes a type and an optional name");
+        const Type wanted = type(text(args[0]));
+        const auto zero = g::float_(0);
+        if (wanted == Type::f32()) return zero;
+        if (wanted == Type::vec(2)) return g::vec2({zero});
+        if (wanted == Type::vec(3)) return g::vec3({zero});
+        if (wanted == Type::vec(4)) return g::vec4({zero});
+        throw std::runtime_error("property: unsupported type " + text(args[0]));
+    }
     // r185's transformNormalToView(normal) outside a material's normal setup:
     // transformNormalByViewMatrix(modelNormalMatrix * normal, cameraViewMatrix).
     if (!method && name == "transformNormalToView") {

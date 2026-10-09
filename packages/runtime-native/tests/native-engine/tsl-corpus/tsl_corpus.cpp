@@ -143,6 +143,7 @@ int main() {
         const Node transformed = uniform("modelNormalMatrix", Type::mat(3, 3)).mul(tint());
         return vec4({normalize(uniform("viewMatrix", Type::mat(4, 4)).mul(vec4({transformed, 0})).xyz()), 1});
     });
+    graph("property", "color", [] { return vec4({vec3({float_(0)}).add(tint()), 1}); });
 
     compute("fn-if-store", [](Storage positions) {
         const Var acc = toVar(float_(0));

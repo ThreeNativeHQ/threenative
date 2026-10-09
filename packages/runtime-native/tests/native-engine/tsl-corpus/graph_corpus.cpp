@@ -188,6 +188,7 @@ int main() {
         const Node transformed = mul(uniform("modelNormalMatrix", Type::mat(3, 3)), tint());
         return vec4({normalize(swizzle(mul(uniform("viewMatrix", Type::mat(4, 4)), vec4({transformed, float_(0)})), "xyz")), float_(1)});
     });
+    shaderGraph("property", "color", [] { return vec4({add(vec3({float_(0)}), tint()), float_(1)}); });
 
     compute("fn-if-store", [](Block& b, Storage positions) {
         const Var acc = b.var(float_(0));
