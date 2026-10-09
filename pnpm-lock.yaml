@@ -1214,6 +1214,12 @@ importers:
 
   packages/three-native:
     devDependencies:
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1(patch_hash=c2e051df4c469d033b151cb9da5ce5112c90801aaaa984d6bfde0e09d80c9a66)
       typescript:
         specifier: 'catalog:'
         version: '@typescript/typescript6@6.0.2'
