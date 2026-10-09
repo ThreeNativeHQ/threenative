@@ -735,6 +735,99 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": 10,
+      "at": "2026-10-09T14:16:12.255Z",
+      "commit": "2e100adc4",
+      "label": "hourly refresh",
+      "notes": "No new PR merged since the last tick. The window still has 2 merged PRs, 470 and 458. It now has 26 merge-group runs, up from 24. Run success fell to 20.8 percent, the fourth straight drop. Board median 109.9 min. Queue wait p90 39 min over 1785 jobs, down from 41.2. First failing job in the red groups: test-unit (3/4) 5, integration / velocity 4, test-browser 2, integration / auto-exposure cold boot 1. test-unit (3/4) is now the largest named cost. Phase 1 on PR 476 includes a compile-spec budget change for test-unit timeouts, and it is not on develop yet. PR 476 is still open. Provisional: fewer than 5 PRs merged.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 477.1,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 109.9,
+        "queueWaitP90Min": 39
+      },
+      "extra": {
+        "prCount": 2,
+        "mergeGroupRuns": 26,
+        "mergeGroupRunSuccessPct": 20.8,
+        "enqueueToMergeMedianMin": 253.5,
+        "queueWaitJobs": 1787
+      },
+      "prs": [
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "integration / velocity",
+          "count": 4
+        },
+        {
+          "job": "test-browser",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 1
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 1
+        }
+      ]
     }
   ]
 }
