@@ -254,10 +254,17 @@ export async function handleToolCall(
   }
   if (name === "blender_run_python") {
     const script = requiredString(argumentsValue, "script", "blender_run_python");
-    const request = isRecord(argumentsValue.arguments) ? argumentsValue.arguments : {};
+    const request = argumentsValue.arguments === undefined ? {} : argumentsValue.arguments;
+    if (!isRecord(request)) throw new Error("blender_run_python 'arguments' must be an object.");
     const timeoutMs = argumentsValue.timeoutMs;
-    if (timeoutMs !== undefined && typeof timeoutMs !== "number") {
-      throw new Error("blender_run_python 'timeoutMs' must be a number.");
+    // Node rejects a fractional, negative, or non-finite timeout, and reads zero as no timeout.
+    if (
+      timeoutMs !== undefined &&
+      (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs <= 0)
+    ) {
+      throw new Error(
+        "blender_run_python 'timeoutMs' must be a positive whole number of milliseconds.",
+      );
     }
     return toolText(
       await runBlenderScript(script, request, timeoutMs === undefined ? {} : { timeoutMs }),

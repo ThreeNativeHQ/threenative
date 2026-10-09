@@ -5,7 +5,17 @@ import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { loadConfig } from "../src/config.js";
+import * as assetKeys from "../../assets/src/config-keys.js";
+import type { IThreeNativeModelsConfig } from "../../core/src/config.js";
+import {
+  ASSETS_CONFIG_KEYS,
+  LIGHTMAP_CONFIG_KEYS,
+  MODELS_CONFIG_KEYS,
+  MODEL_PASS_KEYS,
+  MODEL_QUANTIZE_KEYS,
+  MODEL_VIRTUAL_KEYS,
+  loadConfig,
+} from "../src/config.js";
 
 const execFileAsync = promisify(execFile);
 const roots: string[] = [];
@@ -1131,4 +1141,105 @@ describe("threenative.config.ts", () => {
     const files = await readdir(root);
     expect(files.some((file) => /^\\.threenative\\.config\\./u.test(file))).toBe(false);
   });
+});
+
+// One valid value for every key the loader accepts under `assets.*`, nested sections included.
+const SEAM_SAMPLE = {
+  audio: "none",
+  budget: { uncooked: "none", total: 1000000 },
+  concurrency: 2,
+  exclude: ["*.glb"],
+  lod: false,
+  models: {
+    compact: false,
+    lightmap: { atlasSize: 128, padding: 2 },
+    passes: { dedup: true, meshopt: false, prune: true, quantize: true, reorder: false },
+    quantize: { normalBits: 8, positionBits: 12, uvBits: 12 },
+    sharedImages: true,
+    simplify: { ratio: 0.5 },
+    textures: "none",
+    virtual: {
+      groupSize: 4,
+      maxTriangles: 1000,
+      minSourceTriangles: 500,
+      minTriangles: 100,
+      simplifyRatio: 0.5,
+    },
+  },
+  output: "public",
+  source: "assets",
+  targets: { maxTriangles: 100_000, maxTextureDimension: 2048 },
+  textures: "none",
+};
+type Equals<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+it("accepts every assets.* key on both sides of the config/compiler seam", async () => {
+  const sorted = (keys: readonly string[]) => [...keys].sort();
+  // The sample names every key of each list, and each list is the code's own.
+  expect(sorted(Object.keys(SEAM_SAMPLE))).toEqual(sorted(ASSETS_CONFIG_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models))).toEqual(sorted(MODELS_CONFIG_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models.lightmap))).toEqual(sorted(LIGHTMAP_CONFIG_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models.passes))).toEqual(sorted(MODEL_PASS_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models.quantize))).toEqual(sorted(MODEL_QUANTIZE_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models.virtual))).toEqual(sorted(MODEL_VIRTUAL_KEYS));
+  // The compiler's lists must name the same keys as the loader's, in both directions.
+  expect(sorted(assetKeys.ASSETS_CONFIG_KEYS)).toEqual(sorted(ASSETS_CONFIG_KEYS));
+  expect(sorted(assetKeys.MODELS_CONFIG_KEYS)).toEqual(sorted(MODELS_CONFIG_KEYS));
+  expect(sorted(assetKeys.LIGHTMAP_CONFIG_KEYS)).toEqual(sorted(LIGHTMAP_CONFIG_KEYS));
+  expect(sorted(assetKeys.MODEL_PASS_KEYS)).toEqual(sorted(MODEL_PASS_KEYS));
+  expect(sorted(assetKeys.MODEL_QUANTIZE_KEYS)).toEqual(sorted(MODEL_QUANTIZE_KEYS));
+  expect(sorted(assetKeys.MODEL_VIRTUAL_KEYS)).toEqual(sorted(MODEL_VIRTUAL_KEYS));
+  // Core's public type must name the same model keys as the loader.
+  const coreModelKeysMatch: Equals<
+    keyof IThreeNativeModelsConfig,
+    (typeof MODELS_CONFIG_KEYS)[number]
+  > = true;
+  expect(coreModelKeysMatch).toBe(true);
+
+  const root = await project();
+  await mkdir(path.join(root, "assets"));
+  await writeFile(path.join(root, "assets/keep.txt"), "kept");
+  await config(root, `export default { assets: ${JSON.stringify(SEAM_SAMPLE)} };`);
+  const loaded = await loadConfig(root);
+  await compileAssets({ cwd: root, config: loaded.assets });
+  await compileAssets({ cwd: root, config: SEAM_SAMPLE as never });
+});
+
+it("rejects an unknown assets.* key at every level on both sides of the seam", async () => {
+  const levels = [
+    { assets: { bogus: true } },
+    { assets: { models: { bogus: true } } },
+    { assets: { models: { lightmap: { atlasSize: 128, padding: 2, bogus: true } } } },
+    { assets: { models: { passes: { bogus: true } } } },
+    { assets: { models: { quantize: { bogus: 8 } } } },
+    { assets: { models: { virtual: { bogus: 2 } } } },
+  ];
+  for (const level of levels) {
+    // A fresh project per level, so a cached config module cannot answer for the next one.
+    const root = await project();
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets/keep.txt"), "kept");
+    await config(root, `export default ${JSON.stringify(level)};`);
+    await expect(loadConfig(root)).rejects.toThrow("TN_CONFIG_UNKNOWN_KEY");
+    await expect(compileAssets({ cwd: root, config: level.assets as never })).rejects.toThrow(
+      "TN_ASSETS_CONFIG_UNKNOWN_KEY",
+    );
+  }
+});
+
+it("rejects a lightmap atlas size that is not a multiple of four on both sides of the seam", async () => {
+  const root = await project();
+  await mkdir(path.join(root, "assets"));
+  await writeFile(path.join(root, "assets/keep.txt"), "kept");
+  await config(
+    root,
+    "export default { assets: { models: { lightmap: { atlasSize: 130, padding: 2 } } } };",
+  );
+  await expect(loadConfig(root)).rejects.toThrow("TN_CONFIG_ASSETS_INVALID");
+  await expect(
+    compileAssets({
+      cwd: root,
+      config: { models: { lightmap: { atlasSize: 130, padding: 2 } } } as never,
+    }),
+  ).rejects.toThrow("TN_ASSETS_CONFIG_INVALID");
 });

@@ -46,6 +46,13 @@ describe("native coverage gate", () => {
     expect(nativeCoverageGateErrors(record, "aaaa")).toEqual([]);
   });
 
+  it("should reject a floor looser than the measured value by more than the margin", () => {
+    const loose = record.replace("| `src/webgpu/` | 34.00% |", "| `src/webgpu/` | 20.00% |");
+    expect(nativeCoverageGateErrors(loose, "aaaa")).toEqual([
+      "native coverage floor too loose: src/webgpu/ floor 20.00%, measured 35.00%; raise it to at least 30.00% (measured - 5 percentage points)",
+    ]);
+  });
+
   it("should reject incomplete or duplicate floor sets", () => {
     expect(nativeCoverageGateErrors(record.replace("| `src/js/` | 40.00% |", ""), "aaaa")).toEqual([
       expect.stringContaining("floor set differs"),

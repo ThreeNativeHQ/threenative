@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, rename, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
@@ -706,6 +706,18 @@ async function runInstall(target: string): Promise<void> {
   });
 }
 
+/** Removes what a failed scaffold wrote. A target the scaffold created goes whole. A target that
+ * existed was empty when the scaffold began, so every entry in it now is the scaffold's own. */
+async function discardScaffold(target: string, existedBefore: boolean): Promise<void> {
+  if (!existedBefore) {
+    await rm(target, { force: true, recursive: true });
+    return;
+  }
+  for (const entry of await readdir(target)) {
+    await rm(path.join(target, entry), { force: true, recursive: true });
+  }
+}
+
 export async function createProject(
   options: IScaffoldOptions,
   cwd = process.cwd(),
@@ -720,37 +732,44 @@ export async function createProject(
     throw new Error(`Target '${target}' already exists and is not empty.`);
   }
 
+  const existedBefore = existsSync(target);
   await mkdir(target, { recursive: true });
-  const source = path.join(root, template);
-  await cp(source, target, { recursive: true, errorOnExist: true });
-  await copyTemplateIcon(target, root);
-  await copySharedAssets(target, root);
-  // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
-  // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
-  if (existsSync(path.join(target, "gitignore"))) {
-    await rename(path.join(target, "gitignore"), path.join(target, ".gitignore"));
-  }
-  await installAuthoringGitignore(target);
-  const projectName = packageName(target);
-  const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
-  const projectId = /^[a-z]/u.test(compactProjectId) ? compactProjectId : `game${compactProjectId}`;
-  // Entries rather than an object literal: these are template tokens, not identifiers. Written as
-  // property names they read as names the naming rule must judge, and `__PROJECT_NAME__` is
-  // neither ours to rename nor expressible in camelCase.
-  const replacements = Object.fromEntries([
-    ["__PROJECT_NAME__", projectName],
-    ["__PROJECT_ID__", projectId],
-  ]) as Readonly<Record<string, string>>;
-  await stampTemplateLoading(target, source, root);
-  await copyAgentFiles(target, root);
-  await renderTemplate(target, replacements);
-  await copyFrameworkPatches(target, root);
-  await applyPackageSources(target, options.packageSources);
-  await assertMcpConfig(target);
-  await assertReferenceBundle(target, root);
-
   const installed = options.install ?? true;
-  if (installed) await runInstall(target);
+  try {
+    const source = path.join(root, template);
+    await cp(source, target, { recursive: true, errorOnExist: true });
+    await copyTemplateIcon(target, root);
+    await copySharedAssets(target, root);
+    // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
+    // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
+    if (existsSync(path.join(target, "gitignore"))) {
+      await rename(path.join(target, "gitignore"), path.join(target, ".gitignore"));
+    }
+    await installAuthoringGitignore(target);
+    const projectName = packageName(target);
+    const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
+    const projectId = /^[a-z]/u.test(compactProjectId)
+      ? compactProjectId
+      : `game${compactProjectId}`;
+    // Entries rather than an object literal: these are template tokens, not identifiers. Written as
+    // property names they read as names the naming rule must judge, and `__PROJECT_NAME__` is
+    // neither ours to rename nor expressible in camelCase.
+    const replacements = Object.fromEntries([
+      ["__PROJECT_NAME__", projectName],
+      ["__PROJECT_ID__", projectId],
+    ]) as Readonly<Record<string, string>>;
+    await stampTemplateLoading(target, source, root);
+    await copyAgentFiles(target, root);
+    await renderTemplate(target, replacements);
+    await copyFrameworkPatches(target, root);
+    await applyPackageSources(target, options.packageSources);
+    await assertMcpConfig(target);
+    await assertReferenceBundle(target, root);
+    if (installed) await runInstall(target);
+  } catch (error) {
+    await discardScaffold(target, existedBefore);
+    throw error;
+  }
   return { installed, target, template };
 }
 

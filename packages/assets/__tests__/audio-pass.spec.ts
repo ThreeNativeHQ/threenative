@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   NATIVE_AUDIO_CONTAINERS,
   detectAudioContainer,
@@ -7,6 +7,7 @@ import {
   // too, instead of leaving this suite green over a silent asset on every native target.
 } from "../../runtime-native/scripts/asset-preflight.mjs";
 import type { IAssetPassOutput } from "../src/compile.js";
+import type * as AudioPcm from "../src/passes/audio-pcm.js";
 import { audioPass } from "../src/passes/audio.js";
 import {
   bandLimitedNoise,
@@ -672,5 +673,45 @@ describe("the audio pass determinism", () => {
     // The Ogg serial number is random by default in every encoder; left alone it makes every
     // build's bytes differ and the determinism gate unwinnable.
     expect(first.outputBytes.equals(second.outputBytes)).toBe(true);
+  });
+});
+
+describe("the audio pass cross-fade and drift assertions", () => {
+  it("should refuse a declared cross-fade that would consume half of a short clip", async () => {
+    await expect(
+      compileAudio(
+        "threenative-audio-fade-",
+        "short.wav",
+        wavClip({ frames: RATE / 10, sample: sine(440) }),
+        {
+          audio: {
+            overrides: [{ glob: "short.wav", loop: { crossFadeMs: 250, spliceToleranceMs: 0 } }],
+          },
+        },
+      ),
+    ).rejects.toThrow(/TN_ASSETS_AUDIO_FADE_TOO_LONG/u);
+  });
+
+  it("should fail when the codec hands back a different sample rate than it encoded", async () => {
+    // Only the pass's own re-decode is faulted. The first decode reads the source faithfully.
+    vi.resetModules();
+    const actual = await vi.importActual<typeof AudioPcm>("../src/passes/audio-pcm.js");
+    let decodes = 0;
+    vi.doMock("../src/passes/audio-pcm.js", () => ({
+      ...actual,
+      decodeAudioBytes: async (bytes: Buffer, label: string) => {
+        const decoded = await actual.decodeAudioBytes(bytes, label);
+        decodes += 1;
+        return decodes === 1 ? decoded : { ...decoded, sampleRate: 22_050 };
+      },
+    }));
+    try {
+      const { audioPass: faultyCodecPass } = await import("../src/passes/audio.js");
+      await expect(
+        faultyCodecPass().apply(wavClip({ frames: RATE, sample: sine(440) }), "tone.wav"),
+      ).rejects.toThrow(/TN_ASSETS_AUDIO_DRIFT/u);
+    } finally {
+      vi.doUnmock("../src/passes/audio-pcm.js");
+    }
   });
 });

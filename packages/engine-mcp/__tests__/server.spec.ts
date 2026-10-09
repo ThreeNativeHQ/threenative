@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
@@ -172,6 +172,79 @@ describe("threenative-engine-mcp stdio contract", () => {
     );
     expect(response.error.code).toBe(-32000);
     expect(response.error.message).toContain("situation");
+  });
+
+  it("refuses a null scope instead of quietly searching as mechanic", () => {
+    const response = JSON.parse(
+      handleLine(
+        frame(1, "tools/call", {
+          arguments: { scope: null, situation: "spawn many identical props" },
+          name: "engine_search_capabilities",
+        }),
+        manifestFile,
+      ) ?? "",
+    );
+    expect(response.error.code).toBe(-32000);
+    expect(response.error.message).toBe(
+      "engine_search_capabilities scope must be 'request' or 'mechanic'.",
+    );
+  });
+
+  it.each([
+    [
+      "engine_search_capabilities",
+      { scope: "deep", situation: "x" },
+      "engine_search_capabilities scope must be 'request' or 'mechanic'.",
+    ],
+    [
+      "engine_search_capabilities",
+      { scope: 1, situation: "x" },
+      "engine_search_capabilities scope must be 'request' or 'mechanic'.",
+    ],
+    [
+      "engine_capability_detail",
+      { symbol: 5 },
+      "engine_capability_detail requires a string 'symbol' argument.",
+    ],
+    [
+      "engine_capability_detail",
+      { importPath: 5, symbol: "Foo" },
+      "engine_capability_detail 'importPath' must be a string when given.",
+    ],
+    [
+      "engine_capability_detail",
+      { importPath: null, symbol: "Foo" },
+      "engine_capability_detail 'importPath' must be a string when given.",
+    ],
+  ])("refuses %s called with %j as a named -32000 tool error", (name, arguments_, message) => {
+    const response = JSON.parse(
+      handleLine(frame(1, "tools/call", { arguments: arguments_, name }), manifestFile) ?? "",
+    );
+    expect(response.error.code).toBe(-32000);
+    expect(response.error.message).toBe(message);
+  });
+
+  it("refuses a manifest whose notOwned ids repeat, naming the duplicate", () => {
+    const file = path.join(
+      makeTempDirSync("threenative-engine-mcp-manifest-"),
+      "capabilities.json",
+    );
+    const situation = { guidance: "Write it in src/.", id: "dup", situations: ["spawn props"] };
+    writeFileSync(
+      file,
+      JSON.stringify({ entries: [], notOwned: [situation, situation], version: 2 }),
+    );
+    const response = JSON.parse(
+      handleLine(
+        frame(1, "tools/call", {
+          arguments: { situation: "spawn props" },
+          name: "engine_search_capabilities",
+        }),
+        file,
+      ) ?? "",
+    );
+    expect(response.error.code).toBe(-32000);
+    expect(response.error.message).toContain("notOwned contains duplicate id 'dup'");
   });
 
   it("appends one JSON line per tool call, rejections included", () => {

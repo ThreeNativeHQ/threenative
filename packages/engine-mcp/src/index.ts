@@ -814,7 +814,7 @@ function handleToolCall(
   if (name === "engine_search_capabilities") {
     if (typeof argumentsValue.situation !== "string")
       throw new Error("engine_search_capabilities requires a string 'situation' argument.");
-    const scope = argumentsValue.scope ?? "mechanic";
+    const scope = argumentsValue.scope === undefined ? "mechanic" : argumentsValue.scope;
     if (scope !== "request" && scope !== "mechanic")
       throw new Error("engine_search_capabilities scope must be 'request' or 'mechanic'.");
     const response = searchCapabilities(argumentsValue.situation, manifestFile, scope);

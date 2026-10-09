@@ -3,7 +3,7 @@ import type { IToneRegion } from "../tone.js";
 import type { IPlaytestToneAssertion } from "./schema-base.js";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
-import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
+import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
 import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
@@ -70,7 +70,13 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (!Array.isArray(value.steps) || value.steps.length === 0) {
     throw invalidStep(scenarioPath, "Scenario steps[] must contain at least one step.");
   }
-  const subject = typeof value.subject === "string" && value.subject.trim() !== "" ? value.subject : undefined;
+  // `subject`, `setup`, `artifacts` and `parity` used to be read through `isRecord(...)` /
+  // `typeof === "string"` guards, so a wrong-typed value vanished and the scenario ran without
+  // the subject it aimed, the setup it placed, or the parity it compared.
+  if (value.subject !== undefined && (typeof value.subject !== "string" || value.subject.trim() === "")) {
+    throw invalidScenario(scenarioPath, "Scenario subject must be a non-empty entity id when present.");
+  }
+  const subject = typeof value.subject === "string" ? value.subject : undefined;
   const steps = value.steps.map((step, index) => validateStep(step, scenarioPath, index));
   if (steps.some(({ kind }) => kind === "aimAt") && subject === undefined) {
     throw invalidScenario(scenarioPath, "A step with kind 'aimAt' aims the subject player start; declare scenario.subject or replace the step.");
@@ -79,27 +85,46 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   validateStepLabels(steps, assertions, scenarioPath);
   return {
     ...(typeof value.acceptanceId === "string" ? { acceptanceId: value.acceptanceId } : {}),
-    ...(isRecord(value.artifacts) ? { artifacts: validateArtifacts(value.artifacts, scenarioPath) } : {}),
+    ...(value.artifacts === undefined
+      ? {}
+      : { artifacts: validateArtifacts(requireRecord(value.artifacts, scenarioPath, "artifacts"), scenarioPath) }),
     ...(assertions === undefined ? {} : { assert: assertions }),
     ...(typeof value.awaitStartup === "boolean" ? { awaitStartup: value.awaitStartup } : {}),
     ...(value.bootFailure === "renderer-no-adapter" ? { bootFailure: value.bootFailure } : {}),
     inputDelivery,
     name,
-    ...(isRecord(value.parity) ? { parity: validateParityConfig(value.parity, scenarioPath) } : {}),
+    ...(value.parity === undefined
+      ? {}
+      : { parity: validateParityConfig(requireRecord(value.parity, scenarioPath, "parity"), scenarioPath) }),
     ...(value.reducedMotion === "reduce" ? { reducedMotion: value.reducedMotion } : {}),
     schemaVersion: 1,
-    ...(isRecord(value.setup) ? { setup: validateSetup(value.setup, scenarioPath, subject) } : {}),
+    ...(value.setup === undefined
+      ? {}
+      : { setup: validateSetup(requireRecord(value.setup, scenarioPath, "setup"), scenarioPath, subject) }),
     ...(absolutePath === undefined ? {} : { sourcePath: absolutePath }),
     steps,
-    ...(typeof value.subject === "string" ? { subject: value.subject } : {}),
+    ...(subject === undefined ? {} : { subject }),
     target,
     viewport: validateViewport(value.viewport, scenarioPath),
-    warmupFrames: positiveInteger(value.warmupFrames) ?? 0,
+    warmupFrames: optionalNonNegativeInteger(value, "warmupFrames", scenarioPath, "scenario") ?? 0,
   };
 }
 
 export function validateArtifacts(value: Record<string, unknown>, scenarioPath: string): IPlaytestArtifactRequest {
   rejectUnknownKeys(value, ["console", "contactSheet", "effectLog", "network", "runtimeTrace", "screenshots"], scenarioPath, "artifacts");
+  // The request used to be cast straight to the interface, so `screenshots: "no"` asked for a
+  // screenshot mode the runner has no branch for and still captured.
+  for (const key of ["console", "contactSheet", "network", "runtimeTrace"] as const) {
+    optionalBoolean(value, key, scenarioPath, "artifacts");
+  }
+  const effectLog = value.effectLog;
+  if (effectLog !== undefined && effectLog !== "focused" && typeof effectLog !== "boolean") {
+    throw invalidScenario(scenarioPath, `'artifacts.effectLog' must be true, false or 'focused', received ${describeValue(effectLog)}.`);
+  }
+  const screenshots = value.screenshots;
+  if (screenshots !== undefined && screenshots !== "before-after" && screenshots !== "after" && typeof screenshots !== "boolean") {
+    throw invalidScenario(scenarioPath, `'artifacts.screenshots' must be 'before-after', 'after', true or false, received ${describeValue(screenshots)}.`);
+  }
   return value as IPlaytestArtifactRequest;
 }
 
@@ -603,6 +628,11 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
   if (value.label !== undefined && (typeof value.label !== "string" || value.label.trim() === "")) {
     throw invalidStep(scenarioPath, `Scenario step ${index} label must be a non-empty string.`);
   }
+  // `release` was read as `typeof value.release === "boolean" ? value.release : true`, so a
+  // mistyped release silently became a held key.
+  if (value.release !== undefined && typeof value.release !== "boolean") {
+    throw invalidStep(scenarioPath, `Scenario step ${index} release must be a boolean, received ${describeValue(value.release)}.`);
+  }
   if (value.window !== undefined && window === undefined) {
     throw invalidStep(scenarioPath, `Scenario step ${index} window must define minimize, restore, or resize with positive width and height.`);
   }
@@ -938,6 +968,9 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
     throw invalidScenario(scenarioPath, "Assertion 'assert.tone' must contain at least one tone assertion.");
   }
   const movement = isRecord(value.movement) ? value.movement : undefined;
+  if (movement !== undefined) {
+    validateMovementBounds(movement, scenarioPath);
+  }
   const camera = isRecord(value.camera) ? value.camera : undefined;
   if (
     camera !== undefined &&
@@ -1136,6 +1169,31 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
     ...(Array.isArray(value.visual) ? { visual: value.visual.map((entry, index) => validateVisualAssertion(entry, scenarioPath, `assert.visual[${index}]`)) } : {}),
     ...(world === undefined ? {} : { world: validateWorldAssertion(world, scenarioPath) }),
   };
+}
+
+/**
+ * A movement bound that failed validation used to vanish from the `typeof x === "number" ? { x } : {}`
+ * spread below, so the assertion narrowed to whatever else it still checked and reported green on
+ * that. A present bound must be a real one.
+ */
+function validateMovementBounds(movement: Record<string, unknown>, scenarioPath: string): void {
+  for (const [key, unit] of [["maxDistance", "a non-negative distance"], ["pathLength", "a non-negative distance"]] as const) {
+    const raw = movement[key];
+    if (raw !== undefined && (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0)) {
+      throw invalidScenario(scenarioPath, `Assertion 'assert.movement.${key}' must be ${unit}, received ${describeValue(raw)}.`);
+    }
+  }
+  for (const key of ["closesDistanceToPosition", "minAxisDelta", "minResolvedAxisDelta", "notFacing", "notFacingPosition", "reachesPositionWithin"] as const) {
+    if (movement[key] !== undefined) {
+      requireRecord(movement[key], scenarioPath, `assert.movement.${key}`);
+    }
+  }
+  if (movement.rotationChanged === false) {
+    throw invalidScenario(
+      scenarioPath,
+      "assert.movement.rotationChanged may only be true; remove the key to stop requiring rotation.",
+    );
+  }
 }
 
 /** One cue-count claim: a label, and how many times it may or must have sounded. */

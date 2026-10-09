@@ -534,4 +534,67 @@ describe("CharacterBody3D", () => {
       "CharacterBody3D.teleport cannot be used after dispose.",
     );
   });
+
+  it("climbs a 25-degree slope uphill and downhill with snapToGround, gaining height for 120 steps without freeze", async () => {
+    const { ctx, plugin } = await setup();
+    const slopeAngle = (25 * Math.PI) / 180;
+    const slope = fixedBody(ctx.physics, new BoxGeometry(30, 0.2, 8), 0, 0, slopeAngle);
+    const object = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    object.position.set(0, 2, 0);
+    const character = new CharacterBody3D({
+      gravity: -9.81,
+      maxFallSpeed: 30,
+      object,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+      snapToGround: 0.5,
+    });
+
+    for (let step = 0; step < 120; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+    expect(character.grounded).toBe(true);
+    const initialX = object.position.x;
+
+    const startUphillY = object.position.y;
+    for (let step = 0; step < 120; step += 1) {
+      character.velocity.x = 2;
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+    expect(character.grounded).toBe(true);
+    expect(object.position.x).toBeGreaterThan(initialX + 1.5);
+    expect(object.position.y).toBeGreaterThan(startUphillY + 0.5);
+
+    const peakY = object.position.y;
+    for (let step = 0; step < 120; step += 1) {
+      character.velocity.x = -2;
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+    expect(character.grounded).toBe(true);
+    expect(object.position.y).toBeLessThan(peakY - 0.5);
+
+    character.dispose();
+    slope.dispose();
+  });
+
+  it("clamps falling velocity to maxFallSpeed during moveAndSlide", async () => {
+    const { ctx } = await setup();
+    const object = new Mesh(new BoxGeometry(0.6, 1, 0.6));
+    const character = new CharacterBody3D({
+      gravity: -50,
+      maxFallSpeed: 15,
+      object,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.2, 0.3),
+    });
+
+    for (let step = 0; step < 60; step += 1) {
+      character.moveAndSlide(1 / 60);
+    }
+    expect(character.velocity.y).toBe(-15);
+    character.dispose();
+  });
 });
