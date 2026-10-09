@@ -137,6 +137,52 @@ const Box3& SkinnedMesh::cachedBounds() {
     return *boundingBox;
 }
 
+std::shared_ptr<Object3D> cloneObject(const Object3D& source, bool recursive, std::string& error) {
+    error.clear();
+    const std::function<std::shared_ptr<Object3D>(const Object3D&)> clone = [&](const Object3D& from) -> std::shared_ptr<Object3D> {
+        std::shared_ptr<Object3D> to;
+        const auto kind = from.type();
+        if (kind == "Scene") {
+            auto scene = std::make_shared<Scene>();
+            scene->copy(static_cast<const Scene&>(from));
+            to = std::move(scene);
+        } else {
+            if (kind == "Object3D") to = std::make_shared<Object3D>();
+            else if (kind == "Group") to = std::make_shared<Group>();
+            else if (kind == "Bone") to = std::make_shared<Bone>();
+            else if (kind == "Mesh") {
+                const auto& mesh = static_cast<const Mesh&>(from);
+                auto next = std::make_shared<Mesh>(mesh.geometry, mesh.material);
+                next->morphTargetInfluences = mesh.morphTargetInfluences;
+                to = std::move(next);
+            } else if (kind == "SkinnedMesh") {
+                // three's SkinnedMesh.copy: bindMode, both bind matrices and the same skeleton.
+                const auto& mesh = static_cast<const SkinnedMesh&>(from);
+                auto next = std::make_shared<SkinnedMesh>(mesh.geometry, mesh.material);
+                next->morphTargetInfluences = mesh.morphTargetInfluences;
+                next->attached = mesh.attached;
+                next->bindMatrix.copy(mesh.bindMatrix);
+                next->bindMatrixInverse.copy(mesh.bindMatrixInverse);
+                next->skeleton = mesh.skeleton;
+                if (mesh.boundingBox) next->boundingBox = std::make_shared<Box3>(*mesh.boundingBox);
+                to = std::move(next);
+            } else {
+                error = "TN_NATIVE_CLONE_UNSUPPORTED: " + std::string(kind);
+                return nullptr;
+            }
+            to->copy(from);
+        }
+        if (recursive)
+            for (const auto* child : from.children) {
+                auto next = clone(*child);
+                if (!next) return nullptr;
+                to->add(*next);
+            }
+        return to;
+    };
+    return clone(source);
+}
+
 std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& error) {
     error.clear();
     std::unordered_map<const Object3D*, std::shared_ptr<Object3D>> copies;

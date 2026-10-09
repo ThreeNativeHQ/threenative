@@ -282,6 +282,14 @@ void registerObject3D(ClassBinding& b) {
         as<Object3D>(self)->attach(objectArg(store, a.at(0)));
         return chain();
     };
+    // three's clone(recursive = true): the copy as its own class, meshes sharing their resources.
+    b.methods["clone"] = [](void* self, const Args& a, Store& store) {
+        std::string error;
+        std::shared_ptr<Object3D> copy = cloneObject(*as<Object3D>(self), boolean(a, 0, true), error);
+        if (!copy) throw Unsupported{error};
+        const std::string type(copy->type());
+        return store.adopt(type, std::static_pointer_cast<void>(copy));
+    };
     b.methods["removeFromParent"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->removeFromParent();
         return chain();
