@@ -261,7 +261,8 @@ export function defineWebRenderer(
       if (Array.isArray(gpuMs)) {
         if (this.#gpuSamples < 0) check(module._tnw_web_gpu_timer(1));
         const samples = module._tnw_web_frame(8);
-        if (samples > this.#gpuSamples && this.#gpuSamples >= 0) gpuMs.push(module._tnw_web_frame(7));
+        if (samples > this.#gpuSamples && this.#gpuSamples >= 0)
+          gpuMs.push(module._tnw_web_frame(7));
         this.#gpuSamples = samples;
       }
     }
