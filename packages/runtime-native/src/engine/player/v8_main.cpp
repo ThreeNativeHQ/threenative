@@ -1050,24 +1050,44 @@ int main(int argc, char** argv) {
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
-    // the executable for the legacy host); TN_UI_RENDERER=native-css picks the CSS backend.
-    {
-        const std::filesystem::path ui = std::filesystem::path(gamePath).parent_path() / "ui";
-        std::error_code missing;
-        if (std::filesystem::is_regular_file(ui / "index.html", missing)) {
-            configured.uiRoot = ui.string();
-            const char* renderer = std::getenv("TN_UI_RENDERER");
-            configured.cssUi = renderer != nullptr && std::string(renderer) == "native-css";
-            configured.uiFrame = [&game] { game.uiFrame(); };
+    // the executable for the legacy host), through the legacy host's overlay seam; TN_UI_RENDERER=
+    // native-css picks the CSS backend. The loop reaches it only through these hooks.
+    const std::filesystem::path uiRoot = std::filesystem::path(gamePath).parent_path() / "ui";
+    std::error_code noUi;
+    if (std::filesystem::is_regular_file(uiRoot / "index.html", noUi)) {
+        const char* renderer = std::getenv("TN_UI_RENDERER");
+        const bool cssUi = renderer != nullptr && std::string(renderer) == "native-css";
 #if defined(__linux__) && !defined(__ANDROID__)
-            if (!configured.cssUi) {
-                // As the legacy host does (cli/main.cpp): the web view attaches to an X11 surface, so
-                // GTK and SDL both take X11 before either starts, even inside a Wayland session.
-                SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "x11", SDL_HINT_OVERRIDE);
-                setenv("GDK_BACKEND", "x11", 1);
-            }
-#endif
+        if (!cssUi) {
+            // As the legacy host does (cli/main.cpp): the web view attaches to an X11 surface, so GTK
+            // and SDL both take X11 before either starts, even inside a Wayland session.
+            SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "x11", SDL_HINT_OVERRIDE);
+            setenv("GDK_BACKEND", "x11", 1);
         }
+#endif
+        configured.uiAttach = [root = uiRoot.string(), cssUi](SDL_Window* window) {
+            mystral::platform::setUiOverlayWindow(window);
+            const bool attached = cssUi ? mystral::platform::attachDesktopCssUi(root)
+                                        : mystral::platform::attachDesktopUiOverlay(root);
+            if (!attached)
+                std::printf("TN_UI_LOAD_FAILED: the %s UI in %s could not attach\n", cssUi ? "native-css" : "web",
+                            root.c_str());
+            return attached;
+        };
+        configured.uiFrame = [&game] { game.uiFrame(); };
+        configured.uiDraw = [](Renderer& renderer) {
+            mystral::platform::UiOverlayFrame ui;
+            if (mystral::platform::uiOverlayFrame(ui))
+                renderer.setOverlay(ui.pixels, ui.width, ui.height, ui.counter, ui.stride, !ui.isRgba);
+        };
+        configured.uiPointer = [](const char* type, float x, float y, int buttons) {
+            return mystral::platform::uiOverlayAttached() && mystral::platform::uiOverlayRoutePointer(type, x, y, buttons, 1);
+        };
+        configured.uiResize = [](int width, int height) { mystral::platform::uiOverlaySetSize(width, height); };
+        configured.uiDetach = [] {
+            mystral::platform::detachDesktopUiOverlay();
+            mystral::platform::setUiOverlayWindow(nullptr);
+        };
     }
     configured.observe = [&game](const std::string& method, const json::Value* argument,
                                  json::Value& result, std::string& error) {

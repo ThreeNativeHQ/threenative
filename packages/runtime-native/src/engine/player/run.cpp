@@ -22,7 +22,6 @@
 #include "engine/renderer/presentation.h"
 #include "engine/renderer/render_database.h"
 #include "engine/world/loop/fixed_step.h"
-#include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/presentation.h"
 
@@ -141,14 +140,14 @@ bool SDLCALL lifecycleWatch(void* data, SDL_Event* event) {
 #endif
 
 /** Quits on a close request; the runner ends a run with SIGTERM, not with a window message. */
-bool pumpEvents(Window& window) {
+bool pumpEvents(Window& window, const Game& game) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             return false;
         // The mouse reaches an attached UI first, as on the legacy host (PRD-554), in window-normalized
         // coordinates.
-        if (mystral::platform::uiOverlayAttached() && window.width > 0 && window.height > 0 &&
+        if (game.uiPointer && window.width > 0 && window.height > 0 &&
             (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
              event.type == SDL_EVENT_MOUSE_MOTION)) {
             const bool motion = event.type == SDL_EVENT_MOUSE_MOTION;
@@ -156,7 +155,7 @@ bool pumpEvents(Window& window) {
             const SDL_MouseButtonFlags held = SDL_GetMouseState(nullptr, nullptr);
             int buttons = (held & SDL_BUTTON_LMASK ? 1 : 0) | (held & SDL_BUTTON_RMASK ? 2 : 0) | (held & SDL_BUTTON_MMASK ? 4 : 0);
             const char* type = motion ? "pointermove" : event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "pointerdown" : "pointerup";
-            mystral::platform::uiOverlayRoutePointer(type, x / float(window.width), y / float(window.height), buttons, 1);
+            game.uiPointer(type, x / float(window.width), y / float(window.height), buttons);
             continue;
         }
         if (event.type != SDL_EVENT_WINDOW_RESIZED && event.type != SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
@@ -183,18 +182,10 @@ int run(const Game& game) {
     startupStage("sdl-window-begin");
     const bool windowed = openWindow(window);
     startupStage(windowed ? "sdl-window-ready" : "sdl-window-failed");
-    if (!game.uiRoot.empty()) {
-        // The same overlay the legacy host attaches, over this window; a game that asked for a UI
-        // and cannot show it stops by name rather than playing behind an empty rectangle.
-        mystral::platform::setUiOverlayWindow(windowed ? window.handle : nullptr);
-        const bool attached = game.cssUi ? mystral::platform::attachDesktopCssUi(game.uiRoot)
-                                         : mystral::platform::attachDesktopUiOverlay(game.uiRoot);
-        if (!attached) {
-            std::printf("TN_UI_LOAD_FAILED: the %s UI in %s could not attach\n", game.cssUi ? "native-css" : "web",
-                        game.uiRoot.c_str());
-            return 1;
-        }
-    }
+    // A game's UI over this window (PRD-554); one that asked for a UI and cannot show it stops by name
+    // rather than playing behind an empty rectangle.
+    if (game.uiAttach && !game.uiAttach(windowed ? window.handle : nullptr))
+        return 1;
     std::unique_ptr<mystral::webgpu::Context> context;
     std::unique_ptr<Presenter> presenter;
     auto candidate = std::make_unique<mystral::webgpu::Context>();
@@ -322,7 +313,7 @@ int run(const Game& game) {
         if (presenter && (presenter->width() != window.width || presenter->height() != window.height)) {
             presenter->resize(window.width, window.height);
             renderer.setSize(presenter->width(), presenter->height());
-            if (!game.uiRoot.empty()) mystral::platform::uiOverlaySetSize(int(window.width), int(window.height));
+            if (game.uiResize) game.uiResize(int(window.width), int(window.height));
         }
         // Nothing is drawn until the game publishes its view, as a page's canvas stays blank while it loads.
         if (scene == nullptr || camera == nullptr) {
@@ -341,11 +332,7 @@ int run(const Game& game) {
             Presenter::Frame target;
             if (firstFrame) startupStage("first-acquire-begin");
             // The page's newest frame goes over the world in the same blit (PRD-554).
-            if (!game.uiRoot.empty()) {
-                mystral::platform::UiOverlayFrame ui;
-                if (mystral::platform::uiOverlayFrame(ui))
-                    renderer.setOverlay(ui.pixels, ui.width, ui.height, ui.counter, ui.stride, !ui.isRgba);
-            }
+            if (game.uiDraw) game.uiDraw(renderer);
             if (presenter->begin(target)) {
                 // The window carries the very frame the render database just built.
                 renderer.blitTo(context->getQueue(), target.color,
@@ -364,7 +351,7 @@ int run(const Game& game) {
         if (mailbox.screenshotRequested() && !readbackInFlight) {
             // With a UI the answer is the presented frame, the page drawn over it, as a player sees it.
             const auto read = [&](ReadbackCallback done) {
-                return game.uiRoot.empty() ? renderer.readPixels(std::move(done)) : renderer.readPresented(std::move(done));
+                return game.uiDraw ? renderer.readPresented(std::move(done)) : renderer.readPixels(std::move(done));
             };
             readbackInFlight = read([&](GpuStatus status, std::vector<uint8_t> pixels) {
                 readbackInFlight = false;
@@ -387,7 +374,7 @@ int run(const Game& game) {
         if (game.frameComplete)
             game.frameComplete(renderer, database.diagnostics());
     };
-    while (pumpEvents(window)) {
+    while (pumpEvents(window, game)) {
 #if defined(__ANDROID__)
         if (window.resumeSurface) {
             auto* native = static_cast<ANativeWindow*>(SDL_GetPointerProperty(
@@ -428,10 +415,7 @@ int run(const Game& game) {
     presenter.reset();
     context->releaseSurface();
 #endif
-    if (!game.uiRoot.empty()) {
-        mystral::platform::detachDesktopUiOverlay();
-        mystral::platform::setUiOverlayWindow(nullptr);
-    }
+    if (game.uiDetach) game.uiDetach();
     if (window.handle)
         SDL_DestroyWindow(window.handle);
     SDL_QuitSubSystem(SDL_INIT_VIDEO);

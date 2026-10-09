@@ -9,6 +9,8 @@
 #include "engine/foundation/json.h"
 #include "engine/scene/object3d.h"
 
+struct SDL_Window;
+
 namespace tn::engine {
 
 class Camera;
@@ -45,12 +47,21 @@ struct Game {
      *  requestAnimationFrame fires while nothing is drawn yet (a loader that adds in slices per frame,
      *  core's describe() waiting for the scene the game enters). */
     std::function<void()> frameWithoutView;
-    /** PRD-554: the built UI (`index.html` and its bundle) shown over the frame through the legacy
-     *  host's overlay seam, web view or CSS backend; empty for a game with no UI. */
-    std::string uiRoot;
-    bool cssUi = false;
-    /** At the top of each loop pass: the frames the page queued go to the game's end of the bridge. */
+    /**
+     * PRD-554: a UI the game runtime shows over the frame (the V8 player's overlay seam). Every hook is
+     * optional; a game with no UI sets none, and this loop links no UI code.
+     * - uiAttach: once the window exists (null when headless); false stops the player by name.
+     * - uiFrame: at the top of each loop pass, the page's queued frames to the game.
+     * - uiDraw: before each present, the page's newest frame handed to the renderer (Renderer::setOverlay).
+     * - uiPointer: a window mouse event in 0..1, true when the UI took it.
+     * - uiResize, uiDetach: the window's new size, and teardown.
+     */
+    std::function<bool(SDL_Window* window)> uiAttach;
     std::function<void()> uiFrame;
+    std::function<void(Renderer& renderer)> uiDraw;
+    std::function<bool(const char* type, float x, float y, int buttons)> uiPointer;
+    std::function<void(int width, int height)> uiResize;
+    std::function<void()> uiDetach;
     /** Releases game-owned GPU resources before the loop destroys its renderer. */
     std::function<void()> shutdown;
     /** One fixed tick; `dt` is the step in seconds. The loop calls it once per `advance` tick. */
