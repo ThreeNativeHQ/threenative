@@ -130,6 +130,15 @@ check(orm.roughnessMap === paramTexture && orm.metalnessMap === paramTexture && 
   orm.emissiveMap === paramTexture && orm.aoMapIntensity === 0.6, "packed ORM and emissive map parameters");
 const twin = painted.clone();
 check(twin instanceof THREE.MeshStandardMaterial && twin !== painted && twin.map === painted.map && twin.roughness === painted.roughness, "material clone");
+// Midway's WaterEffects: base.index.clone() and attributes.position.clone() into a new geometry.
+const cloneSource = new THREE.BufferAttribute(new Float32Array([1, 2, 3, 4]), 2).setUsage(THREE.DynamicDrawUsage);
+const cloneCopy = cloneSource.clone();
+check(cloneCopy instanceof THREE.BufferAttribute && cloneCopy !== cloneSource && cloneCopy.itemSize === 2 && cloneCopy.count === 2 &&
+  cloneCopy.getX(1) === 3 && cloneCopy.usage === THREE.DynamicDrawUsage, "attribute clone");
+cloneCopy.setX(0, 9);
+check(cloneSource.getX(0) === 1, "attribute clone owns its array");
+const plane = new THREE.PlaneGeometry(1, 1);
+check(plane.index.clone().count === 6 && plane.attributes.position.clone().count === 4, "index and position clone");
 twin.roughness = 0.95;
 check(painted.roughness !== 0.95, "a clone is independent");
 const sprite = new THREE.SpriteMaterial({ transparent: false });
@@ -232,6 +241,20 @@ const vertex = new THREE.Vector3();
 check(new THREE.Mesh(rounded, lit).getVertexPosition(0, vertex) === vertex && vertex.equals(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0)), "getVertexPosition");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);
+// Midway's ocean and whitewater: += on a variable, screen derivatives, sign and cbrt.
+const summed = Fn(() => {
+  const height = float(0).toVar();
+  height.addAssign(float(0.25));
+  height.subAssign(0.05);
+  height.mulAssign(2);
+  height.divAssign(float(4));
+  return height.add(uv().x.dFdx().abs()).add(uv().y.dFdy().sign()).add(float(-8).cbrt());
+})();
+check(summed && typeof summed.addAssign === "function" && typeof summed.cbrt === "function", "assign forms, dFdx, sign, cbrt");
+// Every swizzle three answers, as Midway's ocean reads positionWorld.xz.
+const lanes = vec3(1, 2, 3);
+check(lanes.xz && lanes.zxy && lanes.st && lanes.bgr && lanes.xxxx && lanes.xyzwx === undefined, "swizzles");
+basic.alphaTestNode = summed;
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
   check(THREE[name] === expected, name + " differs from pinned Three.js");
 // three's audio classes are engine objects over the player's WebAudio, and the native tick pushes
@@ -322,6 +345,7 @@ await mkdir(resolve(work, "audio"));
 const audioPackage = resolve(work, "audio/assets.tnpk");
 await writeFile(audioPackage, writeNativePackage([
   { name: "beep.ogg", kind: 1, data: Buffer.from("OggS!"), uploadSize: 0 },
+  { name: "/assets/audio/engine.ogg", kind: 1, data: Buffer.from("OggS!"), uploadSize: 0 },
   { name: "sky.jpg", kind: 2, data: Buffer.alloc(16), uploadSize: 4 },
 ]));
 await writeFile(entry, `
@@ -336,15 +360,43 @@ try { globalThis.tn.loadAsset("audio", "sky.jpg"); } catch (error) { mismatch = 
 check(mismatch, "a texture entry is not audio");
 // A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
 // both pending, and any refusal before it rejects inside this check's microtasks.
+// "audio/engine.ogg" is not a package name: core's source fallback finds it under assets/, as the
+// web loader does for a game without a manifest (Midway's cues).
 for (const [name, decoding] of [["assets.audio", createAssetLoader().audio("beep.ogg")],
+  ["assets.audio from source", createAssetLoader().audio("audio/engine.ogg")],
   ["AudioLoader", new AudioLoader().loadAsync("beep.ogg")]])
   decoding.catch((error) => { globalThis.tn.__startupError = name + " refused: " + error.message; });
+createAssetLoader({ sourcePath: "" }).audio("audio/engine.ogg").then(
+  () => { globalThis.tn.__startupError = "an empty sourcePath still fell back"; },
+  (error) => { if (!/TN_NATIVE_ASSET_MISSING/.test(error.message)) globalThis.tn.__startupError = error.message; });
 globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
 `);
 await bundleNativeEngine({ entry, outfile, boot: false });
 const audioRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8",
   env: { ...process.env, SDL_AUDIO_DRIVER: "dummy", TN_NATIVE_ASSET_PACKAGE: audioPackage } });
 assert.equal(audioRun.status, 0, `${audioRun.stdout}\n${audioRun.stderr}`);
+// An async boot publishes its scene ticks later, as Midway's does after its audio decodes settle;
+// the player keeps the event loop turning until the scene arrives instead of refusing it.
+await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { Scene, PerspectiveCamera } from "three";
+setTimeout(() => { globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); }, 500);
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const lateRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+assert.equal(lateRun.status, 0, `${lateRun.stdout}\n${lateRun.stderr}`);
+await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { Scene, PerspectiveCamera } from "three";
+// A pass node publishes the scene while start() is still running; __booting holds the check.
+globalThis.tn.__booting = true;
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera();
+setTimeout(() => { globalThis.tn.__startupError = "late failure"; }, 500);
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const lateFailure = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+assert.equal(lateFailure.status, 1);
+assert.match(lateFailure.stderr, /core startup failed: late failure/);
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");
   process.exit(0);

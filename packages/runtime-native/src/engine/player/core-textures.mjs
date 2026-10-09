@@ -138,3 +138,27 @@ export class ImageBitmapLoader {
     return imageBitmap(globalThis.tn.loadAsset("texture", logicalPath(this.path + url)).value, this.options);
   }
 }
+
+/**
+ * three's TextureLoader over the cooked package. The package texture is already decoded, so `load`
+ * returns it at once (upright, flipY true, as three's <img> path) and calls onLoad a microtask later.
+ */
+export class TextureLoader {
+  constructor() { this.path = ""; }
+  setPath(path) { this.path = path; return this; }
+  setCrossOrigin() { return this; }
+  load(url, onLoad, onProgress, onError) {
+    let texture;
+    try {
+      texture = globalThis.tn.loadAsset("texture", logicalPath(this.path + url)).value;
+    } catch (error) {
+      Promise.resolve().then(() => { if (onError) onError(error); else throw error; });
+      return new NativeTexture();
+    }
+    if (onLoad) Promise.resolve().then(() => onLoad(texture));
+    return texture;
+  }
+  loadAsync(url) {
+    return new Promise((resolve, reject) => this.load(url, resolve, undefined, reject));
+  }
+}

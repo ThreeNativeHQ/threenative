@@ -141,6 +141,41 @@ describe("TSL on the browser back end", () => {
     expect(uniforms).toEqual(["1=2.5", "2=4,5"]);
   });
 
+  it("runs a uniform's onRenderUpdate/onFrameUpdate before each frame's lanes, as three's UniformNode", () => {
+    const uniforms: string[] = [];
+    const runtime = tslRuntime([], [], uniforms);
+    const tsl = defineTsl(runtime);
+    const ticks = (tsl.exports.uniform as Fn)(0);
+    let seen: unknown;
+    // Midway's ocean: center.onRenderUpdate(() => syncTexture()); a returned value becomes .value.
+    expect((ticks.onRenderUpdate as Fn)(function (this: unknown, frame: { frameId: number }) {
+      seen = this;
+      return frame.frameId * 10;
+    })).toBe(ticks);
+    const side = (tsl.exports.uniform as Fn)(7);
+    let frames = 0;
+    (side.onFrameUpdate as Fn)(() => { frames++; });
+    tsl.sync();
+    tsl.sync();
+    expect(seen).toBe(ticks);
+    expect(ticks.value).toBe(20);
+    expect(side.value).toBe(7); // undefined keeps the value
+    expect(frames).toBe(2);
+    expect(uniforms).toEqual(["1=10", "1=20"]);
+    expect(() => (side.onObjectUpdate as Fn)(() => 1)).toThrow(/TN_TSL_UPDATE_UNSUPPORTED/);
+  });
+
+  it("answers every swizzle three does: xyzw, rgba and stpq, one to four lanes", () => {
+    const calls: ICall[] = [];
+    const tsl = defineTsl(tslRuntime(calls, [])).exports;
+    const v = (tsl.vec3 as Fn)(1, 2, 3);
+    for (const alias of ["xz", "zxy", "st", "bgr", "xxxx"]) expect(v[alias], alias).toBeDefined();
+    expect(v.xyzwx).toBeUndefined();
+    expect(calls.map((c) => c.name).filter((n) => n.startsWith("swizzle:"))).toEqual([
+      "swizzle:xz", "swizzle:zxy", "swizzle:xy", "swizzle:zyx", "swizzle:xxxx",
+    ]);
+  });
+
   it("runs Fn, If, Else and Loop callbacks inside engine scopes, as V8's adapter does", () => {
     const calls: ICall[] = [];
     const tsl = defineTsl(tslRuntime(calls, [])).exports;

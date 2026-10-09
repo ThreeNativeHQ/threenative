@@ -131,6 +131,10 @@ const METHODS = [
   "log2",
   "normalize",
   "length",
+  "dFdx",
+  "dFdy",
+  "sign",
+  "cbrt",
   "min",
   "max",
   "pow",
@@ -151,23 +155,18 @@ const METHODS = [
   "flipZ",
   "flipW",
 ] as const;
-const SWIZZLES: Readonly<Record<string, string>> = {
-  x: "x",
-  y: "y",
-  z: "z",
-  w: "w",
-  xy: "xy",
-  xyz: "xyz",
-  zyx: "zyx",
-  yx: "yx",
-  r: "x",
-  g: "y",
-  b: "z",
-  a: "w",
-  rg: "xy",
-  rgb: "xyz",
-  rgba: "xyzw",
-};
+/** three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, as xyzw lanes. */
+const SWIZZLES: Readonly<Record<string, string>> = (() => {
+  const out: Record<string, string> = {};
+  for (const set of ["xyzw", "rgba", "stpq"]) {
+    const grow = (alias: string, lanes: string): void => {
+      if (alias.length > 0) out[alias] = lanes;
+      if (alias.length < 4) for (let i = 0; i < 4; i++) grow(alias + set[i], lanes + "xyzw"[i]);
+    };
+    grow("", "");
+  }
+  return out;
+})();
 interface ITslNode {
   readonly [TSL_NODE]: number;
 }
@@ -269,6 +268,13 @@ export function defineTsl(runtime: ITslRuntime): {
     runtime.release(call("assign", this[TSL_NODE], [value]));
     return this;
   };
+  // r185's `<op>Assign`: the shared scopes assign op(this, value) to the variable.
+  for (const form of ["addAssign", "subAssign", "mulAssign", "divAssign"]) {
+    prototype[form] = function (this: ITslNode, value: unknown) {
+      runtime.release(call(form, this[TSL_NODE], [value]));
+      return this;
+    };
+  }
   prototype.Else = function (this: ITslNode, callback: unknown) {
     statement("Else");
     return wrap(runtime.call("Else", this[TSL_NODE], [node(capture("Else", callback))]));

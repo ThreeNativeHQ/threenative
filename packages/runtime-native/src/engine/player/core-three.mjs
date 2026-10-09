@@ -19,7 +19,7 @@ export const {
 } = globalThis;
 // Texture sources (typed array, canvas, ImageBitmap) the engine copies; see core-textures.mjs.
 import { DataTexture, Texture } from "./core-textures.mjs";
-export { CanvasTexture, DataTexture, DataUtils, HalfFloatType, ImageBitmapLoader, Texture } from "./core-textures.mjs";
+export { CanvasTexture, DataTexture, DataUtils, HalfFloatType, ImageBitmapLoader, Texture, TextureLoader } from "./core-textures.mjs";
 
 export const clone = globalThis.__tnCloneSkeleton;
 
@@ -37,7 +37,6 @@ export const LineLoop = unsupported;
 export const LineSegments = unsupported;
 export const Points = unsupported;
 export const WebGLRenderer = unsupported;
-export const TextureLoader = unsupported;
 export const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
 
 // Native traversal and child enumeration are host callbacks, not a second JS scene graph.

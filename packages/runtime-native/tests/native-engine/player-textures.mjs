@@ -131,6 +131,21 @@ globalThis.tn.__startupError = "TEXTURES_CHECK: the async checks did not finish"
   check(new THREE.Texture(await loader.loadAsync("assets/cockpit/dial.png")) instanceof THREE.Texture, "relative web-root URL");
   await rejects(() => loader.loadAsync("/assets/cockpit/absent.png"), /TN_NATIVE_ASSET_MISSING/, "missing bitmap");
 
+  // TextureLoader returns the package texture at once, upright as three's <img> path leaves it.
+  const textures = new THREE.TextureLoader().setPath("/assets/");
+  const loaded = await textures.loadAsync("cockpit/dial.png");
+  check(loaded instanceof THREE.Texture && loaded.flipY === true, "texture loader");
+  let called;
+  const immediate = textures.load("cockpit/dial.png", (texture) => { called = texture; });
+  check(immediate instanceof THREE.Texture && called === undefined, "texture loader returns before onLoad");
+  await Promise.resolve();
+  check(called === immediate, "texture loader onLoad");
+  await rejects(() => textures.loadAsync("cockpit/absent.png"), /TN_NATIVE_ASSET_MISSING/, "missing texture");
+  let failed;
+  textures.load("cockpit/absent.png", undefined, undefined, (error) => { failed = error; });
+  await Promise.resolve();
+  check(/TN_NATIVE_ASSET_MISSING/.test(String(failed?.message)), "texture loader onError");
+
   // createImageBitmap decodes encoded bytes through the engine decoder, as three's loader calls it.
   check(typeof createImageBitmap === "function", "createImageBitmap installed");
   const fromJpeg = await createImageBitmap(Uint8Array.from(${JSON.stringify([...jpeg])}), { imageOrientation: "flipY" });

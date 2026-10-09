@@ -8,6 +8,8 @@
 
 interface IUniformState {
   value: unknown;
+  /** three's `node.update`, set by onRenderUpdate/onFrameUpdate; its result becomes `.value`. */
+  update?: (frame: { frameId: number }) => unknown;
 }
 
 /** One float per lane: a number, a Color's r, g, b, or a VectorN's x, y, z, w. */
@@ -25,8 +27,9 @@ export function uniformLanes(value: unknown): number[] {
 
 /**
  * Wraps a back end's `uniform` so each uniform node it returns answers `.value` (an accessor on the
- * node itself: a V8 node has no prototype of its own to carry it). `setValues` writes a node's lanes
- * into the engine.
+ * node itself: a V8 node has no prototype of its own to carry it) and three's update hooks. `setValues`
+ * writes a node's lanes into the engine. `sync()` runs once per render: the update callbacks first,
+ * then the edited objects' lanes.
  */
 export function liveUniforms<TNode extends object>(
   uniform: (value: unknown) => TNode,
@@ -34,6 +37,8 @@ export function liveUniforms<TNode extends object>(
 ): { uniform: (value: unknown) => TNode; sync(): void } {
   const states = new WeakMap<object, IUniformState>();
   const objects = new Set<WeakRef<TNode>>();
+  const updating = new Set<WeakRef<TNode>>();
+  let frameId = 0;
   return {
     uniform(value) {
       const node = uniform(value);
@@ -51,9 +56,35 @@ export function liveUniforms<TNode extends object>(
         },
       });
       if (typeof value === "object" && value !== null) objects.add(new WeakRef(node));
+      // three's UniformNode.onUpdate: the callback runs with the node as `this` and its result,
+      // unless undefined, becomes the value. ponytail: FRAME and RENDER both run once per sync (one
+      // per render call); a game that renders twice a frame runs a FRAME callback twice.
+      const onUpdate = (callback: (this: TNode, frame: unknown, node: TNode) => unknown, updateType: string) => {
+        if (updateType !== "frame" && updateType !== "render")
+          throw new Error(`TN_TSL_UPDATE_UNSUPPORTED: a native uniform updates per frame or render, not per '${updateType}'`);
+        if (state.update === undefined) updating.add(new WeakRef(node));
+        state.update = (frame) => callback.call(node, frame, node);
+        return node;
+      };
+      Object.defineProperties(node, {
+        onUpdate: { configurable: true, value: onUpdate },
+        onFrameUpdate: { configurable: true, value: (callback: never) => onUpdate(callback, "frame") },
+        onRenderUpdate: { configurable: true, value: (callback: never) => onUpdate(callback, "render") },
+        onObjectUpdate: { configurable: true, value: (callback: never) => onUpdate(callback, "object") },
+      });
       return node;
     },
     sync() {
+      const frame = { frameId: ++frameId };
+      for (const ref of updating) {
+        const node = ref.deref();
+        if (node === undefined) {
+          updating.delete(ref);
+          continue;
+        }
+        const next = states.get(node)?.update?.(frame);
+        if (next !== undefined) (node as { value: unknown }).value = next;
+      }
       for (const ref of objects) {
         const node = ref.deref();
         if (node === undefined) {

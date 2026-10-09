@@ -394,8 +394,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         return g::symbol(lhs());                                                                                       \
     }
             UNARY(negate) UNARY(abs) UNARY(sin) UNARY(cos) UNARY(floor) UNARY(fract) UNARY(sqrt) UNARY(exp) UNARY(exp2)
-                UNARY(log2) UNARY(normalize) UNARY(length)
+                UNARY(log2) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign)
 #undef UNARY
+    // r185's cbrt (MathNode.js): sign(a) * pow(abs(a), 1 / 3).
+    if (name == "cbrt") {
+        arity(method ? 0 : 1);
+        const g::Node a = lhs();
+        const TslArg magnitude = TslArg::of(g::abs(a));
+        return g::mul(g::sign(a), tslCall("pow", &magnitude, {TslArg::of(1.0 / 3.0)}, serial));
+    }
     // r185's fluent mix/smoothstep also place the receiver last.
     if (method && (name == "mix" || name == "smoothstep")) {
         arity(2);
@@ -506,6 +513,13 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         out = block.var(input(*receiver)).declaration;
         statements.push_back(out);
         return true;
+    }
+    // r185's `<op>Assign` (TSLCore.js): assign(this, op(this, value)).
+    if (name == "addAssign" || name == "subAssign" || name == "mulAssign" || name == "divAssign") {
+        arity(1);
+        uint64_t serial = 0;  // the arithmetic names no uniform or render texture
+        const TslArg value = TslArg::of(tslCall(name.substr(0, 3), receiver, args, serial));
+        return call("assign", receiver, {value}, out);
     }
     if (name == "assign") {
         arity(1);
