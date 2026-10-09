@@ -115,6 +115,8 @@ try {
     green.addAssign(uv().dFdx().x.add(uv().dFdy().lengthSq()).mul(0));
     // Midway's fog reads the camera planes; zero-weighted too.
     green.addAssign(cameraFar.sub(cameraNear).mul(0));
+    // r185's clamp() with its default bounds, as WaterSurface3D clamps; green stays inside 0..1.
+    green.assign(green.clamp());
     const blue = tint.toVar();
     blue.mulAssign(1.6);
     return vec4(tint.mul(0.2), green, blue, 1);

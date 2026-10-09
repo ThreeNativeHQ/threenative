@@ -455,6 +455,12 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(2);
         return name == "mix" ? g::mix(arg(0), arg(1), lhs()) : g::smoothstep(arg(0), arg(1), lhs());
     }
+    // r185's clamp(value, low = 0, high = 1): the bounds a call leaves out default to 0 and 1.
+    if (name == "clamp" && args.size() < (method ? 2u : 3u)) {
+        if (!method && args.empty()) throw std::runtime_error("clamp needs a value");
+        const size_t first = method ? 0 : 1, given = args.size() - first;
+        return g::clamp(lhs(), given > 0 ? arg(first) : g::float_(0), given > 1 ? arg(first + 1) : g::float_(1));
+    }
 #define TERNARY(symbol)                                                                                                \
     if (name == #symbol) {                                                                                             \
         arity(method ? 2 : 3);                                                                                         \
