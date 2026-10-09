@@ -141,6 +141,15 @@ const warmClock = (): number => globalThis.performance?.now() ?? Date.now();
 /** Milliseconds one `update` may spend admitting streamed content, unless the game says otherwise. */
 const DEFAULT_ADMISSION_BUDGET_MS = 2;
 /**
+ * How much more one `update` may admit while the startup cover hides the world: 8x takes the 2 ms
+ * default to one 60 Hz frame. Nobody sees frame pacing behind an opaque loading screen, and at 2 ms
+ * a 10-17 fps test lane spent 16 s (web) and about 47 s (native) admitting a spawn backlog of about
+ * 1,200 builds. The loader still presents every frame. Scaling keeps a game's own split between
+ * several worlds; `coveredAdmissionBudgetMs` and `coveredFreshMeshesPerUpdate` name the covered
+ * values outright.
+ */
+const COVERED_BUDGET_SCALE = 8;
+/**
  * How far the follow point has to move before a residency pass is worth repeating. Below it the
  * ring, the refilter brackets and every tile's LOD level are the same numbers, so the pass would
  * re-derive the set it already holds. Half a metre is under one 2 m heightmap cell and far under a
@@ -515,6 +524,12 @@ export interface IWorldCellsLoadOptions {
    */
   readonly freshMeshesPerUpdate?: number;
   /**
+   * New batch meshes per update while the startup cover hides the world, default 8x
+   * `freshMeshesPerUpdate`. The first-draw shader cost the default spreads is invisible behind an
+   * opaque loading screen, and a canopy that needs fresh meshes otherwise trickles in two a frame.
+   */
+  readonly coveredFreshMeshesPerUpdate?: number;
+  /**
    * Side of the world-grid square one shared batch's records are clustered into, in world units.
    * Defaults to the package's own `cellSize`, which is the square the placements are already cut
    * on. Each `(key, cluster)` is its own caster InstancedMesh with its own bounds on the shadow
@@ -534,6 +549,12 @@ export interface IWorldCellsLoadOptions {
    * costs nothing here.
    */
   readonly admissionBudgetMs?: number;
+  /**
+   * The admission budget while the startup cover hides the world and readiness is pending. Defaults
+   * to 8x `admissionBudgetMs` (16 ms for the 2 ms default), so the spawn a loading screen waits on
+   * is admitted in fewer frames. Set it equal to `admissionBudgetMs` to keep one budget throughout.
+   */
+  readonly coveredAdmissionBudgetMs?: number;
   /**
    * Milliseconds source for the admission budget, `performance.now` by default. Injectable so a
    * test can prove the ceiling instead of hoping a machine is slow enough to show it.
@@ -3980,6 +4001,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #rebuildsPerUpdate: number;
   readonly #prefetchSeconds: number;
   readonly #freshMeshesPerUpdate: number;
+  readonly #coveredFreshMeshesPerUpdate: number;
   /**
    * Pixels per world unit at unit depth, the scale a baked chain's level errors are divided by to
    * reach a switch distance. See `IWorldCellsLoadOptions.autoLod` and {@link chainLevels}.
@@ -4205,6 +4227,9 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #recordBounds = new Box3();
   readonly #pressure = { cells: 0, instances: 0, bytes: 0 };
   readonly #budgetMs: number;
+  readonly #coveredBudgetMs: number;
+  /** Set for the length of one `process` call that runs behind the startup cover. */
+  #covered = false;
   readonly #now: () => number;
   #admission = { spentMs: 0, deferred: 0, backlog: 0 };
   #instances = 0;
@@ -4383,6 +4408,10 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#ring = nonNegativeInteger(init.ring, "ring");
     this.#hlod = init.hlod !== false;
     this.#budgetMs = admissionBudgetMs(init.admissionBudgetMs ?? DEFAULT_ADMISSION_BUDGET_MS);
+    this.#coveredBudgetMs =
+      init.coveredAdmissionBudgetMs === undefined
+        ? this.#budgetMs * COVERED_BUDGET_SCALE
+        : admissionBudgetMs(init.coveredAdmissionBudgetMs);
     this.#now = init.admissionNow ?? ((): number => globalThis.performance?.now() ?? Date.now());
     this.#follow = init.follow;
     this.#manifest = init.manifest;
@@ -4428,6 +4457,11 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#freshMeshesPerUpdate = positiveInteger(
       init.freshMeshesPerUpdate ?? 2,
       "freshMeshesPerUpdate",
+    );
+    this.#coveredFreshMeshesPerUpdate = positiveInteger(
+      init.coveredFreshMeshesPerUpdate ??
+        Math.min(Number.MAX_SAFE_INTEGER, this.#freshMeshesPerUpdate * COVERED_BUDGET_SCALE),
+      "coveredFreshMeshesPerUpdate",
     );
     if (!(this.#prefetchSeconds >= 0) || !Number.isFinite(this.#prefetchSeconds))
       throw new Error("WorldCells prefetchSeconds must be a finite number >= 0.");
@@ -4769,7 +4803,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // teleport, a review camera) the 17 x 17 terrain ring spent the whole allowance every frame for
     // seconds and the prop queue got nothing: the forest never built where the camera landed. While
     // props are queued the terrain is held to half, and the props get whatever it left.
-    const terrainMs = this.#jobs.length > 0 ? this.#budgetMs / 2 : this.#budgetMs;
+    const budgetMs = this.#covered ? this.#coveredBudgetMs : this.#budgetMs;
+    const terrainMs = this.#jobs.length > 0 ? budgetMs / 2 : budgetMs;
     const budget = new AdmissionBudget(terrainMs, this.#now);
     this.#freshThisUpdate = 0;
     this.#meshStalled = false;
@@ -4816,10 +4851,7 @@ export class WorldCells extends Group implements IComputeDriven {
     ) {
       this.#terrain?.process(renderer);
     }
-    const props = new AdmissionBudget(
-      this.#budgetMs - Math.min(budget.spentMs, terrainMs),
-      this.#now,
-    );
+    const props = new AdmissionBudget(budgetMs - Math.min(budget.spentMs, terrainMs), this.#now);
     this.#drain(props);
     // The prewarm runs outside the admission budget on purpose — it is not residency, it is the
     // shader builds the residency is about to need, and the allowance that spreads those is
@@ -5396,8 +5428,18 @@ export class WorldCells extends Group implements IComputeDriven {
    * The render-cadence dispatch. The engine hands the frame's render camera over, and this world's
    * main windows follow it; see {@link #cullMainPass} for why the decision is not the meshes' own.
    */
-  process(renderer?: IRendererLike, camera?: Camera): void {
-    this.update(renderer, camera);
+  /** New batch meshes this update may create: scaled while the startup cover hides the world. */
+  #freshAllowance(): number {
+    return this.#covered ? this.#coveredFreshMeshesPerUpdate : this.#freshMeshesPerUpdate;
+  }
+
+  process(renderer?: IRendererLike, camera?: Camera, covered = false): void {
+    this.#covered = covered;
+    try {
+      this.update(renderer, camera);
+    } finally {
+      this.#covered = false;
+    }
   }
 
   /**
@@ -6648,7 +6690,7 @@ export class WorldCells extends Group implements IComputeDriven {
       } else {
         // A fresh mesh is charged against the frame's allowance like any other; the walk that runs
         // out of it comes back for this key rather than paying its build inside a shadow render.
-        if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return;
+        if (this.#freshThisUpdate >= this.#freshAllowance()) return;
         this.#freshThisUpdate += 1;
         shared = new SharedBatch(
           part.geometry,
@@ -6854,7 +6896,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#attach(released);
       return released;
     }
-    if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return undefined;
+    if (this.#freshThisUpdate >= this.#freshAllowance()) return undefined;
     this.#freshThisUpdate += 1;
     const shared = new SharedBatch(
       shape.geometry,
@@ -7656,7 +7698,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // A dressed batch's grow is logical: it raises the ceiling the GPU scene sizes this key's region
     // from and mints no mesh, so the fresh-mesh allowance — which bounds new pooled meshes and their
     // node builds — does not gate it. A CPU grow is a real replacement mesh and still respects it.
-    if (shared.gpu === undefined && this.#freshThisUpdate >= this.#freshMeshesPerUpdate)
+    if (shared.gpu === undefined && this.#freshThisUpdate >= this.#freshAllowance())
       return undefined;
     const old = shared.grow();
     // Only a real replacement is a new object to dress, attach and hand to the pool; a logical GPU

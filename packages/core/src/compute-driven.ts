@@ -26,8 +26,11 @@ export interface IComputeDriven {
    * the view — a streamed world narrowing its instanced windows to what the frustum covers — can do
    * it from the driver that runs every frame rather than from a draw three will not submit. An
    * implementation that does not need it simply declares one parameter.
+   *
+   * `covered` is true while the startup cover hides the world and readiness is still pending, so
+   * a streamed world may spend more of the frame admitting the spawn it is waiting on.
    */
-  process(renderer: IRendererLike, camera?: Camera): void;
+  process(renderer: IRendererLike, camera?: Camera, covered?: boolean): void;
   detach(): void;
   readonly released: boolean;
 }
@@ -94,7 +97,7 @@ export class ComputeDrivenRegistry {
       }
       if ((entry.driven.processCadence ?? "fixed") !== cadence) continue;
       if (startupOnly && entry.driven.processDuringStartup !== true) continue;
-      entry.driven.process(renderer, camera);
+      entry.driven.process(renderer, camera, startupOnly);
     }
   }
 

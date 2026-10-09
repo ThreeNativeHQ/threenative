@@ -193,7 +193,9 @@ interface IWorldUnderTest {
  * work at exactly `UNIT_MS` — the deliberately slow unit the ceiling is measured against.
  */
 async function makeWorld(options: {
-  readonly admissionBudgetMs: number;
+  readonly admissionBudgetMs?: number;
+  readonly coveredAdmissionBudgetMs?: number;
+  readonly freshMeshesPerUpdate?: number;
   readonly priced?: boolean;
   readonly ring?: number;
 }): Promise<IWorldUnderTest> {
@@ -201,12 +203,20 @@ async function makeWorld(options: {
   const follow = followAt(cellCenter(1, 1).x, cellCenter(1, 1).z);
   let elapsed = 0;
   const world = await WorldCells.load({
-    admissionBudgetMs: options.admissionBudgetMs,
+    ...(options.admissionBudgetMs === undefined
+      ? {}
+      : { admissionBudgetMs: options.admissionBudgetMs }),
+    ...(options.coveredAdmissionBudgetMs === undefined
+      ? {}
+      : { coveredAdmissionBudgetMs: options.coveredAdmissionBudgetMs }),
     // The fresh-mesh allowance is its own ceiling; these tests measure the time budget, so an
     // unbounded world is unbounded in both.
     ...(options.admissionBudgetMs === Number.POSITIVE_INFINITY
       ? { freshMeshesPerUpdate: Number.MAX_SAFE_INTEGER }
       : {}),
+    ...(options.freshMeshesPerUpdate === undefined
+      ? {}
+      : { freshMeshesPerUpdate: options.freshMeshesPerUpdate }),
     budgets,
     follow,
     loadModel: async () => model(),
@@ -226,10 +236,11 @@ async function makeWorld(options: {
 }
 
 /** Update until nothing is queued, returning every frame's admission spend. */
-function drain(world: WorldCells, limit = 4000): number[] {
+function drain(world: WorldCells, limit = 4000, covered = false): number[] {
   const spent: number[] = [];
   for (let frame = 0; frame < limit; frame += 1) {
-    world.update();
+    if (covered) world.process(undefined, undefined, true);
+    else world.update();
     const { backlog, deferred, spentMs } = world.stats().admission;
     spent.push(spentMs);
     // Deferred terrain work counts as owed: a tile the budget refused is wanted again next pass,
@@ -284,6 +295,62 @@ describe("WorldCells admission budget", () => {
     expect(cells.stats().admission).toMatchObject({ backlog: 0, deferred: 0 });
     expect(cells.stats().admission.spentMs).toBeLessThanOrEqual(BUDGET_MS);
     expect(cells.stats().failures).toBe(0);
+    cells.dispose();
+  });
+
+  it("admits up to one 60 Hz frame per update behind the startup cover, and 2 ms after it", async () => {
+    const { world: open } = await makeWorld({ priced: true });
+    open.update();
+    await step(open);
+    const openSpent = drain(open);
+    for (const frame of openSpent) expect(frame).toBeLessThanOrEqual(2 + UNIT_MS);
+
+    const { world: covered } = await makeWorld({ priced: true });
+    covered.update();
+    await step(covered);
+    const coveredSpent = drain(covered, 4000, true);
+    for (const frame of coveredSpent) expect(frame).toBeLessThanOrEqual(16 + UNIT_MS);
+    expect(Math.max(...coveredSpent)).toBeGreaterThan(2 + UNIT_MS);
+    expect(coveredSpent.length).toBeLessThan(openSpent.length);
+    expect(covered.stats().failures).toBe(0);
+    open.dispose();
+    covered.dispose();
+  });
+
+  it("scales a game's own budget behind the startup cover", async () => {
+    const { world: cells } = await makeWorld({ admissionBudgetMs: 1, priced: true });
+    cells.update();
+    await step(cells);
+    const spent = drain(cells, 4000, true);
+    for (const frame of spent) expect(frame).toBeLessThanOrEqual(8 + UNIT_MS);
+    expect(Math.max(...spent)).toBeGreaterThan(1 + UNIT_MS);
+    cells.dispose();
+  });
+
+  it("admits more fresh batches per update behind the startup cover", async () => {
+    // The time budget is unpriced and large, so the fresh-mesh allowance alone gates each update.
+    const frames = async (covered: boolean): Promise<number> => {
+      const { world } = await makeWorld({ admissionBudgetMs: 1000, freshMeshesPerUpdate: 1 });
+      world.update();
+      await flush();
+      const count = drain(world, 4000, covered).length;
+      world.dispose();
+      return count;
+    };
+    const open = await frames(false);
+    const covered = await frames(true);
+    expect(covered).toBeLessThan(open);
+  });
+
+  it("keeps a named covered budget behind the startup cover", async () => {
+    const { world: cells } = await makeWorld({
+      admissionBudgetMs: 2,
+      coveredAdmissionBudgetMs: 2,
+      priced: true,
+    });
+    cells.update();
+    await step(cells);
+    for (const frame of drain(cells, 4000, true)) expect(frame).toBeLessThanOrEqual(2 + UNIT_MS);
     cells.dispose();
   });
 
