@@ -53,6 +53,7 @@ import {
   TN_DISCRETE_LOD,
   lodChainOf,
 } from "../src/model-lod.js";
+import { noteShadowRedrawGpuMs } from "../src/render-pass-budget.js";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_GATE_MARKER,
@@ -1234,6 +1235,45 @@ describe("VirtualShadowNode invalidation coalescing", () => {
     // Twenty-nine asks merged into the one already waiting; the thirtieth is the render.
     expect(node.stats.coalesced - before.coalesced).toBe(29);
     expect(node.stats.byMove - before.byMove).toBe(0);
+  });
+
+  /**
+   * One 500 m level, as Machinefall runs it, whose last redraw resolved at `redrawMs` of GPU. Returns
+   * how long after the first of a stream of asks (one a frame) the level redrew for them.
+   */
+  function redrawAfter(redrawMs: number, options: { invalidationDelay?: number } = {}): number {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64, ...options });
+    camera.position.set(0, 5, 0);
+    const renderer = {};
+    const at = (time: number): NodeFrame => ({ camera, renderer, time }) as unknown as NodeFrame;
+    let time = 0;
+    for (let frame = 0; frame < 2; frame += 1) {
+      time += 0.1;
+      node.updateBefore(at(time));
+    }
+    noteShadowRedrawGpuMs(renderer, redrawMs);
+    const renders = countRenders(node);
+    const asked = time;
+    for (let step = 0; step < 600 && renders[0] === 0; step += 1) {
+      node.invalidateAll();
+      time += 1 / 60;
+      node.updateBefore(at(time));
+    }
+    expect(renders[0]).toBe(1);
+    return time - asked;
+  }
+
+  it("should space a redraw that stalls a weak GPU to a tenth of the time", () => {
+    // 300 ms of shadow GPU, as the Iris Xe measured: 3 s between redraws instead of 0.25 s.
+    expect(redrawAfter(300)).toBeGreaterThan(2.8);
+    expect(redrawAfter(300)).toBeLessThan(3.2);
+  });
+
+  it("should keep the base delay when a redraw is cheap or the game set its own", () => {
+    // 5 ms is an RTX 2080's redraw: 50 ms of share, under the 0.25 s the level already waits.
+    expect(redrawAfter(5)).toBeLessThan(0.3);
+    expect(redrawAfter(300, { invalidationDelay: 0.25 })).toBeLessThan(0.3);
   });
 
   it("should still render the finest level within a quarter second of an invalidation", () => {

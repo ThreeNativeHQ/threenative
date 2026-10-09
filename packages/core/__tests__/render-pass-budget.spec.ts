@@ -4,6 +4,7 @@ import {
   FRAME_PASS_KINDS,
   type IRenderPassSample,
   RenderPassBudget,
+  shadowRedrawGpuMs,
 } from "../src/render-pass-budget.js";
 
 /**
@@ -225,6 +226,7 @@ describe("render pass budget", () => {
     pool.timestamps.set(mainUid, 5.5); // only the main pass resolved; shadow is still in flight
     expect(budget.nextGpuFrame()).toBeUndefined();
     // The frame was not consumed: once the shadow lands, the whole frame is handed out.
+    expect(shadowRedrawGpuMs(raw)).toBeUndefined();
     pool.timestamps.set(shadowUid, 2.25);
     expect(budget.nextGpuFrame()).toEqual({
       frame: 7,
@@ -233,6 +235,8 @@ describe("render pass budget", () => {
       shadowPasses: 1,
       total: 7.75,
     });
+    // The whole frame is also the shadow node's price for a redraw on this renderer.
+    expect(shadowRedrawGpuMs(raw)).toBe(2.25);
   });
 
   it("skips a permanently missing older frame and delivers a newer whole frame at once", () => {

@@ -234,6 +234,25 @@ function passKind(scene: unknown, depth: number): FramePassKind {
  * `passes()` after it; a nested render inside the world render is attributed without the owner
  * knowing it happened.
  */
+/** The last resolved shadow-pass GPU milliseconds per instrumented renderer; see {@link shadowRedrawGpuMs}. */
+const lastShadowGpuMs = new WeakMap<object, number>();
+
+/**
+ * What the last resolved frame that drew a shadow spent on its shadow passes, on this renderer, or
+ * `undefined` before one resolved (or with no recorder installed). A shadow node reads it to price
+ * a redraw in GPU time: its own `performance.now()` around the draw is only the CPU encode.
+ */
+export function shadowRedrawGpuMs(renderer: unknown): number | undefined {
+  return typeof renderer === "object" && renderer !== null
+    ? lastShadowGpuMs.get(renderer)
+    : undefined;
+}
+
+/** Records a resolved shadow-pass reading for {@link shadowRedrawGpuMs}; the recorder's own feed. */
+export function noteShadowRedrawGpuMs(renderer: object, ms: number): void {
+  lastShadowGpuMs.set(renderer, ms);
+}
+
 export class RenderPassBudget {
   readonly #target: IRenderPassTarget;
   readonly #original: (scene: unknown, camera: unknown) => void;
@@ -392,6 +411,7 @@ export class RenderPassBudget {
       const sum = this.#gpuSum(frame);
       if (sum === undefined) continue;
       this.#deliveredGpuFrame = frame;
+      if (sum.shadowPasses > 0) noteShadowRedrawGpuMs(this.#target, sum.shadow);
       return {
         frame,
         main: sum.main,

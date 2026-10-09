@@ -47,6 +47,7 @@ import {
   type UniformNode,
 } from "three/webgpu";
 import { lodChainOf } from "../model-lod.js";
+import { shadowRedrawGpuMs } from "../render-pass-budget.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
 import {
   DirectionalClipmap,
@@ -412,6 +413,12 @@ const STATS_QUERY_EVERY = 60;
  * level that pays it is the one whose window is widest.
  */
 const BASE_INVALIDATION_DELAY = 0.25;
+/**
+ * Share of GPU time a level's invalidation redraws may take when the game left `invalidationDelay`
+ * to the engine: a redraw that cost `c` ms waits at least `c / share` ms after the last one. A 5 ms
+ * redraw never reaches the base delay; a 300 ms one on an integrated GPU waits 3 s instead of 0.25 s.
+ */
+const INVALIDATION_GPU_SHARE = 0.1;
 const DEFAULT_MIN_CASTER_TEXELS = 1.5;
 /**
  * The share of the display period a level's render may cost before adaptive refresh widens its
@@ -794,6 +801,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #levelsRequested: boolean | undefined;
   /** The game's own `adaptiveRefresh`, so the URL switch read at setup never overrides it. */
   readonly #adaptiveRefreshGiven: boolean | undefined;
+  /** Whether the game set `invalidationDelay`; only an engine-chosen delay stretches with GPU cost. */
+  readonly #invalidationDelayGiven: boolean;
   /**
    * The diagnostic's tint, one per material build, keyed weakly by the builder that owns it.
    *
@@ -996,6 +1005,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.tracker = new ShadowInvalidationTracker(this.clipmap);
     const marker = options.marker ?? DEFAULT_MARKER_EVERY;
     this.#adaptiveRefreshGiven = options.adaptiveRefresh;
+    this.#invalidationDelayGiven = options.invalidationDelay !== undefined;
     this.options = {
       adaptiveCasterGate: options.adaptiveCasterGate ?? true,
       adaptiveRefresh: options.adaptiveRefresh ?? true,
@@ -2380,6 +2390,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
     }
     this.#regions.length = 0;
     const canRender = (frame as { renderer?: unknown }).renderer !== undefined;
+    // An engine-chosen delay also waits out the GPU cost of the last redraw, so a redraw that is a
+    // visible stall on a weak GPU is spaced to a share of the time instead of queued behind every
+    // streamed cell. Measured, so a fast GPU never reaches it; off with adaptive refresh.
+    const redrawMs =
+      this.#invalidationDelayGiven || !this.options.adaptiveRefresh
+        ? undefined
+        : shadowRedrawGpuMs((frame as { renderer?: unknown }).renderer);
+    const gpuDelay = redrawMs === undefined ? 0 : redrawMs / INVALIDATION_GPU_SHARE / 1000;
 
     let moved = 0;
     let invalidated = 0;
@@ -2439,7 +2457,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // *own* last render, so a burst spanning that delay is one render and a lone ask is one
         // render, and the level keeps the map and window it has in between — already right for
         // every static caster in it, missing only what streamed in since.
-        const delay = this.options.invalidationDelay[index] ?? 0;
+        const delay = Math.max(this.options.invalidationDelay[index] ?? 0, gpuDelay);
         const matured = level.dirty && now - level.lastRender >= delay;
         let reason: RenderReason = REASON_NONE;
         if (windowMoved) reason = REASON_MOVE;
