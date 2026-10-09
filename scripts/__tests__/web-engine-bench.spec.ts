@@ -535,6 +535,65 @@ describe("PRD-533 web arms", () => {
   );
 
   it.runIf(builtWasm)(
+    "reads and writes attribute elements in JS and sends the array back once",
+    async () => {
+      const factory = createRequire(import.meta.url)(
+        "../../packages/runtime-native/build/wasm-browser/tn-native-engine-wasm-browser.js",
+      );
+      const abi = await factory();
+      const runtime = createWasmRuntime(abi);
+      const calls = { engine: 0, arrays: 0 };
+      const counted = new Proxy(runtime, {
+        get(target, key, receiver) {
+          const value = Reflect.get(target, key, receiver);
+          if (typeof value !== "function") return value;
+          return (...args: unknown[]) => {
+            if (key === "attributeArray" || key === "attributeWrite") calls.arrays++;
+            else calls.engine++;
+            return value.apply(target, args);
+          };
+        },
+      });
+      const engine = defineBrowserClasses(registry as IRegistryDump, counted);
+      const Box = engine.classes.BoxGeometry;
+      const Attribute = engine.classes.BufferAttribute;
+      if (!Box || !Attribute) throw new Error("classes missing");
+      type IAttribute = {
+        count: number;
+        getX(i: number): number;
+        getY(i: number): number;
+        getZ(i: number): number;
+        setXY(i: number, x: number, y: number): unknown;
+        setX(i: number, x: number): unknown;
+      };
+      const box = new Box(2, 2, 2) as unknown as {
+        getAttribute(name: string): IAttribute;
+        computeBoundingBox(): void;
+        boundingBox: { max: { x: number } };
+      };
+      const position = box.getAttribute("position");
+      const uv = box.getAttribute("uv");
+      const count = position.count;
+      calls.engine = calls.arrays = 0;
+      // Midway's box-UV projection: a read and a write per vertex, as three's accessors do.
+      for (let i = 0; i < count; i++) uv.setXY(i, position.getX(i) + 1, position.getY(i) * 2);
+      expect(calls.engine).toBe(4); // itemSize and normalized, read once per attribute
+      for (let i = 0; i < count; i++) position.setX(i, position.getX(i) * 3);
+      expect(calls.engine).toBe(4); // and never again per element
+      expect(calls.arrays).toBe(2); // each array fetched once
+      box.computeBoundingBox(); // the next engine call sends both arrays back first
+      expect(calls.arrays).toBe(4);
+      expect(box.boundingBox.max.x).toBeCloseTo(3);
+      expect(uv.getX(0)).toBeCloseTo(position.getX(0) / 3 + 1);
+      // A normalized integer attribute stores and reads as three's normalize and denormalize.
+      const bytes = new Attribute(new Uint8Array(4), 2, true) as unknown as IAttribute;
+      bytes.setXY(1, 0.5, 1);
+      expect(bytes.getX(1)).toBeCloseTo(128 / 255);
+      expect(bytes.getY(1)).toBe(1);
+    },
+  );
+
+  it.runIf(builtWasm)(
     "executes the built Wasm bulk API and refuses nonfinite input before any writes",
     async () => {
       const factory = createRequire(import.meta.url)(

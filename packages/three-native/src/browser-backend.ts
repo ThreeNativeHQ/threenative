@@ -719,24 +719,106 @@ export function defineBrowserClasses(
     typeNames.set(runtime.typeId(name), name);
   }
   if (attributeArray !== undefined && attributeWrite !== undefined) {
+    // The attribute's current array, refreshed when an engine method may have written it.
+    const current = (self: object): TypedArray => {
+      let entry = arrays.get(self);
+      if (entry === undefined) {
+        entry = { array: attributeArray.call(runtime, refOf(self)), epoch };
+        arrays.set(self, entry);
+      } else if (entry.epoch !== epoch && !pending.has(self)) {
+        const fresh = attributeArray.call(runtime, refOf(self));
+        if (fresh.length === entry.array.length) entry.array.set(fresh);
+        else entry.array = fresh;
+        entry.epoch = epoch;
+      }
+      return entry.array;
+    };
+    // itemSize and normalized, read from the engine once and again after either is set.
+    const shapes = new WeakMap<object, { itemSize: number; normalized: boolean }>();
+    const shape = (self: object): { itemSize: number; normalized: boolean } => {
+      let found = shapes.get(self);
+      if (found === undefined) {
+        const attribute = self as { itemSize: number; normalized: boolean };
+        found = { itemSize: attribute.itemSize, normalized: attribute.normalized };
+        shapes.set(self, found);
+      }
+      return found;
+    };
+    // three's element accessors (BufferAttribute.js) over the JS array: an element read or write is
+    // a typed-array access, not an engine call. A read leaves the attribute as it is; a write marks
+    // it pending, so the whole array goes back once before the next engine call.
+    const read = (self: object, at: number): number => {
+      const array = current(self);
+      return shape(self).normalized
+        ? denormalize(array[at] as number, array)
+        : (array[at] as number);
+    };
+    const write = (self: object, at: number, value: number): void => {
+      const array = current(self);
+      pending.add(self);
+      array[at] = shape(self).normalized ? normalize(value, array) : value;
+    };
+    const accessors: Record<string, (this: object, ...args: number[]) => unknown> = {
+      getComponent(index, k) {
+        return read(this, index * shape(this).itemSize + k);
+      },
+      setComponent(index, k, value) {
+        write(this, index * shape(this).itemSize + k, value);
+        return this;
+      },
+      setXY(index, x, y) {
+        const at = index * shape(this).itemSize;
+        write(this, at, x);
+        write(this, at + 1, y);
+        return this;
+      },
+      setXYZ(index, x, y, z) {
+        const at = index * shape(this).itemSize;
+        write(this, at, x);
+        write(this, at + 1, y);
+        write(this, at + 2, z);
+        return this;
+      },
+      setXYZW(index, x, y, z, w) {
+        const at = index * shape(this).itemSize;
+        write(this, at, x);
+        write(this, at + 1, y);
+        write(this, at + 2, z);
+        write(this, at + 3, w);
+        return this;
+      },
+    };
+    for (const [k, axis] of ["X", "Y", "Z", "W"].entries()) {
+      accessors[`get${axis}`] = function (this: object, index: number) {
+        return read(this, index * shape(this).itemSize + k);
+      };
+      accessors[`set${axis}`] = function (this: object, index: number, value: number) {
+        write(this, index * shape(this).itemSize + k, value);
+        return this;
+      };
+    }
     for (const name of ATTRIBUTE_CLASSES) {
       const cls = classes[name];
       if (cls === undefined) continue;
+      for (const [method, value] of Object.entries(accessors))
+        Object.defineProperty(cls.prototype, method, { configurable: true, writable: true, value });
+      for (const field of ["itemSize", "normalized"]) {
+        const own = Object.getOwnPropertyDescriptor(cls.prototype, field);
+        if (own?.set !== undefined)
+          Object.defineProperty(cls.prototype, field, {
+            ...own,
+            set(this: object, value: unknown) {
+              shapes.delete(this);
+              own.set?.call(this, value);
+            },
+          });
+      }
       Object.defineProperty(cls.prototype, "array", {
         configurable: true,
         get(this: object) {
-          let entry = arrays.get(this);
-          if (entry === undefined) {
-            entry = { array: attributeArray.call(runtime, refOf(this)), epoch };
-            arrays.set(this, entry);
-          } else if (entry.epoch !== epoch && !pending.has(this)) {
-            const fresh = attributeArray.call(runtime, refOf(this));
-            if (fresh.length === entry.array.length) entry.array.set(fresh);
-            else entry.array = fresh;
-            entry.epoch = epoch;
-          }
+          const array = current(this);
           pending.add(this);
-          return entry.array;
+          return array;
         },
       });
       // needsUpdate is a property write, not a call, so it writes the array back itself.
@@ -885,6 +967,26 @@ interface IAbiHelpers {
 
 let nextImage = 1;
 
+/** three's MathUtils.denormalize and normalize: a normalized integer attribute's stored value and its number. */
+export function denormalize(value: number, array: TypedArray): number {
+  if (array instanceof Uint32Array) return value / 4294967295;
+  if (array instanceof Uint16Array) return value / 65535;
+  if (array instanceof Uint8Array) return value / 255;
+  if (array instanceof Int32Array) return Math.max(value / 2147483647, -1);
+  if (array instanceof Int16Array) return Math.max(value / 32767, -1);
+  if (array instanceof Int8Array) return Math.max(value / 127, -1);
+  return value;
+}
+export function normalize(value: number, array: TypedArray): number {
+  if (array instanceof Uint32Array) return Math.round(value * 4294967295);
+  if (array instanceof Uint16Array) return Math.round(value * 65535);
+  if (array instanceof Uint8Array) return Math.round(value * 255);
+  if (array instanceof Int32Array) return Math.round(value * 2147483647);
+  if (array instanceof Int16Array) return Math.round(value * 32767);
+  if (array instanceof Int8Array) return Math.round(value * 127);
+  return value;
+}
+
 /** The engine glTF loader over the product web host's `tnw_web_load_gltf`, when the module has it. */
 function gltfOf(
   abi: TnAbiModule,
@@ -906,8 +1008,9 @@ function gltfOf(
         // The page's images by id in the host's table (web_host.cpp tnw_js_copy_image); the host
         // closes each with the last texture that holds it, or at once when no texture took it.
         // quality-allow: the web host module carries its image table as a property it reads by name.
-        const table = ((abi as unknown as { tnImages?: Map<number, IPageImage> }).tnImages ??=
-          new Map());
+        const host = abi as unknown as { tnImages?: Map<number, IPageImage> };
+        host.tnImages ??= new Map();
+        const table = host.tnImages;
         const triples = h.alloc(Math.max(4, images.length * 12));
         images.forEach((image, i) => {
           const id = image === undefined ? 0 : nextImage++;
