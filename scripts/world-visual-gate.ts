@@ -3,7 +3,7 @@
  *   pnpm visuals:world --before reference/world.json --after candidate/world.json --out artifacts/world-gate
  *   pnpm visuals:world --score artifacts/world-gate --verdict critic-1.json --verdict critic-2.json --verdict critic-3.json
  * Share only out/blind with critics. Never share seal.json, poses/reveal.json or walk-reveal.json.
- * Exit 0 = judged pass; 1 = measured regression; 2 = invalid or not yet judged.
+ * Exit 0 = judged pass; 1 = measured regression; 2 = inconclusive, invalid or not yet judged.
  * This is a model instrument, not the human blind session or Machinefall acceptance proof.
  */
 import { createHash, randomBytes, randomInt } from "node:crypto";
@@ -90,9 +90,10 @@ interface IBundle {
 interface ISeal {
   bundleContentSha256: string;
   files: { file: string; sha256: string }[];
-  candidateSeries: string;
+  /** Which anonymous series belongs to which side and capture run; never inside the blind bundle. */
+  series: { label: string; arm: "before" | "after"; run: number }[];
   poseNames: Record<string, string>;
-  adapters: { before: Record<string, string>; after: Record<string, string> };
+  adapters: { before: Record<string, string>[]; after: Record<string, string>[] };
 }
 export interface IWorldVisualBundle {
   bundle: string;
@@ -104,18 +105,28 @@ export interface IPoppingEvent {
   from: string;
   to: string;
   element: string;
-  kind: "appear" | "disappear" | "lod-swap";
+  kind: "appear" | "disappear" | "lod-swap" | "missing";
   distanceMeters: number;
   description: string;
   candidate: boolean;
   disallowed: boolean;
 }
+export interface IIntermittentEvent {
+  critic: string;
+  series: string;
+  kind: IPoppingEvent["kind"];
+  distanceMeters: number;
+  candidateRuns: number;
+  referenceRuns: number;
+}
 export interface IWorldVisualScore {
-  exitCode: 0 | 1;
-  verdict: "pass" | "regression";
+  exitCode: 0 | 1 | 2;
+  verdict: "pass" | "regression" | "inconclusive";
+  reason?: "needs more runs";
   bundleSha256: string;
   samePose: VisualAbScore;
   popping: IPoppingEvent[];
+  intermittent: IIntermittentEvent[];
   adapters: ISeal["adapters"];
   verdicts: { file: string; sha256: string }[];
 }
@@ -266,27 +277,71 @@ function loadCapture(file: string): ILoaded {
   };
 }
 
+/** Fisher-Yates with the crypto RNG already imported, so no extra dependency and no fixed seed. */
+function shuffle<T>(values: readonly T[]): T[] {
+  const out = [...values];
+  for (let index = out.length - 1; index > 0; index -= 1) {
+    const other = randomInt(index + 1);
+    [out[index], out[other]] = [out[other] as T, out[index] as T];
+  }
+  return out;
+}
+
+/** Every run on a side must walk the same route, so series stay index-comparable across runs. */
+function assertRunMatches(
+  side: string,
+  loaded: ILoaded,
+  canonical: ILoaded,
+  metadata: (frames: readonly IFrame[]) => unknown,
+): void {
+  equal(loaded.capture.viewport, canonical.capture.viewport, `${side} run viewport`);
+  equal(
+    metadata(loaded.manifest.samePose),
+    metadata(canonical.manifest.samePose),
+    `${side} run same-pose coverage/poses`,
+  );
+  equal(
+    metadata(loaded.manifest.walk),
+    metadata(canonical.manifest.walk),
+    `${side} run walk coverage/timing/poses`,
+  );
+}
+
+/**
+ * Two or more capture runs per side. Streaming arrival can miss a band in one run and not the next,
+ * so a single capture is not evidence. The same-pose instrument still sees one run per side; every
+ * run is carried into the walk bundle as its own anonymous series, and the private seal remembers
+ * which arm and run each series is so the scorer can measure the reference's own run-to-run spread.
+ */
 export function buildWorldVisualBundle(
-  beforeFile: string,
-  afterFile: string,
+  beforeFiles: string | readonly string[],
+  afterFiles: string | readonly string[],
   output: string,
 ): IWorldVisualBundle {
-  const before = loadCapture(beforeFile);
-  const after = loadCapture(afterFile);
+  const normalize = (value: string | readonly string[]): string[] =>
+    typeof value === "string" ? [value] : [...value];
+  const before = normalize(beforeFiles).map(loadCapture);
+  const after = normalize(afterFiles).map(loadCapture);
+  if (before.length === 0 || after.length === 0) fail("each side needs at least one capture run");
+  const reference = before[0] as ILoaded;
+  const candidate = after[0] as ILoaded;
   for (const key of ["world", "route", "seed", "nearBandMeters", "landmarks"] as const)
-    equal(before.manifest[key], after.manifest[key], key);
-  equal(before.capture.viewport, after.capture.viewport, "viewport");
+    equal(reference.manifest[key], candidate.manifest[key], key);
+  equal(reference.capture.viewport, candidate.capture.viewport, "viewport");
   const metadata = (frames: readonly IFrame[]) => frames.map(({ image: _image, ...rest }) => rest);
   equal(
-    metadata(before.manifest.samePose),
-    metadata(after.manifest.samePose),
+    metadata(reference.manifest.samePose),
+    metadata(candidate.manifest.samePose),
     "same-pose coverage/poses",
   );
   equal(
-    metadata(before.manifest.walk),
-    metadata(after.manifest.walk),
+    metadata(reference.manifest.walk),
+    metadata(candidate.manifest.walk),
     "walk coverage/timing/poses",
   );
+  // Every run on a side must walk the same route, so series stay index-comparable across runs.
+  for (const loaded of before) assertRunMatches("before", loaded, reference, metadata);
+  for (const loaded of after) assertRunMatches("after", loaded, candidate, metadata);
   const out = path.resolve(output);
   if (existsSync(out) && readdirSync(out).length !== 0)
     fail("output must be empty; score an existing bundle with --score");
@@ -300,10 +355,10 @@ export function buildWorldVisualBundle(
   // visual-ab has a public deterministic shuffle. Secretly swapping its two input arms prevents
   // its shuffle seed/order from revealing which arm is the candidate; restore only private reveal.
   const swap = randomInt(2) === 1;
-  const names = before.manifest.samePose.map(() => randomBytes(12).toString("hex"));
+  const names = reference.manifest.samePose.map(() => randomBytes(12).toString("hex"));
   for (const [arm, loaded] of [
-    ["before", before],
-    ["after", after],
+    ["before", reference],
+    ["after", candidate],
   ] as const) {
     const directory = swap ? (arm === "before" ? "after" : "before") : arm;
     loaded.manifest.samePose.forEach((frame, index) =>
@@ -346,10 +401,14 @@ export function buildWorldVisualBundle(
   const samePose = poseBundle.samples.map(({ label, image }) =>
     imageEntry(label, `poses/${image}`),
   );
-  const walkArtifacts = [before, after].flatMap((arm, armIndex) =>
-    arm.manifest.walk.map((frame, index) => ({
-      arm: `${armIndex}:${index}`,
-      id: `${armIndex}:${index}`,
+  const runs: { arm: "before" | "after"; run: number; loaded: ILoaded }[] = [
+    ...before.map((loaded, run) => ({ arm: "before" as const, run, loaded })),
+    ...after.map((loaded, run) => ({ arm: "after" as const, run, loaded })),
+  ];
+  const walkArtifacts = runs.flatMap(({ loaded }, runIndex) =>
+    loaded.manifest.walk.map((frame, index) => ({
+      arm: `${runIndex}:${index}`,
+      id: `${runIndex}:${index}`,
       content: readFileSync(frame.image),
     })),
   );
@@ -364,18 +423,18 @@ export function buildWorldVisualBundle(
   );
   const walkReveal = json(walkRevealFile) as { arm: string; label: string }[];
   const labels = new Map(walkReveal.map(({ arm, label }) => [arm, label]));
-  const order = randomInt(2) === 1 ? [1, 0] : [0, 1];
+  const order = shuffle(runs.map((_run, index) => index));
   const walk = order.map(
-    (armIndex, seriesIndex): ISeries => ({
+    (runIndex, seriesIndex): ISeries => ({
       label: `series-${seriesIndex + 1}`,
-      frames: ([before, after][armIndex] as ILoaded).manifest.walk.map((frame, index) => {
-        const label = labels.get(`${armIndex}:${index}`) as string;
+      frames: (runs[runIndex] as { loaded: ILoaded }).loaded.manifest.walk.map((frame, index) => {
+        const label = labels.get(`${runIndex}:${index}`) as string;
         return {
           ...imageEntry(`frame-${String(index + 1).padStart(3, "0")}`, `walk/${label}/image.png`),
           timeMs: frame.timeMs as number,
           position: frame.position,
           target: frame.target,
-          distances: before.manifest.landmarks.map((landmark) => ({
+          distances: reference.manifest.landmarks.map((landmark) => ({
             landmark: landmark.id,
             meters: distance(frame.position, landmark.position),
           })),
@@ -384,8 +443,8 @@ export function buildWorldVisualBundle(
     }),
   );
   const boundFiles = [
-    ...before.files,
-    ...after.files,
+    ...before.flatMap((run) => run.files),
+    ...after.flatMap((run) => run.files),
     BASELINE,
     RUBRIC,
     promptFile,
@@ -399,19 +458,26 @@ export function buildWorldVisualBundle(
   const content: Omit<IBundle, "evidenceSha256"> = {
     schemaVersion: 1,
     promptSha256: sha256Text(prompt),
-    nearBandMeters: before.manifest.nearBandMeters,
-    landmarks: before.manifest.landmarks,
+    nearBandMeters: reference.manifest.nearBandMeters,
+    landmarks: reference.manifest.landmarks,
     samePose,
     walk,
   };
   const seal: ISeal = {
     bundleContentSha256: sha256Text(JSON.stringify(content)),
     files: [...new Set(boundFiles)].map((file) => ({ file, sha256: hash(file) })),
-    candidateSeries: `series-${order.indexOf(1) + 1}`,
+    series: order.map((runIndex, seriesIndex) => ({
+      label: `series-${seriesIndex + 1}`,
+      arm: (runs[runIndex] as { arm: "before" | "after" }).arm,
+      run: (runs[runIndex] as { run: number }).run,
+    })),
     poseNames: Object.fromEntries(
-      names.map((name, index) => [name, before.manifest.samePose[index]?.id as string]),
+      names.map((name, index) => [name, reference.manifest.samePose[index]?.id as string]),
     ),
-    adapters: { before: before.capture.adapter, after: after.capture.adapter },
+    adapters: {
+      before: before.map((run) => run.capture.adapter),
+      after: after.map((run) => run.capture.adapter),
+    },
   };
   const sealFile = path.join(out, "seal.json");
   write(sealFile, seal);
@@ -433,12 +499,40 @@ function poppingVerdict(
     bundle.walk.map(({ label }) => label).sort(),
     "series coverage",
   );
+  const readEvent = (
+    raw: unknown,
+    allowed: readonly IPoppingEvent["kind"][],
+    from: string,
+    to: string,
+    label: string,
+  ): IPoppingEvent => {
+    const event = record(raw, "event");
+    const kind = text(event.kind, "event kind");
+    if (!allowed.includes(kind as IPoppingEvent["kind"])) fail(`unsupported event kind: ${kind}`);
+    const sealed = seal.series.find((entry) => entry.label === label);
+    if (sealed === undefined) fail(`verdict names an unknown series: ${label}`);
+    const candidate = sealed.arm === "after";
+    const distanceMeters = finite(event.distanceMeters, "event distanceMeters");
+    return {
+      critic,
+      series: label,
+      from,
+      to,
+      element: text(event.element, "event element"),
+      kind: kind as IPoppingEvent["kind"],
+      distanceMeters,
+      description: text(event.description, "event description"),
+      candidate,
+      // Content the candidate never draws is a regression at any distance; a pop is judged by its band.
+      disallowed: candidate && (kind === "missing" || distanceMeters <= bundle.nearBandMeters),
+    };
+  };
   return series.flatMap((raw) => {
     const entry = record(raw, "series");
     const label = text(entry.label, "series label");
-    const frames = (bundle.walk.find((item) => item.label === label) as ISeries).frames;
+    const found = (bundle.walk.find((item) => item.label === label) as ISeries).frames;
     const transitions = list(entry.transitions, "transitions");
-    const expected = frames.slice(1).map((frame, index) => [frames[index]?.label, frame.label]);
+    const expected = found.slice(1).map((frame, index) => [found[index]?.label, frame.label]);
     equal(
       transitions.map((raw) => {
         const t = record(raw, "transition");
@@ -447,35 +541,110 @@ function poppingVerdict(
       expected,
       "chronological transition coverage",
     );
-    return transitions.flatMap((raw) => {
+    const pops = transitions.flatMap((raw) => {
       const transition = record(raw, "transition");
-      return list(transition.events, "events (use [] when none)", 0).map((raw): IPoppingEvent => {
-        const event = record(raw, "event");
-        const kind = text(event.kind, "event kind");
-        if (!["appear", "disappear", "lod-swap"].includes(kind))
-          fail("unsupported popping event kind");
-        const distanceMeters = finite(event.distanceMeters, "event distanceMeters");
-        const candidate = label === seal.candidateSeries;
-        return {
-          critic,
-          series: label,
-          from: transition.from as string,
-          to: transition.to as string,
-          element: text(event.element, "event element"),
-          kind: kind as IPoppingEvent["kind"],
-          distanceMeters,
-          description: text(event.description, "event description"),
-          candidate,
-          disallowed: candidate && distanceMeters <= bundle.nearBandMeters,
-        };
-      });
+      return list(transition.events, "events (use [] when none)", 0).map((raw) =>
+        readEvent(
+          raw,
+          ["appear", "disappear", "lod-swap"],
+          transition.from as string,
+          transition.to as string,
+          label,
+        ),
+      );
     });
+    // Content that never appears produces no transition: the same walk index in the other series is
+    // the only place its absence can be seen.
+    const other = (bundle.walk.find((item) => item.label !== label) as ISeries).frames;
+    return [
+      ...pops,
+      ...list(entry.missing, "missing (use [] when none)", 0).map((raw) => {
+        const event = record(raw, "missing event");
+        const from = text(event.from, "missing from");
+        const to = text(event.to, "missing to");
+        if (other.findIndex((frame) => frame.label === from) < 0)
+          fail("missing from must be the other series' frame at that walk index");
+        if (
+          found.findIndex((frame) => frame.label === to) !==
+          other.findIndex((frame) => frame.label === from)
+        )
+          fail("a missing event must name both series' frames at one walk index");
+        return readEvent(event, ["missing"], from, to, label);
+      }),
+    ];
   });
+}
+
+/** Same transition, kind and element: frame labels are index-based and shared across runs. */
+function runSpreadKey(event: IPoppingEvent): string {
+  return `${event.from}|${event.to}|${event.kind}|${event.element}`;
+}
+
+/**
+ * Streaming arrival makes the same element miss a band in one run and not the next. A regression
+ * only counts when it is outside the reference's own run-to-run spread:
+ * the same critic reports it in every candidate run and in no reference run. With fewer than two
+ * runs per side there is no spread to measure, so the strict single-run rule applies. Partial
+ * candidate-only reports remain visible as intermittent events needing more evidence.
+ */
+export function applyReferenceSpread(
+  events: readonly IPoppingEvent[],
+  seal: ISeal,
+  nearBandMeters: number,
+): { popping: IPoppingEvent[]; intermittent: IIntermittentEvent[] } {
+  const candidateRunCount = seal.series.filter((entry) => entry.arm === "after").length;
+  const referenceRunCount = seal.series.filter((entry) => entry.arm === "before").length;
+  const multiRun = candidateRunCount >= 2 && referenceRunCount >= 2;
+  const runBySeries = new Map(seal.series.map((entry) => [entry.label, entry.run]));
+  const failWorthy = (event: IPoppingEvent): boolean =>
+    event.candidate && (event.kind === "missing" || event.distanceMeters <= nearBandMeters);
+  const allowed = new Map<IPoppingEvent, boolean>();
+  const intermittent: IIntermittentEvent[] = [];
+  for (const event of events) {
+    if (!event.candidate) continue;
+    if (!multiRun) {
+      allowed.set(event, false);
+      continue;
+    }
+    const key = runSpreadKey(event);
+    const matching = events.filter(
+      (other) => other.critic === event.critic && runSpreadKey(other) === key,
+    );
+    const candidateRuns = new Set(
+      matching.filter((other) => other.candidate).map((other) => runBySeries.get(other.series)),
+    ).size;
+    const referenceRuns = new Set(
+      matching.filter((other) => !other.candidate).map((other) => runBySeries.get(other.series)),
+    ).size;
+    if (candidateRuns < candidateRunCount && referenceRuns === 0)
+      intermittent.push({
+        critic: event.critic,
+        series: event.series,
+        kind: event.kind,
+        distanceMeters: event.distanceMeters,
+        candidateRuns,
+        referenceRuns,
+      });
+    const runsShowing = new Set(
+      matching
+        .filter((other) => failWorthy(other))
+        .map((other) => runBySeries.get(other.series) as number),
+    );
+    allowed.set(event, runsShowing.size < candidateRunCount || referenceRuns > 0);
+  }
+  return {
+    popping: events.map((event) => ({
+      ...event,
+      disallowed: failWorthy(event) && !(allowed.get(event) ?? false),
+    })),
+    intermittent,
+  };
 }
 
 export function scoreWorldVisualBundle(
   output: string,
   verdictFiles: readonly string[],
+  allowIntermittent = false,
 ): IWorldVisualScore {
   if (verdictFiles.length !== 3) fail("exactly three independent verdict files are required");
   unique(
@@ -499,7 +668,7 @@ export function scoreWorldVisualBundle(
     verdicts.map((verdict) => text(verdict.critic, "critic identity").trim().toLowerCase()),
     "critic identities",
   );
-  const popping = verdicts.flatMap((value) => {
+  const reported = verdicts.flatMap((value) => {
     if (value.bundleSha256 !== bundleSha256 || value.promptSha256 !== bundle.promptSha256)
       fail("verdict does not bind this bundle and rubric");
     const samples = list(value.samples, "samples");
@@ -510,13 +679,24 @@ export function scoreWorldVisualBundle(
     );
     return poppingVerdict(value, bundle, seal, text(value.critic, "critic"));
   });
+  const { popping, intermittent } = applyReferenceSpread(reported, seal, bundle.nearBandMeters);
   const samePose = scoreVisualAb(path.join(out, "poses/reveal.json"), verdictFiles, 3);
   const regression =
     samePose.rows.some((row) => row.after < VISUAL_FLOOR || row.classification === "LOSS") ||
     popping.some(({ disallowed }) => disallowed);
+  const inconclusive =
+    !regression &&
+    !allowIntermittent &&
+    intermittent.some(
+      (event) =>
+        event.distanceMeters <= bundle.nearBandMeters ||
+        event.kind === "missing" ||
+        event.kind === "disappear",
+    );
   return {
-    exitCode: regression ? 1 : 0,
-    verdict: regression ? "regression" : "pass",
+    exitCode: regression ? 1 : inconclusive ? 2 : 0,
+    verdict: regression ? "regression" : inconclusive ? "inconclusive" : "pass",
+    ...(inconclusive ? { reason: "needs more runs" as const } : {}),
     bundleSha256,
     samePose: {
       ...samePose,
@@ -526,6 +706,7 @@ export function scoreWorldVisualBundle(
       })),
     },
     popping,
+    intermittent,
     adapters: seal.adapters,
     verdicts: verdictFiles.map((file) => ({ file: path.resolve(file), sha256: hash(file) })),
   };
@@ -533,18 +714,24 @@ export function scoreWorldVisualBundle(
 
 function cliOptions(args: readonly string[]): Map<string, string[]> {
   const options = new Map<string, string[]>();
-  for (let i = 0; i < args.length; i += 2) {
+  for (let i = 0; i < args.length; i += 1) {
     const key = args[i] as string;
-    const value = args[i + 1];
+    if (key === "--allow-intermittent") {
+      if (options.has(key)) fail(`duplicate option ${key}`);
+      options.set(key, []);
+      continue;
+    }
+    const value = args[++i];
     if (
       !["--before", "--after", "--out", "--score", "--verdict"].includes(key) ||
       !value ||
       value.startsWith("--")
     )
       fail(
-        "Usage: --before <manifest> --after <manifest> --out <new-dir> | --score <dir> --verdict <file> (exactly three times)",
+        "Usage: --before <manifest> [--before <manifest> ...] --after <manifest> [--after <manifest> ...] --out <new-dir> | --score <dir> --verdict <file> (exactly three times) [--allow-intermittent]",
       );
-    if (key !== "--verdict" && options.has(key)) fail(`duplicate option ${key}`);
+    if (!["--before", "--after", "--verdict"].includes(key) && options.has(key))
+      fail(`duplicate option ${key}`);
     options.set(key, [...(options.get(key) ?? []), value]);
   }
   return options;
@@ -558,15 +745,25 @@ export function runCli(args: readonly string[]): number {
       if (["--before", "--after", "--out"].some((key) => options.has(key)))
         fail("score an existing bundle without rebuilding it");
       rmSync(path.join(scoring, "score.json"), { force: true });
-      const result = scoreWorldVisualBundle(scoring, options.get("--verdict") ?? []);
+      const result = scoreWorldVisualBundle(
+        scoring,
+        options.get("--verdict") ?? [],
+        options.has("--allow-intermittent"),
+      );
       write(path.join(scoring, "score.json"), result);
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return result.exitCode;
     }
-    const before = options.get("--before")?.[0];
-    const after = options.get("--after")?.[0];
+    const before = options.get("--before") ?? [];
+    const after = options.get("--after") ?? [];
     const out = options.get("--out")?.[0];
-    if (!before || !after || !out || options.has("--verdict"))
+    if (
+      before.length === 0 ||
+      after.length === 0 ||
+      !out ||
+      options.has("--verdict") ||
+      options.has("--allow-intermittent")
+    )
       fail(
         "bundle first with --before <manifest> --after <manifest> --out <new-dir>; then use --score",
       );

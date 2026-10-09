@@ -99,7 +99,7 @@ const TRIANGLE = 3;
 export interface IEligibilityFlags {
   /** The primitive already carries a `TN_discrete_lod` payload from an earlier cook. */
   readonly alreadyCooked: boolean;
-  /** A node or mesh name marks this as a hand-authored LOD variant (`hull_LOD1`). */
+  /** The asset is an authored chain: two or more of its nodes carry a level name (`hull_LOD1`). */
   readonly authoredLod: boolean;
   /** `assets.models.simplify` is declared for this asset. */
   readonly legacySimplify: boolean;
@@ -290,7 +290,8 @@ export function classifyJoinCandidate(
 /**
  * Authored LOD detection: a node or mesh whose name carries a level suffix (`hull_LOD1`,
  * `hull-lod2`) is a hand-authored variant, and generating on top of it would stack two owners on
- * one primitive (PRD-377 §4.2).
+ * one primitive (PRD-377 §4.2). The cook counts it as authored only when the asset holds two or
+ * more level-named nodes; a lone one is that asset's LOD0.
  */
 export function authoredLodName(name: string): boolean {
   return /(^|[_\-.\s])lod[0-9]+($|[_\-.\s])/i.test(name);

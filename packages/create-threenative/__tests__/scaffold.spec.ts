@@ -183,21 +183,21 @@ const BUG_REPORT_SKILL_PATHS = [
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Actual no-install generation of the isolated raw4 candidate at parent4e86/develop29f.
-  // The canonical Three patch changes every kit; only starter also changes render source/docs.
-  "action-rpg": "caf3c4f2f63afdf886eb2354d23acd416fff7651c15274a53348d7ade2aaf6fc",
-  minimal: "b6b01a63b921f0b30f0aca3938a656aa2fceb99bb3d7b8ce99c0bfb97359ffb6",
-  platformer: "fe5877b9615cbabe934562643c34de3155460bd34b64ec475b610c62f06f9b11",
-  puzzle: "b2c9e31047a38e651778fe16f74153a7d151089285788576a811d07bc68b0b1e",
-  racing: "1064a22a6a705bdf3f18f8624c76e2c15fdcfb1151c8e13b0bbdad1a897de66a",
-  rain: "ea37bdc0482b09be95a54a7418276b87e4173d472fd6e261879ade1668ff5c54",
-  rts: "7f937142785ca49c931bfd8379b43eece8bb96cd499fadf7bb957275da033bbb",
-  runner: "f0d1d02f927b3449797912a574bf2dfa8ac63a337f4557d4f8620a15a56ad095",
-  sailing: "e8dead635de1cd7bcebb0e6210a90c5ecf49890f8fe8b3f2bd47f9985907b7e7",
-  shooter: "de306f0bfb63c3aa3f9fc77cbd31931327849f412f871a038baff910dba7d5fe",
-  snow: "4f04686e95bc423c20d6edaf88bd89dee0758923bef772cd6df4d4b345afa00b",
-  starter: "62d167652e00369e2e87766f9ae5c807368db7f974af465621c595021aa9db6b",
-  "tower-defense": "6c2f7a2f4e17e1378c8d9be492fa8a8db20a7293141ad775f79e4b66631c687a",
+  // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
+  // merged Three patch changes every kit; starter also carries the merged render source.
+  "action-rpg": "ca3c58ab561319c2c6671a5714019f18b8b2b82dc0be699fbf05b1231504be71",
+  minimal: "44979db5dd573a297c6d66c08d5366fc66f7ddaf0bdc553c4781fae0059fa0fc",
+  platformer: "a0f9f7f33b14041062b0a91789ebdb0cea61f4dd889f67762a14244dbf398266",
+  puzzle: "c92bdc29939c43a8a2bf418f31aabbd2de1b31481eb51286bd834bf2cc9bd84f",
+  racing: "8b7b7cf6b8660790b604d819968f7a48e950823373525660e04f26fe3ef16dba",
+  rain: "e43a82568eb6d6cd0bf069f3db2fe5e77ba92821cf983f018dea78ea40a30080",
+  rts: "d5008c09be975e3dea93ae1c1d19163b7fba7f785d4e031a523b4e9c8a69edac",
+  runner: "b8b4d65a033df2dddffe2462dbbbd42a203d7ff8e1a0c8658c0a22088f5378aa",
+  sailing: "7212532cca11fc11e9346461cc3468a59a92237ca800f2e1fe142681d344ff1b",
+  shooter: "874b9d1a0f053970ad381e3703ac5dc288581ece212f53cbb2f86a095f0df561",
+  snow: "b9ef634e808b6c4a79c8a8768955cb2979ec949cdb147e3c77bca4803089b470",
+  starter: "76c53dd1337161dcfadda2ff25867f47007ce4242148687c5db37ac5184e6f6d",
+  "tower-defense": "4f10541731f30c25b31bb7b5770c1bef1ffe9327d713d980e0847b0ed751f863",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -785,18 +785,19 @@ describe("create-threenative", () => {
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,
       });
-      const channel = (x: number, y: number, shift: number): number => {
+      // Gradients with ±3 levels of noise resist PNG compression without violating PRD-351's quality floor like pure noise.
+      const noise = (x: number, y: number, shift: number): number => {
         let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
         value ^= value >>> 16;
-        return value >>> shift;
+        return ((value >>> shift) % 7) - 3;
       };
       await writeFile(
         path.join(root, "assets", "web-codec-proof.png"),
         rgbaPng({
-          blue: (x, y) => channel(x, y, 16),
-          green: (x, y) => channel(x, y, 8),
+          blue: (x, y) => 48 + Math.floor((x + y) / 2) + noise(x, y, 16),
+          green: (x, y) => 48 + y + noise(x, y, 8),
           height: 128,
-          red: (x, y) => channel(x, y, 0),
+          red: (x, y) => 48 + x + noise(x, y, 0),
           width: 128,
         }),
       );

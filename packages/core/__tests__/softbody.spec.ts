@@ -208,6 +208,27 @@ describe("SoftBody3D cloth", () => {
     expect(topology.pinned).toEqual(new Uint32Array([1, 0, 0, 0]));
   });
 
+  it("throws on an index buffer that is not complete triangles", () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]), 3),
+    );
+    geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2, 3]), 1));
+    expect(() => buildClothTopology(geometry, { pinned: [0] })).toThrow(
+      /must contain complete triangles/,
+    );
+
+    const nonIndexed = new BufferGeometry();
+    nonIndexed.setAttribute(
+      "position",
+      new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]), 3),
+    );
+    expect(() => buildClothTopology(nonIndexed, { pinned: [0] })).toThrow(
+      /must contain complete triangles/,
+    );
+  });
+
   it("keeps pinned vertices exact and settles identically across render rates", () => {
     const topology = buildClothTopology(exportedFlagGeometry(), { pinned: [0, 3] });
     const common = {

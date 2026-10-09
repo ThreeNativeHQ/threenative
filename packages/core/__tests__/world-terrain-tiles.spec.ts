@@ -858,9 +858,29 @@ describe("TerrainTiles", () => {
     expect(disposed).toContain("0:0");
     expect(created).toContain("3:0");
     expect(created).toContain("4:0");
+    // The tile that lost its body still draws: physics left it, residency did not.
+    expect(tiles.residentKeys).toContain("0:0");
+    expect(tiles.residentTileCount).toBe(49);
 
     tiles.dispose();
     expect(disposed).toContain("4:0");
+  });
+
+  it("control: with no `colliderRadius`, every resident tile collides", () => {
+    // The pre-PRD-461 behaviour, kept as the default: physics follows the render radius.
+    const tiles = new TerrainTiles({
+      createCollider: () => ({ dispose: () => undefined }),
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 49,
+      sampleHeight,
+      streamRadius: 3,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+    tiles.follow({ x: 0, z: 0 });
+    expect(tiles.residentColliderKeys).toHaveLength(49);
+    tiles.dispose();
   });
 
   it("leaves settled mixed-LOD seams alone instead of rewriting them every frame", () => {
@@ -1147,6 +1167,30 @@ describe("TerrainTiles", () => {
     expect(visible).toHaveLength(1);
     expect(visible[0]).toBe(tile.lod.levels[tile.lodLevel]?.object);
     expect(measured(tiles.maxVisualSeamGap)).toBeLessThanOrEqual(measured(tiles.maxSeamGap));
+    tiles.dispose();
+  });
+
+  it("tags every tile level as terrain and as a shadow-neutral visibility swap", () => {
+    const tiles = new TerrainTiles({
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 17,
+      tileSize: 16,
+    });
+
+    tiles.follow({ x: 8, z: 8 });
+
+    const key = tiles.residentKeys[0];
+    const tile = key === undefined ? undefined : tiles.getTile(key);
+    if (tile === undefined) throw new Error("Expected the followed tile to be resident.");
+    expect(tile.lod.levels.length).toBeGreaterThan(0);
+    for (const { object } of tile.lod.levels) {
+      expect(object.userData.tnDrawSource).toBe("terrain");
+      expect(object.userData.tnShadowSwap).toBe(true);
+    }
     tiles.dispose();
   });
 

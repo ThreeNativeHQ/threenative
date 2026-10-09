@@ -82,6 +82,7 @@ interface IReflectorPass {
 }
 interface IReflectionFrame {
   readonly scene: Object3D;
+  readonly renderer: unknown;
 }
 interface IReflectorWithPass {
   _reflectorBaseNode: IReflectorPass;
@@ -169,6 +170,25 @@ export class WaterSurface3D {
     // `reflector()` returns the texture node; the pass itself — and the virtual cameras and render
     // it owns — live on the reflector base node hanging off it.
     const pass = (node as unknown as IReflectorWithPass)._reflectorBaseNode; // quality-allow: three 0.185 does not type `_reflectorBaseNode` on the reflector node it returns
+    // Three runs this from the draw of the first object that samples the reflection, and without
+    // `bounces` the node updates per frame, so an opaque water mesh in a world chunk is bundle-safe
+    // and that draw can be part of a `BundleGroup` the main pass is recording. Three keeps that
+    // bundle in `_currentRenderBundle` and does not save it across the nested `render()` the mirror
+    // is: the mirror's draws would be filed under the main bundle, and the mirror's own bundles
+    // leave the field `null`, so the main bundle's remaining draws are recorded but never listed —
+    // a replay refreshes only listed draws, so those keep the camera they were recorded with. The
+    // mirror renders outside the record, and the record gets its bundle back.
+    const mirror = pass.updateBefore.bind(pass);
+    pass.updateBefore = (frame: IReflectionFrame): void => {
+      const host = frame.renderer as { _currentRenderBundle?: unknown };
+      const recording = host._currentRenderBundle;
+      if (recording !== undefined) host._currentRenderBundle = null;
+      try {
+        mirror(frame);
+      } finally {
+        if (recording !== undefined) host._currentRenderBundle = recording;
+      }
+    };
     if (reflection.layers !== undefined) {
       const mask = reflection.layers;
       if (!Number.isInteger(mask) || mask < 0)

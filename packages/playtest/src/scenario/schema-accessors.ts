@@ -13,7 +13,7 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
   // strictly and at least one of them must remain.
   const frameDiff = record.frameDiff === undefined
     ? undefined
-    : validateVisualFrameDiff(requireRecord(record.frameDiff, scenarioPath, `${objectPath}.frameDiff`), scenarioPath, `${objectPath}.frameDiff`);
+    : validateVisualFrameDiff(record.frameDiff, scenarioPath, `${objectPath}.frameDiff`);
   const regionRecord = record.region === undefined
     ? undefined
     : requireRecord(record.region, scenarioPath, `${objectPath}.region`);
@@ -31,9 +31,9 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
       region = {
         element,
         ...present("maxDarkPixelRatio", optionalRatio(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
-        ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
-        ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
-        ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
+        ...present("maxLuminance", optionalRatio(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
+        ...present("minDarkPixelRatio", optionalRatio(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
+        ...present("minNonblankPixelRatio", optionalRatio(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
       };
     } else {
       const edges: Record<"height" | "width" | "x" | "y", number> = { height: 0, width: 0, x: 0, y: 0 };
@@ -47,9 +47,9 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
       region = {
         ...edges,
         ...present("maxDarkPixelRatio", optionalRatio(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
-        ...present("maxLuminance", optionalNumber(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
-        ...present("minDarkPixelRatio", optionalNumber(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
-        ...present("minNonblankPixelRatio", optionalNumber(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
+        ...present("maxLuminance", optionalRatio(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
+        ...present("minDarkPixelRatio", optionalRatio(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
+        ...present("minNonblankPixelRatio", optionalRatio(regionRecord, "minNonblankPixelRatio", scenarioPath, `${objectPath}.region`)),
       };
     }
   }
@@ -58,8 +58,8 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
     : requireRecord(record.entityVisible, scenarioPath, `${objectPath}.entityVisible`);
   let entityVisible: IPlaytestVisualAssertion["entityVisible"] | undefined;
   if (entityVisibleRecord !== undefined) {
-    if (typeof entityVisibleRecord.minProjectedPixels !== "number") {
-      throw invalidScenario(scenarioPath, `'${objectPath}.entityVisible.minProjectedPixels' must be a number, received ${describeValue(entityVisibleRecord.minProjectedPixels)}.`);
+    if (typeof entityVisibleRecord.minProjectedPixels !== "number" || !Number.isFinite(entityVisibleRecord.minProjectedPixels) || entityVisibleRecord.minProjectedPixels < 0) {
+      throw invalidScenario(scenarioPath, `'${objectPath}.entityVisible.minProjectedPixels' must be a non-negative number of pixels, received ${describeValue(entityVisibleRecord.minProjectedPixels)}.`);
     }
     entityVisible = {
       entity: requireString(entityVisibleRecord, "entity", scenarioPath, `${objectPath}.entityVisible`),
@@ -95,18 +95,24 @@ export function validateVisualRegionTarget(value: unknown, scenarioPath: string,
 }
 
 export function validateVisualFrameDiff(
-  record: Record<string, unknown>,
+  value: unknown,
   scenarioPath: string,
   objectPath: string,
 ): IPlaytestVisualAssertion["frameDiff"] {
+  const record = requireRecord(value, scenarioPath, objectPath);
   if (record.baselineImage !== undefined && !isSafeProjectRelativePng(record.baselineImage)) {
     throw invalidScenario(scenarioPath, `'${objectPath}.baselineImage' must be a project-relative .png path without '..' or absolute segments, received ${describeValue(record.baselineImage)}.`);
   }
-  return {
+  const frameDiff = {
     ...present("baselineImage", optionalString(record, "baselineImage", scenarioPath, objectPath)),
-    ...present("maxChangedPixelRatio", optionalNumber(record, "maxChangedPixelRatio", scenarioPath, objectPath)),
-    ...present("minChangedPixelRatio", optionalNumber(record, "minChangedPixelRatio", scenarioPath, objectPath)),
+    ...present("maxChangedPixelRatio", optionalRatio(record, "maxChangedPixelRatio", scenarioPath, objectPath)),
+    ...present("minChangedPixelRatio", optionalRatio(record, "minChangedPixelRatio", scenarioPath, objectPath)),
   };
+  // A diff with no threshold compares the capture to nothing, so it passes on any frame at all.
+  if (frameDiff.maxChangedPixelRatio === undefined && frameDiff.minChangedPixelRatio === undefined) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must set maxChangedPixelRatio or minChangedPixelRatio; a frameDiff that bounds no ratio accepts every frame.`);
+  }
+  return frameDiff;
 }
 
 export function isSafeProjectRelativePng(value: unknown): value is string {
@@ -295,7 +301,7 @@ export function validateDeviceMetricsAssertion(value: unknown, scenarioPath: str
 export function validatePerformanceAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPerformanceAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxPassDrawCalls", "maxPassTriangles", "maxPhaseMsP95", "maxTriangles", "minFps"], scenarioPath, objectPath);
-  return {
+  const assertion = {
     ...present("maxDrawCalls", optionalNonNegativeNumber(record, "maxDrawCalls", scenarioPath, objectPath)),
     ...present("maxFrameMsP95", optionalNonNegativeNumber(record, "maxFrameMsP95", scenarioPath, objectPath)),
     ...present("maxPassDrawCalls", validatePassBudget(record.maxPassDrawCalls, scenarioPath, `${objectPath}.maxPassDrawCalls`)),
@@ -304,6 +310,15 @@ export function validatePerformanceAssertion(value: unknown, scenarioPath: strin
     ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
     ...present("minFps", optionalNonNegativeNumber(record, "minFps", scenarioPath, objectPath)),
   };
+  // A performance assertion with no ceiling reports the numbers it measured and passes; it
+  // measures without judging, which is the vacuous shape this package refuses.
+  if (Object.keys(assertion).length === 0) {
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}' must set at least one of maxDrawCalls, maxFrameMsP95, maxPassDrawCalls, maxPassTriangles, maxPhaseMsP95, maxTriangles, or minFps.`,
+    );
+  }
+  return assertion;
 }
 
 export function validateParityAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestParityAssertion {
@@ -695,6 +710,22 @@ export function validateSceneAssertion(
       `'${objectPath}' must set at least one of ${[...SCENE_FLAGS, "minVisibleLights"].join(", ")}; an empty scene assertion observes nothing.`,
     );
   }
+  // The evaluator reads each flag as `=== true`, and a floor of zero visible lights is satisfied
+  // by an unlit scene. Both spellings would pass whatever the run reported.
+  for (const flag of SCENE_FLAGS) {
+    if (result[flag] === false) {
+      throw invalidScenario(
+        scenarioPath,
+        `${objectPath}.${flag} may only be true; remove the key to stop requiring it.`,
+      );
+    }
+  }
+  if (result.minVisibleLights === 0) {
+    throw invalidScenario(
+      scenarioPath,
+      `${objectPath}.minVisibleLights must be at least 1; a floor of zero is met by an unlit scene.`,
+    );
+  }
   return result;
 }
 
@@ -764,6 +795,13 @@ export function validateCausedByAssertion(
       scenarioPath,
       `'${objectPath}' must set neverBefore or withinTicks; without one it asserts only that both events happened, which assert.states and assert.contacts already do separately.`,
     );
+  // Only the evaluator's `neverBefore === true` branch checks anything, so `false` would satisfy
+  // the same guard as omitting it.
+  if (result.neverBefore === false)
+    throw invalidScenario(
+      scenarioPath,
+      `${objectPath}.neverBefore may only be true; remove the key and set withinTicks to keep the row.`,
+    );
   return result;
 }
 
@@ -822,6 +860,13 @@ export function validateSceneNodesAssertion(
       scenarioPath,
       `'${objectPath}' must set at least one of ${SCENE_NODE_BOUNDS.join(", ")}; selecting nodes without bounding them observes nothing.`,
     );
+  // Only the evaluator's `texturesLoaded === true` branch checks anything, so `false` is the
+  // same assertion as omitting it.
+  if (result.texturesLoaded === false)
+    throw invalidScenario(
+      scenarioPath,
+      `${objectPath}.texturesLoaded may only be true; remove the key to stop requiring loaded textures.`,
+    );
   return result;
 }
 
@@ -835,7 +880,7 @@ export function validateAnimationAssertion(value: unknown, scenarioPath: string,
     ...present("entered", optionalBoolean(record, "entered", scenarioPath, objectPath)),
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
     ...present("finished", optionalBoolean(record, "finished", scenarioPath, objectPath)),
-    ...present("maxFootSlide", optionalNumber(record, "maxFootSlide", scenarioPath, objectPath)),
+    ...present("maxFootSlide", optionalNonNegativeNumber(record, "maxFootSlide", scenarioPath, objectPath)),
     ...present("strideSynced", optionalBoolean(record, "strideSynced", scenarioPath, objectPath)),
   };
 }
@@ -846,8 +891,8 @@ export function validateVisibilityAssertion(value: unknown, scenarioPath: string
   return {
     ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
-    ...present("maxOffscreenRatio", optionalNumber(record, "maxOffscreenRatio", scenarioPath, objectPath)),
-    ...present("minProjectedPixels", optionalNumber(record, "minProjectedPixels", scenarioPath, objectPath)),
+    ...present("maxOffscreenRatio", optionalRatio(record, "maxOffscreenRatio", scenarioPath, objectPath)),
+    ...present("minProjectedPixels", optionalNonNegativeNumber(record, "minProjectedPixels", scenarioPath, objectPath)),
     ...present("present", optionalBoolean(record, "present", scenarioPath, objectPath)),
   };
 }
@@ -859,15 +904,27 @@ export function validatePathAssertion(value: unknown, scenarioPath: string, obje
   // evaluated fewer samples than the author declared.
   const gte = optionalNumber(record, "gte", scenarioPath, objectPath);
   const lte = optionalNumber(record, "lte", scenarioPath, objectPath);
-  return {
-    ...(Array.isArray(record.atSteps) ? { atSteps: record.atSteps.map((step, index) => {
-      const entry = requireRecord(step, scenarioPath, `${objectPath}.atSteps[${index}]`);
+  if (record.atSteps !== undefined && (!Array.isArray(record.atSteps) || record.atSteps.length === 0)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.atSteps' must be a non-empty array of expected labeled-step values; an empty one asserts nothing.`);
+  }
+  // An entry with no `equals` and no `textIncludes` passes on the sample merely existing, and an
+  // empty array is skipped by the evaluator's `(length ?? 0) > 0` guard.
+  const atSteps = Array.isArray(record.atSteps)
+    ? record.atSteps.map((step, index) => {
+      const stepPath = `${objectPath}.atSteps[${index}]`;
+      const entry = requireRecord(step, scenarioPath, stepPath);
+      if (!hasKey(entry, "equals") && entry.textIncludes === undefined) {
+        throw invalidScenario(scenarioPath, `'${stepPath}' must set equals or textIncludes; a labeled step with no expectation passes on any value.`);
+      }
       return {
         ...(hasKey(entry, "equals") ? { equals: entry.equals } : {}),
-        label: requireString(entry, "label", scenarioPath, `${objectPath}.atSteps[${index}]`),
-        ...present("textIncludes", optionalString(entry, "textIncludes", scenarioPath, `${objectPath}.atSteps[${index}]`)),
+        label: requireString(entry, "label", scenarioPath, stepPath),
+        ...present("textIncludes", optionalString(entry, "textIncludes", scenarioPath, stepPath)),
       };
-    }) } : {}),
+    })
+    : undefined;
+  return {
+    ...(atSteps === undefined ? {} : { atSteps }),
     ...present("changed", optionalBoolean(record, "changed", scenarioPath, objectPath)),
     ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
     ...(hasKey(record, "equals") ? { equals: record.equals } : {}),

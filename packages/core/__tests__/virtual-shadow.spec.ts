@@ -53,6 +53,7 @@ import {
   TN_DISCRETE_LOD,
   lodChainOf,
 } from "../src/model-lod.js";
+import { noteShadowRedrawGpuMs } from "../src/render-pass-budget.js";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_GATE_MARKER,
@@ -806,6 +807,67 @@ describe("VirtualShadowNode", () => {
     }
   });
 
+  it("should default adaptiveRefresh off under ?tnAdaptiveRefresh=0 and keep an explicit value", () => {
+    const { light } = world();
+    const nodes: VirtualShadowNode[] = [];
+    try {
+      vi.stubGlobal("location", { search: "?tnAdaptiveRefresh=0" });
+      const defaulted = setupNode(light, { clipExtents: [320] });
+      nodes.push(defaulted);
+      const explicit = setupNode(light, { clipExtents: [320], adaptiveRefresh: true });
+      nodes.push(explicit);
+      expect(defaulted.options.adaptiveRefresh).toBe(false);
+      expect(explicit.options.adaptiveRefresh).toBe(true);
+      vi.stubGlobal("location", { search: "?tnAdaptiveRefresh=1" });
+      const other = setupNode(light, { clipExtents: [320] });
+      nodes.push(other);
+      expect(other.options.adaptiveRefresh).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      for (const node of nodes) node.dispose();
+    }
+  });
+
+  it("should count window travel in pages whatever the frames sampled, where byMove counts renders", () => {
+    const { camera, light } = world();
+    const extent = 320;
+    const step = 0.164;
+    const options = {
+      clipExtents: [extent],
+      mapSize: 512,
+      refreshStep: step,
+      adaptiveRefresh: false,
+    };
+    const walk = (frames: number): { byMove: number; windowSteps: number } => {
+      const node = setupNode(light, options);
+      try {
+        camera.position.copy(node.clipmap.unproject({ u: 100, v: -100 }));
+        settle(node, camera);
+        const before = node.stats;
+        const stride = 4 * (step * extent + node.clipmap.getWindow(0).pageWorldSize);
+        for (let frame = 1; frame <= frames; frame += 1) {
+          camera.position.copy(
+            node.clipmap.unproject({ u: 100 + (stride * frame) / frames, v: -100 }),
+          );
+          node.updateBefore(frameFor(camera));
+        }
+        return {
+          byMove: node.stats.byMove - before.byMove,
+          windowSteps: node.stats.windowSteps - before.windowSteps,
+        };
+      } finally {
+        node.dispose();
+      }
+    };
+    const once = walk(1);
+    const sampled = walk(4);
+    // One frame or four over the same path: four move renders against one, the same travel.
+    expect(sampled.byMove).toBe(4);
+    expect(once.byMove).toBe(1);
+    expect(once.windowSteps).toBeGreaterThan(0);
+    expect(sampled.windowSteps).toBe(once.windowSteps);
+  });
+
   it("should refuse a refreshStep that would cost the selection guard its trailing edge", () => {
     const { light } = world();
     expect(() => setupNode(light, { clipExtents: [8, 32], refreshStep: 0.9 })).toThrow(RangeError);
@@ -1173,6 +1235,45 @@ describe("VirtualShadowNode invalidation coalescing", () => {
     // Twenty-nine asks merged into the one already waiting; the thirtieth is the render.
     expect(node.stats.coalesced - before.coalesced).toBe(29);
     expect(node.stats.byMove - before.byMove).toBe(0);
+  });
+
+  /**
+   * One 500 m level, as Machinefall runs it, whose last redraw resolved at `redrawMs` of GPU. Returns
+   * how long after the first of a stream of asks (one a frame) the level redrew for them.
+   */
+  function redrawAfter(redrawMs: number, options: { invalidationDelay?: number } = {}): number {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [250], mapSize: 64, ...options });
+    camera.position.set(0, 5, 0);
+    const renderer = {};
+    const at = (time: number): NodeFrame => ({ camera, renderer, time }) as unknown as NodeFrame;
+    let time = 0;
+    for (let frame = 0; frame < 2; frame += 1) {
+      time += 0.1;
+      node.updateBefore(at(time));
+    }
+    noteShadowRedrawGpuMs(renderer, redrawMs);
+    const renders = countRenders(node);
+    const asked = time;
+    for (let step = 0; step < 600 && renders[0] === 0; step += 1) {
+      node.invalidateAll();
+      time += 1 / 60;
+      node.updateBefore(at(time));
+    }
+    expect(renders[0]).toBe(1);
+    return time - asked;
+  }
+
+  it("should space a redraw that stalls a weak GPU to a tenth of the time", () => {
+    // 300 ms of shadow GPU, as the Iris Xe measured: 3 s between redraws instead of 0.25 s.
+    expect(redrawAfter(300)).toBeGreaterThan(2.8);
+    expect(redrawAfter(300)).toBeLessThan(3.2);
+  });
+
+  it("should keep the base delay when a redraw is cheap or the game set its own", () => {
+    // 5 ms is an RTX 2080's redraw: 50 ms of share, under the 0.25 s the level already waits.
+    expect(redrawAfter(5)).toBeLessThan(0.3);
+    expect(redrawAfter(300, { invalidationDelay: 0.25 })).toBeLessThan(0.3);
   });
 
   it("should still render the finest level within a quarter second of an invalidation", () => {
@@ -1859,6 +1960,166 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     node.dispose();
   });
 
+  it.each([false, true])(
+    "invalidates cached maps on admission flips (tree arrival=%s)",
+    (arrival) => {
+      const { camera, light, scene, tall } = shadowWorld();
+      const half = tall as Mesh & { mainAdmitted?: boolean };
+      half.mainAdmitted = false;
+      const node = setupNode(light, {
+        clipExtents: [24, 96, 320],
+        invalidationDelay: 0,
+        mapSize: 64,
+      });
+      settle(node, camera);
+      const renders: number[] = [];
+      const visible: boolean[] = [];
+      for (const [index, levelNode] of node.levelNodes.entries()) {
+        (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+          renders.push(index);
+          visible.push(tall.visible);
+        };
+      }
+      node.updateBefore(frameFor(camera));
+      expect(node.stats.rendered).toBe(0);
+      const before = node.stats.byInvalidation;
+      for (const admitted of [true, false]) {
+        half.mainAdmitted = admitted;
+        if (arrival) {
+          // A far-away arrival rebuilds the table but covers none of these windows. It must
+          // not swallow the older half's admission change when table flags are reseeded.
+          const far = new Mesh(tall.geometry, tall.material as Material);
+          far.position.set(10_000, 0, 0);
+          far.castShadow = true;
+          scene.add(far);
+          scene.updateMatrixWorld(true);
+        }
+        renders.length = 0;
+        visible.length = 0;
+        node.updateBefore(frameFor(camera));
+        expect(node.stats).toMatchObject({ invalidated: 3, rendered: 1, deferred: 2, moved: 0 });
+        expect(renders).toEqual([0]);
+        settle(node, camera);
+        expect(renders).toEqual([0, 1, 2]);
+        expect(visible).toEqual([admitted, admitted, admitted]);
+        expect(tall.visible).toBe(true);
+        node.updateBefore(frameFor(camera));
+        expect(node.stats.rendered).toBe(0);
+      }
+      expect(node.stats.byInvalidation - before).toBe(6);
+      node.dispose();
+    },
+  );
+
+  it("should not invalidate cached maps when a tnShadowSwap caster flips visibility", () => {
+    const invalidatedBy = (swap: boolean): number => {
+      const { camera, light, tall } = shadowWorld();
+      tall.userData.tnShadowSwap = swap;
+      const node = setupNode(light, {
+        clipExtents: [24, 96, 320],
+        invalidationDelay: 0,
+        mapSize: 64,
+      });
+      settle(node, camera);
+      tall.visible = false;
+      node.updateBefore(frameFor(camera));
+      const { invalidated } = node.stats;
+      node.dispose();
+      return invalidated;
+    };
+    expect(invalidatedBy(true)).toBe(0);
+    expect(invalidatedBy(false)).toBe(3);
+  });
+
+  it("should not redraw cached maps for an arriving mesh that casts nothing or is a swap twin", () => {
+    const invalidatedByArrival = (castShadow: boolean, swap: boolean): number => {
+      const { camera, light, scene, tall } = shadowWorld();
+      const node = setupNode(light, {
+        clipExtents: [24, 96, 320],
+        invalidationDelay: 0,
+        mapSize: 64,
+      });
+      settle(node, camera);
+      const arrival = new Mesh(tall.geometry, tall.material as MeshStandardMaterial);
+      arrival.position.copy(tall.position);
+      arrival.castShadow = castShadow;
+      arrival.userData.tnShadowSwap = swap;
+      scene.add(arrival);
+      node.updateBefore(frameFor(camera));
+      const { invalidated } = node.stats;
+      node.dispose();
+      return invalidated;
+    };
+    // A streamed caster is a change every level covering it must draw; a mesh that casts nothing,
+    // or terrain's swap twin over the same ground, is not.
+    expect(invalidatedByArrival(true, false)).toBe(3);
+    expect(invalidatedByArrival(false, false)).toBe(0);
+    expect(invalidatedByArrival(true, true)).toBe(0);
+  });
+
+  it("should drop a caster the main pass cannot draw, and leave every other draw alone", () => {
+    const { camera, light, scene, tall } = shadowWorld();
+    /**
+     * A twin of the world's own tower, carrying the answer `WorldCells` publishes for a caster half.
+     * With the GPU scene on, a dressed main mesh draws from the dispatch's record and a batch the
+     * scene holds no placement for draws none of it, while the caster half — never narrowed,
+     * `#clustered` is false for every role but `main` — goes on submitting all of its records.
+     */
+    const twin = new Mesh(tall.geometry, tall.material as MeshStandardMaterial);
+    twin.position.copy(tall.position);
+    twin.castShadow = true;
+    const flag = twin as Mesh & { mainAdmitted?: boolean };
+    /**
+     * Every level's submitted casts, this scene, with the twin admitted or not. `draws` is a frame's
+     * row and a fresh node renders one level a frame, so a level's own render is kept.
+     */
+    const bill = (admitted: boolean): number[] => {
+      flag.mainAdmitted = admitted;
+      scene.add(twin);
+      scene.updateMatrixWorld(true);
+      // Outside the main view but still a valid caster for the light's window.
+      const mainFrustum = new Frustum().setFromProjectionMatrix(
+        new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      );
+      expect(mainFrustum.intersectsBox(new Box3().setFromObject(twin))).toBe(false);
+      const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
+      stubLevelRenders(node);
+      // Observe the actual render boundary: omitting a mesh from the probe's bill does not
+      // stop three from drawing a visible caster on the selected layer.
+      const seen: boolean[] = [];
+      for (const levelNode of node.levelNodes) {
+        (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+          seen.push(twin.visible);
+        };
+      }
+      const drawn = node.levelNodes.map(() => 0);
+      let frames = 0;
+      do {
+        node.updateBefore(frameFor(camera));
+        node.stats.perLevel.forEach((level, index) => {
+          drawn[index] = Math.max(drawn[index] as number, level.draws);
+        });
+        frames += 1;
+      } while (node.stats.deferred > 0 && frames < 16);
+      expect(seen).toEqual([admitted, admitted, admitted]);
+      expect(twin.visible).toBe(true);
+      node.dispose();
+      scene.remove(twin);
+      return drawn;
+    };
+
+    const withAdmitted = bill(true);
+    const withPending = bill(false);
+
+    // The admitted half is one draw in each level that covers it, so the spot is in those windows;
+    // the same half unadmitted submits none of it in any of them.
+    expect(withAdmitted).toEqual([14, 14, 4]);
+    expect(withPending).toEqual([13, 13, 3]);
+    expect(bill(true)).toEqual(withAdmitted);
+    // Held out of the render, never out of the world: `visible` is what the next camera reads.
+    expect(twin.visible).toBe(true);
+  });
+
   it("should take each level's cheaper caster granularity, not a fraction of the ring (PRD-458)", () => {
     const { camera, light, scene } = shadowWorld();
     const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 2048 });
@@ -2417,6 +2678,13 @@ describe("VirtualShadowNode adaptive refresh", () => {
       /TN_VIRTUAL_SHADOW_INVALID/u,
     );
     expect(setupNode(light).options.expensiveRefreshShare).toBe(0.4);
+  });
+
+  it("should default adaptiveRefresh to true", () => {
+    const { light } = world();
+    const node = setupNode(light);
+    expect(node.options.adaptiveRefresh).toBe(true);
+    node.dispose();
   });
 });
 

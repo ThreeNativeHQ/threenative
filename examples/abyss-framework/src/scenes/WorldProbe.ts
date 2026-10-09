@@ -2,6 +2,7 @@ import { type ICtx, Scene, VirtualShadowNode } from "@threenative/core";
 import { type IWorldCellsStats, WorldCells } from "@threenative/core/world";
 import { Color, DirectionalLight, HemisphereLight } from "three";
 import { terrainMaterial } from "../render/terrain.js";
+import { worldFog } from "../render/worldFog.js";
 
 /**
  * PRD-448 Phase 4a: a deterministic fly-through of a committed `world-v1` package.
@@ -30,6 +31,14 @@ const SPEED = 64;
 /** Above the fixture's measured maximum height (4.86 m), so the camera never enters the terrain. */
 const ALTITUDE = 24;
 const RING = 1;
+/** The fixture's cell size; terrain tiles default to it. */
+const CELL_SIZE = 64;
+/**
+ * `?world&viewDistance` runs PRD-461's recipe: props on ring 2, terrain to 3, bodies on the 3x3
+ * around the camera, and fog that is opaque where a new cell can load. The default flight keeps the
+ * ring-1 numbers the phase477 desktop and Android lanes measure.
+ */
+const VIEW_DISTANCE = /[?&]viewDistance\b/.test(globalThis.location?.search ?? "");
 const BUDGETS = { bytes: 8_000_000, instances: 20_000, residentCells: 25 };
 
 const initialState = {
@@ -61,15 +70,28 @@ export class WorldProbe extends Scene<WorldState> {
   #cameraTarget: [number, number, number] = [START_X + 40, ALTITUDE - 14, 0];
   #residenceChanges = 0;
   #shadow: VirtualShadowNode | undefined;
+  /** Tiles holding a body right now, as the game's own `createCollider` sees them. */
+  readonly #bodies = new Map<string, { tileX: number; tileZ: number }>();
 
   override async load(ctx: WorldCtx): Promise<void> {
     this.#world = await WorldCells.load({
       assets: ctx.assets,
       budgets: BUDGETS,
       follow: ctx.camera,
-      ring: RING,
+      ring: VIEW_DISTANCE ? 2 : RING,
       surface: terrainMaterial(),
-      terrain: { tileResolution: 65 },
+      terrain: VIEW_DISTANCE
+        ? { colliderRadius: 1, streamRadius: 3, tileResolution: 65 }
+        : { tileResolution: 65 },
+      ...(VIEW_DISTANCE
+        ? {
+            // A counting body, not a physics one: it proves which tiles the engine asks to collide.
+            createCollider: ({ key, tileX, tileZ }) => {
+              this.#bodies.set(key, { tileX, tileZ });
+              return { dispose: () => this.#bodies.delete(key) };
+            },
+          }
+        : {}),
       // A logical path into this example's own `assets/world/` source, which both build targets
       // compile into content-addressed output plus `assets.manifest.json`.
       url: "world/world.json",
@@ -80,7 +102,8 @@ export class WorldProbe extends Scene<WorldState> {
     const world = this.#world;
     if (world === undefined) throw new Error("WorldProbe.enter ran before load() resolved.");
     ctx.add(world);
-    ctx.scene.background = new Color(0x0b1a2a);
+    if (VIEW_DISTANCE) worldFog(ctx.scene, CELL_SIZE, 2);
+    else ctx.scene.background = new Color(0x0b1a2a);
     // Most props' GLBs carry no materials, so three's default standard material needs a light to be
     // visible. The look is this example's, exactly as a game's would be.
     const sky = new HemisphereLight(0xbfd8ff, 0x2a2f22, 2.2);
@@ -169,6 +192,9 @@ export class WorldProbe extends Scene<WorldState> {
             admissionBacklog: stats.admission.backlog,
             admissionDeferred: stats.admission.deferred,
             admissionSpentMs: stats.admission.spentMs,
+            // PRD-494: the main pass's draw record, so a native run can assert the default reached it.
+            bundleChildren: stats.bundle.children,
+            bundleOn: stats.bundle.on,
             gpuSceneOn: stats.gpuScene.on,
             gpuSceneReason: stats.gpuScene.reason,
             gpuSceneDispatches: stats.gpuScene.dispatches,
@@ -182,6 +208,21 @@ export class WorldProbe extends Scene<WorldState> {
       instances: stats?.instances ?? 0,
       loadsInFlight: stats?.loadsInFlight ?? 0,
       maxResidentCells: this.#maxResident,
+      residentTiles: stats?.residentTiles ?? 0,
+      residentColliders: stats?.residentColliders ?? 0,
+      bodies: this.#bodies.size,
+      // Farthest body from the camera, in tiles, Chebyshev; a tile is centred on a multiple of its
+      // size. Radius 1 keeps every body within 1.5 tiles of the camera.
+      bodyReachTiles: Math.max(
+        0,
+        ...[...this.#bodies.values()].map(
+          ({ tileX, tileZ }) =>
+            Math.max(
+              Math.abs(tileX * CELL_SIZE - ctx.camera.position.x),
+              Math.abs(tileZ * CELL_SIZE - ctx.camera.position.z),
+            ) / CELL_SIZE,
+        ),
+      ),
       residenceChanges: this.#residenceChanges,
       residentCells: stats?.residentCells ?? 0,
       shadowDeferrals: this.#shadowDeferrals,

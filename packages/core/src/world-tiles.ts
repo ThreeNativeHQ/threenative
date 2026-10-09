@@ -2,6 +2,7 @@ import { BufferAttribute, BufferGeometry, LOD, type Matrix4, Mesh, Object3D, Vec
 import type { InterleavedBufferAttribute } from "three";
 import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
+import { SPANS, type SpanId, addSpan, spanNow, spanRecorder } from "./profiling/Spans.js";
 import type { IRendererLike } from "./renderer.js";
 import {
   type ITerrainBridgeAttributes,
@@ -440,6 +441,25 @@ function settleJob<T>(result: T | Promise<T>, apply: (value: T) => void): void {
   else apply(result);
 }
 
+/**
+ * Runs one unit of main-thread terrain work and charges it to a frame span.
+ *
+ * Added, not bracketed: a worker host's block swap arrives in a job reply and an inline host's runs
+ * inside the same `follow`, so `begin`/`end` at both call sites would nest and count one unit twice.
+ * `addSpan` accumulates whatever runs on this thread with no nesting to get wrong, and costs one
+ * guarded return when spans are off — no clock read, no allocation. The frame-span table's
+ * `TN_FRAME_SPANS` report is where the number surfaces; nothing here decides anything.
+ */
+function timedSpan<T>(id: SpanId, run: () => T): T {
+  if (spanRecorder() === undefined) return run();
+  const start = spanNow();
+  try {
+    return run();
+  } finally {
+    addSpan(id, spanNow() - start);
+  }
+}
+
 function edgeVertexIndex(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
   const row = side === "north" ? 0 : side === "south" ? level.resolution - 1 : index;
   const column = side === "west" ? 0 : side === "east" ? level.resolution - 1 : index;
@@ -502,6 +522,9 @@ function fieldStep(field: Heightfield, resolution: number): number {
  */
 function terrainMesh(mesh: Mesh): Mesh {
   mesh.userData.tnDrawSource = "terrain";
+  // Visibility only swaps this mesh with a twin over the same ground (its merged block, or the
+  // neighbouring LOD level), so a cached shadow map need not redraw for it; see `casterFlag`.
+  mesh.userData.tnShadowSwap = true;
   return mesh;
 }
 
@@ -1812,6 +1835,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /** Merged super-tiles by block key, and the blocks a LOD or residency change left to rebuild. */
   readonly #blocks = new Map<string, IMergedBlock>();
   readonly #dirtyBlocks = new Set<string>();
+  /**
+   * Blocks whose merge job is out. A block re-dirtied while its own merge is in flight stays dirty
+   * and waits: dispatching it again would merge the same block twice, and the older reply would land
+   * first carrying the membership the block had when it was sent — a snapshot that no longer matches
+   * the resident set, so the record claims tiles its geometry does not hold and the second reply has
+   * to correct it. (PRD-478.)
+   */
+  readonly #mergingBlocks = new Set<string>();
   /** Tile key -> block key currently hiding it, so a settled member is not drawn twice. */
   readonly #mergedMembers = new Map<string, string>();
   #blockRebuilds = 0;
@@ -2734,7 +2765,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       if (!active.has(key)) this.#removeStitch(key);
     }
     if (requests.length === 0) {
-      this.#settleSeamPass(pairs, reconciled, active);
+      timedSpan(SPANS.terrainSeam, () => this.#settleSeamPass(pairs, reconciled, active));
       return;
     }
     const job: ITerrainSeamJob = {
@@ -2745,14 +2776,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     // own copy of the pairs and not whatever the next pass left there.
     const snapshot = [...pairs];
     this.#seamPending = true;
-    settleJob(this.#jobs.seam(job), (result) => {
+    const result = timedSpan(SPANS.terrainSeam, () => this.#jobs.seam(job));
+    settleJob(result, (settled) => {
       if (this.#released) return;
-      for (const [index, pending] of requests.entries()) {
-        const data = result.bridges[index];
-        if (data === undefined) continue;
-        this.#applyStitch(pending.key, pending.previousBytes, pending.request, data);
-      }
-      this.#settleSeamPass(snapshot, reconciled, active);
+      timedSpan(SPANS.terrainSeam, () => {
+        for (const [index, pending] of requests.entries()) {
+          const data = settled.bridges[index];
+          if (data === undefined) continue;
+          this.#applyStitch(pending.key, pending.previousBytes, pending.request, data);
+        }
+        this.#settleSeamPass(snapshot, reconciled, active);
+      });
     });
   }
 
@@ -3011,11 +3045,13 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (!budget.admit(run)) this.#deferredAdmissions = 1;
   }
 
-  /** The lowest block key still waiting, so the one rebuild a frame spends is the same every time. */
+  /** The lowest block key still waiting for a merge of its own, so the one a frame spends is the same. */
   #nextDirtyBlock(): string | undefined {
     let first: string | undefined;
-    for (const candidate of this.#dirtyBlocks)
+    for (const candidate of this.#dirtyBlocks) {
+      if (this.#mergingBlocks.has(candidate)) continue;
       if (first === undefined || candidate < first) first = candidate;
+    }
     return first;
   }
 
@@ -3034,9 +3070,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #rebuildBlock(blockKey: string): void {
     const { lod, blockX, blockZ } = blockCoordinates(blockKey);
     const { members, parts } = this.#blockMembers(blockKey, lod);
-    const existing = this.#blocks.get(blockKey);
     if (parts.length < 2) {
-      if (existing !== undefined) this.#dissolveBlock(blockKey);
+      this.#dissolveBlock(blockKey);
       // The tiles that remain here (a lone member, or none) draw their own meshes again.
       for (const key of members) this.#showTile(key, blockKey);
       return;
@@ -3045,10 +3080,22 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       x: blockX * TERRAIN_MERGE_BLOCK * this.tileSize,
       z: blockZ * TERRAIN_MERGE_BLOCK * this.tileSize,
     };
-    settleJob(this.#jobs.merge(mergeJob(parts, blockOrigin)), (result) => {
+    this.#mergingBlocks.add(blockKey);
+    const job = timedSpan(SPANS.terrainBlock, () => this.#jobs.merge(mergeJob(parts, blockOrigin)));
+    const apply = (result: ITerrainMergeResult): void => {
+      this.#mergingBlocks.delete(blockKey);
       if (this.#released) return;
-      this.#applyBlock({ blockKey, blockOrigin, lod, members }, result);
-    });
+      timedSpan(SPANS.terrainBlock, () =>
+        this.#applyBlock({ blockKey, blockOrigin, lod, members }, result),
+      );
+    };
+    if (job instanceof Promise)
+      job.then(apply, (error: unknown) => {
+        // Free the block for its next mark, and still name the failure.
+        this.#mergingBlocks.delete(blockKey);
+        console.error(`TN_TERRAIN_MERGE_FAILURE block=${blockKey} message=${String(error)}`);
+      });
+    else apply(job);
   }
 
   #applyBlock(

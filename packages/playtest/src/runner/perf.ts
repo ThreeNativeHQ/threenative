@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { constants as osConstants } from "node:os";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { decideDisplayStrategy } from "./captureEnvironment.js";
@@ -177,6 +178,7 @@ export interface IPresentGapJson {
 
 export type IPerfViolationCode =
   | "TN_PERF_BOUNDS_NOT_ASSESSABLE"
+  | "TN_PERF_HOST_EXIT"
   | "TN_PERF_MAX_FRAME_P95"
   | "TN_PERF_MIN_FPS"
   | "TN_PERF_VIRTUAL_DISPLAY"
@@ -593,10 +595,8 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
     else if (flag === "--allow-virtual-display") bounds.allowVirtualDisplay = true;
     else if (flag === "--file") { sources.file = requireValue(flag, value); index += 1; }
     else if (flag === "--executable") { sources.executable = requireValue(flag, value); index += 1; }
-    else if (flag === "--host-arg") {
-      if (value !== undefined) sources.hostArgs.push(value);
-      index += 1;
-    } else if (flag === "--logcat") { sources.logcatSerial = requireValue(flag, value); index += 1; }
+    else if (flag === "--host-arg") { sources.hostArgs.push(requireValue(flag, value)); index += 1; }
+    else if (flag === "--logcat") { sources.logcatSerial = requireValue(flag, value); index += 1; }
     else if (flag === "--max-frame-p95") { bounds.maxFrameMsP95 = requireNumber(flag, value); index += 1; }
     else if (flag === "--min-fps") { bounds.minFps = requireNumber(flag, value); index += 1; }
     else if (flag === "--require-windows") { bounds.requireWindows = requireNumber(flag, value); index += 1; }
@@ -634,7 +634,7 @@ function requireValue(flag: string, value: string | undefined): string {
 
 function requireNumber(flag: string, value: string | undefined): number {
   const parsed = Number(value);
-  if (value === undefined || Number.isNaN(parsed)) {
+  if (value === undefined || value.trim() === "" || Number.isNaN(parsed)) {
     throw new PlaytestCliUsageError(`threenative-playtest perf: ${flag} needs a number, received '${value ?? ""}'.`);
   }
   return parsed;
@@ -676,6 +676,7 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
   const child = spawn(executable, args.hostArgs, { stdio: ["ignore", "pipe", "pipe"] });
   let collected = "";
   let stopped = false;
+  let spawnFailed = false;
   // The first window is discarded as startup, so a complete run closes requireWindows + 1.
   const enoughWindows = (): boolean =>
     collected.split(FRAME_BUDGET_MARKER).length - 1 >= args.requireWindows + 1;
@@ -693,20 +694,26 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
   const timeout = setTimeout(stop, args.timeoutSeconds * 1000);
   return new Promise<number>((settleExit) => {
     child.on("error", (error) => {
+      spawnFailed = true;
       clearTimeout(timeout);
       const message = `TN_PERF_SOURCE_UNREADABLE: could not spawn ${executable}: ${error.message}`;
       process.stderr.write(`${JSON.stringify({ diagnostics: [{ code: "TN_PERF_SOURCE_UNREADABLE", message, severity: "error" }], pass: false }, null, 2)}\n`);
       process.exitCode = 2;
       settleExit(2);
     });
-    child.on("exit", () => {
+    // Wait for 'close', not 'exit'. Close fires after the pipes end, so every marker is read.
+    child.on("close", (code, signal) => {
       clearTimeout(timeout);
-      const code = emit(parsePerformanceMarkers(collected), args, source, {
-        strategy: strategy.kind,
-        virtual: strategy.kind === "private-xvfb",
-      });
-      process.exitCode = code;
-      settleExit(code);
+      if (spawnFailed) return;
+      const exitCode = emit(
+        parsePerformanceMarkers(collected),
+        args,
+        source,
+        { strategy: strategy.kind, virtual: strategy.kind === "private-xvfb" },
+        hostFailureStatus(code, signal, stopped),
+      );
+      process.exitCode = exitCode;
+      settleExit(exitCode);
     });
   });
 }
@@ -717,7 +724,38 @@ async function readLogcat(serial: string): Promise<string> {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
-  return stdout;
+  return newestProcessLines(stdout);
+}
+
+/**
+ * Keep the lines of the process that wrote the newest marker. Logcat holds earlier launches until
+ * its buffer rolls over, and each launch has its own PID. Those older lines are stale, not this run.
+ * ponytail: a relaunch that has not written a window yet still reads the previous PID's windows.
+ */
+export function newestProcessLines(text: string): string {
+  const lines = text.split("\n");
+  const newest = [...lines].reverse().find((line) => line.includes(FRAME_BUDGET_MARKER));
+  const pid = newest === undefined ? undefined : logcatPid(newest);
+  if (pid === undefined) return text;
+  return lines.filter((line) => logcatPid(line) === undefined || logcatPid(line) === pid).join("\n");
+}
+
+/** The PID in a brief-format header, such as `I/MystralStdio( 4321): message`. */
+function logcatPid(line: string): string | undefined {
+  return /\(\s*(\d+)\)/u.exec(line)?.[1];
+}
+
+/**
+ * The host's failure status, or undefined when it stopped on its own terms. A signal reads as the
+ * shell status 128 plus its number, so a SIGSEGV is 139. Our own SIGTERM after enough windows is a
+ * normal stop.
+ * ponytail: a host that dies from the default SIGTERM action reads as our stop. A host that catches
+ * SIGTERM and exits non-zero is judged on its status.
+ */
+function hostFailureStatus(code: number | null, signal: NodeJS.Signals | null, stoppedByUs: boolean): number | undefined {
+  if (code === 0 || (code === null && signal === "SIGTERM" && stoppedByUs)) return undefined;
+  if (code !== null) return code;
+  return signal === null ? 128 : 128 + osConstants.signals[signal];
 }
 
 function emit(
@@ -725,8 +763,15 @@ function emit(
   args: IPerfArgs,
   source: string,
   display?: { readonly strategy: string; readonly virtual: boolean },
+  hostStatus?: number,
 ): number {
-  const report = assessPerfMarkers(parse, args, source, display);
+  const assessed = assessPerfMarkers(parse, args, source, display);
+  // A host that failed on its own fails the run, whatever its markers say.
+  const report: IPerfReport = hostStatus === undefined ? assessed : {
+    ...assessed,
+    pass: false,
+    violations: [...assessed.violations, { bound: 0, code: "TN_PERF_HOST_EXIT", observed: hostStatus, window: -1 }],
+  };
   const windowsMissing = report.violations.some(({ code }) => code === "TN_PERF_WINDOWS_MISSING");
   const exitCode: 0 | 1 | 2 = windowsMissing ? 2 : report.pass ? 0 : 1;
   process.stdout.write(args.text ? formatPerfReport(report) : `${JSON.stringify(report, null, 2)}\n`);

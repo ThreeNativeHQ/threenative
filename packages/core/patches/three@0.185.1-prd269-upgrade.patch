@@ -1,5 +1,5 @@
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+index 148869ee7f18c62570ac1eafb7df5775e5a89581..ef853fd6f7382a8c7ff66cda43471344aeb20770 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -12307,7 +12307,8 @@
@@ -134,7 +134,98 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  		this.renderTarget.dispose();
  
  	}
-@@ -61392,6 +61434,18 @@
+@@ -44676,6 +44718,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44730,8 +44812,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44762,7 +44844,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45831,8 +45913,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45868,9 +45950,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61392,6 +61474,18 @@
  	}
  
  	/**
@@ -153,21 +244,21 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -76896,7 +76950,12 @@
+@@ -76896,7 +76990,12 @@
  
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79269,7 +79328,7 @@
+@@ -79269,7 +79368,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -176,7 +267,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79293,7 +79352,7 @@
+@@ -79293,7 +79392,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -185,7 +276,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79835,7 +79894,7 @@
+@@ -79835,7 +79934,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -194,7 +285,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  
  				if ( needsSampler ) {
  
-@@ -80265,7 +80324,8 @@
+@@ -80265,7 +80364,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -204,7 +295,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  
  			}
  
-@@ -80521,6 +80581,8 @@
+@@ -80521,6 +80621,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -213,7 +304,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80543,7 +80605,12 @@
+@@ -80543,7 +80645,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -227,7 +318,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80647,7 +80714,7 @@
+@@ -80647,7 +80754,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -236,7 +327,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  
  					multisampled = '_multisampled';
  
-@@ -82145,7 +82212,20 @@
+@@ -82145,7 +82252,20 @@
  
  				let resourceGPU;
  
@@ -258,7 +349,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82316,7 +82396,7 @@
+@@ -82316,7 +82436,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -267,7 +358,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  
  					texture.multisampled = true;
  
-@@ -82354,7 +82434,7 @@
+@@ -82354,7 +82474,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -276,7 +367,7 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  
  							texture.sampleType = GPUTextureSampleType.Float;
  
-@@ -84141,6 +84221,19 @@
+@@ -84141,6 +84261,19 @@
  		this.gpu = null;
  
  		/**
@@ -296,17 +387,17 @@ index 148869ee7f18c62570ac1eafb7df5775e5a89581..941ec68ef0b8174a633054043edb94d9
  		 * A reference to the device.
  		 *
  		 * @type {?GPUDevice}
-@@ -84255,6 +84348,8 @@
- 			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
+@@ -84256,6 +84389,8 @@
  
  			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
-+
-+			this.adapter = adapter;
  
++			this.adapter = adapter;
++
  			if ( adapter === null ) {
  
+ 				throw new Error( 'THREE.WebGPUBackend: Unable to create WebGPU adapter.' );
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..ef853fd6f7382a8c7ff66cda43471344aeb20770 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -12307,7 +12307,8 @@
@@ -341,6 +432,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  		const instancedMesh = builder.object;
  
+-		OnObjectUpdate( ( { object } ) => {
 +		const updatePrevious = ( object, array ) => {
 +
 +			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
@@ -348,24 +440,22 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
 +			previousInstanceMatrix.needsUpdate = true;
 +			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
 +			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
-+
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
 +		};
 +
 +		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
 +		OnBeforeObjectUpdate( ( { object } ) => {
-+
-+			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+ 
+ 			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
 +			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
 +
 +		} );
 +
 +		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
- 		OnObjectUpdate( ( { object } ) => {
- 
--			const previousInstanceData = _previousInstanceMatrices.get( object );
--
--			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
--			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
++		OnObjectUpdate( ( { object } ) => {
++
 +			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
  
  		} );
@@ -483,7 +573,98 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  		this.renderTarget.dispose();
  
  	}
-@@ -61376,6 +61434,18 @@
+@@ -44660,6 +44718,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44714,8 +44812,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44746,7 +44844,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45815,8 +45913,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45852,9 +45950,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61376,6 +61474,18 @@
  	}
  
  	/**
@@ -502,17 +683,34 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -63161,8 +63231,8 @@
+@@ -63161,8 +63271,8 @@
  		// attribute scan - because each of those answers for itself, and a step left out here
  		// cannot: a group a node added after this object's first draw still has to be created, and
  		// the pipeline reads that group's layout whatever this draw decided to do with it.
-+		this._nodes.updateBefore( renderObject );
- 		this._geometries.updateForRender( renderObject );
--		this._nodes.updateBefore( renderObject );
+-		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateBefore( renderObject );
++		this._geometries.updateForRender( renderObject );
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
-@@ -79258,7 +79328,7 @@
+@@ -76880,12 +76990,12 @@
+ 
+ 		}
+ 
+-		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
+-		// Requesting the unused attachment usage rejects the texture on wgpu-native.
+-		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
+ 			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79258,7 +79368,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -521,7 +719,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79282,7 +79352,7 @@
+@@ -79282,7 +79392,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -530,7 +728,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79824,7 +79894,7 @@
+@@ -79824,7 +79934,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -539,7 +737,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  				if ( needsSampler ) {
  
-@@ -80254,7 +80324,8 @@
+@@ -80254,7 +80364,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -549,7 +747,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  			}
  
-@@ -80510,6 +80581,8 @@
+@@ -80510,6 +80621,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -558,7 +756,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80532,7 +80605,12 @@
+@@ -80532,7 +80645,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -572,7 +770,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80636,7 +80714,7 @@
+@@ -80636,7 +80754,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -581,7 +779,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  					multisampled = '_multisampled';
  
-@@ -81391,6 +81469,15 @@
+@@ -81391,6 +81509,15 @@
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -597,19 +795,19 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  		}
  
-@@ -81410,6 +81497,11 @@
- 
+@@ -81411,6 +81538,11 @@
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
-+
+ 
 +		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
 +		// Do not repeat that write after its partial ranges have been consumed.
 +		if ( bufferData.version === bufferAttribute.version &&
 +			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
- 
++
  		let array = bufferAttribute.array;
  
-@@ -81492,6 +81584,9 @@
+ 		const itemSize = bufferData._itemSize;
+@@ -81492,6 +81624,9 @@
  
  		}
  
@@ -619,7 +817,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  	}
  
  	/**
-@@ -82117,7 +82212,20 @@
+@@ -82117,7 +82252,20 @@
  
  				let resourceGPU;
  
@@ -641,7 +839,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82288,7 +82396,7 @@
+@@ -82288,7 +82436,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -650,7 +848,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  
  					texture.multisampled = true;
  
-@@ -82326,7 +82434,7 @@
+@@ -82326,7 +82474,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -660,7 +858,7 @@ index 5c5ef3c06885c724c1c2288295e7e68483ee1f6e..941ec68ef0b8174a633054043edb94d9
  							texture.sampleType = GPUTextureSampleType.Float;
  
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..ef853fd6f7382a8c7ff66cda43471344aeb20770 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -12307,7 +12307,8 @@
@@ -695,6 +893,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  		const instancedMesh = builder.object;
  
+-		OnObjectUpdate( ( { object } ) => {
 +		const updatePrevious = ( object, array ) => {
 +
 +			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
@@ -702,24 +901,22 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
 +			previousInstanceMatrix.needsUpdate = true;
 +			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
 +			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
-+
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
 +		};
 +
 +		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
 +		OnBeforeObjectUpdate( ( { object } ) => {
-+
-+			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+ 
+ 			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
 +			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
 +
 +		} );
 +
 +		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
- 		OnObjectUpdate( ( { object } ) => {
- 
--			const previousInstanceData = _previousInstanceMatrices.get( object );
--
--			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
--			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
++		OnObjectUpdate( ( { object } ) => {
++
 +			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
  
  		} );
@@ -837,7 +1034,98 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  		this.renderTarget.dispose();
  
  	}
-@@ -61376,6 +61434,18 @@
+@@ -44660,6 +44718,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44714,8 +44812,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44746,7 +44844,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45815,8 +45913,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45852,9 +45950,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61376,6 +61474,18 @@
  	}
  
  	/**
@@ -856,31 +1144,31 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -63161,8 +63231,8 @@
+@@ -63161,8 +63271,8 @@
  		// attribute scan - because each of those answers for itself, and a step left out here
  		// cannot: a group a node added after this object's first draw still has to be created, and
  		// the pipeline reads that group's layout whatever this draw decided to do with it.
-+		this._nodes.updateBefore( renderObject );
- 		this._geometries.updateForRender( renderObject );
--		this._nodes.updateBefore( renderObject );
+-		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateBefore( renderObject );
++		this._geometries.updateForRender( renderObject );
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
-@@ -76880,7 +76950,12 @@
+@@ -76880,7 +76990,12 @@
  
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79253,7 +79328,7 @@
+@@ -79253,7 +79368,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -889,7 +1177,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79277,7 +79352,7 @@
+@@ -79277,7 +79392,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -898,7 +1186,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79819,7 +79894,7 @@
+@@ -79819,7 +79934,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -907,7 +1195,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  				if ( needsSampler ) {
  
-@@ -80249,7 +80324,8 @@
+@@ -80249,7 +80364,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -917,7 +1205,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  			}
  
-@@ -80505,6 +80581,8 @@
+@@ -80505,6 +80621,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -926,7 +1214,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80527,7 +80605,12 @@
+@@ -80527,7 +80645,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -940,7 +1228,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80631,7 +80714,7 @@
+@@ -80631,7 +80754,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -949,7 +1237,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  					multisampled = '_multisampled';
  
-@@ -81386,6 +81469,15 @@
+@@ -81386,6 +81509,15 @@
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -965,19 +1253,19 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  		}
  
-@@ -81405,6 +81497,11 @@
- 
+@@ -81406,6 +81538,11 @@
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
-+
+ 
 +		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
 +		// Do not repeat that write after its partial ranges have been consumed.
 +		if ( bufferData.version === bufferAttribute.version &&
 +			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
- 
++
  		let array = bufferAttribute.array;
  
-@@ -81487,6 +81584,9 @@
+ 		const itemSize = bufferData._itemSize;
+@@ -81487,6 +81624,9 @@
  
  		}
  
@@ -987,7 +1275,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  	}
  
  	/**
-@@ -82112,7 +82212,20 @@
+@@ -82112,7 +82252,20 @@
  
  				let resourceGPU;
  
@@ -1009,7 +1297,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82283,7 +82396,7 @@
+@@ -82283,7 +82436,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -1018,7 +1306,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  					texture.multisampled = true;
  
-@@ -82321,7 +82434,7 @@
+@@ -82321,7 +82474,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -1027,7 +1315,7 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  
  							texture.sampleType = GPUTextureSampleType.Float;
  
-@@ -84108,6 +84221,19 @@
+@@ -84108,6 +84261,19 @@
  		this.gpu = null;
  
  		/**
@@ -1047,17 +1335,17 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..941ec68ef0b8174a633054043edb94d9
  		 * A reference to the device.
  		 *
  		 * @type {?GPUDevice}
-@@ -84222,6 +84348,8 @@
- 			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
+@@ -84223,6 +84389,8 @@
  
  			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
-+
-+			this.adapter = adapter;
  
++			this.adapter = adapter;
++
  			if ( adapter === null ) {
  
+ 				throw new Error( 'THREE.WebGPUBackend: Unable to create WebGPU adapter.' );
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+index bdffb9b4069f7beafa85913b155e92d3e83f12d0..ef853fd6f7382a8c7ff66cda43471344aeb20770 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -12307,7 +12307,8 @@
@@ -1192,7 +1480,98 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  		this.renderTarget.dispose();
  
  	}
-@@ -61392,6 +61434,18 @@
+@@ -44676,6 +44718,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44730,8 +44812,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44762,7 +44844,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45831,8 +45913,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45868,9 +45950,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61392,6 +61474,18 @@
  	}
  
  	/**
@@ -1211,21 +1590,21 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -76896,7 +76950,12 @@
+@@ -76896,7 +76990,12 @@
  
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79269,7 +79328,7 @@
+@@ -79269,7 +79368,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -1234,7 +1613,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79293,7 +79352,7 @@
+@@ -79293,7 +79392,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -1243,7 +1622,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79835,7 +79894,7 @@
+@@ -79835,7 +79934,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -1252,7 +1631,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  				if ( needsSampler ) {
  
-@@ -80265,7 +80324,8 @@
+@@ -80265,7 +80364,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -1262,7 +1641,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  			}
  
-@@ -80521,6 +80581,8 @@
+@@ -80521,6 +80621,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -1271,7 +1650,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80543,7 +80605,12 @@
+@@ -80543,7 +80645,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -1285,7 +1664,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80647,7 +80714,7 @@
+@@ -80647,7 +80754,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -1294,7 +1673,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  					multisampled = '_multisampled';
  
-@@ -81402,6 +81469,15 @@
+@@ -81402,6 +81509,15 @@
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -1310,19 +1689,19 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  		}
  
-@@ -81421,6 +81497,11 @@
- 
+@@ -81422,6 +81538,11 @@
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
-+
+ 
 +		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
 +		// Do not repeat that write after its partial ranges have been consumed.
 +		if ( bufferData.version === bufferAttribute.version &&
 +			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
- 
++
  		let array = bufferAttribute.array;
  
-@@ -81503,6 +81584,9 @@
+ 		const itemSize = bufferData._itemSize;
+@@ -81503,6 +81624,9 @@
  
  		}
  
@@ -1332,7 +1711,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  	}
  
  	/**
-@@ -82128,7 +82212,20 @@
+@@ -82128,7 +82252,20 @@
  
  				let resourceGPU;
  
@@ -1354,7 +1733,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82299,7 +82396,7 @@
+@@ -82299,7 +82436,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -1363,7 +1742,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  					texture.multisampled = true;
  
-@@ -82337,7 +82434,7 @@
+@@ -82337,7 +82474,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -1372,7 +1751,7 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  
  							texture.sampleType = GPUTextureSampleType.Float;
  
-@@ -84124,6 +84221,19 @@
+@@ -84124,6 +84261,19 @@
  		this.gpu = null;
  
  		/**
@@ -1392,17 +1771,17 @@ index bdffb9b4069f7beafa85913b155e92d3e83f12d0..941ec68ef0b8174a633054043edb94d9
  		 * A reference to the device.
  		 *
  		 * @type {?GPUDevice}
-@@ -84238,6 +84348,8 @@
- 			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
+@@ -84239,6 +84389,8 @@
  
  			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
-+
-+			this.adapter = adapter;
  
++			this.adapter = adapter;
++
  			if ( adapter === null ) {
  
+ 				throw new Error( 'THREE.WebGPUBackend: Unable to create WebGPU adapter.' );
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+index efd0e16719cc7bbef1fbc18c241948e25eb85881..ef853fd6f7382a8c7ff66cda43471344aeb20770 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -12307,7 +12307,8 @@
@@ -1520,7 +1899,98 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  		this.renderTarget.dispose();
  
  	}
-@@ -61400,6 +61434,18 @@
+@@ -44684,6 +44718,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44738,8 +44812,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44770,7 +44844,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45839,8 +45913,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45876,9 +45950,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61400,6 +61474,18 @@
  	}
  
  	/**
@@ -1539,21 +2009,21 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -76904,7 +76950,12 @@
+@@ -76904,7 +76990,12 @@
  
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79277,7 +79328,7 @@
+@@ -79277,7 +79368,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -1562,7 +2032,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79301,7 +79352,7 @@
+@@ -79301,7 +79392,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -1571,7 +2041,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79843,7 +79894,7 @@
+@@ -79843,7 +79934,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -1580,7 +2050,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  
  				if ( needsSampler ) {
  
-@@ -80273,7 +80324,8 @@
+@@ -80273,7 +80364,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -1590,7 +2060,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  
  			}
  
-@@ -80529,6 +80581,8 @@
+@@ -80529,6 +80621,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -1599,7 +2069,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80551,7 +80605,12 @@
+@@ -80551,7 +80645,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -1613,7 +2083,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80655,7 +80714,7 @@
+@@ -80655,7 +80754,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -1622,7 +2092,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  
  					multisampled = '_multisampled';
  
-@@ -82153,7 +82212,20 @@
+@@ -82153,7 +82252,20 @@
  
  				let resourceGPU;
  
@@ -1644,7 +2114,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82324,7 +82396,7 @@
+@@ -82324,7 +82436,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -1653,7 +2123,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  
  					texture.multisampled = true;
  
-@@ -82362,7 +82434,7 @@
+@@ -82362,7 +82474,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -1662,7 +2132,7 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  
  							texture.sampleType = GPUTextureSampleType.Float;
  
-@@ -84149,6 +84221,19 @@
+@@ -84149,6 +84261,19 @@
  		this.gpu = null;
  
  		/**
@@ -1682,17 +2152,17 @@ index efd0e16719cc7bbef1fbc18c241948e25eb85881..941ec68ef0b8174a633054043edb94d9
  		 * A reference to the device.
  		 *
  		 * @type {?GPUDevice}
-@@ -84263,6 +84348,8 @@
- 			this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null;
+@@ -84264,6 +84389,8 @@
  
  			const adapter = this.gpu !== null ? await this.gpu.requestAdapter( adapterOptions ) : null;
-+
-+			this.adapter = adapter;
  
++			this.adapter = adapter;
++
  			if ( adapter === null ) {
  
+ 				throw new Error( 'THREE.WebGPUBackend: Unable to create WebGPU adapter.' );
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c95c401b6 100644
+index 1245f0da9bb6a0f731b8c75a64490d7c91238700..e7956e565579aa6ec550ca001336d5a0d76c652a 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -12307,7 +12307,8 @@
@@ -1827,7 +2297,98 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  		this.renderTarget.dispose();
  
  	}
-@@ -61347,6 +61389,18 @@
+@@ -44631,6 +44673,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44685,8 +44767,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44717,7 +44799,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45786,8 +45868,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45823,9 +45905,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61347,6 +61429,18 @@
  	}
  
  	/**
@@ -1846,21 +2407,21 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -76840,7 +76894,12 @@
+@@ -76840,7 +76934,12 @@
  
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79213,7 +79272,7 @@
+@@ -79213,7 +79312,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -1869,7 +2430,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79237,7 +79296,7 @@
+@@ -79237,7 +79336,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -1878,7 +2439,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79779,7 +79838,7 @@
+@@ -79779,7 +79878,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -1887,7 +2448,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  
  				if ( needsSampler ) {
  
-@@ -80208,7 +80267,8 @@
+@@ -80208,7 +80307,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -1897,7 +2458,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  
  			}
  
-@@ -80464,6 +80524,8 @@
+@@ -80464,6 +80564,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -1906,7 +2467,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80486,7 +80548,12 @@
+@@ -80486,7 +80588,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -1920,7 +2481,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80587,7 +80654,7 @@
+@@ -80587,7 +80694,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -1929,7 +2490,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  
  					multisampled = '_multisampled';
  
-@@ -81342,6 +81409,15 @@
+@@ -81342,6 +81449,15 @@
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -1945,19 +2506,19 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  
  		}
  
-@@ -81361,6 +81437,11 @@
- 
+@@ -81362,6 +81478,11 @@
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
-+
+ 
 +		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
 +		// Do not repeat that write after its partial ranges have been consumed.
 +		if ( bufferData.version === bufferAttribute.version &&
 +			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
- 
++
  		let array = bufferAttribute.array;
  
-@@ -81443,6 +81524,9 @@
+ 		const itemSize = bufferData._itemSize;
+@@ -81443,6 +81564,9 @@
  
  		}
  
@@ -1967,7 +2528,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  	}
  
  	/**
-@@ -82070,7 +82154,20 @@
+@@ -82070,7 +82194,20 @@
  
  				let resourceGPU;
  
@@ -1989,7 +2550,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82241,7 +82338,7 @@
+@@ -82241,7 +82378,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -1998,7 +2559,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  
  					texture.multisampled = true;
  
-@@ -82279,7 +82376,7 @@
+@@ -82279,7 +82416,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -2008,7 +2569,7 @@ index 1245f0da9bb6a0f731b8c75a64490d7c91238700..57f69c17352b936a9eca118a9801805c
  							texture.sampleType = GPUTextureSampleType.Float;
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c95c401b6 100644
+index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..e7956e565579aa6ec550ca001336d5a0d76c652a 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -12307,7 +12307,8 @@
@@ -2126,7 +2687,98 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  		this.renderTarget.dispose();
  
  	}
-@@ -61355,6 +61389,18 @@
+@@ -44639,6 +44673,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44693,8 +44767,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44725,7 +44799,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45794,8 +45868,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45831,9 +45905,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61355,6 +61429,18 @@
  	}
  
  	/**
@@ -2145,21 +2797,21 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -76848,7 +76894,12 @@
+@@ -76848,7 +76934,12 @@
  
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79221,7 +79272,7 @@
+@@ -79221,7 +79312,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -2168,7 +2820,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79245,7 +79296,7 @@
+@@ -79245,7 +79336,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -2177,7 +2829,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79787,7 +79838,7 @@
+@@ -79787,7 +79878,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -2186,7 +2838,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  
  				if ( needsSampler ) {
  
-@@ -80216,7 +80267,8 @@
+@@ -80216,7 +80307,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -2196,7 +2848,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  
  			}
  
-@@ -80472,6 +80524,8 @@
+@@ -80472,6 +80564,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -2205,7 +2857,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80494,7 +80548,12 @@
+@@ -80494,7 +80588,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -2219,7 +2871,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80595,7 +80654,7 @@
+@@ -80595,7 +80694,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -2228,7 +2880,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  
  					multisampled = '_multisampled';
  
-@@ -82095,7 +82154,20 @@
+@@ -82095,7 +82194,20 @@
  
  				let resourceGPU;
  
@@ -2250,7 +2902,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82266,7 +82338,7 @@
+@@ -82266,7 +82378,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -2259,7 +2911,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  
  					texture.multisampled = true;
  
-@@ -82304,7 +82376,7 @@
+@@ -82304,7 +82416,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -2269,7 +2921,7 @@ index 1b3a6e96291af0077f7f247040e657cf4aa0cb33..57f69c17352b936a9eca118a9801805c
  							texture.sampleType = GPUTextureSampleType.Float;
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c95c401b6 100644
+index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..e7956e565579aa6ec550ca001336d5a0d76c652a 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -12307,7 +12307,8 @@
@@ -2304,6 +2956,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  		const instancedMesh = builder.object;
  
+-		OnObjectUpdate( ( { object } ) => {
 +		const updatePrevious = ( object, array ) => {
 +
 +			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
@@ -2316,17 +2969,16 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
 +
 +		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
 +		OnBeforeObjectUpdate( ( { object } ) => {
-+
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
 +			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
 +			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
 +
 +		} );
 +
 +		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
- 		OnObjectUpdate( ( { object } ) => {
++		OnObjectUpdate( ( { object } ) => {
  
--			const previousInstanceData = _previousInstanceMatrices.get( object );
--
 -			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
 +			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
  
@@ -2445,7 +3097,98 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  		this.renderTarget.dispose();
  
  	}
-@@ -61330,6 +61389,18 @@
+@@ -44614,6 +44673,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44668,8 +44767,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44700,7 +44799,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45769,8 +45868,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45806,9 +45905,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61330,6 +61429,18 @@
  	}
  
  	/**
@@ -2464,17 +3207,34 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -63104,8 +63175,8 @@
+@@ -63104,8 +63215,8 @@
  		// attribute scan - because each of those answers for itself, and a step left out here
  		// cannot: a group a node added after this object's first draw still has to be created, and
  		// the pipeline reads that group's layout whatever this draw decided to do with it.
-+		this._nodes.updateBefore( renderObject );
- 		this._geometries.updateForRender( renderObject );
--		this._nodes.updateBefore( renderObject );
+-		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateBefore( renderObject );
++		this._geometries.updateForRender( renderObject );
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
-@@ -79201,7 +79272,7 @@
+@@ -76823,12 +76934,12 @@
+ 
+ 		}
+ 
+-		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
+-		// Requesting the unused attachment usage rejects the texture on wgpu-native.
+-		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
+ 			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79201,7 +79312,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -2483,7 +3243,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79225,7 +79296,7 @@
+@@ -79225,7 +79336,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -2492,7 +3252,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79767,7 +79838,7 @@
+@@ -79767,7 +79878,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -2501,7 +3261,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  				if ( needsSampler ) {
  
-@@ -80196,7 +80267,8 @@
+@@ -80196,7 +80307,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -2511,7 +3271,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  			}
  
-@@ -80452,6 +80524,8 @@
+@@ -80452,6 +80564,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -2520,7 +3280,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80474,7 +80548,12 @@
+@@ -80474,7 +80588,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -2534,7 +3294,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80575,7 +80654,7 @@
+@@ -80575,7 +80694,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -2543,7 +3303,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  					multisampled = '_multisampled';
  
-@@ -81330,6 +81409,15 @@
+@@ -81330,6 +81449,15 @@
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -2559,19 +3319,19 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  		}
  
-@@ -81349,6 +81437,11 @@
- 
+@@ -81350,6 +81478,11 @@
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
-+
+ 
 +		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
 +		// Do not repeat that write after its partial ranges have been consumed.
 +		if ( bufferData.version === bufferAttribute.version &&
 +			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
- 
++
  		let array = bufferAttribute.array;
  
-@@ -81431,6 +81524,9 @@
+ 		const itemSize = bufferData._itemSize;
+@@ -81431,6 +81564,9 @@
  
  		}
  
@@ -2581,7 +3341,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  	}
  
  	/**
-@@ -82058,7 +82154,20 @@
+@@ -82058,7 +82194,20 @@
  
  				let resourceGPU;
  
@@ -2603,7 +3363,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82229,7 +82338,7 @@
+@@ -82229,7 +82378,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -2612,7 +3372,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  
  					texture.multisampled = true;
  
-@@ -82267,7 +82376,7 @@
+@@ -82267,7 +82416,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -2622,7 +3382,7 @@ index 3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3..57f69c17352b936a9eca118a9801805c
  							texture.sampleType = GPUTextureSampleType.Float;
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c95c401b6 100644
+index 81c24b2e05e5047e1a02410a2056949d39b1a05c..e7956e565579aa6ec550ca001336d5a0d76c652a 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -12307,7 +12307,8 @@
@@ -2757,7 +3517,98 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  		this.renderTarget.dispose();
  
  	}
-@@ -61347,6 +61389,18 @@
+@@ -44631,6 +44673,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44685,8 +44767,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44717,7 +44799,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45786,8 +45868,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45823,9 +45905,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61347,6 +61429,18 @@
  	}
  
  	/**
@@ -2776,21 +3627,21 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -76840,7 +76894,12 @@
+@@ -76840,7 +76934,12 @@
  
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79213,7 +79272,7 @@
+@@ -79213,7 +79312,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -2799,7 +3650,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79237,7 +79296,7 @@
+@@ -79237,7 +79336,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -2808,7 +3659,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79779,7 +79838,7 @@
+@@ -79779,7 +79878,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -2817,7 +3668,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  
  				if ( needsSampler ) {
  
-@@ -80208,7 +80267,8 @@
+@@ -80208,7 +80307,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -2827,7 +3678,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  
  			}
  
-@@ -80464,6 +80524,8 @@
+@@ -80464,6 +80564,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -2836,7 +3687,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80486,7 +80548,12 @@
+@@ -80486,7 +80588,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -2850,7 +3701,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80587,7 +80654,7 @@
+@@ -80587,7 +80694,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -2859,7 +3710,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  
  					multisampled = '_multisampled';
  
-@@ -82087,7 +82154,20 @@
+@@ -82087,7 +82194,20 @@
  
  				let resourceGPU;
  
@@ -2881,7 +3732,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82258,7 +82338,7 @@
+@@ -82258,7 +82378,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -2890,7 +3741,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  
  					texture.multisampled = true;
  
-@@ -82296,7 +82376,7 @@
+@@ -82296,7 +82416,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -2900,7 +3751,7 @@ index 81c24b2e05e5047e1a02410a2056949d39b1a05c..57f69c17352b936a9eca118a9801805c
  							texture.sampleType = GPUTextureSampleType.Float;
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c95c401b6 100644
+index b8a7b2fd0a2e95911e7e12fd5674592107f012de..e7956e565579aa6ec550ca001336d5a0d76c652a 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -12307,7 +12307,8 @@
@@ -2935,6 +3786,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  		const instancedMesh = builder.object;
  
+-		OnObjectUpdate( ( { object } ) => {
 +		const updatePrevious = ( object, array ) => {
 +
 +			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
@@ -2947,17 +3799,16 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
 +
 +		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
 +		OnBeforeObjectUpdate( ( { object } ) => {
-+
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
 +			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
 +			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
 +
 +		} );
 +
 +		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
- 		OnObjectUpdate( ( { object } ) => {
++		OnObjectUpdate( ( { object } ) => {
  
--			const previousInstanceData = _previousInstanceMatrices.get( object );
--
 -			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
 +			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
  
@@ -3076,7 +3927,98 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  		this.renderTarget.dispose();
  
  	}
-@@ -61330,6 +61389,18 @@
+@@ -44614,6 +44673,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44668,8 +44767,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44700,7 +44799,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45769,8 +45868,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45806,9 +45905,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61330,6 +61429,18 @@
  	}
  
  	/**
@@ -3095,31 +4037,31 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -63104,8 +63175,8 @@
+@@ -63104,8 +63215,8 @@
  		// attribute scan - because each of those answers for itself, and a step left out here
  		// cannot: a group a node added after this object's first draw still has to be created, and
  		// the pipeline reads that group's layout whatever this draw decided to do with it.
-+		this._nodes.updateBefore( renderObject );
- 		this._geometries.updateForRender( renderObject );
--		this._nodes.updateBefore( renderObject );
+-		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateBefore( renderObject );
++		this._geometries.updateForRender( renderObject );
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
-@@ -76823,7 +76894,12 @@
+@@ -76823,7 +76934,12 @@
  
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -79196,7 +79272,7 @@
+@@ -79196,7 +79312,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -3128,7 +4070,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79220,7 +79296,7 @@
+@@ -79220,7 +79336,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -3137,7 +4079,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79762,7 +79838,7 @@
+@@ -79762,7 +79878,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -3146,7 +4088,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  				if ( needsSampler ) {
  
-@@ -80191,7 +80267,8 @@
+@@ -80191,7 +80307,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -3156,7 +4098,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  			}
  
-@@ -80447,6 +80524,8 @@
+@@ -80447,6 +80564,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -3165,7 +4107,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80469,7 +80548,12 @@
+@@ -80469,7 +80588,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -3179,7 +4121,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80570,7 +80654,7 @@
+@@ -80570,7 +80694,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -3188,7 +4130,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  					multisampled = '_multisampled';
  
-@@ -81325,6 +81409,15 @@
+@@ -81325,6 +81449,15 @@
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -3204,19 +4146,19 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  		}
  
-@@ -81344,6 +81437,11 @@
- 
+@@ -81345,6 +81478,11 @@
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
-+
+ 
 +		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
 +		// Do not repeat that write after its partial ranges have been consumed.
 +		if ( bufferData.version === bufferAttribute.version &&
 +			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
- 
++
  		let array = bufferAttribute.array;
  
-@@ -81426,6 +81524,9 @@
+ 		const itemSize = bufferData._itemSize;
+@@ -81426,6 +81564,9 @@
  
  		}
  
@@ -3226,7 +4168,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  	}
  
  	/**
-@@ -82053,7 +82154,20 @@
+@@ -82053,7 +82194,20 @@
  
  				let resourceGPU;
  
@@ -3248,7 +4190,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82224,7 +82338,7 @@
+@@ -82224,7 +82378,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -3257,7 +4199,7 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..57f69c17352b936a9eca118a9801805c
  
  					texture.multisampled = true;
  
-@@ -82262,7 +82376,7 @@
+@@ -82262,7 +82416,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -3458,7 +4400,7 @@ index 83bbe189915c8450c4e14108e6a3f4ed98c4b016..16bd72d0c0f1d693481efc98140a0f1b
  
  	/**
 diff --git a/src/renderers/webgpu/utils/WebGPUTextureUtils.js b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
-index ff8ee2dbace2816105aa7152891c04f2333f33e8..5c999c162840d266c676c83affdd2788f2fa47eb 100644
+index ff8ee2dbace2816105aa7152891c04f2333f33e8..c46f6ab0e06d93f124c9fc62ece8859529461d5e 100644
 --- a/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 +++ b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 @@ -359,7 +359,12 @@
@@ -3466,17 +4408,17 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..5c999c162840d266c676c83affdd2788
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9d3d58f5e 100644
+index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..ef853fd6f7382a8c7ff66cda43471344aeb20770 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -12307,7 +12307,8 @@
@@ -3594,7 +4536,98 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  		this.renderTarget.dispose();
  
  	}
-@@ -61400,6 +61434,18 @@
+@@ -44684,6 +44718,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44738,8 +44812,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44770,7 +44844,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45839,8 +45913,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45876,9 +45950,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61400,6 +61474,18 @@
  	}
  
  	/**
@@ -3613,7 +4646,24 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -79282,7 +79328,7 @@
+@@ -76904,12 +76990,12 @@
+ 
+ 		}
+ 
+-		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
+-		// Requesting the unused attachment usage rejects the texture on wgpu-native.
+-		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
+ 			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79282,7 +79368,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -3622,7 +4672,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79306,7 +79352,7 @@
+@@ -79306,7 +79392,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -3631,7 +4681,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79848,7 +79894,7 @@
+@@ -79848,7 +79934,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -3640,7 +4690,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  
  				if ( needsSampler ) {
  
-@@ -80278,7 +80324,8 @@
+@@ -80278,7 +80364,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -3650,7 +4700,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  
  			}
  
-@@ -80534,6 +80581,8 @@
+@@ -80534,6 +80621,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -3659,7 +4709,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80556,7 +80605,12 @@
+@@ -80556,7 +80645,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -3673,7 +4723,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80660,7 +80714,7 @@
+@@ -80660,7 +80754,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -3682,7 +4732,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  
  					multisampled = '_multisampled';
  
-@@ -82158,7 +82212,20 @@
+@@ -82158,7 +82252,20 @@
  
  				let resourceGPU;
  
@@ -3704,7 +4754,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82329,7 +82396,7 @@
+@@ -82329,7 +82436,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -3713,7 +4763,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  
  					texture.multisampled = true;
  
-@@ -82367,7 +82434,7 @@
+@@ -82367,7 +82474,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -3723,7 +4773,7 @@ index 9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1..941ec68ef0b8174a633054043edb94d9
  							texture.sampleType = GPUTextureSampleType.Float;
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c95c401b6 100644
+index 9e7c7f74be1191b761711bd70ee59cc033e586cb..e7956e565579aa6ec550ca001336d5a0d76c652a 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -12307,7 +12307,8 @@
@@ -3841,7 +4891,98 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  		this.renderTarget.dispose();
  
  	}
-@@ -61355,6 +61389,18 @@
+@@ -44639,6 +44673,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44693,8 +44767,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44725,7 +44799,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45794,8 +45868,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45831,9 +45905,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -61355,6 +61429,18 @@
  	}
  
  	/**
@@ -3860,7 +5001,24 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
  	 *
-@@ -79226,7 +79272,7 @@
+@@ -76848,12 +76934,12 @@
+ 
+ 		}
+ 
+-		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
+-		// Requesting the unused attachment usage rejects the texture on wgpu-native.
+-		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
+ 			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+@@ -79226,7 +79312,7 @@
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -3869,7 +5027,7 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79250,7 +79296,7 @@
+@@ -79250,7 +79336,7 @@
  			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
  			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
  			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
@@ -3878,7 +5036,7 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
-@@ -79792,7 +79838,7 @@
+@@ -79792,7 +79878,7 @@
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -3887,7 +5045,7 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  
  				if ( needsSampler ) {
  
-@@ -80221,7 +80267,8 @@
+@@ -80221,7 +80307,8 @@
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -3897,7 +5055,7 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  
  			}
  
-@@ -80477,6 +80524,8 @@
+@@ -80477,6 +80564,8 @@
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -3906,7 +5064,7 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80499,7 +80548,12 @@
+@@ -80499,7 +80588,12 @@
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -3920,7 +5078,7 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80600,7 +80654,7 @@
+@@ -80600,7 +80694,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -3929,7 +5087,7 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  
  					multisampled = '_multisampled';
  
-@@ -82100,7 +82154,20 @@
+@@ -82100,7 +82194,20 @@
  
  				let resourceGPU;
  
@@ -3951,7 +5109,7 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -82271,7 +82338,7 @@
+@@ -82271,7 +82378,7 @@
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -3960,7 +5118,7 @@ index 9e7c7f74be1191b761711bd70ee59cc033e586cb..57f69c17352b936a9eca118a9801805c
  
  					texture.multisampled = true;
  
-@@ -82309,7 +82376,7 @@
+@@ -82309,7 +82416,7 @@
  
  					} else if ( type === FloatType ) {
  
@@ -4235,4 +5393,228 @@ index a5da7ca09f746c0b2859ef173df663ccdc851ebc..c479d0a88794b01bca531e7cbfb780cf
 +						if ( texture.multisampled !== true && this.backend.hasFeature( 'float32-filterable' ) ) {
  
  							texture.sampleType = GPUTextureSampleType.Float;
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 941ec68ef0b8174a633054043edb94d9d3d58f5e..ef853fd6f7382a8c7ff66cda43471344aeb20770 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -44718,6 +44718,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44772,8 +44812,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44804,7 +44844,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45873,8 +45913,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45910,9 +45950,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -76950,12 +76990,12 @@
+ 
+ 		}
+ 
+-		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
+-		// Requesting the unused attachment usage rejects the texture on wgpu-native.
+-		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
+ 			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 57f69c17352b936a9eca118a9801805c95c401b6..e7956e565579aa6ec550ca001336d5a0d76c652a 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -44673,6 +44673,46 @@
+ 
+ const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
+ 
++const _shadowUniforms = /*@__PURE__*/ new WeakMap();
++
++/**
++ * Returns the uniform `create` makes for this shadow and name, and makes it only once.
++ *
++ * A filter body runs once per node builder. A uniform that the body makes directly is a new node
++ * for each material, and a new render-group node gives each material its own copy of the shared
++ * render group: a buffer that each material compares and writes on each render call. One node per
++ * shadow lets every material that reads it share one render-group buffer.
++ *
++ * @private
++ * @param {LightShadow} shadow - The shadow that owns the uniform.
++ * @param {string} name - The uniform's name within that shadow.
++ * @param {Function} create - Makes the uniform the first time.
++ * @return {Node} The uniform node.
++ */
++const getShadowUniform = ( shadow, name, create ) => {
++
++	let uniforms = _shadowUniforms.get( shadow );
++
++	if ( uniforms === undefined ) {
++
++		uniforms = new Map();
++		_shadowUniforms.set( shadow, uniforms );
++
++	}
++
++	let node = uniforms.get( name );
++
++	if ( node === undefined ) {
++
++		node = create();
++		uniforms.set( name, node );
++
++	}
++
++	return node;
++
++};
++
+ /**
+  * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
+  * with a binary `[0,1]` result.
+@@ -44727,8 +44767,8 @@
+ 
+ 	};
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 	const radiusScaled = radius.mul( texelSize.x );
+@@ -44759,7 +44799,7 @@
+  */
+ const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
+ 
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = vec2( 1 ).div( mapSize );
+ 
+@@ -45828,8 +45868,8 @@
+  */
+ const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
+ 
+-	const radius = reference( 'radius', 'float', shadow ).setGroup( renderGroup );
+-	const mapSize = reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup );
++	const radius = getShadowUniform( shadow, 'radius', () => reference( 'radius', 'float', shadow ).setGroup( renderGroup ) );
++	const mapSize = getShadowUniform( shadow, 'mapSize', () => reference( 'mapSize', 'vec2', shadow ).setGroup( renderGroup ) );
+ 
+ 	const texelSize = radius.div( mapSize.x );
+ 
+@@ -45865,9 +45905,9 @@
+ 	const shadowPositionAbs = shadowPosition.abs().toConst();
+ 	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
+ 
+-	const shadowCameraNear = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near );
+-	const shadowCameraFar = uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far );
+-	const bias = reference( 'bias', 'float', shadow ).setGroup( renderGroup );
++	const shadowCameraNear = getShadowUniform( shadow, 'cameraNear', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.near ) );
++	const shadowCameraFar = getShadowUniform( shadow, 'cameraFar', () => uniform( 'float' ).setGroup( renderGroup ).onRenderUpdate( () => shadow.camera.far ) );
++	const bias = getShadowUniform( shadow, 'bias', () => reference( 'bias', 'float', shadow ).setGroup( renderGroup ) );
+ 
+ 	const result = float( 1.0 ).toVar();
+ 
+@@ -76894,12 +76934,12 @@
+ 
+ 		}
+ 
+-		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
+-		// Requesting the unused attachment usage rejects the texture on wgpu-native.
+-		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
+ 			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
+ 
+-		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
+ 
+ 			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  

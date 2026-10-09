@@ -23,4 +23,4 @@ This is a Linux desktop QuickJS **decoder-free fallback** proof. It does not qua
 
 The unchanged runner summary calls its total decoded accessor count `decodedGeometryBytes`; that count includes animation samples. It is a CPU accessor-byte count, not measured GPU allocation or a claimed compression-related GPU saving.
 
-[Machine-readable provenance](provenance.json) and [unchanged runner summary](quickjs-native-summary.json) retain the source, run, runtime, package, adapter and image identities. [Canonical PRD](../../PRDs/assets/PRD-VQ-01-native-asset-capabilities.md) remains partial.
+[Machine-readable provenance](provenance.json) and [unchanged runner summary](quickjs-native-summary.json) retain the source, run, runtime, package, adapter and image identities. [Canonical PRD](../../PRDs/done/PRD-VQ-01-native-asset-capabilities.md) remains partial.

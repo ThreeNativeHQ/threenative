@@ -70,6 +70,10 @@ export const SPANS = {
   sort: 12,
   /** Per-draw submission inside a render call, accumulated across the draws of one pass. */
   draw: 13,
+  /** Terrain block rebuild and merged-attribute swap on the calling thread. */
+  terrainBlock: 14,
+  /** Terrain seam reconciliation and bridge-attribute swap on the calling thread. */
+  terrainSeam: 15,
 } as const;
 
 export type SpanId = (typeof SPANS)[keyof typeof SPANS];
@@ -90,6 +94,8 @@ export const SPAN_NAMES: readonly string[] = [
   "projectObject",
   "sort",
   "draw",
+  "terrainBlock",
+  "terrainSeam",
 ];
 
 export const SPAN_COUNT = SPAN_NAMES.length;
@@ -408,19 +414,29 @@ export class SpanRecorder {
 /**
  * The installed recorder, or `undefined` when spans are off.
  *
- * Module state rather than a parameter because the call sites are the frame loop and the renderer's
- * own wrappers, and threading a recorder through either would put a parameter on the hot path for a
- * diagnostic that is off in every shipped build.
+ * `Symbol.for` on `globalThis` rather than module state, because core is built once per entry: a
+ * game that imports `@threenative/core/world` gets a second copy of this module, and a recorder
+ * installed by the main entry is invisible to it. The world's own spans (terrain block rebuild and
+ * seam swap) recorded nothing in a browser walk for exactly that reason — two copies, two states.
+ * The global symbol is one slot every copy reads, and a parameter would still put a recorder on the
+ * hot path for a diagnostic that is off in every shipped build.
  */
-let recorder: SpanRecorder | undefined;
+const RECORDER_SLOT = Symbol.for("threenative.frameSpans.recorder");
 
-/** Installs or removes the recorder every `beginSpan`/`endSpan` routes to. */
+type RecorderHost = { [key: symbol]: SpanRecorder | undefined };
+
+function recorderHost(): RecorderHost {
+  // quality-allow: the recorder lives on globalThis under a private symbol, which no lib type names.
+  return globalThis as unknown as RecorderHost;
+}
+
+/** Installs or removes the recorder every `beginSpan`/`endSpan` routes to, in every entry copy. */
 export function setSpanRecorder(next: SpanRecorder | undefined): void {
-  recorder = next;
+  recorderHost()[RECORDER_SLOT] = next;
 }
 
 export function spanRecorder(): SpanRecorder | undefined {
-  return recorder;
+  return recorderHost()[RECORDER_SLOT];
 }
 
 /** The one clock the spans and the frame budget share, so their numbers are comparable. */
@@ -433,20 +449,20 @@ export function spanNow(): number {
  * anything but the recorder's own presence.
  */
 export function beginSpan(id: SpanId): void {
-  const active = recorder;
+  const active = spanRecorder();
   if (active === undefined) return;
   active.begin(id, spanNow());
 }
 
 export function endSpan(id: SpanId): void {
-  const active = recorder;
+  const active = spanRecorder();
   if (active === undefined) return;
   active.end(id, spanNow());
 }
 
 /** Adds an already-measured duration to a span entered many times per frame. */
 export function addSpan(id: SpanId, ms: number): void {
-  const active = recorder;
+  const active = spanRecorder();
   if (active === undefined) return;
   active.add(id, ms);
 }

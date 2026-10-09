@@ -1,8 +1,27 @@
 import { describe, expect, it } from "vitest";
+import { imageQuality } from "../src/image-quality.js";
+import { formatTextureQualityTotals } from "../src/report.js";
 import { formatModelSizes, formatSkippedCompression, formatTextureSizes } from "../src/report.js";
 import type { IModelSizeRow, ISkippedCompressionRow, ITextureSizeRow } from "../src/report.js";
 
 describe("formatTextureSizes", () => {
+  it("prints per-image measurements and build floor totals", () => {
+    const data = new Uint8Array(4 * 4 * 4).fill(255);
+    const quality = {
+      ...imageQuality(data, data, 4, 4),
+      sourceWidth: 8,
+      sourceHeight: 8,
+      codec: "etc1s",
+    };
+    const lines = formatTextureSizes([
+      { after: 10, before: 20, format: "etc1s", logicalPath: "flat.png", quality },
+    ]);
+    expect(lines.join("\n")).toContain("SSIM 1.0000; mean ΔE00 0.000");
+    expect(lines.join("\n")).toContain("source 8x8 -> comparison 4x4");
+    expect(formatTextureQualityTotals([quality])).toContain(
+      "1 measured; 1 pass; 0 below-floor; 0 unvalidated-slots",
+    );
+  });
   it("should report a smaller total after compression", async () => {
     const rows: readonly ITextureSizeRow[] = [
       { after: 51_234, before: 184_320, format: "etc1s", logicalPath: "rock.png" },

@@ -797,6 +797,44 @@ describe("WorldCells shadow casters over a chain", () => {
     world.dispose();
   });
 
+  it("casts the placements past castLevels with the level-0 casters, minting none for them", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const model = await chainedModel(REGISTERED_PIXEL_ERROR);
+    stubManifestFetch(withoutAuthoredLods());
+
+    const world = await loadWorld({
+      budgets,
+      follow: { position: { x: -64, z: -64 } },
+      loadModel: chainLoader(model),
+      ring: 0,
+      shadows: { cast: true },
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flushed(world);
+
+    // The main pass splits the 85 placements across the chain's three levels; `castLevels` is 1, so
+    // only level 0 has casters. Every placement still casts, through level 0's: a tree past its
+    // first switch keeps its shadow instead of leaving a hole in the map (PRD-541).
+    const drawn = [0, 1, 2].reduce(
+      (sum, level) => sum + liveCount(levelMesh(world, "pine", level) as InstancedMesh),
+      0,
+    );
+    expect(drawn).toBe(85);
+    expect(liveCount(levelMesh(world, "pine", 1) as InstancedMesh)).toBeGreaterThan(0);
+    expect(liveCount(wideCaster(world, "pine:0:0"))).toBe(drawn);
+    let clustered = 0;
+    for (const [name, mesh] of castersOn(world, CLUSTER_LAYER))
+      if (name.startsWith("pine:0:0@")) clustered += liveCount(mesh);
+    expect(clustered).toBe(drawn);
+    // And no caster for the coarser levels: they cast through level 0's, at no extra mesh.
+    for (const mask of [CLUSTER_LAYER, WIDE_LAYER, SMALL_WIDE_LAYER])
+      for (const name of castersOn(world, mask).keys())
+        expect(name.startsWith("pine:1:") || name.startsWith("pine:2:"), name).toBe(false);
+    world.dispose();
+  });
+
   it("leaves an asset with one level drawing the geometry it drew before", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const model = await chainedModel(REGISTERED_PIXEL_ERROR);
