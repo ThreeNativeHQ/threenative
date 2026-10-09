@@ -11279,6 +11279,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "vertexNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -12473,6 +12482,15 @@
         {
           "name": "forceSinglePass",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "vertexNode",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -19289,6 +19307,15 @@
         {
           "name": "forceSinglePass",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "vertexNode",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {

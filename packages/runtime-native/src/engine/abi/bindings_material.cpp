@@ -241,7 +241,7 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false)
              {"colorNode", &Nodes::colorNode}, {"positionNode", &Nodes::positionNode},
              {"normalNode", &Nodes::normalNode}, {"opacityNode", &Nodes::opacityNode},
              {"emissiveNode", &Nodes::emissiveNode}, {"roughnessNode", &Nodes::roughnessNode},
-             {"metalnessNode", &Nodes::metalnessNode}}) {
+             {"metalnessNode", &Nodes::metalnessNode}, {"vertexNode", &Nodes::vertexNode}}) {
         b.getters[name] = [field](void* self) { return Value::shaderNode(as<Material>(self)->nodes.*field); };
         b.setters[name] = [field, name](void* self, const Value& v) {
             if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))

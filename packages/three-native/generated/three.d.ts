@@ -1413,6 +1413,7 @@ fog: boolean;
 blending: Blending;
 vertexColors: boolean;
 forceSinglePass: boolean;
+vertexNode: Node | null;
 
   clone(): this;
 }
@@ -1541,6 +1542,7 @@ aoMap: Texture | null;
 emissiveMap: Texture | null;
 vertexColors: boolean;
 forceSinglePass: boolean;
+vertexNode: Node | null;
 
   clone(): this;
 }
@@ -2443,6 +2445,7 @@ fog: boolean;
 blending: Blending;
 vertexColors: boolean;
 forceSinglePass: boolean;
+vertexNode: Node | null;
 
   clone(): this;
 }

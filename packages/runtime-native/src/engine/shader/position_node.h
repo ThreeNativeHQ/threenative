@@ -14,11 +14,13 @@ class Program;
 /** NodeMaterial slots; null nodes use the non-node material path. */
 struct MaterialNodes {
     graph::Node colorNode, positionNode, normalNode, emissiveNode, roughnessNode, metalnessNode, opacityNode;
+    /** NodeMaterial.vertexNode: the clip-space position itself, replacing model-view-projection. */
+    graph::Node vertexNode;
     bool operator==(const MaterialNodes&) const = default;
     auto pointers() const { return std::array{colorNode.get(), positionNode.get(), normalNode.get(), emissiveNode.get(),
-                                           roughnessNode.get(), metalnessNode.get(), opacityNode.get()}; }
+                                           roughnessNode.get(), metalnessNode.get(), opacityNode.get(), vertexNode.get()}; }
     auto graphs() const { return std::array{colorNode, positionNode, normalNode, emissiveNode,
-                                         roughnessNode, metalnessNode, opacityNode}; }
+                                         roughnessNode, metalnessNode, opacityNode, vertexNode}; }
     std::string key() const {
         std::string out;
         for (const auto& node : graphs()) {

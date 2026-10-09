@@ -455,7 +455,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             const auto& mesh = static_cast<const Mesh&>(object);
             const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                  !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
-                                 !mesh.material->nodes.positionNode &&
+                                 !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
                                  (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
                                  mesh.matrixWorld.determinant() > 0;
             Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);

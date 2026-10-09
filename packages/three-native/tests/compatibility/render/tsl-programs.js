@@ -32,6 +32,9 @@ import {
   normalViewGeometry,
   normalWorld,
   normalize,
+  cameraProjectionMatrix,
+  cameraViewMatrix,
+  positionGeometry,
   output,
   pass,
   pmremTexture,
@@ -700,6 +703,14 @@ export const programs = {
       pmremTexture(equirectSky(), normalize(positionWorld), uv().x.mul(0.9)),
       1,
     );
+  },
+  /** NodeMaterial.vertexNode: a screen-space quad, and a world-space wave through the camera matrices. */
+  async "vertex-node-screen"({ target }) {
+    target.vertexNode = vec4(positionGeometry.xy.mul(0.4).add(vec2(-0.5, 0.45)), 0, 1);
+  },
+  async "vertex-node-world"({ target }) {
+    const bent = positionGeometry.add(vec3(0, sin(positionGeometry.x.mul(3)).mul(0.3), 0));
+    target.vertexNode = cameraProjectionMatrix.mul(cameraViewMatrix.mul(vec4(bent, 1)));
   },
   async "nodemat-standard-nodes"({ target }) {
     target.roughnessNode = uv().x.mul(0.7).add(0.2);

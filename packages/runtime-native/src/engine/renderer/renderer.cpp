@@ -1371,6 +1371,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) 
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
+    kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
     kind.map = false;           // ...nor a diffuse map: no uv passes through the depth program
     const std::string key = "depth|" + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
@@ -1949,7 +1950,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             // Previous deformed vertex data is not yet retained by these variants. Refuse it;
             // ordinary rigid object/camera motion goes through the real VelocityNode equations.
             if (item.instanceMatrices || item.skinIndices || item.morphGeometry || item.sprite ||
-                item.positionNode || item.nodes.positionNode || item.transparent || item.material->alphaTest > 0)
+                item.positionNode || item.nodes.positionNode || item.nodes.vertexNode || item.transparent ||
+                item.material->alphaTest > 0)
                 throw std::runtime_error("TN_TRAA_VELOCITY_UNSUPPORTED: deformed/instanced/sprite/alpha-tested/transparent draw");
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};

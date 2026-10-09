@@ -406,6 +406,15 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
 
+// NodeMaterial.setupVertex: a vertexNode is the clip-space position itself; positionLocal (after
+// morph, skinning, instancing and positionNode) is what it reads.
+static ExprId clipPosition(Program& v, const VertexVariant& variant, const LocalVertex& local, ExprId clip) {
+    if (!variant.nodes.vertexNode) return clip;
+    tsl::Build build(v);
+    return nodeType(v, graph::lower(variant.nodes.vertexNode, v, {{"positionLocal", v.swizzle(local.position, "xyz")}}),
+                    Type::vec(4));
+}
+
 static void outputInstanceColor(Program& v, const LocalVertex& local) {
     if (local.instanceColor != kInvalid) v.output("instanceColor", local.instanceColor);
 }
@@ -841,7 +850,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const LocalVertex local = localVertex(v, variant, true);
     const ExprId position = local.position, normal = local.normal;
     const ExprId positionView = v.mul(view, v.mul(model, position));
-    v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
+    v.output("position", clipPosition(v, variant, local, v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView)));
     // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
     v.output("normalView", v.call("normalize", {v.mul(normalMatrix, variant.backSide ? v.neg(normal) : normal)}));
@@ -1116,7 +1125,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const LocalVertex local = localVertex(v, variant, true);
     const ExprId position = local.position, normal = local.normal;
     const ExprId positionView = v.mul(view, v.mul(model, position));
-    v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
+    v.output("position", clipPosition(v, variant, local, v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView)));
     // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
     v.output("normalView", v.call("normalize", {v.mul(normalMatrix, variant.backSide ? v.neg(normal) : normal)}));
@@ -1206,7 +1215,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
         // Model translation cancels camera translation; force z=w, and no depth test/write.
         clip = v.construct(Type::vec(4), {v.swizzle(clip, "xy"), v.swizzle(clip, "w"), v.swizzle(clip, "w")});
     }
-    v.output("position", clip);
+    v.output("position", clipPosition(v, variant, local, clip));
     if (needsNormal)
         v.output("normalView", v.call("normalize", {v.mul(v.uniform("normalMatrix", Type::mat(3, 3)),
                                                          variant.backSide ? v.neg(local.normal) : local.normal)}));
