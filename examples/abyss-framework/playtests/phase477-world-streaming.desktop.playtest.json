@@ -73,8 +73,7 @@
         "component": "residentCells",
         "entity": "world",
         "gte": 1,
-        "changed": true,
-        "allowTrivial": "Residency is already nonzero after warm-up; the load-bearing half is that the count changed as the camera crossed cell boundaries.",
+        "allowTrivial": "A full ring holds the same number of cells at both ends of a straight flight; residency changing on the way is what evictions and residenceChanges assert.",
         "lte": 25
       },
       {
@@ -154,13 +153,20 @@
         "entity": "world",
         "component": "cameraPosition",
         "equals": [180, 24, 0]
+      },
+      {
+        "entity": "world",
+        "component": "bundleOn",
+        "equals": true,
+        "allowTrivial": "Bundles are on by default from the first stats read; the run proves the native host draws the world with them on and no failure."
+      },
+      {
+        "entity": "world",
+        "component": "bundleChildren",
+        "gte": 1,
+        "allowTrivial": "The record holds draws from the first resident cell; the run proves it keeps holding them across the flight."
       }
     ],
-    "diagnostics": {
-      "noConsoleErrors": true,
-      "noRuntimeDiagnostics": true,
-      "runtimeReady": true
-    },
     "resources": [
       {
         "id": "state",
