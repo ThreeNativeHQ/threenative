@@ -5,20 +5,23 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import type * as THREE from "three";
 
 import { defineBufferGeometryUtils } from "../src/addons/merge-geometries.js";
+import { definePostEffects } from "../src/addons/post-effects.js";
 import type { defineAudioClasses } from "../src/audio.js";
 import {
   type IRegistryDump,
+  TSL_NODE,
   type TnAbiModule,
   createWasmRuntime,
   defineBrowserClasses,
   engineRef,
 } from "../src/browser-backend.js";
 import { bindWebEngine } from "../src/browser-entry.js";
-import { defineTsl } from "../src/browser-tsl.js";
+import { type ITslRuntime, type TslArgValue, defineTsl } from "../src/browser-tsl.js";
 import { defineReflector } from "../src/reflector.js";
 
 const modulePath = process.argv[2];
@@ -37,12 +40,17 @@ const engine = defineBrowserClasses(registry, runtime);
 const {
   Box3,
   BoxGeometry,
+  DataTexture,
   Mesh,
+  MeshBasicNodeMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
   Quaternion,
   Scene,
+  Texture,
+  Vector2,
   Vector3,
+  Vector4,
 } = engine.classes as unknown as typeof THREE;
 
 function check(condition: boolean, what: string): void {
@@ -729,11 +737,71 @@ engine.collect();
     "web mergeGeometries equals three's",
   );
 }
+// The calls the spec read off its fake runtime, read off the real one. Each node id is numbered in
+// the order it was made, from 1, as the fake numbered them, so the spec's expected values hold as written.
+interface ITrace {
+  readonly calls: { name: string; receiver: number | null; args: TslArgValue[] }[];
+  readonly sets: string[];
+  readonly uniforms: string[];
+  readonly runtime: ITslRuntime;
+  // biome-ignore lint/suspicious/noExplicitAny: smoke test calls dynamic TSL methods
+  readonly tsl: Record<string, any>;
+  sync(): void;
+}
+
+function traceTsl(real: ITslRuntime): ITrace {
+  const calls: ITrace["calls"] = [];
+  const sets: string[] = [];
+  const uniforms: string[] = [];
+  const numbered = new Map<number, number>();
+  let made = 0;
+  const ordinal = (node: number): number => numbered.get(node) ?? node;
+  const argument = (value: TslArgValue): TslArgValue => {
+    if (value.kind === "node") return { kind: "node", node: ordinal(value.node) };
+    if (value.kind === "rgb" || value.kind === "vector")
+      return { kind: value.kind, numbers: [...value.numbers] };
+    return value;
+  };
+  const runtime: ITslRuntime = {
+    call(name, receiver, args) {
+      calls.push({
+        name,
+        receiver: receiver === null ? null : ordinal(receiver),
+        args: args.map(argument),
+      });
+      const node = real.call(name, receiver, args);
+      numbered.set(node, ++made);
+      return node;
+    },
+    release: (node) => real.release(node),
+    set(material, path, node) {
+      sets.push(`${material.type}.${path}=${ordinal(node)}`);
+      real.set(material, path, node);
+    },
+    setUniform(node, lanes) {
+      uniforms.push(`${ordinal(node)}=${lanes.join(",")}`);
+      real.setUniform(node, lanes);
+    },
+    effectParameter(node, name, value) {
+      calls.push({
+        name: `effect ${name}`,
+        receiver: ordinal(node),
+        args: value === undefined ? [] : [{ kind: "number", number: value }],
+      });
+      return real.effectParameter(node, name, value);
+    },
+    setPost: (node) => real.setPost(node),
+  };
+  const live = defineTsl(runtime);
+  return { calls, sets, uniforms, runtime, tsl: live.exports, sync: live.sync };
+}
+
 // TSL by name over the real ABI: pmremTexture's texture crosses as a handle in tn_tsl_arg_t.
 check(runtime.tsl !== undefined, "the module answers TSL by name");
 if (runtime.tsl !== undefined) {
-  const tsl = defineTsl(runtime.tsl).exports as Record<string, (...args: unknown[]) => unknown>;
-  const { DataTexture } = engine.classes as unknown as typeof THREE;
+  const tslInstance = defineTsl(runtime.tsl);
+  // biome-ignore lint/suspicious/noExplicitAny: smoke test calls dynamic TSL methods
+  const tsl = tslInstance.exports as Record<string, any>;
   const direction = tsl.vec3?.(0, 1, 0);
   check(
     tsl.pmremTexture?.(new DataTexture(), direction, 0.5) !== undefined,
@@ -746,7 +814,7 @@ if (runtime.tsl !== undefined) {
     refused = String(error);
   }
   check(refused.includes("pmremTexture"), `pmremTexture refuses a material: ${refused}`);
-  const { Object3D, PerspectiveCamera } = engine.classes as unknown as typeof THREE;
+  const { Object3D } = engine.classes as unknown as typeof THREE;
   const reflector = defineReflector(tsl.reflector as never, { Object3D, PerspectiveCamera });
   const mirror = reflector({ resolutionScale: 0.5 }) as { target: unknown };
   check(mirror.target instanceof Object3D, "reflector builds its target over the real module");
@@ -757,5 +825,372 @@ if (runtime.tsl !== undefined) {
     wrong = String(error);
   }
   check(wrong.includes("reflector"), `reflector refuses a camera as its target: ${wrong}`);
+
+  // TSL behaviors on the real Node-Wasm ABI module (PRD-540)
+  // 1. builds uniform(0) and its node methods and swizzles
+  const clock = tsl.uniform(0);
+  const scaled = clock.mul(2);
+  const swiz = scaled.x;
+  check(typeof swiz[TSL_NODE] === "number", "uniform(0).mul(2).x creates a valid TSL node");
+
+  // 2. turns three values into what TSL makes of them, and assigns graphs to node materials
+  const sun = new Vector3(1, 2, 3);
+  (sun as { isVector3?: boolean }).isVector3 = true;
+  const sunVec = tsl.vec3(sun);
+  check(typeof sunVec[TSL_NODE] === "number", "vec3(Vector3) creates a valid TSL node");
+  const sea = new Texture();
+  sea.name = "sea";
+  const sample = tsl.texture(sea, tsl.uv());
+  check(typeof sample[TSL_NODE] === "number", "texture(Texture, uv()) creates a valid TSL node");
+  const namedSample = tsl.texture({ name: "scene" }, tsl.uv());
+  check(
+    typeof namedSample[TSL_NODE] === "number",
+    "texture({ name: 'scene' }, uv()) creates a valid TSL node",
+  );
+  const nodeMat = new MeshBasicNodeMaterial();
+  nodeMat.colorNode = sample;
+  check(nodeMat.colorNode === sample, "MeshBasicNodeMaterial.colorNode setter and getter match");
+
+  // 3. writes uniform.value through to the engine: numbers at once, edited vectors each frame
+  const clk = tsl.uniform(0);
+  check(clk.value === 0, "uniform(0).value initial is 0");
+  clk.value = 2.5;
+  check(clk.value === 2.5, "uniform.value setter updates value");
+  const origin = new Vector2(1, 2);
+  (origin as { isVector2?: boolean }).isVector2 = true;
+  const center = tsl.uniform(origin);
+  check(center.value === origin, "uniform(Vector2).value preserves vector reference");
+  origin.x = 4;
+  origin.y = 5;
+  tslInstance.sync();
+  check(center.value.x === 4 && center.value.y === 5, "uniform vector value synced");
+
+  // 4. runs uniform onRenderUpdate/onFrameUpdate before each frame's lanes
+  const ticks = tsl.uniform(0);
+  let seenThis: unknown;
+  let updateCalls = 0;
+  ticks.onRenderUpdate(function (this: unknown, frame: { frameId: number }) {
+    seenThis = this;
+    updateCalls++;
+    return updateCalls * 10;
+  });
+  const side = tsl.uniform(7);
+  let frames = 0;
+  side.onFrameUpdate(() => {
+    frames++;
+  });
+  tslInstance.sync();
+  tslInstance.sync();
+  check(seenThis === ticks, "uniform onRenderUpdate receives node as this");
+  check(ticks.value === 20, "uniform onRenderUpdate return value updates .value");
+  check(side.value === 7, "uniform without return keeps its value");
+  check(frames === 2, "uniform onFrameUpdate called each sync");
+  let updateThrew = false;
+  try {
+    side.onObjectUpdate(() => 1);
+  } catch (error) {
+    updateThrew = /TN_TSL_UPDATE_UNSUPPORTED/.test(String(error));
+  }
+  check(updateThrew, "uniform onObjectUpdate is refused by name");
+
+  // 5. reads uniformArray entries each render, caching element by index
+  const ships = [new Vector4(1, 2, 3, 4), new Vector4(5, 6, 7, 8)];
+  (ships[0] as { isVector4?: boolean }).isVector4 = true;
+  (ships[1] as { isVector4?: boolean }).isVector4 = true;
+  const array = tsl.uniformArray(ships, "vec4");
+  const first = array.element(1);
+  check(array.element(1) === first, "uniformArray.element caches node by index");
+  (ships[0] as { x: number }).x = 9;
+  tslInstance.sync();
+  let arrayThrew1 = false;
+  try {
+    array.element(first);
+  } catch (error) {
+    arrayThrew1 = /TN_TSL_UNIFORM_ARRAY/.test(String(error));
+  }
+  check(arrayThrew1, "uniformArray.element refuses non-integer index");
+  let arrayThrew2 = false;
+  try {
+    array.element(2);
+  } catch (error) {
+    arrayThrew2 = /TN_TSL_UNIFORM_ARRAY/.test(String(error));
+  }
+  check(arrayThrew2, "uniformArray.element refuses out-of-bounds index");
+
+  // 6. answers every swizzle: xyzw, rgba and stpq, one to four lanes
+  const v = tsl.vec3(1, 2, 3);
+  for (const alias of ["xz", "zxy", "st", "bgr", "xxxx"]) {
+    check(v[alias] !== undefined && typeof v[alias][TSL_NODE] === "number", `swizzle ${alias}`);
+  }
+  check(v.xyzwx === undefined, "invalid swizzle length is undefined");
+
+  // 7. runs Fn, If, Else and Loop callbacks inside engine scopes
+  const shade = tsl.Fn(() => {
+    const acc = tsl.float(0).toVar();
+    tsl.Loop(2, ({ i }: { i: { lessThan(n: number): unknown } }) => {
+      const branch = tsl.If(i.lessThan(1), () => acc.assign(1));
+      branch.Else(() => acc.assign(2));
+    });
+  });
+  const built = shade();
+  check(shade() === built, "Fn returns cached graph built once at definition");
+  let fnThrew = false;
+  try {
+    tsl.Fn(() => {
+      throw new Error("original");
+    })();
+  } catch (error) {
+    fnThrew = String(error).includes("original");
+  }
+  check(fnThrew, "throwing callback inside Fn preserves original error");
+  let ifThrew = false;
+  try {
+    tsl.If(tsl.float(1), () => {});
+  } catch (error) {
+    ifThrew = String(error).includes("statement outside Fn");
+  }
+  check(ifThrew, "statement outside Fn is refused");
+
+  // 8. publishes live effect uniforms as ao(...).radius.value
+  const effects = definePostEffects(tsl as never);
+  const depthTexture = tsl.texture({ name: "depth" }, tsl.uv());
+  const ao = effects.ao(depthTexture, undefined, undefined) as unknown as {
+    radius: { value: number };
+  };
+  check(ao.radius?.value === 0.25, "ao radius initial value");
+  ao.radius.value = 0.5;
+  check(ao.radius?.value === 0.5, "ao radius updated value");
+
+  // 9. builds screenUV once and flips it
+  const screen = tsl.screenUV;
+  check(tsl.screenUV === screen, "screenUV singleton instance");
+  const flipped = screen.flipX();
+  check(typeof flipped[TSL_NODE] === "number", "screenUV.flipX() builds a TSL node");
+
+  // 10. refuses argument TSL has no meaning for
+  let sinThrew = false;
+  try {
+    tsl.sin({ plain: true });
+  } catch (error) {
+    sinThrew = String(error).includes("TN_TSL sin: argument 0");
+  }
+  check(sinThrew, "sin refuses argument TSL has no meaning for");
+
+  // The spec's call traces (PRD-540), read off the real module. Each block runs one spec test's
+  // steps in the spec's order, so each expected value is the spec's own.
+  {
+    const t = traceTsl(runtime.tsl);
+    const scaled = t.tsl.uniform(0).mul(2);
+    void scaled.x;
+    check(
+      isDeepStrictEqual(t.calls, [
+        { name: "uniform", receiver: null, args: [{ kind: "number", number: 0 }] },
+        { name: "mul", receiver: 1, args: [{ kind: "number", number: 2 }] },
+        { name: "swizzle:x", receiver: 2, args: [] },
+      ]),
+      "uniform(0).mul(2).x crosses as three calls, each on the node before it",
+    );
+  }
+  {
+    const t = traceTsl(runtime.tsl);
+    const sun = new Vector3(1, 2, 3);
+    (sun as { isVector3?: boolean }).isVector3 = true;
+    t.tsl.vec3(sun);
+    const sea = new Texture();
+    sea.name = "sea";
+    const sample = t.tsl.texture(sea, t.tsl.uv());
+    const names = t.calls.map(({ name }) => name);
+    check(names.join() === "vec3,uv,texture", `TSL calls: ${names.join()}`);
+    check(
+      isDeepStrictEqual(t.calls[0]?.args, [{ kind: "vector", numbers: [1, 2, 3] }]),
+      "vec3(Vector3) crosses as its three lanes",
+    );
+    const handle = t.calls[2]?.args[0];
+    check(
+      handle?.kind === "handle" &&
+        handle.ref.type === runtime.typeId("Texture") &&
+        isDeepStrictEqual(t.calls[2]?.args[1], { kind: "node", node: 2 }),
+      "an engine Texture crosses as a handle, and uv as node 2",
+    );
+    t.tsl.texture({ name: "scene" }, t.tsl.uv());
+    check(
+      isDeepStrictEqual(t.calls[4]?.args[0], { kind: "named", text: "scene" }),
+      "a plain object crosses as its name",
+    );
+    const traced = defineBrowserClasses(registry, { ...runtime, tsl: t.runtime })
+      .classes as unknown as typeof THREE;
+    const material = new traced.MeshBasicNodeMaterial();
+    material.colorNode = sample;
+    check(
+      t.sets.join() === `${runtime.typeId("MeshBasicNodeMaterial")}.colorNode=3`,
+      `colorNode reaches the engine as node 3: ${t.sets.join()}`,
+    );
+  }
+  {
+    const t = traceTsl(runtime.tsl);
+    const clock = t.tsl.uniform(0);
+    clock.value = 2.5;
+    const origin = new Vector2(0, 0);
+    (origin as { isVector2?: boolean }).isVector2 = true;
+    t.tsl.uniform(origin);
+    origin.x = 4;
+    origin.y = 5;
+    t.sync();
+    check(
+      isDeepStrictEqual(t.uniforms, ["1=2.5", "2=4,5"]),
+      `uniform lanes reach the engine: ${t.uniforms.join(" ")}`,
+    );
+  }
+  {
+    const t = traceTsl(runtime.tsl);
+    const ticks = t.tsl.uniform(0);
+    check(
+      ticks.onRenderUpdate((frame: { frameId: number }) => frame.frameId * 10) === ticks,
+      "onRenderUpdate returns its node, so calls chain",
+    );
+    t.tsl.uniform(7).onFrameUpdate(() => undefined);
+    t.sync();
+    t.sync();
+    check(
+      isDeepStrictEqual(t.uniforms, ["1=10", "1=20"]),
+      `a render update's value reaches the engine each frame: ${t.uniforms.join(" ")}`,
+    );
+  }
+  {
+    const t = traceTsl(runtime.tsl);
+    const first = new Vector4(0, 0, 0, 0);
+    const second = new Vector4(0, 0, 0, 0);
+    for (const ship of [first, second]) (ship as { isVector4?: boolean }).isVector4 = true;
+    t.tsl.uniformArray([first, second], "vec4").element(1);
+    second.x = 3;
+    second.y = 4;
+    second.z = 5;
+    second.w = 6;
+    t.sync();
+    check(
+      /^\d+=3,4,5,6$/.test(t.uniforms.at(-1) ?? ""),
+      `an array entry's edit reaches the engine: ${t.uniforms.at(-1)}`,
+    );
+  }
+  {
+    const t = traceTsl(runtime.tsl);
+    const v = t.tsl.vec3(1, 2, 3);
+    for (const alias of ["xz", "zxy", "st", "bgr", "xxxx"]) {
+      void v[alias];
+    }
+    check(
+      isDeepStrictEqual(
+        t.calls.map(({ name }) => name).filter((name) => name.startsWith("swizzle:")),
+        ["swizzle:xz", "swizzle:zxy", "swizzle:xy", "swizzle:zyx", "swizzle:xxxx"],
+      ),
+      "each alias crosses as its xyzw lanes: st as xy, bgr as zyx",
+    );
+  }
+  {
+    const t = traceTsl(runtime.tsl);
+    t.tsl.Fn(() => {
+      const acc = t.tsl.float(0).toVar();
+      t.tsl.Loop(2, ({ i }: { i: { lessThan(n: number): unknown } }) => {
+        const branch = t.tsl.If(i.lessThan(1), () => acc.assign(1));
+        branch.Else(() => acc.assign(2));
+      });
+    });
+    const names = () => t.calls.map(({ name }) => name);
+    check(
+      isDeepStrictEqual(names(), [
+        "scope:open",
+        "float",
+        "toVar",
+        "Loop:index",
+        "scope:open",
+        "lessThan",
+        "scope:open",
+        "assign",
+        "scope:close",
+        "If",
+        "scope:open",
+        "assign",
+        "scope:close",
+        "Else",
+        "scope:close",
+        "Loop",
+        "scope:close",
+      ]),
+      "Fn, If, Else and Loop open and close their scopes in order",
+    );
+    t.calls.length = 0;
+    let threw = "";
+    try {
+      t.tsl.Fn(() => {
+        throw new Error("original");
+      });
+    } catch (error) {
+      threw = String(error);
+    }
+    check(
+      threw.includes("original") && names().join() === "scope:open,scope:close",
+      `a throwing callback closes its scope: ${names().join()}`,
+    );
+  }
+  {
+    const t = traceTsl(runtime.tsl);
+    const effects = definePostEffects(t.tsl as never);
+    // The engine refuses a bare uv() as ao's depth (TN_TSL_POST_INPUT), so the depth is a texture of uv.
+    const depth = t.tsl.texture({ name: "depth" }, t.tsl.uv());
+    const ao = effects.ao(depth, undefined, undefined) as unknown as { radius: { value: number } };
+    check(
+      isDeepStrictEqual(t.calls.at(-1), {
+        name: "ao",
+        receiver: null,
+        args: [{ kind: "node", node: 2 }, { kind: "other" }, { kind: "other" }],
+      }),
+      "ao crosses with its depth node and two omitted inputs",
+    );
+    void ao.radius.value;
+    ao.radius.value = 0.5;
+    check(
+      isDeepStrictEqual(
+        t.calls.slice(-2).map(({ name, args }) => [name, args]),
+        [
+          ["effect radius", []],
+          ["effect radius", [{ kind: "number", number: 0.5 }]],
+        ],
+      ),
+      "a post effect's uniform reads and writes through the engine",
+    );
+  }
+  {
+    const t = traceTsl(runtime.tsl);
+    const sky = new DataTexture();
+    t.tsl.pmremTexture(sky, t.tsl.uv(), 0.5);
+    const call = t.calls[1];
+    const texture = call?.args[0];
+    check(
+      call?.name === "pmremTexture" && call.receiver === null,
+      "pmremTexture is the second call, on no receiver",
+    );
+    check(
+      texture?.kind === "handle" && texture.ref.type === runtime.typeId("DataTexture"),
+      "pmremTexture takes its texture as an engine handle",
+    );
+    check(
+      isDeepStrictEqual(call?.args.slice(1), [
+        { kind: "node", node: 1 },
+        { kind: "number", number: 0.5 },
+      ]),
+      "uv crosses as node 1, and 0.5 as a number",
+    );
+  }
+  {
+    const t = traceTsl(runtime.tsl);
+    t.tsl.screenUV.flipX();
+    check(
+      isDeepStrictEqual(t.calls, [
+        { name: "constant:screenUV", receiver: null, args: [] },
+        { name: "flipX", receiver: 1, args: [] },
+      ]),
+      "screenUV is built once, and flipX takes it as its receiver",
+    );
+  }
 }
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");
