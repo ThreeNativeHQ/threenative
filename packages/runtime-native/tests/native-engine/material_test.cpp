@@ -32,6 +32,19 @@ float scalar(const Program& p, ExprId id) {
     CHECK(false); return NAN;
 }
 
+// Every varying the fragment reads sits at the location the vertex stage writes it, as WebGPU's
+// inter-stage interface requires.
+void stagesAgree(const Program& fragment, const std::string& vertex, const std::string& code) {
+    for (const auto& [name, type] : fragment.varyings()) {
+        const auto at = code.find("i_" + name + ":");
+        const auto location = code.rfind("@location(", at);
+        const auto end = code.find(')', location);
+        const bool linked = vertex.find(code.substr(location, end - location + 1) + " o_" + name + ":") != std::string::npos;
+        if (!linked) std::fprintf(stderr, "varying %s: fragment %s, vertex elsewhere\n", name.c_str(), code.substr(location, end - location + 1).c_str());
+        CHECK(linked);
+    }
+}
+
 void fog() {
     for (float z : {0.0f, 2.0f, 6.0f, 10.0f, 25.0f}) {
         Program p(Stage::Fragment);
@@ -161,12 +174,7 @@ void nodes() {
     CHECK(sf.code.find("f_roughness") == std::string::npos);
     CHECK(sf.code.find("f_metalness") == std::string::npos);
     // Varyings match by name despite roughness, metalness and normal using different graph orders.
-    for (const auto& [name, type] : standard.fragment.varyings()) {
-        const auto at = sf.code.find("i_" + name + ":");
-        const auto location = sf.code.rfind("@location(", at);
-        const auto end = sf.code.find(')', location);
-        CHECK(sv.code.find(sf.code.substr(location, end - location + 1) + " o_" + name + ":") != std::string::npos);
-    }
+    stagesAgree(standard.fragment, sv.code, sf.code);
     CHECK(sv.code.find("out.position =") != std::string::npos);
     VertexVariant invalid;
     invalid.nodes.colorNode = g::Block{}.node();
@@ -192,6 +200,22 @@ void builds() {
         CHECK(vertex.wgsl.code.find("instanceBase") != std::string::npos);
         CHECK(vertex.attributes.size() == (kind == 0 ? 1 : 2));
         CHECK(fragment.wgsl.code.find("i_instanceColor") != std::string::npos);
+    }
+    // Midway's instanced, mapped, fogged meshes: no builder may leave the stages' varyings in
+    // declaration order when the fragment reads them in another.
+    for (int kind = 0; kind < 5; ++kind) {
+        for (int bits = 0; bits < 16; ++bits) {
+            VertexVariant variant;
+            variant.instanced = variant.instanceColor = bits & 1;
+            variant.map = bits & 2;
+            variant.fog = (bits & 4) ? 1 : 0;
+            variant.vertexColors = (bits & 8) ? 4 : 0;
+            const auto p = kind == 0 ? buildBasic(variant) : kind == 1 ? buildLambert(variant) :
+                kind == 2 ? buildPhong(variant) : kind == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+            const auto vertex = buildStage(p.vertex, 0), fragment = buildStage(p.fragment, 1);
+            CHECK(vertex.wgsl.ok() && fragment.wgsl.ok());
+            stagesAgree(p.fragment, vertex.wgsl.code, fragment.wgsl.code);
+        }
     }
     // Both GGX and copy passes must address all extra tiles, including negative mips.
     for (uint32_t lodMax : {4u, 8u}) {

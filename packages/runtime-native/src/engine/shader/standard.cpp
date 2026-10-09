@@ -278,9 +278,8 @@ std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
 struct LocalVertex {
     ExprId position;      // vec4, w = 1
     ExprId normal;        // vec3; kInvalid without one
-    ExprId instanceColor; // vec3; kInvalid without one. Written last (outputInstanceColor): varyings
-                          // take locations in first-use order, and every fragment reads it last.
-    ExprId uv;            // vec2; kInvalid without a map. Written after instanceColor for the same reason.
+    ExprId instanceColor; // vec3; kInvalid without one (outputInstanceColor)
+    ExprId uv;            // vec2; kInvalid without a map (outputMapUv)
 };
 
 // The slot's requested type is three's subBuild/vecN/float conversion, including vector padding.
@@ -401,7 +400,6 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         instanceColor = instanceColor == kInvalid ? vertexColor
             : v.mul(v.construct(Type::vec(4), {instanceColor, v.constant(1.0f)}), vertexColor);
     }
-    // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
     const ExprId uv = (variant.map || variant.normalMap || variant.pbrMaps) && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
@@ -419,7 +417,7 @@ static void outputInstanceColor(Program& v, const LocalVertex& local) {
     if (local.instanceColor != kInvalid) v.output("instanceColor", local.instanceColor);
 }
 
-// A map's uv varying, written after instanceColor so both stages agree on the location order.
+// A map's uv varying; linkNodes moves it to the location the fragment reads it at.
 static void outputMapUv(Program& v, const LocalVertex& local) {
     if (local.uv != kInvalid) v.output("uv", local.uv);
 }
@@ -615,7 +613,8 @@ static ExprId diffuseAlpha(Program& f, const VertexVariant& variant, ExprId diff
 static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const LocalVertex& local) {
     bool hasNodes = false;
     for (const auto& node : variant.nodes.graphs()) hasNodes |= bool(node);
-    if (!hasNodes) return;
+    // Every builder ends here: the fragment's read order, not declaration order, fixes the locations.
+    if (!hasNodes) return out.vertex.linkVaryings(out.fragment);
     Program& v = out.vertex;
     // varying(node): the vertex stage computes each node the fragment reads by its varying name.
     std::unordered_map<std::string, graph::Node> carried;
@@ -1297,7 +1296,6 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     // Background.js writes opaque output regardless of the source texture's alpha.
     f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha)));
     linkNodes(out, variant, local);
-    if (variant.fog || variant.background) v.linkVaryings(f);
     return out;
 }
 
