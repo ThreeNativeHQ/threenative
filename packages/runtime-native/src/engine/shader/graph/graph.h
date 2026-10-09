@@ -31,7 +31,7 @@ enum class Kind : uint8_t {
     Unary, Binary, Math, Swizzle, Join, Convert, Select, Texture,
     StorageElement, VarRead, LoopIndex,
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
-    Pmrem, ScreenUv, Reflector,
+    Pmrem, ScreenUv, Reflector, ViewportDepth,
 };
 
 enum class UnOp : uint8_t { Negate };
@@ -88,6 +88,8 @@ Node positionLocal();
 Node uv();
 /** TSL's screenUV: the fragment's position over the target size; a post pass maps it to its quad's uv. */
 Node screenUV();
+/** ViewportDepthTextureNode: the frame's depth as drawn before this draw, read at `uv` (0..1). */
+Node viewportDepth(Node uv);
 Node instanceIndex();
 
 Node vec2(std::initializer_list<Node> parts);
@@ -112,6 +114,8 @@ Node equal(Node a, Node b);
 Node select(Node condition, Node whenTrue, Node whenFalse);
 Node swizzle(Node value, std::string_view lanes);
 Node texture(std::string_view map, Node uvs);
+/** TSL's texture(textureObject, uv): that engine Texture itself, bound under `name`, not a material slot. */
+Node textureObject(std::shared_ptr<const void> texture, std::string_view name, Node uvs);
 /**
  * TSL's `texture(object, uv)` over an engine Texture the material does not own as a map: sampled
  * under `name`, the binding the renderer fills from `texture` per draw (RenderDatabase::graphSources).

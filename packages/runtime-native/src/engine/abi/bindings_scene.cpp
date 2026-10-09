@@ -654,7 +654,7 @@ std::shared_ptr<BufferGeometry> geometryArg(Store& store, const Value& arg) {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
         "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry", "LatheGeometry",
         "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry", "IcosahedronGeometry", "CapsuleGeometry",
-        "DodecahedronGeometry", "OctahedronGeometry", "TorusKnotGeometry"};
+        "DodecahedronGeometry", "OctahedronGeometry", "TorusKnotGeometry", "InstancedBufferGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -807,6 +807,10 @@ void registerMesh(ClassBinding& b) {
     };
     b.members["geometry"] = [](void* self, const Args&, Store& store) -> Value {
         return store.share("BufferGeometry", as<Mesh>(self)->geometry);
+    };
+    // three's Mesh.geometry is a plain property: a game swaps it (Midway's LOD and merged hulls).
+    b.setters["geometry"] = [](void* self, const Value& value, Store& store) {
+        as<Mesh>(self)->geometry = geometryArg(store, value);
     };
     // morphTargetInfluences: a plain array three sizes from the geometry's morph targets.
     b.methods["updateMorphTargets"] = [](void* self, const Args&, Store&) {
@@ -1334,6 +1338,18 @@ void registerInstancedMesh(ClassBinding& b) {
     b.members["instanceColor"] = [](void* self, const Args&, Store& store) -> Value {
         const auto& colors = as<InstancedMesh>(self)->instanceColor;
         return colors ? store.share("InstancedBufferAttribute", colors) : Value{};
+    };
+    // three's instanceColor is a plain property: a game assigns its own InstancedBufferAttribute
+    // (three components per instance), or null to drop the colours.
+    b.setters["instanceColor"] = [](void* self, const Value& v, Store& store) {
+        auto& mesh = *as<InstancedMesh>(self);
+        if (v.kind == Value::Kind::Undefined || v.kind == Value::Kind::Null) {
+            mesh.instanceColor = nullptr;
+            return;
+        }
+        std::shared_ptr<BufferAttribute> colors = sharedAttributeArg(store, v);
+        if (colors->itemSize != 3) throw Unsupported{"instanceColor needs 3 components per instance"};
+        mesh.instanceColor = std::move(colors);
     };
     const auto index = [](const Value& v, const InstancedMesh& mesh) {
         const double i = number(v);

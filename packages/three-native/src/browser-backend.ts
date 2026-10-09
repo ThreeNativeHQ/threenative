@@ -1022,7 +1022,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   // scope rewinds, a stack as nested calls (a callback inside an invoke) need; a scope that outgrows
   // it falls back to malloc and frees on exit. Every engine call crosses here, many per frame.
   const arenaSize = 64 * 1024;
-  const arenaBase = abi._malloc(arenaSize);
+  const arenaBase = abi._malloc(arenaSize) >>> 0;
   let arenaTop = arenaBase;
   const allocations: number[] = [];
   const alloc = (size: number): number => {
@@ -1032,7 +1032,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       pointer = arenaTop;
       arenaTop += aligned;
     } else {
-      pointer = abi._malloc(size);
+      // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
+      pointer = abi._malloc(size) >>> 0;
       allocations.push(pointer);
     }
     abi.HEAPU8.fill(0, pointer, pointer + size);
@@ -1060,7 +1061,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     let pointer = names.get(text);
     if (pointer === undefined) {
       const bytes = abi.lengthBytesUTF8(text);
-      pointer = abi._malloc(bytes + 1);
+      pointer = abi._malloc(bytes + 1) >>> 0;
       abi.stringToUTF8(text, pointer, bytes + 1);
       names.set(text, pointer);
     }
@@ -1206,18 +1207,21 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   let releaseTrampoline = 0;
   const trampolines = () => {
     if (invokeTrampoline !== 0) return;
-    invokeTrampoline = abi.addFunction((id, args, count, error, capacity) => {
+    invokeTrampoline = abi.addFunction((id, rawArgs, count, rawError, capacity) => {
+      // Pointers arrive as signed i32; the module addresses up to 4 GB.
+      const args = (rawArgs ?? 0) >>> 0;
+      const error = (rawError ?? 0) >>> 0;
       const handler = handlers.get(id ?? 0);
       if (handler === undefined) return 0;
       const decoded: EngineValue[] = [];
-      for (let i = 0; i < (count ?? 0); i++) decoded.push(readValue((args ?? 0) + i * VALUE));
+      for (let i = 0; i < (count ?? 0); i++) decoded.push(readValue(args + i * VALUE));
       try {
         handler(decoded);
         return 0;
       } catch (thrown) {
         abi.stringToUTF8(
           thrown instanceof Error ? thrown.message : String(thrown),
-          error ?? 0,
+          error,
           capacity ?? 0,
         );
         return 8; // TN_ERROR_INVALID_STATE: the engine records it and goes on

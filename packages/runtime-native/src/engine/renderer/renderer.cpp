@@ -129,10 +129,11 @@ constexpr const char* kSlotNames[] = {
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
     "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "cameraPosition", "cameraProjectionMatrix",
-    "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform", "specularColorMapUvTransform",
+    "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform",
+    "bumpMapUvTransform", "specularColorMapUvTransform",
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
-    "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale",
-    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize"};
+    "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
+    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -227,15 +228,41 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
 
 // A program that samples a material `map` or an environment cannot have one shared fragment group:
 // each draw's group binds its own texture and sampler. Its group[1] is left null and built per draw.
-// A texture(object) node's binding: filled per draw from the graph's own texture, never a fallback.
-bool objectTextureBinding(const std::string& name) {
-    return name.rfind("t_nodeMap", 0) == 0 || name.rfind("smp_nodeMap", 0) == 0;
+// A TSL texture(object, uv) binding (tsl_call's "nodeMap<id>"): the draw's own texture, in either stage.
+bool graphTextureBinding(std::string_view name) { return name.rfind("t_nodeMap", 0) == 0; }
+
+// Bit i set: the vertex stage's attribute i is one of the draw's InstancedBufferAttributes.
+uint64_t instanceStepMask(const shader::StageModule& vertex, const DrawItem& item) {
+    uint64_t mask = 0;
+    for (std::size_t i = 0; i < vertex.attributes.size() && i < 64; ++i)
+        for (const DrawItem::CustomAttribute& custom : item.attributes)
+            if (custom.perInstance && custom.name == vertex.attributes[i].name) mask |= uint64_t(1) << i;
+    return mask;
+}
+
+// A viewport texture binding: the frame's colour or depth as drawn before this draw.
+bool viewportBinding(std::string_view name) {
+    return name == "t_viewportColor" || name == "smp_viewportColor" || name == "t_viewportDepth" ||
+           name == "smp_viewportDepth";
+}
+
+bool readsViewport(const shader::StageModule& stage) {
+    return std::any_of(stage.bindings.begin(), stage.bindings.end(),
+                       [](const shader::Binding& binding) { return viewportBinding(binding.name); });
 }
 
 bool perDrawFragment(const shader::StageModule& stage) {
     for (const shader::Binding& binding : stage.bindings)
-        if (binding.name == "t_map" || binding.name == "t_env" || objectTextureBinding(binding.name)) return true;
+        if (binding.name == "t_map" || binding.name == "t_env" || graphTextureBinding(binding.name) ||
+            viewportBinding(binding.name))
+            return true;
     return false;
+}
+
+// A vertex stage that samples a graph texture (a positionNode's displacement map) binds it per draw.
+bool perDrawVertex(const shader::StageModule& stage) {
+    return std::any_of(stage.bindings.begin(), stage.bindings.end(),
+                       [](const shader::Binding& binding) { return graphTextureBinding(binding.name); });
 }
 
 // The PMREM generator's shaders, three's PMREMGenerator/PMREMUtils WGSL, ported operation for
@@ -502,7 +529,8 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
 
 Renderer::~Renderer() {
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    mainBundle_ = nullptr;
+    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+    mainBundle_ = viewportBundle_ = nullptr;
     if (timestamps_) wgpuQuerySetRelease(timestamps_);
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program
@@ -550,8 +578,12 @@ void Renderer::releaseTargets() {
     if (sceneColor_) wgpuTextureRelease(sceneColor_);
     if (normalView_) wgpuTextureViewRelease(normalView_);
     if (normalTexture_) wgpuTextureRelease(normalTexture_);
-    colorView_ = depthView_ = sceneView_ = normalView_ = nullptr;
-    depth_ = sceneColor_ = normalTexture_ = nullptr;
+    if (viewportColorView_) wgpuTextureViewRelease(viewportColorView_);
+    if (viewportColor_) wgpuTextureRelease(viewportColor_);
+    if (viewportDepthView_) wgpuTextureViewRelease(viewportDepthView_);
+    if (viewportDepth_) wgpuTextureRelease(viewportDepth_);
+    colorView_ = depthView_ = sceneView_ = normalView_ = viewportColorView_ = viewportDepthView_ = nullptr;
+    depth_ = sceneColor_ = normalTexture_ = viewportColor_ = viewportDepth_ = nullptr;
     releaseOutputGroup();  // it binds the scene target
 }
 
@@ -681,6 +713,13 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     sceneView_ = view2d(sceneColor_, WGPUTextureFormat_RGBA16Float);
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);
     depthView_ = view2d(depth_, WGPUTextureFormat_Depth32Float);
+    WGPUTextureDescriptor viewportDesc = sceneDesc;
+    viewportDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+    viewportColor_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
+    viewportColorView_ = view2d(viewportColor_, WGPUTextureFormat_RGBA16Float);
+    viewportDesc.format = WGPUTextureFormat_Depth32Float;
+    viewportDepth_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
+    viewportDepthView_ = view2d(viewportDepth_, WGPUTextureFormat_Depth32Float);
     if (traa_) traa_->resize(width, height);
     if (postEffects_) postEffects_->resize(width, height);
 }
@@ -696,19 +735,19 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                                   const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps,
                                   WGPUTextureView pmremView, WGPUSampler pmremSampler,
                                   WGPUTextureView reflectorView, WGPUSampler reflectorSampler,
-                                  const std::vector<std::pair<std::string, const MaterialTexture*>>* nodeTextures) {
+                                  const GraphTextures* graphTextures) {
+    // A graph texture's GPU texture, by its `t_<name>` / `smp_<name>` binding; null for any other.
+    const auto graph = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
+        if (!graphTextures) return nullptr;
+        for (const auto& [label, texture] : *graphTextures)
+            if (name == (sampler ? "smp_" : "t_") + label) return materialTexture(*texture);
+        return nullptr;
+    };
     // A PbrMap's texture or sampler, by its `t_<name>` / `smp_<name>` binding; null for any other.
     const auto pbr = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
         if (!pbrMaps) return nullptr;
         for (int k = 0; k < shader::kPbrMapCount; ++k)
             if (name == (sampler ? "smp_" : "t_") + std::string(shader::kPbrMapNames[k])) return (*pbrMaps)[k];
-        return nullptr;
-    };
-    // A texture(object) node's texture or sampler, by its `t_<name>` / `smp_<name>` binding.
-    const auto node = [&](const std::string& binding, bool sampler) -> const MaterialTexture* {
-        if (!nodeTextures) return nullptr;
-        for (const auto& [name, texture] : *nodeTextures)
-            if (binding == (sampler ? "smp_" : "t_") + name) return texture;
         return nullptr;
     };
     std::vector<WGPUBindGroupEntry> entries;
@@ -726,6 +765,10 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
             e.buffer = gpu_.buffer(storage.buffer);
             e.size = storage.capacity;
+        } else if (viewportBinding(b.name)) {
+            const bool depthCopy = b.name.find("Depth") != std::string::npos;
+            if (b.kind == shader::BindingKind::Texture) e.textureView = depthCopy ? viewportDepthView_ : viewportColorView_;
+            else e.sampler = depthCopy ? compareSampler_ : outputSampler_;
         } else if (b.volume) {
             const auto& atlas = probeTextures_.at(b.name.substr(b.kind == shader::BindingKind::Texture ? 2 : 4));
             if (b.kind == shader::BindingKind::Texture) e.textureView = atlas.view;
@@ -739,11 +782,9 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             if (b.kind == shader::BindingKind::Texture)
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;
-        } else if (objectTextureBinding(b.name)) {
-            const MaterialTexture* texture = node(b.name, b.kind == shader::BindingKind::Sampler);
-            if (!texture)
-                throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name +
-                                         " (a texture(object) sample outside the fragment stage, or without its texture)");
+        } else if (graphTextureBinding(b.kind == shader::BindingKind::Sampler ? "t_" + b.name.substr(4) : b.name)) {
+            const MaterialTexture* texture = graph(b.name, b.kind == shader::BindingKind::Sampler);
+            if (!texture) throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name + " has no texture this draw");
             if (b.kind == shader::BindingKind::Texture) e.textureView = texture->view;
             else e.sampler = texture->sampler;
         } else if (b.kind == shader::BindingKind::Texture) {
@@ -947,7 +988,8 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
 
 void Renderer::releaseMaterialTextures() {
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    mainBundle_ = nullptr;
+    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+    mainBundle_ = viewportBundle_ = nullptr;
     for (auto& [texture, cube] : backgroundCubes_) {
         if (cube.view) wgpuTextureViewRelease(cube.view);
         if (cube.texture) wgpuTextureRelease(cube.texture);
@@ -970,7 +1012,8 @@ void Renderer::dropMapGroups() {
     // A bind group is cached by the address of the views it binds; a view released here can come back
     // at the same address.
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    mainBundle_ = nullptr;
+    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+    mainBundle_ = viewportBundle_ = nullptr;
     for (auto& [key, group] : mapGroups_)
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
@@ -1405,6 +1448,7 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     if (uniformCapacity_ != 0) {
         for (int g = 0; g < 2; ++g) {
             if (g == 1 && perDrawFragment(built->fragment)) continue;  // per-draw groups instead
+            if (g == 0 && perDrawVertex(built->vertex)) continue;
             built->groups[g] = bindGroup(built->layouts[g], g == 0 ? built->vertex : built->fragment, uniformBuffer_,
                                          lutView_, lutSampler_);
         }
@@ -1414,7 +1458,8 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
 
 void Renderer::rebuildGroups() {
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    mainBundle_ = nullptr; // Emdawn may recycle a released bind-group handle immediately
+    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+    mainBundle_ = viewportBundle_ = nullptr; // Emdawn may recycle a released bind-group handle immediately
     for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
@@ -1422,7 +1467,7 @@ void Renderer::rebuildGroups() {
         if (!program) continue;  // a refused program
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
-            program->groups[g] = (g == 1 && perDrawFragment(program->fragment))
+            program->groups[g] = (g == 1 && perDrawFragment(program->fragment)) || (g == 0 && perDrawVertex(program->vertex))
                                      ? nullptr
                                      : bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
                                                  uniformBuffer_, lutView_, lutSampler_);
@@ -1732,6 +1777,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.sprite = item.sprite;
         v.backSide = item.side == 1;
         v.doubleSide = item.side == 2;
+        v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
         v.vertexColors = item.colorSize;
@@ -1762,6 +1808,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         WGPURenderPipeline pipeline;
         uint32_t vertexOffset, fragmentOffset;
         WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
+        WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
     };
     std::vector<Planned> plan, velocityPlan;
     plan.reserve(opaque.size());
@@ -1786,8 +1833,11 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                               item.depthWrite};
         target.layout = program.pipelineLayout;
         if (item.background) target.depthCompare = WGPUCompareFunction_Always;
+        target.depthBias = item.depthBias;
+        target.depthBiasSlopeScale = item.depthBiasSlopeScale;
         target.frontFace = item.frontFace();
         target.skinIndex = skinIndexFormat(item);
+        target.instanceStepMask = instanceStepMask(program.vertex, item);
         lineTopology(target, item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
         if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
@@ -1811,6 +1861,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             put(frameUniforms_, base, slots[kCameraPosition], cameraPosition);
             put(frameUniforms_, base, slots[kCameraProjectionMatrix], camera.projectionMatrix);
             put(frameUniforms_, base, slots[kCameraWorldMatrix], camera.matrixWorld);
+            put(frameUniforms_, base, slots[kCameraNear], std::array<double, 1>{camera.near});
+            put(frameUniforms_, base, slots[kCameraFar], std::array<double, 1>{camera.far});
         }
         put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
         // NodeMaterial forces alpha to 1 only on an opaque NormalBlending material.
@@ -1828,6 +1880,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         put(frameUniforms_, f, fs[kClearcoat], std::array<double, 1>{m.clearcoat});
         put(frameUniforms_, f, fs[kClearcoatRoughness], std::array<double, 1>{m.clearcoatRoughness});
         put(frameUniforms_, f, fs[kClearcoatNormalScale], std::array<double, 2>{m.clearcoatNormalScale[0], m.clearcoatNormalScale[1]});
+        put(frameUniforms_, f, fs[kBumpScale], std::array<double, 1>{m.bumpScale});
         if (item.background) put(frameUniforms_, f, fs[kBackgroundRotation], item.backgroundRotation);
         if (item.fog) {
             const auto& fog = *item.fog;
@@ -1935,6 +1988,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.layout = program.pipelineLayout;
             target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
+            target.instanceStepMask = instanceStepMask(program.vertex, item);
             WGPURenderPipeline pipeline = pipelines_.get(program.vertex, nullptr, target);
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
             const uint64_t v = frameUniforms_.size();
@@ -1965,8 +2019,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             // Previous deformed vertex data is not yet retained by these variants. Refuse it;
             // ordinary rigid object/camera motion goes through the real VelocityNode equations.
             if (item.instanceMatrices || item.skinIndices || item.morphGeometry || item.sprite ||
-                item.positionNode || item.nodes.positionNode || item.nodes.vertexNode || item.transparent ||
-                item.material->alphaTest > 0)
+                item.positionNode || item.nodes.positionNode || item.nodes.vertexNode || !item.attributes.empty() ||
+                item.transparent || item.material->alphaTest > 0)
                 throw std::runtime_error("TN_TRAA_VELOCITY_UNSUPPORTED: deformed/instanced/sprite/alpha-tested/transparent draw");
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
@@ -2008,15 +2062,43 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, 0, storage.data.data(), storage.data.size() * 4);
     }
 
+    // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
+    // draw, in the main pass and the shadow passes alike; `graphKey` names the draw's textures.
+    const auto vertexGroupOf = [&](const Planned& p, const std::string& graphKey) -> WGPUBindGroup {
+        if (!perDrawVertex(p.program->vertex)) return nullptr;
+        const std::string vertexKey = "vertex|" + std::to_string(reinterpret_cast<uintptr_t>(p.program)) + graphKey;
+        const auto found = mapGroups_.find(vertexKey);
+        if (found != mapGroups_.end()) return found->second;
+        return mapGroups_.emplace(vertexKey, bindGroup(p.program->layouts[0], p.program->vertex, uniformBuffer_,
+                                  lutView_, lutSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                  nullptr, nullptr, nullptr, nullptr, p.item->nodeTextures)).first->second;
+    };
+    const auto graphKeyOf = [&](const DrawItem& item) {
+        std::string key;
+        if (item.nodeTextures)
+            for (const auto& [label, texture] : *item.nodeTextures) {
+                const MaterialTexture* gpu = materialTexture(*texture);
+                key += "|" + label + "," + std::to_string(reinterpret_cast<uintptr_t>(gpu->view)) + "," +
+                       std::to_string(reinterpret_cast<uintptr_t>(gpu->sampler));
+            }
+        return key;
+    };
+    for (ShadowPass& pass : shadowPasses)
+        for (Planned& draw : pass.draws) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
         const bool readsPbr = std::any_of(p.item->pbrMaps.begin(), p.item->pbrMaps.end(), [](const Texture* t) { return t; });
+        const GraphTextures* graphTextures = p.item->nodeTextures;
+        std::string graphKey = graphKeyOf(*p.item);
+        p.vertexGroup = vertexGroupOf(p, graphKey);
+        const bool viewport = readsViewport(p.program->fragment);
         if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
-            !p.item->reflectorView && !p.item->nodeTextures) continue;
-        std::vector<std::pair<std::string, const MaterialTexture*>> nodeTextures;
-        if (p.item->nodeTextures)
-            for (const auto& [name, texture] : *p.item->nodeTextures) nodeTextures.emplace_back(name, materialTexture(*texture));
+            !p.item->reflectorView && !graphTextures && !viewport) continue;
+        if (viewport)
+            graphKey += "|viewport," + std::to_string(reinterpret_cast<uintptr_t>(viewportColorView_)) + "," +
+                        std::to_string(reinterpret_cast<uintptr_t>(viewportDepthView_));
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
         std::array<const MaterialTexture*, shader::kPbrMapCount> pbrTextures{};
         for (int k = 0; k < shader::kPbrMapCount; ++k)
@@ -2039,9 +2121,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         for (const MaterialTexture* texture : pbrTextures)
             pbrKey += "|" + std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->view : nullptr)) + "," +
                       std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->sampler : nullptr));
-        for (const auto& [name, texture] : nodeTextures)
-            pbrKey += "|" + name + "=" + std::to_string(reinterpret_cast<uintptr_t>(texture->view)) + "," +
-                      std::to_string(reinterpret_cast<uintptr_t>(texture->sampler));
+        pbrKey += graphKey;
         const auto found = mapGroups_.find(key + pbrKey);
         p.mapGroup = found != mapGroups_.end()
                          ? found->second
@@ -2049,7 +2129,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                                              lutView_, lutSampler_, mapView, mapSampler, envView, envSampler,
                                                          normal ? normal->view : nullptr, normal ? normal->sampler : nullptr, &pbrTextures,
                                                          pmrem ? pmrem->view : nullptr, pmrem ? pmrem->sampler : nullptr,
-                                                         p.item->reflectorView, p.item->reflectorSampler, &nodeTextures))
+                                                         p.item->reflectorView, p.item->reflectorSampler, graphTextures))
                                .first->second;
     }
 
@@ -2089,6 +2169,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.layout = draw.program->pipelineLayout; target.depthWrite = false;
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
+            target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
             const auto pipeline = pipelines_.get(draw.program->vertex, &normalFragment_, target);
             if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
             Planned normal = draw;
@@ -2135,6 +2216,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                   : a.name == "skinIndex"     ? item.skinIndices
                                   : a.name == "skinWeight"    ? item.skinWeights
                                   : column                   ? item.instanceMatrices : nullptr;
+            // Any other name is one of the geometry's own attributes (TSL attribute(name)).
+            for (const DrawItem::CustomAttribute& custom : item.attributes)
+                if (!source && custom.name == a.name) source = custom.store;
             if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
             BufferStore& store = *source;
             const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
@@ -2143,7 +2227,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             TN_ENCODE(SetVertexBuffer, a.location, gpu_.buffer(buffer), offset, store.byteLength() - offset);
             if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
         }
-        TN_ENCODE(SetBindGroup, 0, p.program->groups[0], 1, &p.vertexOffset);
+        TN_ENCODE(SetBindGroup, 0, p.vertexGroup ? p.vertexGroup : p.program->groups[0], 1, &p.vertexOffset);
         // The depth program's fragment group is empty: no uniform block, no dynamic offset.
         const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
         TN_ENCODE(SetBindGroup, 1, p.mapGroup ? p.mapGroup : p.program->groups[1],
@@ -2247,7 +2331,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     for (const Planned& p : plan) {
         const DrawItem& item = *p.item;
         bundleKey.insert(bundleKey.end(), {reinterpret_cast<uintptr_t>(p.pipeline),
-            reinterpret_cast<uintptr_t>(p.program->groups[0]),
+            reinterpret_cast<uintptr_t>(p.vertexGroup ? p.vertexGroup : p.program->groups[0]),
             reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
             p.vertexOffset, p.fragmentOffset, item.instanceCount});
         for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights}) {
@@ -2257,21 +2341,37 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                 store ? store->byteLength() : 0, store ? static_cast<uintptr_t>(store->scalar()) : 0});
         }
     }
+    // three's viewport textures copy the frame at the first draw that reads one: the main pass splits
+    // there, the scene colour and depth are copied, and the rest draws in a second pass that loads them.
+    const std::size_t viewportSplit = static_cast<std::size_t>(
+        std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
+        plan.begin());
+    bundleKey.push_back(viewportSplit);
     if (!mainBundle_ || bundleKey != mainBundleKey_) {
         if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
+        if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+        mainBundle_ = viewportBundle_ = nullptr;
         WGPURenderBundleEncoderDescriptor descriptor{};
         const WGPUTextureFormat color = WGPUTextureFormat_RGBA16Float;
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = 1;
-        const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
         const auto shadowStats = lastFrame_.shadowSkinned;
         lastFrame_ = FrameStats{};
-        for (const Planned& p : plan) encode(bundle, p, true);
+        const auto record = [&](std::size_t from, std::size_t to) {
+            const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
+            bound = nullptr;
+            boundIndex = nullptr;
+            std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
+            for (std::size_t k = from; k < to; ++k) encode(bundle, plan[k], true);
+            WGPURenderBundleDescriptor finish{};
+            const WGPURenderBundle recorded = wgpuRenderBundleEncoderFinish(bundle, &finish);
+            wgpuRenderBundleEncoderRelease(bundle);
+            return recorded;
+        };
+        mainBundle_ = record(0, viewportSplit);
+        if (viewportSplit < plan.size()) viewportBundle_ = record(viewportSplit, plan.size());
         mainBundleStats_ = lastFrame_;
         lastFrame_.shadowSkinned = shadowStats;
-        WGPURenderBundleDescriptor finish{};
-        mainBundle_ = wgpuRenderBundleEncoderFinish(bundle, &finish);
-        wgpuRenderBundleEncoderRelease(bundle);
         mainBundleKey_ = std::move(bundleKey);
     } else {
         lastFrame_.draws = mainBundleStats_.draws;
@@ -2281,6 +2381,27 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     wgpuRenderPassEncoderExecuteBundles(pass, 1, &mainBundle_);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
+    if (viewportBundle_) {
+        WGPUImageCopyTexture_Compat from = {}, to = {};
+        const WGPUExtent3D extent{width_, height_, 1};
+        from.texture = sceneColor_; to.texture = viewportColor_;
+        wgpuCommandEncoderCopyTextureToTexture(encoder, &from, &to, &extent);
+        from.texture = depth_; to.texture = viewportDepth_;
+        from.aspect = to.aspect = WGPUTextureAspect_DepthOnly;
+        wgpuCommandEncoderCopyTextureToTexture(encoder, &from, &to, &extent);
+        WGPURenderPassColorAttachment loadColor = color;
+        loadColor.loadOp = WGPULoadOp_Load;
+        WGPURenderPassDepthStencilAttachment loadDepth = depth;
+        loadDepth.depthLoadOp = WGPULoadOp_Load;
+        WGPURenderPassDescriptor viewportDesc = {};
+        viewportDesc.colorAttachmentCount = 1;
+        viewportDesc.colorAttachments = &loadColor;
+        viewportDesc.depthStencilAttachment = &loadDepth;
+        WGPURenderPassEncoder rest = wgpuCommandEncoderBeginRenderPass(encoder, &viewportDesc);
+        wgpuRenderPassEncoderExecuteBundles(rest, 1, &viewportBundle_);
+        wgpuRenderPassEncoderEnd(rest);
+        wgpuRenderPassEncoderRelease(rest);
+    }
     if (normalPass) {
         WGPURenderPassColorAttachment normals{};
         normals.view = normalView_; normals.loadOp = WGPULoadOp_Clear; normals.storeOp = WGPUStoreOp_Store;

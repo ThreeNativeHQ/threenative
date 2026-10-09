@@ -217,6 +217,9 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     static std::atomic<uint64_t> nextId{1};
     module.id = nextId.fetch_add(1, std::memory_order_relaxed);
     std::string& out = module.code;
+    // WGSLNodeBuilder's header outside Firefox: a texture sampled inside a branch (a TSL If, as core's
+    // WaterSurface3D refraction is) is legal, as it is in three's shaders.
+    if (program.stage() == Stage::Fragment) out += "diagnostic(off, derivative_uniformity);\n";
 
     // Resources in first-use order: uniforms in one block at binding 0, then storage buffers.
     std::vector<ExprId> uniforms, attributes, builtins, varyings;

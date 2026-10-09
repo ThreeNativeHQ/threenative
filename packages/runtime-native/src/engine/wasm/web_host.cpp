@@ -198,9 +198,14 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     outputChanged = false;
     database.shadowMapEnabled = shadowMap;
     database.shadowMapType = shadowMapType;
-    {
+    // A refusal the renderer throws (an unported feature, a refused binding) is this frame's named
+    // failure, never a bare WebAssembly.Exception in the page.
+    std::string refused;
+    try {
         Renderer::PresentScope present(*renderer, view, surfaceFormat);
         database.render(*renderer, *scene, *camera, {r, g, b, a});
+    } catch (const std::exception& error) {
+        refused = error.what();
     }
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(frame.texture);
@@ -209,6 +214,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     static std::set<std::string> reported;
     for (const std::string& diagnostic : renderer->diagnostics())
         if (reported.insert(diagnostic).second) std::fprintf(stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
+    if (!refused.empty()) return fail(refused);
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
     return 0;
 }

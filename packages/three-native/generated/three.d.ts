@@ -861,11 +861,17 @@ export declare const IncrementStencilOp: 7682;
 /** Catalog partial (native-not-implemented): three/IncrementWrapStencilOp. */
 export declare const IncrementWrapStencilOp: 34055;
 
+/** Catalog supported: three/InstancedBufferGeometry. */
+export declare class InstancedBufferGeometry extends BufferGeometry {
+constructor();
+instanceCount: number;
+}
+
 /** Catalog supported: three/webgpu/InstancedMesh. */
 export declare class InstancedMesh extends Mesh {
 constructor();
 count: number;
-readonly instanceColor: InstancedBufferAttribute | null;
+instanceColor: InstancedBufferAttribute | null;
 readonly instanceMatrix: InstancedBufferAttribute;
 boundingBox: Box3 | null;
 
@@ -967,7 +973,7 @@ export declare const LessStencilFunc: 513;
 export declare class Line extends Object3D {
 constructor();
 readonly morphTargetInfluences: number[] | undefined;
-readonly geometry: BufferGeometry;
+geometry: BufferGeometry;
 material: Material;
 
   updateMorphTargets(): void;
@@ -1026,6 +1032,9 @@ color: Color;
 map: Texture | null;
 vertexColors: boolean;
 forceSinglePass: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -1423,6 +1432,9 @@ blending: Blending;
 vertexColors: boolean;
 forceSinglePass: boolean;
 vertexNode: Node | null;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -1484,6 +1496,7 @@ aoMapIntensity: number;
 emissive: Color;
 emissiveIntensity: number;
 emissiveMap: Texture | null;
+bumpMap: Texture | null;
 bumpScale: number;
 normalMap: Texture | null;
 normalMapType: NormalMapTypes;
@@ -1556,6 +1569,11 @@ emissiveMap: Texture | null;
 vertexColors: boolean;
 forceSinglePass: boolean;
 vertexNode: Node | null;
+bumpScale: number;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
+bumpMap: Texture | null;
 
   clone(): this;
 
@@ -2411,7 +2429,7 @@ export declare class Sprite extends Object3D {
 constructor();
 count: number;
 readonly morphTargetInfluences: number[];
-readonly geometry: BufferGeometry;
+geometry: BufferGeometry;
 material: SpriteMaterial;
 
   updateMorphTargets(): void;
@@ -2439,6 +2457,9 @@ fog: boolean;
 blending: Blending;
 vertexColors: boolean;
 forceSinglePass: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -2475,6 +2496,9 @@ blending: Blending;
 vertexColors: boolean;
 forceSinglePass: boolean;
 vertexNode: Node | null;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -3132,6 +3156,9 @@ normalMap: Texture | null;
 normalScale: Vector2;
 vertexColors: boolean;
 forceSinglePass: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 
@@ -3164,6 +3191,9 @@ normalMap: Texture | null;
 normalScale: Vector2;
 vertexColors: boolean;
 forceSinglePass: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 

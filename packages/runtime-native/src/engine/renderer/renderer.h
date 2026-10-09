@@ -39,6 +39,9 @@ class Texture;  // the material's diffuse `map` (engine/scene/texture.h)
 /** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
 enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 
+/** A material graph's texture(object, uv) reads: the binding name ("nodeMap<id>") and the texture. */
+using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
+
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
     bool background = false;
@@ -48,6 +51,17 @@ struct DrawItem {
     BufferStore* positions = nullptr;    // vec3 float
     BufferStore* normals = nullptr;      // vec3 float; unused by Basic
     BufferStore* uvs = nullptr;          // vec2 float; only a mapped material's program reads it
+    /** material.polygonOffset's depth bias (units) and slope scale (factor), zero without it. */
+    int32_t depthBias = 0;
+    float depthBiasSlopeScale = 0;
+    /** The geometry's other attributes (TSL attribute(name) reads them), float, and whether each is an
+     *  InstancedBufferAttribute read once per instance. */
+    struct CustomAttribute {
+        std::string name;
+        BufferStore* store = nullptr;
+        bool perInstance = false;
+    };
+    std::vector<CustomAttribute> attributes;
     BufferStore* colors = nullptr;       // material.vertexColors: the `color` attribute as float32
     uint8_t colorSize = 0;               // its item size, 3 or 4; 0 without vertex colours
     BufferStore* indices = nullptr;      // u16 or u32; null draws non-indexed
@@ -70,8 +84,8 @@ struct DrawItem {
     Matrix envRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     /** A node graph's pmremTexture source: prefiltered as an environment is, sampled as "pmrem". */
     const Texture* pmremMap = nullptr;
-    /** A node graph's texture(object) samples, by binding name (`t_<name>`); null when it has none. */
-    const std::vector<std::pair<std::string, const Texture*>>* nodeTextures = nullptr;
+    /** A node graph's texture(object) samples, by binding name (`t_<name>`, either stage); null when it has none. */
+    const GraphTextures* nodeTextures = nullptr;
     Matrix pmremRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};  // three's materialEnvRotation
     /** A node graph's reflector (an engine::Reflector) and the view of its mirrored pass, sampled as "reflector". */
     const void* reflector = nullptr;
@@ -128,6 +142,8 @@ struct CameraState {
     // In three's WebGPUCoordinateSystem (clip z 0..1): WebGPURenderer.render switches a camera to it
     // and recomputes projectionMatrix, so the render database does the same before it fills this.
     Matrix projectionMatrix{};
+    /** The camera's near and far planes (TSL's cameraNear / cameraFar). */
+    double near = 0.1, far = 2000;
 };
 
 /** One direct light, world space and linear colour with its intensity folded in. */
@@ -345,10 +361,12 @@ private:
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
         kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kCameraPosition, kCameraProjectionMatrix,
-        kRoughnessMapUvTransform, kMetalnessMapUvTransform, kAoMapUvTransform, kEmissiveMapUvTransform, kSpecularColorMapUvTransform,
+        kRoughnessMapUvTransform, kMetalnessMapUvTransform, kAoMapUvTransform, kEmissiveMapUvTransform,
+        kBumpMapUvTransform, kSpecularColorMapUvTransform,
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
-        kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale,
-        kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kSlotCount
+        kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
+        kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
+        kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -385,7 +403,7 @@ private:
                             const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps = nullptr,
                             WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
                             WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr,
-                            const std::vector<std::pair<std::string, const MaterialTexture*>>* nodeTextures = nullptr);
+                            const GraphTextures* graphTextures = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         Handle gpu;
@@ -470,6 +488,10 @@ private:
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
+    // The viewport textures (three's viewportSharedTexture / viewportDepthTexture): the scene colour
+    // and depth copied at the first draw that reads either, created with the scene target.
+    WGPUTexture viewportColor_ = nullptr, viewportDepth_ = nullptr;
+    WGPUTextureView viewportColorView_ = nullptr, viewportDepthView_ = nullptr;
     WGPUSampler linearClampSampler_ = nullptr;
     Handle color_;
     WGPUTexture depth_ = nullptr;
@@ -507,6 +529,7 @@ private:
     uint64_t renderId_ = 0;
     FrameStats lastFrame_;
     WGPURenderBundle mainBundle_ = nullptr;
+    WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
     std::vector<uint64_t> mainBundleKey_;
     FrameStats mainBundleStats_;
     bool timerBeganAtShadow_ = false;

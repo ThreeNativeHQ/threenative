@@ -85,6 +85,12 @@ const FUNCTIONS = [
   "ivec2",
   "textureLoad",
   "reflect",
+  "dFdx",
+  "dFdy",
+  "lengthSq",
+  "viewportSharedTexture",
+  "viewportDepthTexture",
+  "linearDepth",
   "convertToTexture",
   "varying",
   // The live post effects (lane-531's table entries); post-effects.ts publishes them as three's addons.
@@ -101,7 +107,10 @@ const FUNCTIONS = [
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
+  "viewportLinearDepth",
   "cameraPosition",
+  "cameraNear",
+  "cameraFar",
   "cameraProjectionMatrix",
   "cameraWorldMatrix",
   "positionGeometry",
@@ -159,6 +168,7 @@ const METHODS = [
   "distance",
   "cross",
   "reflect",
+  "lengthSq",
   "mix",
   "clamp",
   "smoothstep",
@@ -170,6 +180,7 @@ const METHODS = [
   "flipY",
   "flipZ",
   "flipW",
+  "level",
   "transformDirection",
 ] as const;
 /** three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, as xyzw lanes. */

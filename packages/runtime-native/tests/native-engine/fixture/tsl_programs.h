@@ -36,6 +36,22 @@ inline engine::Material* materialOf(binding::Object& object) {
     return static_cast<engine::Material*>(object.ptr.get());
 }
 
+/** The JS programs' dataTexture(): RGBA8, linear filtering, texels from `texel(x, y)`. */
+template <typename Texel>
+std::shared_ptr<engine::DataTexture> dataTexture(uint32_t width, uint32_t height, Texel texel) {
+    auto map = std::make_shared<engine::DataTexture>();
+    map->width = width; map->height = height; map->data.resize(std::size_t(width) * height * 4);
+    for (uint32_t y = 0; y < height; ++y) for (uint32_t x = 0; x < width; ++x) {
+        const auto rgb = texel(x, y);
+        const auto at = (std::size_t(y) * width + x) * 4;
+        map->data[at] = rgb[0]; map->data[at + 1] = rgb[1]; map->data[at + 2] = rgb[2]; map->data[at + 3] = 255;
+    }
+    map->magFilter = static_cast<uint16_t>(engine::TextureFilter::Linear);
+    map->minFilter = static_cast<uint16_t>(engine::TextureFilter::Linear);
+    map->needsUpdate();
+    return map;
+}
+
 /** The equirectangular sky of the JS programs' equirectSky(): asymmetric bands. */
 inline std::shared_ptr<engine::DataTexture> equirectSky() {
     auto sky = std::make_shared<engine::DataTexture>();
@@ -322,6 +338,52 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         scene.backgroundRotation.set(0.1, 0.4, 0); scene.environmentRotation.set(0.1, 0.4, 0);
         return "";
     }
+    if (program == "instanced-geometry") {
+        if (object.cls != "Scene") return "TN_FIXTURE_INSTANCED_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto* quads = dynamic_cast<engine::Mesh*>(scene.getObjectByName("quads"));
+        if (!quads || !quads->material) return "TN_FIXTURE_INSTANCED_INVALID: quads/material";
+        namespace g = engine::shader::graph;
+        // Through the shared TSL table, as V8 and Wasm build it.
+        uint64_t serial = 0;
+        const auto tsl = [&serial](const char* name, std::vector<abi::TslArg> args) {
+            return abi::tslCall(name, nullptr, args, serial);
+        };
+        g::Node view;
+        for (auto& [label, node] : abi::tslConstants())
+            if (label == "cameraViewMatrix") view = node;
+        const auto offset = tsl("attribute", {abi::TslArg::of(std::string("aOffset")), abi::TslArg::of(std::string("vec3"))});
+        const auto tint = tsl("attribute", {abi::TslArg::of(std::string("aTint")), abi::TslArg::of(std::string("vec3"))});
+        const auto local = g::add(g::mul(g::positionLocal(), g::float_(0.4f)), offset);
+        quads->material->nodes.vertexNode = g::mul(tsl("cameraProjectionMatrix", {}), g::mul(view, g::vec4({local, g::float_(1)})));
+        quads->material->nodes.colorNode = g::vec4({tint, g::float_(1)});
+        quads->material->needsUpdate();
+        return "";
+    }
+    if (program == "viewport-textures") {
+        if (object.cls != "Scene") return "TN_FIXTURE_VIEWPORT_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto* water = dynamic_cast<engine::Mesh*>(scene.getObjectByName("water"));
+        if (!water || !water->material) return "TN_FIXTURE_VIEWPORT_INVALID: water/material";
+        namespace g = engine::shader::graph;
+        // Through the shared TSL table, as V8 and Wasm build it.
+        uint64_t serial = 0;
+        const auto behind = abi::tslCall("viewportSharedTexture", nullptr,
+            {abi::TslArg::of(g::add(g::screenUV(), g::vec2({g::float_(0.02f), g::float_(0)})))}, serial);
+        g::Node linear;
+        for (auto& [label, node] : abi::tslConstants())
+            if (label == "viewportLinearDepth") linear = node;
+        const auto own = abi::tslCall("linearDepth", nullptr, {}, serial);
+        const auto offsetDepth = abi::tslCall("viewportDepthTexture", nullptr,
+            {abi::TslArg::of(g::add(g::screenUV(), g::vec2({g::float_(0.02f), g::float_(0)})))}, serial);
+        const auto offsetLinear = abi::tslCall("linearDepth", nullptr, {abi::TslArg::of(offsetDepth)}, serial);
+        water->material->nodes.colorNode = g::vec4({g::add(g::add(g::mul(g::swizzle(behind, "xyz"),
+            g::vec3({g::float_(0.5f), g::float_(0.8f), g::float_(1)})),
+            g::vec3({g::float_(0), g::float_(0), g::mul(g::sub(linear, own), g::float_(8))})),
+            g::vec3({g::mul(offsetLinear, g::float_(0.2f)), g::float_(0), g::float_(0)})), g::float_(1)});
+        water->material->needsUpdate();
+        return "";
+    }
     if (program == "reflector-plane") {
         if (object.cls != "Scene") return "TN_FIXTURE_REFLECTOR_INVALID: requires scene";
         auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
@@ -453,6 +515,22 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         const abi::TslArg receiver = abi::TslArg::of(screen);
         const auto flipped = abi::tslCall("flipX", &receiver, {}, serial);
         material->nodes.colorNode = g::vec4({flipped, g::mul(g::swizzle(screen, "x"), g::swizzle(screen, "y")), g::float_(1)});
+    } else if (program == "tsl-texture-object") {
+        // Through the shared TSL table: texture(textureObject, uv) and .level(0), as V8 and Wasm build them.
+        uint64_t serial = 0;
+        using Rgb = std::array<uint8_t, 3>;
+        const auto ramp = tsl_detail::dataTexture(8, 4, [](uint32_t tx, uint32_t ty) {
+            return Rgb{uint8_t(tx * 36), uint8_t(ty * 80), uint8_t(200 - tx * 20)}; });
+        const auto bumps = tsl_detail::dataTexture(8, 8, [](uint32_t tx, uint32_t ty) {
+            return Rgb{uint8_t(((tx + ty) % 4) * 80), 0, 0}; });
+        const auto sample = [&serial](std::shared_ptr<engine::DataTexture> map) {
+            return abi::tslCall("texture", nullptr, {abi::TslArg::objectOf("DataTexture", std::move(map)), abi::TslArg::of(g::uv())}, serial);
+        };
+        const abi::TslArg bump = abi::TslArg::of(sample(bumps));
+        const auto level = abi::tslCall("level", &bump, {abi::TslArg::of(0.0)}, serial);
+        material->nodes.positionNode = g::add(g::positionLocal(),
+            g::vec3({g::float_(0), g::float_(0), g::mul(g::swizzle(level, "x"), g::float_(0.4))}));
+        material->nodes.colorNode = g::vec4({g::swizzle(sample(ramp), "xyz"), g::float_(1)});
     } else if (program == "texture-object") {
         // texture(object, uv) through the shared TSL table, as V8 and Wasm pass an engine Texture.
         uint64_t serial = 0;

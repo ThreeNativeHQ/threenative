@@ -238,6 +238,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.specularColor = {float(m.specularColor.r), float(m.specularColor.g), float(m.specularColor.b)};
     p.clearcoat = float(m.clearcoat);
     p.clearcoatRoughness = float(m.clearcoatRoughness);
+    p.bumpScale = float(m.bumpScale);
     p.clearcoatNormalScale = {float(m.clearcoatNormalScale.x), float(m.clearcoatNormalScale.y)};
     p.sheen = float(m.sheen);
     p.transmission = float(m.transmission);
@@ -257,6 +258,45 @@ BufferStore* store(const BufferGeometry& g, const char* name) {
 // The renderer binds position, normal, uv and skin weights as float32. glTF stores quantized models
 // with normalized 8/16-bit attributes (GLTFExporter writes int8 normals, WEIGHTS_0 is unsigned byte
 // in most files): they reach the shader as a dequantized float32 copy, kept while the source is unchanged.
+// three's vertexColors: a material that asks for them reads the geometry's `color` attribute (3 or 4
+// components); without the attribute three draws the plain colour, and so does this.
+void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Material& material, DrawItem& d) {
+    d.colors = nullptr;
+    d.colorSize = 0;
+    if (!material.vertexColors) return;
+    const auto it = geometry.attributes.find("color");
+    if (it == geometry.attributes.end() || !it->second) return;
+    if (it->second->itemSize != 3 && it->second->itemSize != 4)
+        throw std::runtime_error("TN_NATIVE_VERTEX_COLORS_UNSUPPORTED: a color attribute of " +
+                                 std::to_string(it->second->itemSize) + " components");
+    d.colors = floatStore(geometry, "color");
+    d.colorSize = static_cast<uint8_t>(it->second->itemSize);
+}
+
+// The geometry's attributes beyond the ones the programs name (a TSL attribute() reads them), and an
+// InstancedBufferGeometry's instance count: instanceCount, at most what its per-instance attributes
+// hold, as three's WebGL backend clamps it (_maxInstanceCount).
+void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& d) {
+    d.attributes.clear();
+    uint64_t held = std::numeric_limits<uint64_t>::max();
+    for (const auto& [name, attribute] : geometry.attributes) {
+        if (!attribute || name == "position" || name == "normal" || name == "uv" || name == "color" ||
+            name == "skinIndex" || name == "skinWeight")
+            continue;
+        d.attributes.push_back({name, floatStore(geometry, name.c_str()), attribute->perInstance});
+        if (attribute->perInstance) held = std::min(held, attribute->count());
+    }
+    if (!geometry.instanced) return;
+    const double count = std::min(geometry.instanceCount, held == std::numeric_limits<uint64_t>::max() ? 0.0 : double(held));
+    d.instanceCount = static_cast<uint32_t>(std::min(count, double(std::numeric_limits<uint32_t>::max())));
+}
+
+// three's polygonOffset as WebGPUPipelineUtils sets it: depthBias = units, slope scale = factor.
+void RenderDatabase::depthBiasOf(const Material& material, DrawItem& d) {
+    d.depthBias = material.polygonOffset ? static_cast<int32_t>(material.polygonOffsetUnits) : 0;
+    d.depthBiasSlopeScale = material.polygonOffset ? static_cast<float>(material.polygonOffsetFactor) : 0.0f;
+}
+
 BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* name) {
     const auto it = g.attributes.find(name);
     if (it == g.attributes.end() || !it->second) return nullptr;
@@ -343,6 +383,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     if (r.draw) {
         r.draw->item.matrixWorld = toArray(mesh.matrixWorld);
         r.draw->item.renderOrder = mesh.renderOrder();
+        // A game moves an InstancedBufferGeometry's instanceCount every frame (Midway's particles).
+        if (mesh.geometry && mesh.geometry->instanced) geometryInputsOf(*mesh.geometry, r.draw->item);
         return r;
     }
     r.draw = std::make_unique<Record::Draw>();
@@ -353,14 +395,6 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.normals = r.buffers[1];
     d.uvs = r.buffers[2];
     d.indices = r.buffers[3];
-    if (material->vertexColors) {  // three reads the `color` attribute only when the material asks
-        const auto color = mesh.geometry->attributes.find("color");
-        if (color != mesh.geometry->attributes.end() && color->second &&
-            (color->second->itemSize == 3 || color->second->itemSize == 4)) {
-            d.colors = floatStore(*mesh.geometry, "color");
-            d.colorSize = d.colors ? uint8_t(color->second->itemSize) : 0;
-        }
-    }
     // The diffuse map is sampled only when its image is decoded and the geometry carries uv; an
     // image-less glTF placeholder (source only) keeps drawing its flat colour as before.
     if (d.uvs != nullptr) {
@@ -375,6 +409,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.aoMapIntensity = material->aoMapIntensity;
     d.normalScaleX = material->normalScale.x;
     d.normalScaleY = material->normalScale.y;
+    vertexColorsOf(*mesh.geometry, *material, d);
+    depthBiasOf(*material, d);
+    geometryInputsOf(*mesh.geometry, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
@@ -416,6 +453,9 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.aoMapIntensity = r.material->aoMapIntensity;
     d.normalScaleX = r.material->normalScale.x;
     d.normalScaleY = r.material->normalScale.y;
+    if (mesh.geometry) vertexColorsOf(*mesh.geometry, *r.material, d);
+    depthBiasOf(*r.material, d);
+    if (mesh.geometry) geometryInputsOf(*mesh.geometry, d);
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     return d;
@@ -423,7 +463,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
 
 const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material& material) {
     static const GraphSources none;
-    std::array<const void*, 7> roots{};
+    std::array<const void*, 8> roots{};
     const auto graphs = material.nodes.pointers();
     std::copy(graphs.begin(), graphs.end(), roots.begin());
     if (std::all_of(roots.begin(), roots.end(), [](const void* root) { return root == nullptr; })) return none;
@@ -456,6 +496,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                  !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                  !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
+                                 !mesh.geometry->instanced &&
                                  (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
                                  mesh.matrixWorld.determinant() > 0;
             Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
@@ -1142,6 +1183,10 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
+    if (const auto* perspective = dynamic_cast<const PerspectiveCamera*>(&camera))
+        std::tie(state.near, state.far) = std::pair{perspective->near, perspective->far};
+    else if (const auto* orthographic = dynamic_cast<const OrthographicCamera*>(&camera))
+        std::tie(state.near, state.far) = std::pair{orthographic->near, orthographic->far};
     if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
         clear = {world->background->r, world->background->g, world->background->b, 1};
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};

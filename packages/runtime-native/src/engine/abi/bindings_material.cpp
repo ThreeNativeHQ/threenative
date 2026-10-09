@@ -129,11 +129,14 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "transparent", &Material::transparent);
     materialBool(b, "depthTest", &Material::depthTest);
     materialBool(b, "depthWrite", &Material::depthWrite);
+    materialBool(b, "forceSinglePass", &Material::forceSinglePass);
+    materialBool(b, "vertexColors", &Material::vertexColors);
+    materialBool(b, "polygonOffset", &Material::polygonOffset);
+    materialNumber(b, "polygonOffsetFactor", &Material::polygonOffsetFactor);
+    materialNumber(b, "polygonOffsetUnits", &Material::polygonOffsetUnits);
     materialBool(b, "visible", &Material::visible);
     materialBool(b, "toneMapped", &Material::toneMapped);
     materialBool(b, "fog", &Material::fog);
-    materialBool(b, "vertexColors", &Material::vertexColors);
-    materialBool(b, "forceSinglePass", &Material::forceSinglePass);
     materialNumber(b, "opacity", &Material::opacity);
     materialNumber(b, "alphaTest", &Material::alphaTest);
     b.getters["side"] = [](void* self) { return Value::of(double(as<Material>(self)->side)); };
@@ -212,6 +215,7 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     // The standard program's scalar and emissive maps (shader::kPbrMapNames) and the occlusion strength.
     for (int k = 0; k < shader::kStandardPbrMapCount; ++k) materialMapSlot(b, shader::kPbrMapNames[k]);
     materialNumber(b, "aoMapIntensity", &Material::aoMapIntensity);
+    materialNumber(b, "bumpScale", &Material::bumpScale);
     if (type == MaterialType::Standard) return;
     materialNumber(b, "ior", &Material::ior);
     materialNumber(b, "specularIntensity", &Material::specularIntensity);

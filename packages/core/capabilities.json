@@ -7726,6 +7726,11 @@
         "source": "three"
       },
       {
+        "symbol": "InstancedBufferGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "InstancedMesh",
         "kind": "class",
         "source": "three/webgpu"

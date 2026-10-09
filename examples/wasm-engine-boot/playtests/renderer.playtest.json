@@ -109,6 +109,25 @@
         "path": "triangles",
         "gte": 24,
         "allowTrivial": "ready() resolves after the first engine frame; two boxes of 12 triangles plus the output pass."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "renderUpdates",
+        "gte": 30
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "finished",
+        "equals": 1
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "trackAudit",
+        "equals": "box/position 1 refused",
+        "allowTrivial": "Set once before the first frame: one path binds, the missing node is reported."
       }
     ],
     "visual": [

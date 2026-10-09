@@ -388,7 +388,26 @@ void registerVector3(ClassBinding& b) {
     chainVoid<Vector3>(b, "roundToZero", &Vector3::roundToZero);
     chainVoid<Vector3>(b, "negate", &Vector3::negate);
     chainVoid<Vector3>(b, "normalize", &Vector3::normalize);
-    chainRef<Vector3, Vector3>(b, "copy", "Vector3", &Vector3::copy);
+    // three's copy reads v.x, v.y and v.z: a Vector3, or a plain {x, y, z} a game passes (Midway's
+    // audio cues), copies the same.
+    b.methods["copy"] = [](void* self, const Args& a, Store& d) {
+        const Value& source = a.at(0);
+        if (source.kind == Value::Kind::Record) {
+            double xyz[3] = {0, 0, 0};
+            int found = 0;
+            for (const auto& [key, value] : source.fields) {
+                const auto lane = key == "x" ? 0 : key == "y" ? 1 : key == "z" ? 2 : -1;
+                if (lane < 0) continue;
+                xyz[lane] = number(value);
+                ++found;
+            }
+            if (found != 3) throw Unsupported{"copy needs a Vector3 or an object with x, y and z"};
+            as<Vector3>(self)->set(xyz[0], xyz[1], xyz[2]);
+            return chain();
+        }
+        as<Vector3>(self)->copy(d.ref<Vector3>(source, "Vector3"));
+        return chain();
+    };
     chainRef<Vector3, Vector3>(b, "add", "Vector3", &Vector3::add);
     chainRef<Vector3, Vector3>(b, "sub", "Vector3", &Vector3::sub);
     chainRef<Vector3, Vector3>(b, "multiply", "Vector3", &Vector3::multiply);

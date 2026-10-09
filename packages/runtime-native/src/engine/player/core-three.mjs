@@ -140,7 +140,8 @@ export function unsupported() {
 }
 
 export const BatchedMesh = unsupported;
-export const InstancedBufferGeometry = unsupported;
+// three's InstancedBufferGeometry: an engine class, drawn instanceCount times.
+export const { InstancedBufferGeometry } = globalThis;
 export const LineLoop = unsupported;
 export const Points = unsupported;
 export const WebGLRenderer = unsupported;
@@ -212,6 +213,7 @@ const geometries = [
   DodecahedronGeometry,
   OctahedronGeometry,
   TorusKnotGeometry,
+  InstancedBufferGeometry,
 ];
 // Adapt wrapper inheritance only; native classes continue to own every scene operation.
 for (const [base, names] of [

@@ -68,7 +68,7 @@ export function defineWebRenderer(
   let claimed = false;
   const string = (text: string): number => {
     const bytes = module.lengthBytesUTF8(text) + 1;
-    const pointer = module._malloc(bytes);
+    const pointer = module._malloc(bytes) >>> 0;
     module.stringToUTF8(text, pointer, bytes);
     return pointer;
   };
@@ -151,7 +151,7 @@ export function defineWebRenderer(
     init(): Promise<this> {
       this.#initialized ??= (async () => {
         module.specialHTMLTargets[CANVAS_TARGET] = this.domElement;
-        handles = module._malloc(36);
+        handles = module._malloc(36) >>> 0;
         const selector = string(CANVAS_TARGET);
         try {
           check(module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight()));
@@ -321,7 +321,7 @@ export function defineWebRenderer(
     const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
     if (id === 0) check(1);
     const size = width * height * 8;
-    const out = module._malloc(size);
+    const out = module._malloc(size) >>> 0;
     try {
       for (;;) {
         module._tnw_web_poll();

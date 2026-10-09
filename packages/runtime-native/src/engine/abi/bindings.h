@@ -2,6 +2,12 @@
 
 #include "engine/abi/binding.h"
 
+#include <memory>
+
+namespace tn::engine {
+class BufferAttribute;
+}
+
 namespace tn::binding {
 
 /** The math classes (PRD-501): Vector2/3/4, Matrix3/4, Quaternion, Euler, Color and primitives. */
@@ -18,6 +24,8 @@ void registerObject3DBindings(ClassBinding& b);
 
 /** Resolves any scene node argument, refusing non-Object3D classes. */
 engine::Object3D& objectArg(Store& store, const Value& arg);
+/** The caller's BufferAttribute (any of its bound classes) itself, not a copy. */
+std::shared_ptr<engine::BufferAttribute> sharedAttributeArg(Store& store, const Value& arg);
 
 /** Geometry (PRD-508): BufferAttribute, BufferGeometry and the built-in generators. */
 void registerGeometryBindings(Registry& classes);

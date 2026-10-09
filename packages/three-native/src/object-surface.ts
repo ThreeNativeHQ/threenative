@@ -57,6 +57,23 @@ function defineGeometrySurface(
       authoredNames.get(this)?.delete(String(name));
       return deleteAttribute.call(this, name);
     };
+    // three's morphAttributes is a plain object a game replaces whole (core's merge clears it with
+    // {}): the engine's holder takes its position and normal arrays, an absent one as none, and
+    // any other key is refused by name.
+    const morph = Object.getOwnPropertyDescriptor(prototype, "morphAttributes");
+    if (morph?.get !== undefined && morph.set === undefined)
+      Object.defineProperty(prototype, "morphAttributes", {
+        configurable: true,
+        get: morph.get,
+        set(this: object, value: Record<string, unknown>) {
+          for (const key of Object.keys(value))
+            if (key !== "position" && key !== "normal")
+              throw new TypeError(`TN_NATIVE_UNSUPPORTED morphAttributes.${key} is not ported`);
+          const holder = morph.get?.call(this) as Record<string, unknown>;
+          holder.position = value.position ?? [];
+          holder.normal = value.normal ?? [];
+        },
+      });
     // The registry answers `groups` as canonical JSON text (the fixtures' protocol); three's is an
     // array of { start, count, materialIndex } in that key order.
     // ponytail: a fresh array per read, so edit groups with addGroup/clearGroups, as three advises.
