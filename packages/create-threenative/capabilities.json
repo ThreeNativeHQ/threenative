@@ -4096,6 +4096,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class Area3D { … }",
       "situations": [
         "detect when an enemy enters a trigger area",
@@ -4141,6 +4142,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export function boxFootprint(halfWidth: number, halfDepth: number): ISnowFootprint { … }",
       "situations": [
         "let a crate, platform or plank press a rectangular pit into snow",
@@ -4161,6 +4163,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export function buildStaticColliders( context: IStaticColliderContext, root: Object3D, filter?: StaticColliderFilter, ): readonly RigidBody3D[] { … }",
       "situations": [
         "make the level I built stop the player",
@@ -4178,6 +4181,7 @@
       "kind": "class",
       "overrides": ["buoyancy disables force application while submergedFraction remains measured"],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class Buoyancy3D { … }",
       "situations": ["float a boat on waves", "keep a hull above a moving water surface"],
       "summary": "Float a rigid body on a game-owned height source with fixed-step force ordering.",
@@ -4192,6 +4196,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export function capsuleFootprint(halfHeight: number, radius: number): ISnowFootprint { … }",
       "situations": [
         "let a fallen capsule, limb or barrel leave a linear imprint in snow",
@@ -4218,6 +4223,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class CharacterBody3D { … }",
       "situations": [
         "move an enemy or player through a level",
@@ -4235,6 +4241,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class CollisionShape3D { … }",
       "situations": [
         "add a capsule or box collider to a character",
@@ -4252,6 +4259,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export function interactionGroups(layer: number, mask: number): number { … }",
       "situations": [
         "make an enemy collide with the world but not pickups",
@@ -4272,6 +4280,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class Joint3D { … }",
       "situations": [
         "constrain a rigid body to another body",
@@ -4290,6 +4299,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class PhysicsDirectSpaceState3D { … }",
       "situations": [
         "raycast for visibility or aiming",
@@ -4307,6 +4317,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export function rapier(options: IPhysicsOptions = { … }",
       "situations": [
         "add physics to a portable game",
@@ -4329,6 +4340,7 @@
         "continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting"
       ],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class RigidBody3D { … }",
       "situations": [
         "give a crate or prop physical motion",
@@ -4352,6 +4364,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export function softBodyCollision(...bodies: readonly RigidBody3D[]): ISoftBodyCollision { … }",
       "situations": [
         "stop a cloth flag, cape, or curtain at an existing physics wall",
@@ -4380,6 +4393,7 @@
         "continuousCollision is on for the chassis, so a fast car cannot tunnel through a wall"
       ],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class VehicleBody3D extends RigidBody3D { … }",
       "situations": [
         "drive a car, truck or bike around a track",
@@ -4399,6 +4413,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class NavigationAgent3D { … }",
       "situations": [
         "enemy walks around a wall",
@@ -4421,6 +4436,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class NavigationObstacle3D { … }",
       "situations": [
         "keep navigation agents away from a blocking prop",
@@ -4438,6 +4454,7 @@
       "kind": "class",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export class NavigationRegion3D { … }",
       "situations": [
         "let enemies walk around level geometry",
@@ -4455,6 +4472,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/physics",
+      "requires": ["npm i @threenative/physics"],
       "signature": "export function recast(): NavigationPlugin { … }",
       "situations": ["enemy walks around a wall", "NPC patrols a level and chases a player"],
       "summary": "Install navmesh pathfinding and crowd avoidance.",
@@ -6920,6 +6938,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ui",
+      "requires": ["npm i @threenative/ui"],
       "signature": "export function DebugOverlay() { … }",
       "situations": [
         "display runtime and playtest diagnostics in a React HUD",
@@ -6939,6 +6958,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ui",
+      "requires": ["npm i @threenative/ui"],
       "signature": "export function GameCanvas<TState extends Record<string, unknown>, TPhysics>( { … }",
       "situations": [
         "add a game viewport to a React application",
@@ -6956,6 +6976,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ui",
+      "requires": ["npm i @threenative/ui"],
       "signature": "export function UiLayer( { … }",
       "situations": [
         "write one HUD that looks the same on the web build and on a phone",
@@ -6973,6 +6994,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ui",
+      "requires": ["npm i @threenative/ui"],
       "signature": "export function useGameState<TState extends Record<string, unknown>, TPhysics, TSelected>( game: IGame<TState, TPhysics>, selector: GameSelector<TState, TSelected>, ): TSelected;",
       "situations": [
         "bind a HUD component to game state",
@@ -6990,6 +7012,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ui",
+      "requires": ["npm i @threenative/ui"],
       "signature": "export function useUiIntent(): (intent: string, payload?: unknown) => void { … }",
       "situations": [
         "wire a Restart button in a HUD to the running game",
@@ -7007,6 +7030,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/ui",
+      "requires": ["npm i @threenative/ui"],
       "signature": "export function useUiState<TState extends object>(): TState | undefined;",
       "situations": [
         "bind a HUD to game state on web and native alike",
