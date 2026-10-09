@@ -176,11 +176,6 @@ for (const name of [
         return parent.call(this) ?? null;
       },
     },
-    children: {
-      get() {
-        return globalThis.tn.children(this);
-      },
-    },
     userData: {
       get() {
         if (!bags.has(this)) bags.set(this, {});
