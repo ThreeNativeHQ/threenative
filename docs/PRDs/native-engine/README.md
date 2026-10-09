@@ -1,12 +1,19 @@
-# ThreeNative Native Engine — batch index and implementation proposal
+# ThreeNative Native Engine — Implementation Proposal
 
-This file is the index for the native-engine PRDs. Start here. The implementation proposal that
-the PRDs cite by section number (§2 to §19) follows the index, unchanged.
+**Status:** Proposed architecture and delivery plan; not an implementation or a claim of benchmarked performance.  
+**Prepared:** 4 October 2026.  
+**Repository reference:** `ThreeNativeHQ/threenative`, `develop` commit `15adf350da53addfa33675c2b3f0e2722e086e37`.  
+**Compatibility baseline:** workspace-pinned `three@0.185.1`, including ThreeNative’s current patch.  
+**Audience:** Engineering owner and agents preparing individual PRDs.
+
+All new package names, configuration fields, ABI names, status markers, and work-package identifiers below are proposals. They do not describe existing commands or published packages.
+
+## Start here
 
 **Owner goal (2026-10-08):** any three.js game runs on Wasm (web), native V8 and Perry with no
 faults, and runs fast.
 
-## How to start
+### How to start
 
 Execute [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md),
 phase 1, box 1: reproduce Midway's "argument is not a Vector3" error in a native test, then fix it
@@ -16,7 +23,7 @@ the shared C++ engine (`packages/runtime-native/src/engine`), so V8 and Wasm bot
 `pnpm prd:progress <prd file>` before you start and after each phase, and tick a box only with its
 proof green.
 
-## Remaining PRDs, in execution order
+### Remaining PRDs, in execution order
 
 Labels come from `pnpm prd:progress <file>` (2026-10-08). "Next box" is the first open box in the
 file.
@@ -39,7 +46,7 @@ file.
 The N22 folder index ([README](N22-three-surface-coverage/README.md)) holds the layer map of all
 495 catalog entries, the ranked gaps, the backlog and the per-game scorecard.
 
-## Why this order
+### Why this order
 
 ```mermaid
 flowchart LR
@@ -68,7 +75,7 @@ flowchart LR
    against its visual baseline and the §15.4 gates. PRD-519 and PRD-534 feed it measurements;
    PRD-499 needs only a PR CI run. PRD-530 (gate T) and PRD-535 come after promotion.
 
-## Owner decisions still parked
+### Owner decisions still parked
 
 | Decision | Holder |
 | --- | --- |
@@ -80,45 +87,70 @@ flowchart LR
 | Moving `MeshBVH` (`ScenePicker` behind `ctx.raycast`) behind a feature, a charter decision | [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md), minimal-template design notes |
 | Accepting the catalog owner link (layer, subsystem and owner PRD per entry, with a fail-closed check) | [N22 README](N22-three-surface-coverage/README.md#proposed-decision-owner-to-accept) |
 
-## Done
+PRD-536 (tests close the fail-open and regression holes) is not a native-engine PRD and is not on
+this branch, so it is not in the table. The done native-engine PRDs are the rows marked `done` in
+the progress table below.
 
-- [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md) — Architecture decision, scope and compatibility inventory (N00)
-- [PRD-498](../done/native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md) — Baseline and differential fixture runner (N01)
-- [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) — API catalog, binding ABI and version protocol (N03)
-- [PRD-501](../done/native-engine/N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) — Math matches the pinned reference (N04a)
-- [PRD-502](../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) — Handles keep identity and aliases (N04b)
-- [PRD-503](../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) — Unreachable cycles are reclaimed (N04c)
-- [PRD-504](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) — Buffers cross the ABI with an owner (N04d)
-- [PRD-505](../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) — The language corpus compiles on Linux x64 (N05a)
-- [PRD-506](../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) — Three imports bind natively and callbacks are reclaimed (N05b)
-- [PRD-507](../done/native-engine/N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) — The same corpus runs on Android arm64 (N05c)
-- [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) — Native scene graph, transforms, cameras and geometry (N06)
-- [PRD-509](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md) — GPU resources, presentation and device loss (N07)
-- [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) — A typed shader IR with ordered effects (N08a)
-- [PRD-511](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) — Shader packages, not WGSL text (N08b)
-- [PRD-512](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) — Standard PBR and deformation that shadows (N08c)
-- [PRD-513](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) — Compute, multipass and a dynamic graph (N08d)
-- [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md) — Native renderer and standard materials (N09)
-- [PRD-515](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) — Native glTF, cooked assets and decoders (N10)
-- [PRD-516](../done/native-engine/N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) — AnimationMixer semantics in native (N11a)
-- [PRD-517](../done/native-engine/N11-native-animation/PRD-517-n11b-morph-targets-and-property-tracks.md) — Morph targets and property tracks (N11b)
-- [PRD-518](../done/native-engine/N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) — Skinning palettes and pose history (N11c)
-- [PRD-520](../done/native-engine/N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) — Bounded streaming admission and IO events (N13a)
-- [PRD-521](../done/native-engine/N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) — WorldCells and WorldTiles run native (N13b)
-- [PRD-522](../done/native-engine/N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) — A world loads, walks and unloads without growth (N13c)
-- [PRD-523](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) — The render graph owns passes and history (N14a)
-- [PRD-524](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) — Virtual shadows run native (N14b)
-- [PRD-525](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) — Probes run native (N14c)
-- [PRD-526](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) — Post effects and render chains run native (N14d)
-- [PRD-527](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) — Particles and fluids run native (N14e)
-- [PRD-528](../done/native-engine/PRD-528-n15-framework-loop-rapier-sync-input-services.md) — Framework loop, Rapier sync, input and services (N15)
-- [PRD-529](../done/native-engine/PRD-529-n16-native-playtest-inspection-telemetry.md) — Native playtest, inspection and telemetry (N16)
-- [PRD-532](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) — WebAssembly native-core browser port (N19)
+## PRD index
 
-The batch moves to `done/` whole only when every PRD in it is finished. A work package too large
-for one PRD (at most 3 phases and about 8 boxes) is a folder with its own `README.md` and child PRDs.
+**Batch status: IN PROGRESS — 208/238 phase boxes (87%) as of 2026-10-06, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
 
-## Owner decisions (2026-10-04)
+### Progress
+
+Generated from the PRD files' boxes; a PRD is done when every box is ticked.
+
+| PRD | Work package | Boxes | State |
+| --- | --- | --- | --- |
+| [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md) | Architecture decision, scope and compatibility inventory (N00) | 6/6 | done |
+| [PRD-498](../done/native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md) | Baseline and differential fixture runner (N01) | 4/4 | done |
+| [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md) | The host links and runs without a JS engine (N02) | 7/8 | in progress |
+| [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) | API catalog, binding ABI and version protocol (N03) | 7/7 | done |
+| [PRD-501](../done/native-engine/N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md) | Math matches the pinned reference (N04a) | 5/5 | done |
+| [PRD-502](../done/native-engine/N04-lifetime-and-numerics/PRD-502-n04b-handles-keep-identity-and-aliases.md) | Handles keep identity and aliases (N04b) | 5/5 | done |
+| [PRD-503](../done/native-engine/N04-lifetime-and-numerics/PRD-503-n04c-unreachable-cycles-are-reclaimed.md) | Unreachable cycles are reclaimed (N04c) | 7/7 | done |
+| [PRD-504](../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) | Buffers cross the ABI with an owner (N04d) | 7/7 | done |
+| [PRD-505](../done/native-engine/N05-native-typescript-qualification/PRD-505-n05a-the-language-corpus-compiles-on-linux-x64.md) | The language corpus compiles on Linux x64 (N05a) | 6/6 | done |
+| [PRD-506](../done/native-engine/N05-native-typescript-qualification/PRD-506-n05b-three-imports-bind-natively-and-callbacks-are-reclaimed.md) | Three imports bind natively and callbacks are reclaimed (N05b) | 6/6 | done |
+| [PRD-507](../done/native-engine/N05-native-typescript-qualification/PRD-507-n05c-the-same-corpus-runs-on-android-arm64.md) | The same corpus runs on Android arm64 (N05c) | 4/4 | done |
+| [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md) | Native scene graph, transforms, cameras and geometry (N06) | 7/7 | done |
+| [PRD-509](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md) | GPU resources, presentation and device loss (N07) | 8/8 | done |
+| [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md) | A typed shader IR with ordered effects (N08a) | 4/4 | done |
+| [PRD-511](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) | Shader packages, not WGSL text (N08b) | 6/6 | done |
+| [PRD-512](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) | Standard PBR and deformation that shadows (N08c) | 5/5 | done |
+| [PRD-513](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-513-n08d-compute-multipass-and-a-dynamic-graph.md) | Compute, multipass and a dynamic graph (N08d) | 6/6 | done |
+| [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md) | Native renderer and standard materials (N09) | 8/8 | done |
+| [PRD-515](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md) | Native glTF, cooked assets and decoders (N10) | 7/7 | done |
+| [PRD-516](../done/native-engine/N11-native-animation/PRD-516-n11a-animation-mixer-semantics-in-native.md) | AnimationMixer semantics in native (N11a) | 6/6 | done |
+| [PRD-517](../done/native-engine/N11-native-animation/PRD-517-n11b-morph-targets-and-property-tracks.md) | Morph targets and property tracks (N11b) | 4/4 | done |
+| [PRD-518](../done/native-engine/N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md) | Skinning palettes and pose history (N11c) | 7/7 | done |
+| [PRD-519](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | Native batching, visibility, LOD and GPU scene (N12) | 6/7 | in progress |
+| [PRD-520](../done/native-engine/N13-native-streaming-and-world/PRD-520-n13a-bounded-streaming-admission-and-io-events.md) | Bounded streaming admission and IO events (N13a) | 5/5 | done |
+| [PRD-521](../done/native-engine/N13-native-streaming-and-world/PRD-521-n13b-worldcells-and-worldtiles-run-native.md) | WorldCells and WorldTiles run native (N13b) | 6/6 | done |
+| [PRD-522](../done/native-engine/N13-native-streaming-and-world/PRD-522-n13c-a-world-loads-walks-and-unloads-without-growth.md) | A world loads, walks and unloads without growth (N13c) | 4/4 | done |
+| [PRD-523](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md) | The render graph owns passes and history (N14a) | 7/7 | done |
+| [PRD-524](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md) | Virtual shadows run native (N14b) | 5/5 | done |
+| [PRD-525](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md) | Probes run native (N14c) | 5/5 | done |
+| [PRD-526](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-526-n14d-post-effects-and-render-chains-run-native.md) | Post effects and render chains run native (N14d) | 5/5 | done |
+| [PRD-527](../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-527-n14e-particles-and-fluids-run-native.md) | Particles and fluids run native (N14e) | 4/4 | done |
+| [PRD-528](../done/native-engine/PRD-528-n15-framework-loop-rapier-sync-input-services.md) | Framework loop, Rapier sync, input and services (N15) | 7/7 | done |
+| [PRD-529](../done/native-engine/PRD-529-n16-native-playtest-inspection-telemetry.md) | Native playtest, inspection and telemetry (N16) | 6/6 | done |
+| [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) | Strict native-TypeScript game packaging (N17) | 4/7 | in progress |
+| [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) | V8 game runtime adapter (N18) | 7/8 | in progress |
+| [PRD-532](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) | WebAssembly native-core browser port (N19) | 8/8 | done |
+| [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) | Platform qualification, performance and default promotion (N20) | 2/9 | in progress |
+| [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 2/5 | in progress |
+| [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
+| [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md) | Web games boot on the Wasm engine (N20 support) | 4/10 | in progress |
+| [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | Corpus gaps in math, the object model and geometry (N22a) | 0/6 | in progress |
+| [PRD-546](N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | Corpus gaps in materials, textures and render state (N22b) | 0/8 | in progress |
+| [PRD-547](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | Corpus gaps in TSL and shader nodes (N22c) | 0/8 | not started |
+| [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) | Corpus gaps in renderer passes, loaders, animation and addons (N22d) | 0/9 | not started |
+
+**CP1 (PRD-534), historical functional reading (2026-10-05), not the verdict:** `pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous` at 4,096 cubes (Xvfb and headless Dawn) measured hot path p50 10.26 ms for current ThreeNative, 23.60 ms through V8 and 13.28 ms from C++. That prototype preceded N12 native batching. The physical-desktop and Pixel 8 verdict runs remain open; these early timings do not describe the current engine.
+
+**Current performance boundary (2026-10-07, P28):** the reopened 2× campaign stopped at P28 (Wasm Mesh/Material pooling). On the frozen browser workload (Brave, hardware WebGPU, NVIDIA/Turing, 600/120 frames, three repeats, zero pixel mismatch) the Wasm engine beats the optimized current arm by 2.55× at 64k and 2.63× at 16k objects; 4k sits at 1.97× (within noise of 2×, not a strict pass). Perry and JavaScript game code tie, so option B stays. This is an empirical stopping point, not an upper bound; N20 promotion gates and the native 18× scaling gate remain open. Details: [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md).
+
+### Owner decisions (2026-10-04)
 
 Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md#decisions). **Where these differ from the proposal below, these win.**
 
@@ -128,7 +160,19 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 4. **One engine everywhere.** The web runs the C++ core in Wasm ([N19](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) is mandatory), so the core is Wasm-safe from day one. The legacy engine, the TS systems and upstream Three.js at runtime are deleted ([N21](PRD-535-n21-the-js-engine-is-deleted.md)).
 5. **Accepted agent calls:** the game API stays vanilla Three.js, measured from what templates import; `ctx.renderer.raw` survives as the compatible renderer; one binding catalog serves several VMs; bulk paths only where CP1 shows crossing cost; legacy is deleted one release after promotion.
 
-## Work packages and dependencies
+### Execution order
+
+The wave plan of 4 October 2026, kept as history. The current order is [Start here](#start-here).
+
+| Wave | Start when | PRDs (parallel within a wave) |
+| --- | --- | --- |
+| 1 | now | N00 [PRD-497](../done/native-engine/PRD-497-n00-architecture-decision-and-compatibility-inventory.md), N01 [PRD-498](../done/native-engine/PRD-498-n01-baseline-and-differential-fixture-runner.md), N02 [PRD-499](PRD-499-n02-the-host-links-without-a-js-engine.md), N03 [PRD-500](../done/native-engine/PRD-500-n03-api-catalog-binding-abi-and-version-protocol.md) |
+| 2 | N02 + N03 land | N04a–d, N07 [PRD-509](../done/native-engine/PRD-509-n07-gpu-resources-presentation-and-device-loss.md), N08a [PRD-510](../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md); N05 spike alongside, off the critical path |
+| 3 | N04 + N07 land | N06 [PRD-508](../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), N08b–d, N10 [PRD-515](../done/native-engine/PRD-515-n10-native-gltf-cooked-assets-and-decoders.md), N18 phases 1–2 [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) |
+| 4 | N06 + N08 land | N09 [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md), then **CP1 [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) — go/stop** |
+| 5 | CP1 passes | N11, N12, N13, N14, N15, N16, N18 phase 3; N19 may start at wave 4 because CP1 does not gate it |
+| 6 | wave 5 done | N20 [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) promotion, then N21 [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) one release later |
+| later | after N20 | Gate T: N17 [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) on top of the N05 result |
 
 | Key | PRD | Depends on |
 | --- | --- | --- |
@@ -203,16 +247,6 @@ flowchart LR
   N13 & N14 & N15 & N16 & N19 & N22 --> N20 --> N21
   N05 & N20 -. later .-> N17
 ```
-
-# Implementation proposal (4 October 2026)
-
-**Status:** Proposed architecture and delivery plan; not an implementation or a claim of benchmarked performance.  
-**Prepared:** 4 October 2026.  
-**Repository reference:** `ThreeNativeHQ/threenative`, `develop` commit `15adf350da53addfa33675c2b3f0e2722e086e37`.  
-**Compatibility baseline:** workspace-pinned `three@0.185.1`, including ThreeNative’s current patch.  
-**Audience:** Engineering owner and agents preparing individual PRDs.
-
-All new package names, configuration fields, ABI names, status markers, and work-package identifiers below are proposals. They do not describe existing commands or published packages.
 
 ## 1. Executive decision
 
