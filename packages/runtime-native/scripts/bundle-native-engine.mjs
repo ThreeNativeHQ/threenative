@@ -142,7 +142,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true }) {
   const unresolved = new Map();
   const bundled = await build({
     stdin: { contents: boot
-      ? `import ${JSON.stringify(resolve(player, "core-host.mjs"))}; import game from "tn:game"; void game.start().then(() => game.ctx.renderer.render(game.ctx.scene, game.ctx.camera)).catch(error => { globalThis.tn.__startupError = String(error.stack ?? error); });`
+      ? `import ${JSON.stringify(resolve(player, "core-host.mjs"))}; import game from "tn:game"; globalThis.tn.__booting = true; void game.start().then(() => { globalThis.tn.__booting = false; game.ctx.renderer.render(game.ctx.scene, game.ctx.camera); }).catch(error => { globalThis.tn.__startupError = String(error.stack ?? error); });`
       : 'import "tn:game";', resolveDir: repo },
     bundle: true, write: false, format: "iife", platform: "neutral", target: "es2022",
     conditions: ["threenative-native"], define: { "import.meta.env": "{}" }, metafile: true,

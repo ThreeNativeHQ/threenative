@@ -648,7 +648,11 @@ int V8Game::view(std::string& error) {
     if (!tn->Get(ctx, v8str(isolate_, "scene")).ToLocal(&sceneValue) ||
         !tn->Get(ctx, v8str(isolate_, "camera")).ToLocal(&cameraValue))
         return error = "tn.scene or tn.camera could not be read", -1;
-    if (sceneValue->IsNullOrUndefined() || cameraValue->IsNullOrUndefined())
+    // The bundle's boot holds `__booting` until start() settles: a pass node publishes the scene
+    // while start() is still loading, and only a settled start is a booted game.
+    v8::Local<v8::Value> booting;
+    if (sceneValue->IsNullOrUndefined() || cameraValue->IsNullOrUndefined() ||
+        (tn->Get(ctx, v8str(isolate_, "__booting")).ToLocal(&booting) && booting->IsTrue()))
         return 0;
     tn_handle_t handle{};
     tn::binding::Object* scene = adapter_->unwrap(sceneValue, handle) ? tn::abi::objectOf(handle) : nullptr;

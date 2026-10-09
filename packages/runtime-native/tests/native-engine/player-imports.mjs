@@ -310,6 +310,10 @@ const lateRun = spawnSync(resolve(executable), ["--check-game", outfile], { enco
 assert.equal(lateRun.status, 0, `${lateRun.stdout}\n${lateRun.stderr}`);
 await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { Scene, PerspectiveCamera } from "three";
+// A pass node publishes the scene while start() is still running; __booting holds the check.
+globalThis.tn.__booting = true;
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera();
 setTimeout(() => { globalThis.tn.__startupError = "late failure"; }, 500);
 `);
 await bundleNativeEngine({ entry, outfile, boot: false });
