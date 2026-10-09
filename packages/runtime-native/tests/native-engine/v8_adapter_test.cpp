@@ -645,7 +645,7 @@ void tslApi() {
         {"tsl.float(0.25).smoothstep(0,1)", g::smoothstep(g::float_(0), g::float_(1), g::float_(0.25))},
         {"tsl.float(0.25).clamp(0,1)", g::clamp(g::float_(0.25), g::float_(0), g::float_(1))},
         {"tsl.screenUV", g::screenUV()},
-        {"tsl.materialColor", g::uniform("diffuse", tn::engine::shader::Type::vec(4))},
+        {"tsl.materialColor", g::swizzle(g::uniform("diffuse", tn::engine::shader::Type::vec(4)), "xyz")},
         {"tsl.materialEmissive", g::uniform("emissive", tn::engine::shader::Type::vec(3))},
         {"tsl.materialMetalness", g::uniform("metalness", tn::engine::shader::Type::f32())},
         {"tsl.materialRoughness", g::uniform("roughness", tn::engine::shader::Type::f32())},
@@ -707,7 +707,10 @@ void tslApi() {
         const N = tsl.normalView.normalize(), V = tsl.positionViewDirection.normalize();
         const L = tsl.cameraViewMatrix.transformDirection(tsl.uniform(new Vector3(0, 1, 0)));
         const T = tsl.transformDirection(tsl.vec3(1, 0, 0), tsl.cameraViewMatrix);
-        m.emissiveNode = tsl.vec3(tsl.dot(N, V)).mul(tsl.dot(L, N)).add(T);
+        // materialColor is three's vec3 colour: the rim tints by it and mixes it as reflectance.
+        const reflectance = tsl.mix(tsl.vec3(0.04), tsl.materialColor, tsl.materialMetalness);
+        m.emissiveNode = tsl.vec3(tsl.dot(N, V)).mul(tsl.dot(L, N)).add(T)
+            .mul(tsl.clamp(tsl.materialColor, 0, 1)).add(reflectance).add(tsl.materialEmissive);
         return m;
     })())JS")).ToLocalChecked()->Run(ctx).ToLocal(&rim);
     CHECK(rimRan);

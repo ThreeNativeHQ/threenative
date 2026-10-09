@@ -5,6 +5,9 @@
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
 #include "engine/renderer/render_database.h"
+
+#include <cstdio>
+#include <set>
 #if TN_WEB_GLTF
 #include "engine/assets/gltf/loader.h"
 #endif
@@ -189,6 +192,11 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     }
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(frame.texture);
+    // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
+    // so a page that draws less than its scene says why.
+    static std::set<std::string> reported;
+    for (const std::string& diagnostic : renderer->diagnostics())
+        if (reported.insert(diagnostic).second) std::fprintf(stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
     return 0;
 }

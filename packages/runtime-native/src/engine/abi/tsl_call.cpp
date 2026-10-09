@@ -531,7 +531,9 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"cameraViewMatrix", g::uniform("viewMatrix", Type::mat(4, 4))},
             {"instanceIndex", g::instanceIndex()},
             {"screenUV", g::screenUV()},
-            {"materialColor", g::uniform("diffuse", Type::vec(4))},
+            // three's materialColor is the material's colour, a vec3 (MaterialNode COLOR, type 'color').
+            // ponytail: the colour uniform only; three also multiplies in `map` when the material has one.
+            {"materialColor", g::swizzle(g::uniform("diffuse", Type::vec(4)), "xyz")},
             {"materialEmissive", g::uniform("emissive", Type::vec(3))},
             {"materialMetalness", g::uniform("metalness", Type::f32())},
             {"materialRoughness", g::uniform("roughness", Type::f32())},
