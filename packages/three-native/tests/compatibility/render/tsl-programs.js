@@ -8,6 +8,7 @@ import {
   LinearMipmapLinearFilter,
   Mesh,
   MeshLambertNodeMaterial,
+  NearestFilter,
   PointLight,
   RenderPipeline,
   RenderTarget,
@@ -38,6 +39,7 @@ import {
   output,
   pass,
   pmremTexture,
+  positionGeometry,
   positionLocal,
   positionWorld,
   reflector,
@@ -128,7 +130,29 @@ async function postAddons(program, renderer, scene, camera) {
     return filtered.div(float(1).sub(peak(filtered)).max(1e-4));
   };
   let node;
-  if (program === "post-ao") node = occlusion(colour);
+  // Written after the first frame, as a game's settings menu or a per-frame driver writes them; the
+  // captured second frame must show the new values.
+  let afterFirstFrame;
+  if (program === "post-live-parameters") {
+    const contact = ao(depth, normal, camera);
+    contact.radius.value = 0.35;
+    const glow = bloom(colour, 0.7, 0.5, 0.2);
+    node = colour.mul(contact.getTextureNode().r).add(glow);
+    afterFirstFrame = () => {
+      contact.resolutionScale = 0.5;
+      glow.strength.value = 0.3;
+      glow.radius.value = 0.9;
+      glow.threshold.value = 0.8;
+    };
+  } else if (program === "post-uniform-write") {
+    const gain = uniform(0.25);
+    const lift = uniform(0.4);
+    node = convertToTexture(colour.mul(lift)).mul(gain);
+    afterFirstFrame = () => {
+      gain.value = 1;
+      lift.value = 1.5;
+    };
+  } else if (program === "post-ao") node = occlusion(colour);
   else if (program === "post-ao-raw") {
     const contact = ao(depth, normal, camera);
     contact.radius.value = 0.35;
@@ -149,6 +173,11 @@ async function postAddons(program, renderer, scene, camera) {
   }
   const pipeline = new RenderPipeline(renderer);
   pipeline.outputNode = node;
+  if (afterFirstFrame) {
+    pipeline.render();
+    await renderer.backend.device.queue.onSubmittedWorkDone();
+    afterFirstFrame();
+  }
   return { render: () => pipeline.render() };
 }
 
@@ -504,7 +533,6 @@ async function temporalFixture({ renderer, scene, camera, traaDump }, firstCutFr
   return { render: draw };
 }
 
-/** Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity. */
 /** An RGBA8 DataTexture with linear filtering, its texels from `texel(x, y)` -> [r, g, b]. */
 function dataTexture(width, height, texel) {
   const pixels = new Uint8Array(width * height * 4);
@@ -517,6 +545,20 @@ function dataTexture(width, height, texel) {
   return map;
 }
 
+/** An 8 x 8 checker, nearest-filtered: texels 255 and 64 alternate in r, g and b. */
+function checker() {
+  const pixels = new Uint8Array(8 * 8 * 4);
+  for (let i = 0; i < 64; ++i) {
+    pixels.fill(((i % 8) + Math.floor(i / 8)) % 2 ? 255 : 64, i * 4, i * 4 + 3);
+    pixels[i * 4 + 3] = 255;
+  }
+  const map = new DataTexture(pixels, 8, 8);
+  map.magFilter = map.minFilter = NearestFilter;
+  map.needsUpdate = true;
+  return map;
+}
+
+/** Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity. */
 function equirectSky() {
   const width = 128;
   const height = 64;
@@ -701,11 +743,26 @@ export const programs = {
     );
     quads.material.colorNode = vec4(attribute("aTint", "vec3"), 1);
   },
+  async "texture-object"({ target }) {
+    const bands = equirectSky();
+    target.colorNode = vec4(
+      texture(bands, uv()).rgb.mul(texture(checker(), uv()).r.mul(0.6).add(0.4)),
+      1,
+    );
+  },
   async "pmrem-texture"({ target }) {
     target.colorNode = vec4(
       pmremTexture(equirectSky(), normalize(positionWorld), uv().x.mul(0.9)),
       1,
     );
+  },
+  /** NodeMaterial.vertexNode: a screen-space quad, and a world-space wave through the camera matrices. */
+  async "vertex-node-screen"({ target }) {
+    target.vertexNode = vec4(positionGeometry.xy.mul(0.4).add(vec2(-0.5, 0.45)), 0, 1);
+  },
+  async "vertex-node-world"({ target }) {
+    const bent = positionGeometry.add(vec3(0, sin(positionGeometry.x.mul(3)).mul(0.3), 0));
+    target.vertexNode = cameraProjectionMatrix.mul(cameraViewMatrix.mul(vec4(bent, 1)));
   },
   async "nodemat-standard-nodes"({ target }) {
     target.roughnessNode = uv().x.mul(0.7).add(0.2);
@@ -750,6 +807,12 @@ export const programs = {
   },
   async "post-template-high"({ renderer, scene, camera }) {
     return postAddons("post-template-high", renderer, scene, camera);
+  },
+  async "post-live-parameters"({ renderer, scene, camera }) {
+    return postAddons("post-live-parameters", renderer, scene, camera);
+  },
+  async "post-uniform-write"({ renderer, scene, camera }) {
+    return postAddons("post-uniform-write", renderer, scene, camera);
   },
 
   async "post-chromatic"({ renderer, scene, camera }) {

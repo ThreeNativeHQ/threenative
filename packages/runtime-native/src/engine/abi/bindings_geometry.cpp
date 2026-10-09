@@ -45,7 +45,8 @@ BufferGeometry& geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
         "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry", "LatheGeometry",
-        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry", "InstancedBufferGeometry"};
+        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry", "IcosahedronGeometry", "CapsuleGeometry",
+        "DodecahedronGeometry", "OctahedronGeometry", "TorusKnotGeometry", "InstancedBufferGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -181,6 +182,10 @@ void registerBufferAttribute(ClassBinding& b, const char* cls) {
         if (flag(v)) as<BufferAttribute>(self)->setNeedsUpdate();
     };
 
+    // three's clone(): an attribute of the same class holding a copy of the array.
+    b.methods["clone"] = [cls](void* self, const Args&, Store& store) {
+        return store.adopt(cls, std::static_pointer_cast<void>(as<BufferAttribute>(self)->clone()));
+    };
     b.methods["getX"] = [](void* self, const Args& a, Store&) {
         return component(*as<BufferAttribute>(self), jsIndex(a.at(0)), 0);
     };
@@ -245,10 +250,6 @@ void registerBufferAttribute(ClassBinding& b, const char* cls) {
         as<BufferAttribute>(self)->setXYZW(jsIndex(a.at(0)), number(a.at(1)),
                                            number(a.at(2)), number(a.at(3)), number(a.at(4)));
         return chain();
-    };
-    // three's clone(): a new attribute of the same class (`new this.constructor(...)`) with a copy of the array.
-    b.methods["clone"] = [cls](void* self, const Args&, Store& store) {
-        return store.adopt(cls, std::static_pointer_cast<void>(as<BufferAttribute>(self)->clone()));
     };
     b.methods["copyAt"] = [](void* self, const Args& a, Store& store) {
         as<BufferAttribute>(self)->copyAt(jsIndex(a.at(0)),
@@ -545,10 +546,27 @@ void registerGeometryGenerators(Registry& classes) {
         return makeCircleGeometry(optional(a, 0, 1), optional(a, 1, 32), optional(a, 2, 0),
                                   optional(a, 3, 6.283185307179586));
     });
+    registerGenerator(classes, "IcosahedronGeometry", [](const Args& a) {
+        return makeIcosahedronGeometry(optional(a, 0, 1), optional(a, 1, 0));
+    });
+    registerGenerator(classes, "CapsuleGeometry", [](const Args& a) {
+        return makeCapsuleGeometry(optional(a, 0, 1), optional(a, 1, 1), optional(a, 2, 4),
+                                   optional(a, 3, 8), optional(a, 4, 1));
+    });
+    registerGenerator(classes, "DodecahedronGeometry", [](const Args& a) {
+        return makeDodecahedronGeometry(optional(a, 0, 1), optional(a, 1, 0));
+    });
+    registerGenerator(classes, "OctahedronGeometry", [](const Args& a) {
+        return makeOctahedronGeometry(optional(a, 0, 1), optional(a, 1, 0));
+    });
     registerGenerator(classes, "TorusGeometry", [](const Args& a) {
         return makeTorusGeometry(optional(a, 0, 1), optional(a, 1, 0.4), optional(a, 2, 12),
                                  optional(a, 3, 48), optional(a, 4, 6.283185307179586),
                                  optional(a, 5, 0), optional(a, 6, 6.283185307179586));
+    });
+    registerGenerator(classes, "TorusKnotGeometry", [](const Args& a) {
+        return makeTorusKnotGeometry(optional(a, 0, 1), optional(a, 1, 0.4), optional(a, 2, 64),
+                                     optional(a, 3, 8), optional(a, 4, 2), optional(a, 5, 3));
     });
     registerGenerator(classes, "RingGeometry", [](const Args& a) {
         return makeRingGeometry(optional(a, 0, 0.5), optional(a, 1, 1), optional(a, 2, 32),

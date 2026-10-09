@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <array>
 #include <map>
 #include <cstdint>
@@ -38,7 +39,7 @@ class Texture;  // the material's diffuse `map` (engine/scene/texture.h)
 /** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
 enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 
-/** A material graph's texture(textureObject, uv) reads: the binding name ("tex<id>") and the texture. */
+/** A material graph's texture(object, uv) reads: the binding name ("nodeMap<id>") and the texture. */
 using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
@@ -61,9 +62,8 @@ struct DrawItem {
         bool perInstance = false;
     };
     std::vector<CustomAttribute> attributes;
-    /** material.vertexColors: the geometry's `color` attribute (float) and its 3 or 4 components. */
-    BufferStore* colors = nullptr;
-    uint8_t colorSize = 0;
+    BufferStore* colors = nullptr;       // material.vertexColors: the `color` attribute as float32
+    uint8_t colorSize = 0;               // its item size, 3 or 4; 0 without vertex colours
     BufferStore* indices = nullptr;      // u16 or u32; null draws non-indexed
     Matrix matrixWorld{};
     // A merged draw retains its first member's render-list origin when its model becomes identity.
@@ -84,18 +84,21 @@ struct DrawItem {
     Matrix envRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     /** A node graph's pmremTexture source: prefiltered as an environment is, sampled as "pmrem". */
     const Texture* pmremMap = nullptr;
+    /** A node graph's texture(object) samples, by binding name (`t_<name>`, either stage); null when it has none. */
+    const GraphTextures* nodeTextures = nullptr;
     Matrix pmremRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};  // three's materialEnvRotation
-    /** A node graph's texture(textureObject, uv) reads, bound as `t_<name>` / `smp_<name>`. */
-    GraphTextures graphTextures;
     /** A node graph's reflector (an engine::Reflector) and the view of its mirrored pass, sampled as "reflector". */
     const void* reflector = nullptr;
     WGPUTextureView reflectorView = nullptr;
     WGPUSampler reflectorSampler = nullptr;
     MaterialKind kind = MaterialKind::Standard;
+    /** three's Line (LineStrip) and LineSegments (LineList) draw lines; everything else triangles. */
+    WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
     // Render-list inputs, as three's RenderList reads them.
     uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
     int renderOrder = 0;       // Object3D.renderOrder
     bool transparent = false;  // material.transparent: drawn after opaques, back to front, blended
+    bool forceSinglePass = false;  // material.forceSinglePass: a transparent DoubleSide draws once
     bool depthWrite = true;    // material.depthWrite
     // SkinnedMesh: the skin attributes, the skeleton's palette this frame and the bind matrices.
     BufferStore* skinIndices = nullptr; // u8, u16 or u32 ×4
@@ -340,12 +343,15 @@ public:
     /** Every built program's vertex WGSL by program key: what a test reads to see how the frame's programs were compiled. */
     std::vector<std::pair<std::string, std::string>> programVertexSources() const {
         std::vector<std::pair<std::string, std::string>> out;
-        for (const auto& [key, program] : programs_) out.emplace_back(key, program->vertex.wgsl.code);
+        for (const auto& [key, program] : programs_)
+            if (program) out.emplace_back(key, program->vertex.wgsl.code);
         return out;
     }
     GpuResources& gpu() { return gpu_; }
     const GeometryCache& geometry() const { return geometry_; }
     const PipelineCache& pipelines() const { return pipelines_; }
+    /** Material programs built or refused so far; a steady frame adds none. */
+    size_t programCount() const { return programs_.size(); }
 
 private:
     // The uniforms a material program may read, resolved to block offsets once per program.
@@ -380,8 +386,10 @@ private:
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
     };
     void buildLayouts(Program& program);
-    /** The program for a material kind, vertex variant and light layout, built on first use. */
-    Program& program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights,
+    /** The program for a material kind, vertex variant and light layout, built on first use; null
+     *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
+     *  as three logs a shader error and draws the rest of the scene. */
+    Program* program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights,
                      bool softShadows = false);
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
     Program& depthProgram(const shader::VertexVariant& variant);
@@ -452,7 +460,8 @@ private:
     PipelineCache pipelines_;
     // By MaterialKind, vertex variant (0 plain, 1 instanced, 2 instanced with instanceColor) and light
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.
-    std::map<std::string, std::unique_ptr<Program>> programs_;
+    std::map<std::string, std::unique_ptr<Program>> programs_;  // a null entry: refused, never retried
+    std::map<std::string, std::string> refusedPrograms_;          // why, reported each frame it skips draws
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;
@@ -499,6 +508,9 @@ private:
     std::unique_ptr<TraaPass> traa_;
     std::unique_ptr<PostEffects> postEffects_;
     std::map<std::string, std::vector<float>> postUniforms_;
+    /** three's `time` (its NodeFrame clock): seconds since this renderer was made, read once a frame. */
+    std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
+    float frameTime_ = 0;
     shader::StageModule blitVertex_, blitFragment_;  // blitTo's pass-through copy
     shader::StageModule outputVertex_;
     shader::StageModule outputFragment_;

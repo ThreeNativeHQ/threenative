@@ -63,6 +63,12 @@ const FUNCTIONS = [
   "log2",
   "normalize",
   "length",
+  "atan",
+  "mod",
+  "fwidth",
+  "saturation",
+  "mat2",
+  "hash",
   "min",
   "max",
   "pow",
@@ -97,6 +103,7 @@ const FUNCTIONS = [
   "mx_worley_noise_vec2",
   "pmremTexture",
   "reflector",
+  "transformDirection",
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
@@ -118,6 +125,12 @@ const CONSTANTS = [
   "materialEmissive",
   "materialMetalness",
   "materialRoughness",
+  "time",
+  "normalView",
+  "positionViewDirection",
+  "screenCoordinate",
+  "normalGeometry",
+  "tangentGeometry",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
@@ -140,6 +153,13 @@ const METHODS = [
   "log2",
   "normalize",
   "length",
+  "dFdx",
+  "dFdy",
+  "sign",
+  "cbrt",
+  "atan",
+  "mod",
+  "fwidth",
   "min",
   "max",
   "pow",
@@ -148,8 +168,6 @@ const METHODS = [
   "distance",
   "cross",
   "reflect",
-  "dFdx",
-  "dFdy",
   "lengthSq",
   "mix",
   "clamp",
@@ -163,21 +181,18 @@ const METHODS = [
   "flipZ",
   "flipW",
   "level",
+  "transformDirection",
 ] as const;
-/**
- * TSL's swizzles: every one- to four-lane pattern over xyzw, and the same over rgba (three's
- * SwizzleNode accepts any of them), each as its xyzw lanes.
- */
+/** three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, as xyzw lanes. */
 const SWIZZLES: Readonly<Record<string, string>> = (() => {
   const out: Record<string, string> = {};
-  const grow = (lanes: string): void => {
-    if (lanes.length > 0) {
-      out[lanes] = lanes;
-      out[lanes.replace(/[xyzw]/gu, (lane) => "rgba"["xyzw".indexOf(lane)] ?? lane)] = lanes;
-    }
-    if (lanes.length < 4) for (const lane of "xyzw") grow(lanes + lane);
-  };
-  grow("");
+  for (const set of ["xyzw", "rgba", "stpq"]) {
+    const grow = (alias: string, lanes: string): void => {
+      if (alias.length > 0) out[alias] = lanes;
+      if (alias.length < 4) for (let i = 0; i < 4; i++) grow(alias + set[i], lanes + "xyzw"[i]);
+    };
+    grow("", "");
+  }
   return out;
 })();
 interface ITslNode {
@@ -214,17 +229,20 @@ export function defineTsl(runtime: ITslRuntime): {
   };
   const argument = (name: string, index: number, value: unknown): TslArgValue => {
     if (isTslNode(value)) return { kind: "node", node: value[TSL_NODE] };
-    // An omitted optional input (denoise's normal node) has no TSL meaning of its own.
+    // An omitted optional input (denoise's normal node) has no TSL meaning of its own, and ao's and
+    // denoise's camera is the render camera, whose matrices the engine's effect reads each frame.
     if (value === null || value === undefined) return { kind: "other" };
+    if ((name === "ao" && index === 2) || (name === "denoise" && index === 3))
+      return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
-    // texture(textureObject): an unnamed engine Texture crosses as itself and is bound by identity;
-    // a named one names its material map, and textureLoad also takes a texture node.
+    // texture(engineTexture, uv) samples that texture itself; a plain object names a material map,
+    // and textureLoad also takes a texture node.
     if (
       index === 0 &&
       name === "texture" &&
-      engineRef(value) !== undefined &&
-      ((value as { name?: unknown }).name ?? "") === ""
+      typeof value === "object" &&
+      engineRef(value) !== undefined
     )
       return { kind: "handle", ref: engineRef(value) as IEngineRef };
     if (index === 0 && (name === "texture" || name === "textureLoad") && typeof value === "object")
@@ -285,12 +303,17 @@ export function defineTsl(runtime: ITslRuntime): {
   prototype.toVar = function (this: ITslNode) {
     return wrap(runtime.call("toVar", this[TSL_NODE], []));
   };
-  // assign and r185's compound forms (a.addAssign(b) is a.assign(a.add(b))), built by the engine.
-  for (const form of ["assign", "addAssign", "subAssign", "mulAssign", "divAssign"])
+  prototype.assign = function (this: ITslNode, value: unknown) {
+    runtime.release(call("assign", this[TSL_NODE], [value]));
+    return this;
+  };
+  // r185's `<op>Assign`: the shared scopes assign op(this, value) to the variable.
+  for (const form of ["addAssign", "subAssign", "mulAssign", "divAssign"]) {
     prototype[form] = function (this: ITslNode, value: unknown) {
       runtime.release(call(form, this[TSL_NODE], [value]));
       return this;
     };
+  }
   prototype.Else = function (this: ITslNode, callback: unknown) {
     statement("Else");
     return wrap(runtime.call("Else", this[TSL_NODE], [node(capture("Else", callback))]));

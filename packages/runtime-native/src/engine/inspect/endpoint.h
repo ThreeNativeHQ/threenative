@@ -59,6 +59,8 @@ struct Host {
 class Endpoint {
   public:
     explicit Endpoint(Host host) : host_(std::move(host)) {}
+    /** The world named lookups search, for a game that publishes or swaps its scene at run time. */
+    void setScene(Object3D* scene) { host_.scene = scene; }
 
     /** One request frame to one response frame. Never throws. */
     std::string handle(std::string_view frame);

@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace tn::fixture {
@@ -67,6 +68,20 @@ inline std::shared_ptr<engine::DataTexture> equirectSky() {
     sky->minFilter = static_cast<uint16_t>(engine::TextureFilter::LinearMipmapLinear);
     sky->needsUpdate();
     return sky;
+}
+
+/** The JS programs' checker(): 8 x 8, nearest-filtered, texels 255 and 64 alternating in r, g, b. */
+inline std::shared_ptr<engine::DataTexture> checker() {
+    auto map = std::make_shared<engine::DataTexture>();
+    map->width = 8; map->height = 8; map->data.resize(8 * 8 * 4);
+    for (uint32_t i = 0; i < 64; ++i) {
+        const uint8_t value = ((i % 8) + i / 8) % 2 ? 255 : 64;
+        map->data[i * 4] = map->data[i * 4 + 1] = map->data[i * 4 + 2] = value;
+        map->data[i * 4 + 3] = 255;
+    }
+    map->magFilter = map->minFilter = static_cast<uint16_t>(engine::TextureFilter::Nearest);
+    map->needsUpdate();
+    return map;
 }
 
 /** PRD-513: a compute pass writes the grid; the positionNode places instance i at entry i. */
@@ -222,7 +237,9 @@ inline void postChromatic(engine::Renderer& renderer) {
  * the minimal template's high-tier chain, stage for stage: exposure, GTAO with its denoise, bloom,
  * vignette, then SMAA under the reversible Karis squeeze.
  */
-inline std::string postAddons(const std::string& program, engine::Renderer& renderer) {
+inline std::string postAddons(const std::string& program, engine::Renderer& renderer,
+                              const std::function<std::string(uint32_t, uint32_t)>& renderAt, uint32_t width,
+                              uint32_t height) {
     namespace g = engine::shader::graph;
     const auto colour = g::texture("scene", g::uv()), depth = g::texture("depth", g::uv()),
                normal = g::texture("normal", g::uv());
@@ -254,6 +271,41 @@ inline std::string postAddons(const std::string& program, engine::Renderer& rend
         root = g::mul(colour, g::swizzle(g::effectNode(contact), "x"));
     }
     else if (program == "post-bloom") root = g::add(colour, g::bloom(colour, 0.7, 0.5, 0.2));
+    else if (program == "post-live-parameters" || program == "post-uniform-write") {
+        // Written after the first frame through the calls both language back ends make
+        // (`ao.resolutionScale = s`, `bloomNode.strength.value = v`, `uniform.value = v`).
+        std::function<void()> afterFirstFrame;
+        if (program == "post-live-parameters") {
+            auto effect = g::gtaoEffect(depth, normal);
+            effect->parameters["radius"] = {0.35f};
+            const auto contact = g::effectNode(effect);
+            const auto glow = g::bloom(colour, 0.7, 0.5, 0.2);
+            root = g::add(g::mul(colour, g::swizzle(contact, "x")), glow);
+            afterFirstFrame = [contact, glow] {
+                for (const auto& [node, name, value] : {std::tuple{contact, "resolutionScale", 0.5},
+                                                        {glow, "strength", 0.3}, {glow, "radius", 0.9},
+                                                        {glow, "threshold", 0.8}})
+                    abi::tslEffectParameter(node, name, &value);
+            };
+        } else {
+            const auto gain = g::uniform("fixtureGain", engine::shader::Type::f32(), {0.25f});
+            const auto lift = g::uniform("fixtureLift", engine::shader::Type::f32(), {0.4f});
+            root = g::mul(rtt(g::mul(colour, lift)), gain);
+            afterFirstFrame = [gain, lift] {
+                const double one = 1, more = 1.5;
+                abi::tslSetUniform(gain, &one, 1);
+                abi::tslSetUniform(lift, &more, 1);
+            };
+        }
+        renderer.setPostGraph(root);
+        try {
+            if (const auto failed = renderAt(width, height); !failed.empty()) return failed;
+            afterFirstFrame();
+        } catch (const std::exception& error) {
+            return error.what();
+        }
+        return "";
+    }
     else if (program == "post-smaa") root = antialias(colour);
     else if (program == "post-template-high") {
         auto input = occlusion(g::mul(colour, g::float_(0.62)));
@@ -418,8 +470,9 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         }
         return "";
     }
-    if (program == "post-ao" || program == "post-ao-raw" || program == "post-bloom" || program == "post-smaa" || program == "post-template-high")
-        return tsl_detail::postAddons(program, renderer);
+    if (program == "post-ao" || program == "post-ao-raw" || program == "post-bloom" || program == "post-smaa" ||
+        program == "post-template-high" || program == "post-live-parameters" || program == "post-uniform-write")
+        return tsl_detail::postAddons(program, renderer, renderAt, renderer.width(), renderer.height());
     if (program == "post-chromatic") {
         tsl_detail::postChromatic(renderer);
         return "";
@@ -478,12 +531,36 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         material->nodes.positionNode = g::add(g::positionLocal(),
             g::vec3({g::float_(0), g::float_(0), g::mul(g::swizzle(level, "x"), g::float_(0.4))}));
         material->nodes.colorNode = g::vec4({g::swizzle(sample(ramp), "xyz"), g::float_(1)});
+    } else if (program == "texture-object") {
+        // texture(object, uv) through the shared TSL table, as V8 and Wasm pass an engine Texture.
+        uint64_t serial = 0;
+        const auto sample = [&serial](std::shared_ptr<void> map) {
+            return abi::tslCall("texture", nullptr, {abi::TslArg::objectOf("DataTexture", std::move(map)),
+                                                     abi::TslArg::of(g::uv())}, serial);
+        };
+        const auto bands = sample(tsl_detail::equirectSky()), squares = sample(tsl_detail::checker());
+        material->nodes.colorNode = g::vec4({g::mul(g::swizzle(bands, "xyz"),
+            g::add(g::mul(g::swizzle(squares, "x"), g::float_(0.6)), g::float_(0.4))), g::float_(1)});
     } else if (program == "pmrem-texture") {
         uint64_t serial = 0;
         const auto positionWorld = g::varying("positionWorld", Type::vec(3));
         const std::vector<abi::TslArg> args = {abi::TslArg::objectOf("DataTexture", tsl_detail::equirectSky()),
             abi::TslArg::of(g::normalize(positionWorld)), abi::TslArg::of(g::mul(x, g::float_(0.9)))};
         material->nodes.colorNode = g::vec4({abi::tslCall("pmremTexture", nullptr, args, serial), g::float_(1)});
+    } else if (program == "vertex-node-screen" || program == "vertex-node-world") {
+        uint64_t serial = 0;
+        const auto geometry = abi::tslCall("positionGeometry", nullptr, {}, serial);
+        if (program == "vertex-node-screen") {
+            material->nodes.vertexNode = g::vec4({g::add(g::mul(g::swizzle(geometry, "xy"), g::float_(0.4)),
+                                                         g::vec2({g::float_(-0.5), g::float_(0.45)})),
+                                                  g::float_(0), g::float_(1)});
+        } else {
+            const auto bent = g::add(geometry, g::vec3({g::float_(0), g::mul(g::sin(g::mul(g::swizzle(geometry, "x"),
+                                                         g::float_(3))), g::float_(0.3)), g::float_(0)}));
+            const auto projection = abi::tslCall("cameraProjectionMatrix", nullptr, {}, serial);
+            material->nodes.vertexNode = g::mul(projection, g::mul(g::uniform("viewMatrix", Type::mat(4, 4)),
+                                                                   g::vec4({bent, g::float_(1)})));
+        }
     } else if (program == "nodemat-standard-nodes") {
         material->nodes.roughnessNode = g::add(g::mul(x, g::float_(0.7)), g::float_(0.2));
         material->nodes.metalnessNode = g::mul(y, g::float_(0.8));

@@ -22,8 +22,12 @@ export interface IRegistryClass {
   readonly members: readonly string[];
   /** Language callbacks the engine calls back (`onBeforeRender`). */
   readonly callbacks: readonly string[];
-  /** Native event types (AnimationMixer's "finished", "loop") an EventDispatcher listens to. */
+  /** Event types the engine dispatches (AnimationMixer's `finished`, `loop`). */
   readonly events?: readonly string[];
+  /** Members the owner keeps for life (`position`, `matrixWorld`): the first answer may be kept. */
+  readonly fixedMembers?: readonly string[];
+  /** Doubles held in place: [byte offset from the object's `__address`, count] (JSON arrays). */
+  readonly fields?: Readonly<Record<string, readonly number[]>>;
 }
 
 export interface IRegistryDump {
@@ -54,11 +58,14 @@ export interface IBrowserRuntime {
   get(self: IEngineRef, path: string): EngineValue;
   set(self: IEngineRef, path: string, value: EngineValue): void;
   release(self: IEngineRef): void;
-  /**
-   * three's `attribute.array`: a typed array over the attribute's own storage, so an element write
-   * is a write to the attribute (see createWasmRuntime). Absent where no memory is shared.
-   */
+  /** For each ref, how many references other engine objects hold to its object; one call a batch. */
+  engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
+  /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
+  readDoubles?(address: number, count: number): number | number[];
+  /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
   attributeArray?(self: IEngineRef): TypedArray;
+  /** Writes `array` into the attribute's data; present with attributeArray. */
+  attributeWrite?(self: IEngineRef, array: TypedArray): void;
   /** Sets (or, with null, clears) a callback the engine runs; `handler` gets the engine's arguments. */
   setCallback(
     self: IEngineRef,
@@ -78,9 +85,10 @@ export const TSL_NODE = Symbol("tn.tslNode");
 export interface IBrowserEngine {
   readonly classes: Record<string, new (...args: unknown[]) => object>;
   /**
-   * A wrapper whose object carries a callback is held while the object is attached (the engine may
-   * call it) and let go once detached, so a detached object, its closure and the wrapper the closure
-   * captured are a cycle the collector reclaims.
+   * The safe point (the renderer runs one before every frame). A wrapper the engine references (a
+   * parent, a material slot) is held, so its JS state (userData, expandos, a subclass, callbacks)
+   * survives while JS keeps no reference; once nothing in the engine references it, it is let go,
+   * so a detached subtree, its closures and its wrappers are collected.
    */
   collect(): void;
   /** The wrapper for an engine object the engine handed over (a loaded model's scene). */
@@ -208,18 +216,30 @@ function defineTraversal(
   prototype: Record<string, unknown>,
   className: string,
   hasChildren: boolean,
+  walks: boolean,
 ) {
   const childrenOf = (object: object): object[] => {
     if (!hasChildren) throw new TypeError(`TN_BROWSER_UNBOUND: ${className}.children`);
     return (object as { children: object[] }).children;
   };
+  // The engine's walk: one crossing for the whole subtree, in three's order (`__walk`).
+  const walk = (object: object, visibleOnly: boolean): object[] =>
+    (object as { __walk(visibleOnly: boolean): object[] }).__walk(visibleOnly);
   const methods: Record<string, (this: object, callback: TraverseCallback) => void> = {
     traverse(callback) {
+      if (walks) {
+        for (const object of walk(this, false)) callback(object);
+        return;
+      }
       callback(this);
       for (const child of childrenOf(this))
         (child as { traverse(c: TraverseCallback): void }).traverse(callback);
     },
     traverseVisible(callback) {
+      if (walks) {
+        for (const object of walk(this, true)) callback(object);
+        return;
+      }
       if ((this as { visible: boolean }).visible === false) return;
       callback(this);
       for (const child of childrenOf(this))
@@ -247,90 +267,70 @@ export function defineBrowserClasses(
 ): IBrowserEngine {
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object }>();
+  const typeNames = new Map<number, string>();
+  (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
+  // Reads that need no engine call: a field the engine holds in place is read from its memory (Wasm,
+  // `readDoubles`), and a fixed member (`position`, `matrixWorld`) is kept after its first answer.
+  // Writes still go through the engine's setters, which it reacts to.
+  const addresses = new WeakMap<object, number>();
+  const kept = new WeakMap<object, Map<string, unknown>>();
+  const fastGetter = (binding: IRegistryClass, property: string) => {
+    const field = binding.fields?.[property];
+    const read = runtime.readDoubles;
+    if (field !== undefined && read !== undefined) {
+      const [offset = 0, count = 1] = field;
+      return function (this: object) {
+        let address = addresses.get(this);
+        if (address === undefined) {
+          address = runtime.get(refOf(this), "__address") as number;
+          addresses.set(this, address);
+        }
+        return read(address + offset, count);
+      };
+    }
+    if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property))
+      return function (this: object) {
+        let members = kept.get(this);
+        if (members === undefined) {
+          members = new Map();
+          kept.set(this, members);
+        }
+        if (!members.has(property))
+          members.set(property, fromEngine(runtime.get(refOf(this), property)));
+        return members.get(property);
+      };
+    return undefined;
+  };
   const wrappers = new Map<string, WeakRef<object>>();
   // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
   // the collector sees; `held` roots a wrapper while the engine may still call it.
   const callbackFunctions = new WeakMap<object, Map<string, (...args: unknown[]) => unknown>>();
   const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
   const held = new Set<object>();
-  // three's EventDispatcher on a class with native events, as the V8 adapter keeps it: the listener
-  // lists live here, and the engine calls back for a native type only while something listens.
-  type Listener = (this: object, event: Record<string, unknown>) => void;
-  const listenerTables = new WeakMap<object, Map<string, Listener[]>>();
-  const defineListeners = (
-    prototype: Record<string, unknown>,
-    native: ReadonlySet<string>,
-  ): void => {
-    const dispatch = (target: object, type: string, event: Record<string, unknown>): void => {
-      event.target = target;
-      for (const listener of [...(listenerTables.get(target)?.get(type) ?? [])])
-        listener.call(target, event);
-    };
-    prototype.addEventListener = function (this: object, type: unknown, listener: unknown) {
-      if (typeof type !== "string" || typeof listener !== "function")
-        throw new TypeError("addEventListener needs a type and a function");
-      const table = listenerTables.get(this) ?? new Map<string, Listener[]>();
-      listenerTables.set(this, table);
-      let list = table.get(type);
-      if (list?.includes(listener as Listener)) return;
-      if (list === undefined) {
-        list = [];
-        table.set(type, list);
-        if (native.has(type)) {
-          const ref = refOf(this);
-          const self = new WeakRef(this);
-          runtime.setCallback(ref, type, (args) => {
-            const target = self.deref();
-            if (target !== undefined)
-              dispatch(target, type, fromEngine(args[0] ?? {}) as Record<string, unknown>);
-          });
-          callbackNames.set(ref.key, (callbackNames.get(ref.key) ?? new Set()).add(type));
-          held.add(this);
-        }
-      }
-      list.push(listener as Listener);
-    };
-    prototype.removeEventListener = function (this: object, type: unknown, listener: unknown) {
-      const list = typeof type === "string" ? listenerTables.get(this)?.get(type) : undefined;
-      const at = list?.indexOf(listener as Listener) ?? -1;
-      if (list === undefined || at < 0) return;
-      list.splice(at, 1);
-      if (list.length > 0) return;
-      listenerTables.get(this)?.delete(type as string);
-      if (!native.has(type as string)) return;
-      const ref = refOf(this);
-      runtime.setCallback(ref, type as string, null);
-      callbackNames.get(ref.key)?.delete(type as string);
-    };
-    prototype.hasEventListener = function (this: object, type: unknown, listener: unknown) {
-      return (
-        typeof type === "string" &&
-        (listenerTables
-          .get(this)
-          ?.get(type)
-          ?.includes(listener as Listener) ??
-          false)
-      );
-    };
-    prototype.dispatchEvent = function (this: object, event: unknown) {
-      if (
-        typeof event !== "object" ||
-        event === null ||
-        typeof (event as { type?: unknown }).type !== "string"
-      )
-        throw new TypeError("dispatchEvent needs an event object with a type");
-      dispatch(this, (event as { type: string }).type, event as Record<string, unknown>);
-    };
-  };
-  // userData is the game's, not the engine's: kept by handle, so a wrapper made again for the same
-  // object finds it. ponytail: an entry outlives an attached object's wrapper by design, and goes
-  // when a detached one is released.
-  const userData = new Map<string, unknown>();
+  // userData is the game's: it lives with the wrapper, which `held` keeps while the engine references it.
+  const userData = new WeakMap<object, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
+  // three's `attribute.array` is the attribute's own JS typed array (PRD-540): the array the
+  // constructor was handed, or a copy of the engine's data on first read. A view of Wasm memory
+  // would detach when the memory grows. A read hands the game the array, so the attribute is
+  // `pending` until its array is written back before the next engine call; a geometry or attribute
+  // method that may write attribute data bumps `epoch`, and a later read refreshes the copy.
+  // ponytail: a game that writes a kept array after such a method and before its next read loses
+  // that write to the refresh; track writes per attribute if a game does that.
+  const { attributeArray, attributeWrite } = runtime;
+  const arrays = new WeakMap<object, { array: TypedArray; epoch: number }>();
+  const pending = new Set<object>();
+  let epoch = 0;
+  const writeBack = (): void => {
+    for (const attribute of pending) {
+      const entry = arrays.get(attribute);
+      if (entry !== undefined) attributeWrite?.call(runtime, refOf(attribute), entry.array);
+    }
+    pending.clear();
+  };
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
       wrappers.delete(ref.key);
-      if (userData.has(ref.key) && runtime.get(ref, "parent") === null) userData.delete(ref.key);
       shaderNodes.delete(ref.key); // the engine material keeps its graph; the JS nodes may go
       for (const name of callbackNames.get(ref.key) ?? []) runtime.setCallback(ref, name, null);
       callbackNames.delete(ref.key);
@@ -350,7 +350,10 @@ export function defineBrowserClasses(
     const cls = byType.get(ref.type);
     if (cls === undefined)
       throw new TypeError(`TN_BROWSER_TYPE_UNKNOWN: no class for engine type ${ref.type}`);
-    return adopt(Object.create(cls.prototype) as object, ref);
+    // Held until the next safe point decides: the engine may reference what it just handed out.
+    const wrapper = adopt(Object.create(cls.prototype) as object, ref);
+    held.add(wrapper);
+    return wrapper;
   };
   const refOf = (self: unknown): IEngineRef => {
     const ref = (self as Partial<IWrapped> | null)?.[REF];
@@ -371,8 +374,8 @@ export function defineBrowserClasses(
     }
     if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
     if (typeof value === "object" && REF in value) {
-      // An object with callbacks passed into the engine is held until the next safe point.
-      if (callbackNames.has((value as IWrapped)[REF].key)) held.add(value);
+      // A wrapper passed into the engine is held until the next safe point decides (collect()).
+      held.add(value);
       return (value as IWrapped)[REF];
     }
     // An options object (`new ExtrudeGeometry(shape, { depth })`) crosses as a record of scalars and
@@ -404,6 +407,10 @@ export function defineBrowserClasses(
   };
 
   for (const [name, binding] of Object.entries(registry.classes)) {
+    const adopts =
+      attributeWrite !== undefined &&
+      (name === "BufferAttribute" || name === "InstancedBufferAttribute");
+    const writesAttributes = ATTRIBUTE_CLASSES.has(name) || name.endsWith("Geometry");
     const cls = class {
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
@@ -417,16 +424,24 @@ export function defineBrowserClasses(
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
         if (parameters !== undefined) setValues(this, name, parameters);
+        // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
+        const handed = args[0];
+        if (adopts && ArrayBuffer.isView(handed) && !(handed instanceof DataView)) {
+          arrays.set(this, { array: handed as TypedArray, epoch });
+          pending.add(this);
+        }
       }
     };
     Object.defineProperty(cls, "name", { value: name });
     const prototype = cls.prototype as Record<string, unknown>;
     for (const method of binding.methods) {
+      const bumps = writesAttributes && !/^(get|has|clone|equals|toJSON)/u.test(method);
       Object.defineProperty(prototype, method, {
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
           const intersections = method === "intersectObject" || method === "intersectObjects";
+          if (pending.size > 0) writeBack();
           const result = fromEngine(
             runtime.invoke(
               refOf(this),
@@ -434,6 +449,7 @@ export function defineBrowserClasses(
               (intersections ? args.slice(0, 2) : args).map(toEngine),
             ),
           );
+          if (bumps) epoch++;
           if (intersections && args[2] !== undefined) {
             if (!Array.isArray(args[2]) || !Array.isArray(result))
               throw new TypeError("intersection target must be an array");
@@ -478,9 +494,11 @@ export function defineBrowserClasses(
         continue;
       Object.defineProperty(prototype, property, {
         configurable: true,
-        get(this: object) {
-          return fromEngine(runtime.get(refOf(this), property));
-        },
+        get:
+          fastGetter(binding, property) ??
+          function (this: object) {
+            return fromEngine(runtime.get(refOf(this), property));
+          },
         ...(setters.has(property)
           ? {
               set(this: object, value: unknown) {
@@ -564,47 +582,153 @@ export function defineBrowserClasses(
         },
       });
     }
-    if (binding.events !== undefined && binding.events.length > 0)
-      defineListeners(prototype, new Set(binding.events));
+    // three's EventDispatcher, as the V8 adapter keeps it: listeners live in JS, and the engine
+    // calls back once per native event type something listens to; `target` is set while they run.
+    if (binding.methods.includes("addEventListener")) {
+      const native = new Set(binding.events ?? []);
+      type Listener = (this: object, event: Record<string, unknown>) => void;
+      const listeners = new WeakMap<object, Map<string, Listener[]>>();
+      const dispatch = (target: object, event: Record<string, unknown>): void => {
+        const list = listeners.get(target)?.get(String(event.type));
+        if (list === undefined) return;
+        event.target = target;
+        for (const listener of [...list]) listener.call(target, event);
+        event.target = null;
+      };
+      const listenerArgs = (name: string, type: unknown, listener: unknown): Listener => {
+        if (typeof type !== "string" || typeof listener !== "function")
+          throw new TypeError(`${name} needs a type and a function`);
+        return listener as Listener;
+      };
+      Object.defineProperties(prototype, {
+        addEventListener: {
+          configurable: true,
+          writable: true,
+          value(this: object, type: unknown, fn: unknown): void {
+            const listener = listenerArgs("addEventListener", type, fn);
+            const table = listeners.get(this) ?? new Map<string, Listener[]>();
+            listeners.set(this, table);
+            let list = table.get(type as string);
+            if (list === undefined) {
+              list = [];
+              table.set(type as string, list);
+              if (native.has(type as string)) {
+                const ref = refOf(this);
+                const self = new WeakRef(this);
+                runtime.setCallback(ref, type as string, (args) => {
+                  const target = self.deref();
+                  if (target !== undefined)
+                    dispatch(target, fromEngine(args[0] as EngineValue) as Record<string, unknown>);
+                });
+                callbackNames.set(
+                  ref.key,
+                  (callbackNames.get(ref.key) ?? new Set()).add(type as string),
+                );
+                held.add(this);
+              }
+            }
+            if (!list.includes(listener)) list.push(listener);
+          },
+        },
+        hasEventListener: {
+          configurable: true,
+          writable: true,
+          value(this: object, type: unknown, fn: unknown): boolean {
+            const listener = listenerArgs("hasEventListener", type, fn);
+            return (
+              listeners
+                .get(this)
+                ?.get(type as string)
+                ?.includes(listener) ?? false
+            );
+          },
+        },
+        removeEventListener: {
+          configurable: true,
+          writable: true,
+          value(this: object, type: unknown, fn: unknown): void {
+            const listener = listenerArgs("removeEventListener", type, fn);
+            const table = listeners.get(this);
+            const list = table?.get(type as string);
+            if (table === undefined || list === undefined || !list.includes(listener)) return;
+            list.splice(list.indexOf(listener), 1);
+            if (list.length > 0) return;
+            table.delete(type as string);
+            if (native.has(type as string)) {
+              const ref = refOf(this);
+              runtime.setCallback(ref, type as string, null);
+              callbackNames.get(ref.key)?.delete(type as string);
+            }
+          },
+        },
+        dispatchEvent: {
+          configurable: true,
+          writable: true,
+          value(this: object, event: unknown): void {
+            if (typeof event !== "object" || event === null)
+              throw new TypeError("dispatchEvent needs an event object");
+            dispatch(this, event as Record<string, unknown>);
+          },
+        },
+      });
+    }
     if (binding.members.includes("parent") || binding.getters.includes("parent")) {
       Object.defineProperty(prototype, "userData", {
         configurable: true,
         get(this: object) {
-          const key = refOf(this).key;
-          if (!userData.has(key)) userData.set(key, {});
-          return userData.get(key);
+          if (!userData.has(this)) userData.set(this, {});
+          return userData.get(this);
         },
         set(this: object, value: unknown) {
-          userData.set(refOf(this).key, value);
+          userData.set(this, value);
         },
       });
       defineTraversal(
         prototype,
         name,
         binding.members.includes("children") || binding.getters.includes("children"),
+        binding.methods.includes("__walk"),
       );
     }
     classes[name] = cls;
     byType.set(runtime.typeId(name), cls);
+    typeNames.set(runtime.typeId(name), name);
   }
-  // three's `attribute.array` is the attribute's own typed array: one per attribute, viewed again
-  // only when Wasm memory growth detached the last one.
-  const attributeArray = runtime.attributeArray;
-  if (attributeArray !== undefined) {
-    const arrays = new WeakMap<object, TypedArray>();
+  if (attributeArray !== undefined && attributeWrite !== undefined) {
     for (const name of ATTRIBUTE_CLASSES) {
       const cls = classes[name];
       if (cls === undefined) continue;
       Object.defineProperty(cls.prototype, "array", {
         configurable: true,
         get(this: object) {
-          const cached = arrays.get(this);
-          if (cached !== undefined && cached.buffer.byteLength !== 0) return cached;
-          const array = attributeArray.call(runtime, refOf(this));
-          arrays.set(this, array);
-          return array;
+          let entry = arrays.get(this);
+          if (entry === undefined) {
+            entry = { array: attributeArray.call(runtime, refOf(this)), epoch };
+            arrays.set(this, entry);
+          } else if (entry.epoch !== epoch && !pending.has(this)) {
+            const fresh = attributeArray.call(runtime, refOf(this));
+            if (fresh.length === entry.array.length) entry.array.set(fresh);
+            else entry.array = fresh;
+            entry.epoch = epoch;
+          }
+          pending.add(this);
+          return entry.array;
         },
       });
+      // needsUpdate is a property write, not a call, so it writes the array back itself.
+      const needsUpdate = Object.getOwnPropertyDescriptor(cls.prototype, "needsUpdate");
+      if (needsUpdate?.set !== undefined)
+        Object.defineProperty(cls.prototype, "needsUpdate", {
+          ...needsUpdate,
+          set(this: object, value: unknown) {
+            const entry = arrays.get(this);
+            if (value === true && entry !== undefined) {
+              attributeWrite.call(runtime, refOf(this), entry.array);
+              pending.delete(this);
+            }
+            needsUpdate.set?.call(this, value);
+          },
+        });
     }
   }
   const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
@@ -628,12 +752,18 @@ export function defineBrowserClasses(
     classes,
     wrap,
     collect() {
-      for (const [key, names] of callbackNames) {
-        const wrapper = wrappers.get(key)?.deref();
-        if (wrapper === undefined || names.size === 0) continue;
-        if (runtime.get(refOf(wrapper), "parent") !== null) held.add(wrapper);
-        else held.delete(wrapper);
-      }
+      const candidates = [...held];
+      const counts = runtime.engineReferences?.(candidates.map(refOf));
+      // ponytail: every held wrapper is asked each safe point, in one call; keep a dirty set if a
+      // scene's held count shows in a profile.
+      candidates.forEach((wrapper, i) => {
+        const referenced =
+          counts !== undefined
+            ? (counts[i] as number) > 0
+            : callbackNames.has(refOf(wrapper).key) &&
+              runtime.get(refOf(wrapper), "parent") !== null;
+        if (!referenced) held.delete(wrapper);
+      });
     },
   };
 }
@@ -649,6 +779,7 @@ type AbiCall =
   | "_tn_context_create"
   | "_tn_type_id"
   | "_tn_object_release"
+  | "_tn_object_engine_references"
   | "_tn_construct"
   | "_tn_invoke"
   | "_tn_get"
@@ -868,6 +999,18 @@ function tslOf(
 }
 
 /** The runtime over a loaded ABI module: one engine context, every call checked. */
+/**
+ * Opt-in boundary census for `pnpm profile:wasm-page --calls`: while the page sets
+ * `globalThis.__tnCallCounts` to a Map, every engine get, set and invoke counts under
+ * "<kind> <type id>.<name>" (`__tnEngineTypes` names the type ids). Off, it costs one global read.
+ */
+function countCall(kind: string, self: IEngineRef, name: string): void {
+  const counts = (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts;
+  if (counts === undefined) return;
+  const key = `${kind} ${self.type}.${name}`;
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   let dataView = new DataView(abi.HEAPU8.buffer);
   const view = () => {
@@ -875,20 +1018,35 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     return dataView;
   };
   // Each call frees what it allocated, and only that: a callback can run a nested call.
+  // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
+  // scope rewinds, a stack as nested calls (a callback inside an invoke) need; a scope that outgrows
+  // it falls back to malloc and frees on exit. Every engine call crosses here, many per frame.
+  const arenaSize = 64 * 1024;
+  const arenaBase = abi._malloc(arenaSize) >>> 0;
+  let arenaTop = arenaBase;
   const allocations: number[] = [];
   const alloc = (size: number): number => {
-    // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
-    const pointer = abi._malloc(size) >>> 0;
+    const aligned = (size + 7) & ~7;
+    let pointer: number;
+    if (arenaTop + aligned <= arenaBase + arenaSize) {
+      pointer = arenaTop;
+      arenaTop += aligned;
+    } else {
+      // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
+      pointer = abi._malloc(size) >>> 0;
+      allocations.push(pointer);
+    }
     abi.HEAPU8.fill(0, pointer, pointer + size);
-    allocations.push(pointer);
     return pointer;
   };
   const scoped = <T>(work: () => T): T => {
     const mark = allocations.length;
+    const top = arenaTop;
     try {
       return work();
     } finally {
       for (const pointer of allocations.splice(mark)) abi._free(pointer);
+      arenaTop = top;
     }
   };
   const string = (text: string): { pointer: number; bytes: number } => {
@@ -896,6 +1054,18 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     const pointer = alloc(bytes + 1);
     abi.stringToUTF8(text, pointer, bytes + 1);
     return { pointer, bytes };
+  };
+  // Member, method and class names: a bounded set, encoded once and kept for the module's life.
+  const names = new Map<string, number>();
+  const name = (text: string): number => {
+    let pointer = names.get(text);
+    if (pointer === undefined) {
+      const bytes = abi.lengthBytesUTF8(text);
+      pointer = abi._malloc(bytes + 1) >>> 0;
+      abi.stringToUTF8(text, pointer, bytes + 1);
+      names.set(text, pointer);
+    }
+    return pointer;
   };
   const diagnostic = () => alloc(8);
   const check = (status: number, diag: number, what: string) => {
@@ -911,13 +1081,15 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     const key = `${type}:${v.getUint16(pointer + 2, true)}:${v.getUint32(pointer + 4, true)}:${v.getUint32(pointer + 8, true)}`;
     return { key, type };
   };
+  // A ref's handle fields, parsed from its key once.
+  const handles = new WeakMap<IEngineRef, readonly [number, number, number, number]>();
   const writeHandle = (pointer: number, ref: IEngineRef) => {
-    const [type, context, index, generation] = ref.key.split(":").map(Number) as [
-      number,
-      number,
-      number,
-      number,
-    ];
+    let fields = handles.get(ref);
+    if (fields === undefined) {
+      fields = ref.key.split(":").map(Number) as [number, number, number, number];
+      handles.set(ref, fields);
+    }
+    const [type, context, index, generation] = fields;
     const v = view();
     v.setUint16(pointer, type, true);
     v.setUint16(pointer + 2, context, true);
@@ -1061,34 +1233,30 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     }, "vi");
   };
 
-  // A view over the attribute's storage, leased so it cannot reallocate under the view; the lease
-  // goes back when the collector takes the view. Memory growth detaches a view over a fixed-size
-  // heap, and every later read of a kept array would be silently empty, so the getter refuses by
-  // name. The modules are not built with -sGROWABLE_ARRAYBUFFERS: Chromium's GPUQueue.writeTexture
-  // and writeBuffer reject a view of a resizable buffer, so every upload would fail instead.
-  const viewAttribute = (handle: number, out: number): number => {
-    if ((abi.HEAPU8.buffer as { resizable?: boolean }).resizable !== true)
-      throw new TypeError(
-        "TN_WASM_ATTRIBUTE_VIEW_UNSAFE: attribute.array would be a view of the engine's Wasm memory, which memory growth detaches, so a kept array would read as empty; read the attribute (getX, count) instead",
-      );
-    const call = abi._tnw_attribute_view;
-    if (call === undefined)
-      throw new TypeError("TN_WASM_MODULE: this module exports no attribute views");
-    return call(handle, out);
-  };
-  const leases = new FinalizationRegistry<number>((lease) =>
-    abi._tnw_attribute_view_release?.(lease),
-  );
-  const attributeView = (
-    Typed: (typeof SCALARS)[number],
-    address: number,
-    count: number,
-    lease: number,
-  ): TypedArray => {
-    const array = new Typed(abi.HEAPU8.buffer as ArrayBuffer, address, count);
-    leases.register(array, lease);
-    return array;
-  };
+  // A view over the attribute's storage, used only inside one call: the lease pins the storage and
+  // nothing in between can grow the memory and detach the view. A kept view would detach on growth,
+  // so the back end keeps JS arrays and copies through this (see defineBrowserClasses).
+  const withAttributeView = <T>(self: IEngineRef, use: (view: TypedArray) => T): T =>
+    scoped(() => {
+      const call = abi._tnw_attribute_view;
+      if (call === undefined)
+        throw new TypeError("TN_WASM_MODULE: this module exports no attribute views");
+      const out = alloc(24);
+      const lease = call(handleOf(self), out);
+      if (lease === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
+      try {
+        const v = view();
+        const [address, count, scalar] = [0, 8, 16].map((at) =>
+          Number(v.getBigUint64(out + at, true)),
+        );
+        const Typed = SCALARS[scalar ?? -1];
+        if (Typed === undefined)
+          throw new TypeError(`TN_NATIVE_UNSUPPORTED array: scalar ${String(scalar)}`);
+        return use(new Typed(abi.HEAPU8.buffer as ArrayBuffer, address ?? 0, count ?? 0));
+      } finally {
+        abi._tnw_attribute_view_release?.(lease);
+      }
+    });
 
   const context = scoped(() => {
     const version = alloc(32);
@@ -1111,7 +1279,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       view,
     }) ?? {}),
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
-    typeId: (className) => scoped(() => abi._tn_type_id(string(className).pointer)),
+    typeId: (className) => abi._tn_type_id(name(className)),
     construct: (className, args) =>
       scoped(() => {
         const out = alloc(HANDLE);
@@ -1132,38 +1300,45 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       }),
     invoke: (self, method, args) =>
       scoped(() => {
+        countCall("call", self, method);
         const out = alloc(VALUE);
         const diag = diagnostic();
         check(
-          abi._tn_invoke(
-            handleOf(self),
-            string(method).pointer,
-            values(args),
-            args.length,
-            out,
-            diag,
-          ),
+          abi._tn_invoke(handleOf(self), name(method), values(args), args.length, out, diag),
           diag,
           `${method}()`,
         );
         return readValue(out);
       }),
+    engineReferences: (refs) =>
+      scoped(() => {
+        const handles = alloc(Math.max(1, refs.length) * HANDLE);
+        refs.forEach((ref, i) => writeHandle(handles + i * HANDLE, ref));
+        const out = alloc(Math.max(1, refs.length) * 4);
+        abi._tn_object_engine_references(handles, refs.length, out);
+        const v = view();
+        return refs.map((_, i) => v.getUint32(out + i * 4, true));
+      }),
+    readDoubles: (address, count) => {
+      const at = address / 8;
+      return count === 1
+        ? (abi.HEAPF64[at] as number)
+        : Array.from(abi.HEAPF64.subarray(at, at + count));
+    },
     get: (self, path) =>
       scoped(() => {
+        countCall("get", self, path);
         const out = alloc(VALUE);
         const diag = diagnostic();
-        check(abi._tn_get(handleOf(self), string(path).pointer, out, diag), diag, `get ${path}`);
+        check(abi._tn_get(handleOf(self), name(path), out, diag), diag, `get ${path}`);
         return readValue(out);
       }),
     set: (self, path, value) =>
       scoped(() => {
+        countCall("set", self, path);
         const pointer = values([value]);
         const diag = diagnostic();
-        check(
-          abi._tn_set(handleOf(self), string(path).pointer, pointer, diag),
-          diag,
-          `set ${path}`,
-        );
+        check(abi._tn_set(handleOf(self), name(path), pointer, diag), diag, `set ${path}`);
       }),
     release: (self) =>
       scoped(() => {
@@ -1171,19 +1346,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         abi._tn_object_release(handleOf(self), diag);
         abi._tn_diagnostic_release(diag);
       }),
-    attributeArray: (self) =>
-      scoped(() => {
-        const out = alloc(24);
-        const lease = viewAttribute(handleOf(self), out);
-        if (lease === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
-        const v = view();
-        const [address, count, scalar] = [0, 8, 16].map((at) =>
-          Number(v.getBigUint64(out + at, true)),
-        );
-        const Typed = SCALARS[scalar ?? -1];
-        if (Typed === undefined)
-          throw new TypeError(`TN_NATIVE_UNSUPPORTED array: scalar ${String(scalar)}`);
-        return attributeView(Typed, address ?? 0, count ?? 0, lease);
+    attributeArray: (self) => withAttributeView(self, (array) => array.slice()),
+    attributeWrite: (self, array) =>
+      withAttributeView(self, (target) => {
+        if (target.length !== array.length)
+          throw new RangeError(
+            `TN_NATIVE_ATTRIBUTE_LENGTH: attribute.array has ${String(array.length)} elements, the attribute ${String(target.length)}`,
+          );
+        target.set(array);
       }),
     setCallback: (self, name, handler) =>
       scoped(() => {

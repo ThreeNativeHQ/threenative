@@ -143,6 +143,8 @@ TN_TSL_UNARY(exp2)
 TN_TSL_UNARY(log2)
 TN_TSL_UNARY(normalize)
 TN_TSL_UNARY(length)
+TN_TSL_UNARY(atan)
+TN_TSL_UNARY(fwidth)
 TN_TSL_BINARY(min)
 TN_TSL_BINARY(max)
 TN_TSL_BINARY(pow)
@@ -150,9 +152,13 @@ TN_TSL_BINARY(step)
 TN_TSL_BINARY(dot)
 TN_TSL_BINARY(distance)
 TN_TSL_BINARY(cross)
+TN_TSL_BINARY(atan2)
+TN_TSL_BINARY(mod)
 TN_TSL_TERNARY(mix)
 TN_TSL_TERNARY(clamp)
 TN_TSL_TERNARY(smoothstep)
+inline Node shiftRight(Node a, Node b, Where w = Where::current()) { return program().shiftRight(a.id, b.id, w); }
+inline Node bitXor(Node a, Node b, Where w = Where::current()) { return program().bitXor(a.id, b.id, w); }
 #undef TN_TSL_UNARY
 #undef TN_TSL_BINARY
 #undef TN_TSL_TERNARY

@@ -52,6 +52,10 @@ struct Game {
     std::function<void()> afterRender;
     /** Binds the endpoint, so a game reads the input queued for each tick itself. */
     std::function<void(inspect::Endpoint& endpoint)> attach;
+    /** The scene and camera to draw this frame, for a game that publishes them at run time (a V8
+     *  bundle's async boot, a later `renderer.render(other, camera)`): 1 bound, 0 not published yet
+     *  (the frame stays undrawn), -1 failed, with `error` set. Without it, `scene`/`camera` are fixed. */
+    std::function<int(Object3D*& scene, Camera*& camera, std::string& error)> view;
 };
 
 /** Runs one game until the window closes or the runner stops the process. */

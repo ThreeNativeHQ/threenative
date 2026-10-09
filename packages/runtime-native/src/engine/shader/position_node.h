@@ -14,7 +14,7 @@ class Program;
 /** NodeMaterial slots; null nodes use the non-node material path. */
 struct MaterialNodes {
     graph::Node colorNode, positionNode, normalNode, emissiveNode, roughnessNode, metalnessNode, opacityNode;
-    /** NodeMaterial.vertexNode: the vertex's clip position (vec4), replacing projection * view * model. */
+    /** NodeMaterial.vertexNode: the clip-space position itself, replacing model-view-projection. */
     graph::Node vertexNode;
     bool operator==(const MaterialNodes&) const = default;
     auto pointers() const { return std::array{colorNode.get(), positionNode.get(), normalNode.get(), emissiveNode.get(),
@@ -27,8 +27,7 @@ struct MaterialNodes {
             // An empty slot is most slots on most frames: graph::key(null) is "null;", without its
             // hash map, std::function and string.
             if (!node) { out += "5:null;"; continue; }
-            const auto k = graph::key(node);
-            out += std::to_string(k.size()) + ":" + k;
+            out += "#" + std::to_string(graph::keyId(node)) + ";";  // the structure, interned
         }
         return out;
     }
@@ -58,6 +57,8 @@ struct PostNode {
     std::function<uint32_t(Program& fragment, uint32_t sceneTexture, uint32_t screenUv)> build;
     std::vector<graph::PostPass> passes;
     std::map<std::string, std::vector<float>> uniforms;
+    /** The graph's uniform nodes, read each frame over `uniforms` (three's `uniform.value = x`). */
+    std::vector<graph::Node> live;
 };
 
 }  // namespace tn::engine::shader

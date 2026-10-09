@@ -89,15 +89,16 @@ describe("browser texture sources", () => {
       }),
     };
     const texture = new (bound.CanvasTexture as Ctor)(canvas);
-    expect(constructed.at(-1)).toEqual(["DataTexture", [[9, 8, 7, 255], 1, 1]]);
+    // The engine's own CanvasTexture: three's Texture defaults (flipped, linear, mipmapped) and the
+    // first upload are its constructor's, so nothing more crosses until needsUpdate.
+    expect(constructed.at(-1)).toEqual(["CanvasTexture", [[9, 8, 7, 255], 1, 1]]);
     expect(texture.isCanvasTexture).toBe(true);
     expect(texture instanceof (bound.Texture as Ctor)).toBe(true);
     expect(texture.image).toBe(canvas);
+    expect(writes).toEqual([]);
+    texture.needsUpdate = true;
     const key = writes[0]?.[0];
     expect(writes).toEqual([
-      [key, "flipY", true],
-      [key, "magFilter", 1006],
-      [key, "minFilter", 1008],
       [key, "image.data", [9, 8, 7, 255]],
       [key, "needsUpdate", true],
     ]);

@@ -1,4 +1,5 @@
 #include "compute.h"
+#include "engine/renderer/pipeline_cache.h"
 
 #include <cstring>
 
@@ -77,7 +78,7 @@ bool ComputePass::dispatch(WGPUCommandEncoder encoder, std::span<const Handle> s
     groupDesc.layout = layout;
     groupDesc.entryCount = entries.size();
     groupDesc.entries = entries.data();
-    WGPUBindGroup group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
+    WGPUBindGroup group = createBindGroup(device_, &groupDesc);
     wgpuBindGroupLayoutRelease(layout);
     WGPUComputePassDescriptor passDesc = {};
     WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &passDesc);

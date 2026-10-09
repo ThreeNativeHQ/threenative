@@ -144,6 +144,48 @@ bool Mesh::raycast(const Raycaster& caster, std::vector<Intersection>& hits) {
     }
     return true;
 }
+// three r185 Line.raycast and its checkIntersection: the bounding sphere grown by the threshold, then
+// every segment (LineSegments steps by two) within the threshold scaled to the line's local space.
+bool Line::raycast(const Raycaster& caster, std::vector<Intersection>& hits) {
+    if (!geometry) return true;
+    const auto position = geometry->getAttribute("position");
+    if (!position) return true;
+    if (!geometry->boundingSphere) geometry->computeBoundingSphere();
+    Sphere sphere;
+    sphere.copy(*geometry->boundingSphere).applyMatrix4(matrixWorld);
+    sphere.radius += caster.lineThreshold;
+    if (!caster.ray.intersectsSphere(sphere)) return true;
+    Matrix4 inverse;
+    inverse.copy(matrixWorld).invert();
+    Ray local;
+    local.copy(caster.ray).applyMatrix4(inverse);
+    const double localThreshold = caster.lineThreshold / ((scale.x + scale.y + scale.z) / 3);
+    const double localThresholdSq = localThreshold * localThreshold;
+    const auto check = [&](uint64_t a, uint64_t b, uint64_t i) {
+        const Vector3 start = attribute(*position, a), end = attribute(*position, b);
+        Vector3 onRay, onSegment;
+        if (local.distanceSqToSegment(start, end, &onRay, &onSegment) > localThresholdSq) return;
+        onRay.applyMatrix4(matrixWorld);  // back to world space for the distance
+        const double distance = caster.ray.origin.distanceTo(onRay);
+        if (distance < caster.near || distance > caster.far) return;
+        Intersection hit;
+        hit.distance = distance;
+        hit.point.copy(onSegment).applyMatrix4(matrixWorld);
+        hit.index = i;
+        hit.object = this;
+        hits.push_back(hit);
+    };
+    const double step = segments() ? 2 : 1;
+    const auto index = geometry->index;
+    const double start = jsMax(0, geometry->drawRange.start);
+    const double end = jsMin(double(index ? index->count() : position->count()), geometry->drawRange.start + geometry->drawRange.count);
+    for (double i = start; i < end - 1; i += step) {
+        if (index) check(uint64_t(index->getX(uint64_t(i))), uint64_t(index->getX(uint64_t(i + 1))), uint64_t(i));
+        else check(uint64_t(i), uint64_t(i + 1), uint64_t(i));
+    }
+    return true;
+}
+
 bool InstancedMesh::raycast(const Raycaster& caster, std::vector<Intersection>& hits) {
     if (!material || !geometry) return true;
     if (!boundingSphere) computeBoundingSphere();

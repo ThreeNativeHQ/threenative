@@ -1098,4 +1098,470 @@ std::shared_ptr<BufferGeometry> makeExtrudeGeometry(const std::vector<std::share
     return geometry;
 }
 
+// ----------------------------------------------------------------------- PolyhedronGeometry
+
+namespace {
+
+double azimuth(const Vector3& vector) {
+    return ieee754::atan2(vector.z, -vector.x);
+}
+
+double inclination(const Vector3& vector) {
+    return ieee754::atan2(-vector.y, std::sqrt((vector.x * vector.x) + (vector.z * vector.z)));
+}
+
+void correctUV(std::vector<double>& uvBuffer, size_t stride, const Vector3& vector, double azi) {
+    if (azi < 0 && uvBuffer[stride] == 1) {
+        uvBuffer[stride] = uvBuffer[stride] - 1;
+    }
+    if (vector.x == 0 && vector.z == 0) {
+        uvBuffer[stride] = azi / 2 / kPi + 0.5;
+    }
+}
+
+void correctUVs(const std::vector<double>& vertexBuffer, std::vector<double>& uvBuffer) {
+    for (size_t i = 0, j = 0; i < vertexBuffer.size(); i += 9, j += 6) {
+        Vector3 a(vertexBuffer[i + 0], vertexBuffer[i + 1], vertexBuffer[i + 2]);
+        Vector3 b(vertexBuffer[i + 3], vertexBuffer[i + 4], vertexBuffer[i + 5]);
+        Vector3 c(vertexBuffer[i + 6], vertexBuffer[i + 7], vertexBuffer[i + 8]);
+
+        Vector3 centroid;
+        centroid.copy(a).add(b).add(c).divideScalar(3);
+
+        const double azi = azimuth(centroid);
+
+        correctUV(uvBuffer, j + 0, a, azi);
+        correctUV(uvBuffer, j + 2, b, azi);
+        correctUV(uvBuffer, j + 4, c, azi);
+    }
+}
+
+void correctSeam(std::vector<double>& uvBuffer) {
+    for (size_t i = 0; i < uvBuffer.size(); i += 6) {
+        const double x0 = uvBuffer[i + 0];
+        const double x1 = uvBuffer[i + 2];
+        const double x2 = uvBuffer[i + 4];
+
+        const double max = std::max({x0, x1, x2});
+        const double min = std::min({x0, x1, x2});
+
+        if (max > 0.9 && min < 0.1) {
+            if (x0 < 0.2) uvBuffer[i + 0] += 1;
+            if (x1 < 0.2) uvBuffer[i + 2] += 1;
+            if (x2 < 0.2) uvBuffer[i + 4] += 1;
+        }
+    }
+}
+
+}  // namespace
+
+std::shared_ptr<BufferGeometry> makePolyhedronGeometry(const std::vector<double>& vertices,
+                                                       const std::vector<uint32_t>& indices,
+                                                       double radius, double detail) {
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->type = "PolyhedronGeometry";
+    geometry->parameters["radius"] = num(radius);
+    geometry->parameters["detail"] = num(detail);
+
+    std::vector<double> vertexBuffer;
+    std::vector<double> uvBuffer;
+
+    auto pushVertex = [&](const Vector3& vertex) {
+        vertexBuffer.push_back(vertex.x);
+        vertexBuffer.push_back(vertex.y);
+        vertexBuffer.push_back(vertex.z);
+    };
+
+    auto getVertexByIndex = [&](uint32_t index, Vector3& vertex) {
+        const size_t stride = static_cast<size_t>(index) * 3;
+        vertex.x = vertices[stride + 0];
+        vertex.y = vertices[stride + 1];
+        vertex.z = vertices[stride + 2];
+    };
+
+    auto subdivideFace = [&](const Vector3& a, const Vector3& b, const Vector3& c, int detailLevel) {
+        const int cols = detailLevel + 1;
+        std::vector<std::vector<Vector3>> v(cols + 1);
+
+        for (int i = 0; i <= cols; ++i) {
+            const double frac = static_cast<double>(i) / cols;
+            Vector3 aj = a;
+            aj.lerp(c, frac);
+            Vector3 bj = b;
+            bj.lerp(c, frac);
+
+            const int rows = cols - i;
+            v[i].resize(rows + 1);
+
+            for (int j = 0; j <= rows; ++j) {
+                if (j == 0 && i == cols) {
+                    v[i][j] = aj;
+                } else {
+                    Vector3 temp = aj;
+                    temp.lerp(bj, static_cast<double>(j) / rows);
+                    v[i][j] = temp;
+                }
+            }
+        }
+
+        for (int i = 0; i < cols; ++i) {
+            for (int j = 0; j < 2 * (cols - i) - 1; ++j) {
+                const int k = j / 2;
+                if (j % 2 == 0) {
+                    pushVertex(v[i][k + 1]);
+                    pushVertex(v[i + 1][k]);
+                    pushVertex(v[i][k]);
+                } else {
+                    pushVertex(v[i][k + 1]);
+                    pushVertex(v[i + 1][k + 1]);
+                    pushVertex(v[i + 1][k]);
+                }
+            }
+        }
+    };
+
+    const int detailLevel = static_cast<int>(detail);
+    Vector3 a, b, c;
+    for (size_t i = 0; i < indices.size(); i += 3) {
+        getVertexByIndex(indices[i + 0], a);
+        getVertexByIndex(indices[i + 1], b);
+        getVertexByIndex(indices[i + 2], c);
+        subdivideFace(a, b, c, detailLevel);
+    }
+
+    // applyRadius
+    for (size_t i = 0; i < vertexBuffer.size(); i += 3) {
+        Vector3 vertex(vertexBuffer[i + 0], vertexBuffer[i + 1], vertexBuffer[i + 2]);
+        vertex.normalize().multiplyScalar(radius);
+        vertexBuffer[i + 0] = vertex.x;
+        vertexBuffer[i + 1] = vertex.y;
+        vertexBuffer[i + 2] = vertex.z;
+    }
+
+    // generateUVs
+    for (size_t i = 0; i < vertexBuffer.size(); i += 3) {
+        Vector3 vertex(vertexBuffer[i + 0], vertexBuffer[i + 1], vertexBuffer[i + 2]);
+        const double u = azimuth(vertex) / 2 / kPi + 0.5;
+        const double v = inclination(vertex) / kPi + 0.5;
+        uvBuffer.push_back(u);
+        uvBuffer.push_back(1 - v);
+    }
+
+    correctUVs(vertexBuffer, uvBuffer);
+    correctSeam(uvBuffer);
+
+    geometry->setAttribute("position", BufferAttribute::fromFloats(vertexBuffer, 3));
+    geometry->setAttribute("normal", BufferAttribute::fromFloats(vertexBuffer, 3));
+    geometry->setAttribute("uv", BufferAttribute::fromFloats(uvBuffer, 2));
+
+    if (detailLevel == 0) {
+        geometry->computeVertexNormals();
+    } else {
+        geometry->normalizeNormals();
+    }
+
+    return geometry;
+}
+
+// -------------------------------------------------------------------- IcosahedronGeometry
+
+std::shared_ptr<BufferGeometry> makeIcosahedronGeometry(double radius, double detail) {
+    const double t = (1 + std::sqrt(5)) / 2;
+    const std::vector<double> vertices = {
+        -1, t, 0,  1, t, 0,  -1, -t, 0,  1, -t, 0,
+        0, -1, t,  0, 1, t,  0, -1, -t,  0, 1, -t,
+        t, 0, -1,  t, 0, 1,  -t, 0, -1,  -t, 0, 1
+    };
+    const std::vector<uint32_t> indices = {
+        0, 11, 5,  0, 5, 1,   0, 1, 7,   0, 7, 10,  0, 10, 11,
+        1, 5, 9,   5, 11, 4,  11, 10, 2, 10, 7, 6,  7, 1, 8,
+        3, 9, 4,   3, 4, 2,   3, 2, 6,   3, 6, 8,   3, 8, 9,
+        4, 9, 5,   2, 4, 11,  6, 2, 10,  8, 6, 7,   9, 8, 1
+    };
+    auto geometry = makePolyhedronGeometry(vertices, indices, radius, detail);
+    geometry->type = "IcosahedronGeometry";
+    geometry->parameters.clear();
+    geometry->parameters["radius"] = num(radius);
+    geometry->parameters["detail"] = num(detail);
+    return geometry;
+}
+
+// --------------------------------------------------------------------- OctahedronGeometry
+
+std::shared_ptr<BufferGeometry> makeOctahedronGeometry(double radius, double detail) {
+    const std::vector<double> vertices = {
+        1, 0, 0,  -1, 0, 0,  0, 1, 0,
+        0, -1, 0,  0, 0, 1,  0, 0, -1
+    };
+    const std::vector<uint32_t> indices = {
+        0, 2, 4,  0, 4, 3,  0, 3, 5,
+        0, 5, 2,  1, 2, 5,  1, 5, 3,
+        1, 3, 4,  1, 4, 2
+    };
+    auto geometry = makePolyhedronGeometry(vertices, indices, radius, detail);
+    geometry->type = "OctahedronGeometry";
+    geometry->parameters.clear();
+    geometry->parameters["radius"] = num(radius);
+    geometry->parameters["detail"] = num(detail);
+    return geometry;
+}
+
+// ------------------------------------------------------------------- DodecahedronGeometry
+
+std::shared_ptr<BufferGeometry> makeDodecahedronGeometry(double radius, double detail) {
+    const double t = (1 + std::sqrt(5)) / 2;
+    const double r = 1 / t;
+    const std::vector<double> vertices = {
+        // (+-1, +-1, +-1)
+        -1, -1, -1,  -1, -1, 1,
+        -1, 1, -1,   -1, 1, 1,
+        1, -1, -1,   1, -1, 1,
+        1, 1, -1,    1, 1, 1,
+
+        // (0, +-1/phi, +-phi)
+        0, -r, -t,  0, -r, t,
+        0, r, -t,   0, r, t,
+
+        // (+-1/phi, +-phi, 0)
+        -r, -t, 0,  -r, t, 0,
+        r, -t, 0,   r, t, 0,
+
+        // (+-phi, 0, +-1/phi)
+        -t, 0, -r,  t, 0, -r,
+        -t, 0, r,   t, 0, r
+    };
+    const std::vector<uint32_t> indices = {
+        3, 11, 7,   3, 7, 15,   3, 15, 13,
+        7, 19, 17,  7, 17, 6,   7, 6, 15,
+        17, 4, 8,   17, 8, 10,  17, 10, 6,
+        8, 0, 16,   8, 16, 2,   8, 2, 10,
+        0, 12, 1,   0, 1, 18,   0, 18, 16,
+        6, 10, 2,   6, 2, 13,   6, 13, 15,
+        2, 16, 18,  2, 18, 3,   2, 3, 13,
+        18, 1, 9,   18, 9, 11,  18, 11, 3,
+        4, 14, 12,  4, 12, 0,   4, 0, 8,
+        11, 9, 5,   11, 5, 19,  11, 19, 7,
+        19, 5, 14,  19, 14, 4,  19, 4, 17,
+        1, 12, 14,  1, 14, 5,   1, 5, 9
+    };
+    auto geometry = makePolyhedronGeometry(vertices, indices, radius, detail);
+    geometry->type = "DodecahedronGeometry";
+    geometry->parameters.clear();
+    geometry->parameters["radius"] = num(radius);
+    geometry->parameters["detail"] = num(detail);
+    return geometry;
+}
+
+// ------------------------------------------------------------------------ CapsuleGeometry
+
+std::shared_ptr<BufferGeometry> makeCapsuleGeometry(double radius, double height,
+                                                    double capSegments, double radialSegments,
+                                                    double heightSegments) {
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->type = "CapsuleGeometry";
+    geometry->parameters["radius"] = num(radius);
+    geometry->parameters["height"] = num(height);
+    geometry->parameters["capSegments"] = num(capSegments);
+    geometry->parameters["radialSegments"] = num(radialSegments);
+    geometry->parameters["heightSegments"] = num(heightSegments);
+
+    height = std::max(0.0, height);
+    const int capSeg = std::max(1, static_cast<int>(std::floor(capSegments)));
+    const int radialSeg = std::max(3, static_cast<int>(std::floor(radialSegments)));
+    const int heightSeg = std::max(1, static_cast<int>(std::floor(heightSegments)));
+
+    Builder builder;
+
+    const double halfHeight = height / 2;
+    const double capArcLength = (kPi / 2) * radius;
+    const double cylinderPartLength = height;
+    const double totalArcLength = 2 * capArcLength + cylinderPartLength;
+
+    const int numVerticalSegments = capSeg * 2 + heightSeg;
+    const int verticesPerRow = radialSeg + 1;
+
+    for (int iy = 0; iy <= numVerticalSegments; ++iy) {
+        double currentArcLength = 0;
+        double profileY = 0;
+        double profileRadius = 0;
+        double normalYComponent = 0;
+
+        if (iy <= capSeg) {
+            // bottom cap
+            const double segmentProgress = static_cast<double>(iy) / capSeg;
+            const double angle = (segmentProgress * kPi) / 2;
+            profileY = -halfHeight - radius * ieee754::cos(angle);
+            profileRadius = radius * ieee754::sin(angle);
+            normalYComponent = -radius * ieee754::cos(angle);
+            currentArcLength = segmentProgress * capArcLength;
+        } else if (iy <= capSeg + heightSeg) {
+            // middle section
+            const double segmentProgress = static_cast<double>(iy - capSeg) / heightSeg;
+            profileY = -halfHeight + segmentProgress * height;
+            profileRadius = radius;
+            normalYComponent = 0;
+            currentArcLength = capArcLength + segmentProgress * cylinderPartLength;
+        } else {
+            // top cap
+            const double segmentProgress = static_cast<double>(iy - capSeg - heightSeg) / capSeg;
+            const double angle = (segmentProgress * kPi) / 2;
+            profileY = halfHeight + radius * ieee754::sin(angle);
+            profileRadius = radius * ieee754::cos(angle);
+            normalYComponent = radius * ieee754::sin(angle);
+            currentArcLength = capArcLength + cylinderPartLength + segmentProgress * capArcLength;
+        }
+
+        const double v = std::max(0.0, std::min(1.0, currentArcLength / totalArcLength));
+
+        double uOffset = 0;
+        if (iy == 0) {
+            uOffset = 0.5 / radialSeg;
+        } else if (iy == numVerticalSegments) {
+            uOffset = -0.5 / radialSeg;
+        }
+
+        for (int ix = 0; ix <= radialSeg; ++ix) {
+            const double u = static_cast<double>(ix) / radialSeg;
+            const double theta = u * kTwoPi;
+
+            const double sinTheta = ieee754::sin(theta);
+            const double cosTheta = ieee754::cos(theta);
+
+            builder.positions.push_back(-profileRadius * cosTheta);
+            builder.positions.push_back(profileY);
+            builder.positions.push_back(profileRadius * sinTheta);
+
+            Vector3 normal(-profileRadius * cosTheta, normalYComponent, profileRadius * sinTheta);
+            normal.normalize();
+            builder.normals.push_back(normal.x);
+            builder.normals.push_back(normal.y);
+            builder.normals.push_back(normal.z);
+
+            builder.uvs.push_back(u + uOffset);
+            builder.uvs.push_back(v);
+        }
+
+        if (iy > 0) {
+            const int prevIndexRow = (iy - 1) * verticesPerRow;
+            for (int ix = 0; ix < radialSeg; ++ix) {
+                const uint32_t i1 = prevIndexRow + ix;
+                const uint32_t i2 = prevIndexRow + ix + 1;
+                const uint32_t i3 = iy * verticesPerRow + ix;
+                const uint32_t i4 = iy * verticesPerRow + ix + 1;
+
+                builder.indices.push_back(i1);
+                builder.indices.push_back(i2);
+                builder.indices.push_back(i3);
+
+                builder.indices.push_back(i2);
+                builder.indices.push_back(i4);
+                builder.indices.push_back(i3);
+            }
+        }
+    }
+
+    finish(*geometry, builder);
+    return geometry;
+}
+
+// ---------------------------------------------------------------------- TorusKnotGeometry
+
+namespace {
+
+void calculatePositionOnCurve(double u, double p, double q, double radius, Vector3& position) {
+    const double cu = ieee754::cos(u);
+    const double su = ieee754::sin(u);
+    const double quOverP = q / p * u;
+    const double cs = ieee754::cos(quOverP);
+
+    position.x = radius * (2 + cs) * 0.5 * cu;
+    position.y = radius * (2 + cs) * su * 0.5;
+    position.z = radius * ieee754::sin(quOverP) * 0.5;
+}
+
+}  // namespace
+
+std::shared_ptr<BufferGeometry> makeTorusKnotGeometry(double radius, double tube,
+                                                      double tubularSegments, double radialSegments,
+                                                      double p, double q) {
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->type = "TorusKnotGeometry";
+    geometry->parameters["radius"] = num(radius);
+    geometry->parameters["tube"] = num(tube);
+    geometry->parameters["tubularSegments"] = num(tubularSegments);
+    geometry->parameters["radialSegments"] = num(radialSegments);
+    geometry->parameters["p"] = num(p);
+    geometry->parameters["q"] = num(q);
+
+    const int tubularSeg = static_cast<int>(std::floor(tubularSegments));
+    const int radialSeg = static_cast<int>(std::floor(radialSegments));
+
+    Builder builder;
+
+    Vector3 vertex;
+    Vector3 normal;
+    Vector3 P1;
+    Vector3 P2;
+    Vector3 B;
+    Vector3 T;
+    Vector3 N;
+
+    for (int i = 0; i <= tubularSeg; ++i) {
+        const double u = static_cast<double>(i) / tubularSeg * p * kTwoPi;
+
+        calculatePositionOnCurve(u, p, q, radius, P1);
+        calculatePositionOnCurve(u + 0.01, p, q, radius, P2);
+
+        T.subVectors(P2, P1);
+        N.addVectors(P2, P1);
+        B.crossVectors(T, N);
+        N.crossVectors(B, T);
+
+        B.normalize();
+        N.normalize();
+
+        for (int j = 0; j <= radialSeg; ++j) {
+            const double v = static_cast<double>(j) / radialSeg * kTwoPi;
+            const double cx = -tube * ieee754::cos(v);
+            const double cy = tube * ieee754::sin(v);
+
+            vertex.x = P1.x + (cx * N.x + cy * B.x);
+            vertex.y = P1.y + (cx * N.y + cy * B.y);
+            vertex.z = P1.z + (cx * N.z + cy * B.z);
+
+            builder.positions.push_back(vertex.x);
+            builder.positions.push_back(vertex.y);
+            builder.positions.push_back(vertex.z);
+
+            normal.subVectors(vertex, P1).normalize();
+            builder.normals.push_back(normal.x);
+            builder.normals.push_back(normal.y);
+            builder.normals.push_back(normal.z);
+
+            builder.uvs.push_back(static_cast<double>(i) / tubularSeg);
+            builder.uvs.push_back(static_cast<double>(j) / radialSeg);
+        }
+    }
+
+    for (int j = 1; j <= tubularSeg; ++j) {
+        for (int i = 1; i <= radialSeg; ++i) {
+            const uint32_t a = (radialSeg + 1) * (j - 1) + (i - 1);
+            const uint32_t b = (radialSeg + 1) * j + (i - 1);
+            const uint32_t c = (radialSeg + 1) * j + i;
+            const uint32_t d = (radialSeg + 1) * (j - 1) + i;
+
+            builder.indices.push_back(a);
+            builder.indices.push_back(b);
+            builder.indices.push_back(d);
+
+            builder.indices.push_back(b);
+            builder.indices.push_back(c);
+            builder.indices.push_back(d);
+        }
+    }
+
+    finish(*geometry, builder);
+    return geometry;
+}
+
 }  // namespace tn::engine

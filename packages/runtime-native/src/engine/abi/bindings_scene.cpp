@@ -142,46 +142,6 @@ Value foundObject(Store& store, Object3D* found) {
     return store.share(std::string(found->type()), std::static_pointer_cast<void>(shared));
 }
 
-/**
- * three's Object3D.clone(recursive = true): `new this.constructor().copy(this, recursive)`. A mesh
- * shares its geometry and material and a skinned mesh its skeleton, as three's copy does (a cloned
- * rig still follows the source's bones; SkeletonUtils.clone is what rebinds them). A type whose own
- * copy is not ported is refused by name. ponytail: userData lives in the language back end and is
- * not carried over; the JS side copies it if a game needs it.
- */
-std::shared_ptr<Object3D> cloneObject(const Object3D& source, bool recursive) {
-    std::shared_ptr<Object3D> copy;
-    if (const auto* skinned = dynamic_cast<const SkinnedMesh*>(&source)) {
-        auto mesh = std::make_shared<SkinnedMesh>();
-        mesh->geometry = skinned->geometry;
-        mesh->material = skinned->material;
-        mesh->morphTargetInfluences = skinned->morphTargetInfluences;
-        mesh->skeleton = skinned->skeleton;
-        mesh->attached = skinned->attached;
-        mesh->bindMatrix.copy(skinned->bindMatrix);
-        mesh->bindMatrixInverse.copy(skinned->bindMatrixInverse);
-        copy = mesh;
-    } else if (dynamic_cast<const InstancedMesh*>(&source) || dynamic_cast<const Sprite*>(&source)) {
-        throw Unsupported{"clone of a " + std::string(source.type()) + " is not ported"};
-    } else if (const auto* mesh = dynamic_cast<const Mesh*>(&source)) {
-        auto made = std::make_shared<Mesh>(mesh->geometry, mesh->material);
-        made->morphTargetInfluences = mesh->morphTargetInfluences;
-        copy = made;
-    } else if (dynamic_cast<const Bone*>(&source)) {
-        copy = std::make_shared<Bone>();
-    } else if (source.type() == "Group") {
-        copy = std::make_shared<Group>();
-    } else if (source.type() == "Object3D") {
-        copy = std::make_shared<Object3D>();
-    } else {
-        throw Unsupported{"clone of a " + std::string(source.type()) + " is not ported"};
-    }
-    copy->copy(source);
-    if (recursive)
-        for (const Object3D* child : source.children) copy->add(*cloneObject(*child, true));
-    return copy;
-}
-
 void registerObject3D(ClassBinding& b) {
     b.members["parent"] = [](void* self, const Args&, Store& store) {
         return foundObject(store, as<Object3D>(self)->parent);
@@ -192,6 +152,21 @@ void registerObject3D(ClassBinding& b) {
         Args children;
         for (Object3D* child : as<Object3D>(self)->children) children.push_back(foundObject(store, child));
         return Value::array(std::move(children));
+    };
+    // Engine-internal (`__`: never three's surface): the subtree in three's traverse order, or only its
+    // visible part, as one array. Both back ends' `traverse`/`traverseVisible` call their callback
+    // over it, so a walk costs one crossing, not two per object (children and visible).
+    // ponytail: a snapshot; an object a callback adds or removes mid-walk is not revisited, as three's
+    // live walk would. Walk live if a game depends on it.
+    b.methods["__walk"] = [](void* self, const Args& a, Store& store) {
+        std::vector<Object3D*> objects;
+        const auto collect = [](Object3D& object, void* out) { static_cast<std::vector<Object3D*>*>(out)->push_back(&object); };
+        if (boolean(a, 0, false)) as<Object3D>(self)->traverseVisible(collect, &objects);
+        else as<Object3D>(self)->traverse(collect, &objects);
+        Args walked;
+        walked.reserve(objects.size());
+        for (Object3D* object : objects) walked.push_back(foundObject(store, object));
+        return Value::array(std::move(walked));
     };
     b.callbacks["onBeforeRender"] = [](void* self, RenderCallback callback) {
         as<Object3D>(self)->onBeforeRender = std::move(callback);
@@ -322,6 +297,14 @@ void registerObject3D(ClassBinding& b) {
         as<Object3D>(self)->attach(objectArg(store, a.at(0)));
         return chain();
     };
+    // three's clone(recursive = true): the copy as its own class, meshes sharing their resources.
+    b.methods["clone"] = [](void* self, const Args& a, Store& store) {
+        std::string error;
+        std::shared_ptr<Object3D> copy = cloneObject(*as<Object3D>(self), boolean(a, 0, true), error);
+        if (!copy) throw Unsupported{error};
+        const std::string type(copy->type());
+        return store.adopt(type, std::static_pointer_cast<void>(copy));
+    };
     b.methods["removeFromParent"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->removeFromParent();
         return chain();
@@ -439,11 +422,6 @@ void registerObject3D(ClassBinding& b) {
     b.methods["copy"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->copy(objectArg(store, a.at(0)));
         return chain();
-    };
-    b.methods["clone"] = [](void* self, const Args& a, Store& store) {
-        const bool recursive = a.empty() || a.at(0).kind == Value::Kind::Undefined || flag(a.at(0));
-        const std::shared_ptr<Object3D> copy = cloneObject(*as<Object3D>(self), recursive);
-        return store.adopt(std::string(copy->type()), std::static_pointer_cast<void>(copy));
     };
 }
 
@@ -589,7 +567,7 @@ void registerScene(ClassBinding& b) {
     b.setters["environment"] = [](void* self, const Value& v, Store& store) {
         if (v.kind == Value::Kind::Null) { as<Scene>(self)->environment.reset(); return; }
         Object* texture = store.find(v);
-        if (!texture || (texture->cls != "Texture" && texture->cls != "DataTexture"))
+        if (!texture || !isTextureClass(texture->cls))
             throw Unsupported{"environment must be a Texture or null"};
         as<Scene>(self)->environment = std::static_pointer_cast<Texture>(texture->ptr);
     };
@@ -613,7 +591,7 @@ void registerScene(ClassBinding& b) {
         if (!color) throw Unsupported{"background must be a Color, Texture or null"};
         if (color->cls == "Color") {
             scene->background = std::static_pointer_cast<Color>(color->ptr); scene->backgroundTexture.reset();
-        } else if (color->cls == "Texture" || color->cls == "DataTexture") {
+        } else if (isTextureClass(color->cls)) {
             scene->backgroundTexture = std::static_pointer_cast<Texture>(color->ptr); scene->background.reset();
         } else throw Unsupported{"background must be a Color, Texture or null"};
     };
@@ -675,7 +653,8 @@ std::shared_ptr<BufferGeometry> geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
         "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry", "LatheGeometry",
-        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry", "InstancedBufferGeometry"};
+        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry", "IcosahedronGeometry", "CapsuleGeometry",
+        "DodecahedronGeometry", "OctahedronGeometry", "TorusKnotGeometry", "InstancedBufferGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -697,6 +676,12 @@ Value intersections(Store& store, const std::vector<Intersection>& hits) {
             using V = std::decay_t<decltype(v)>;
             return store.adopt(cls, std::make_shared<V>(v));
         };
+        if (h.index) {  // three's Line hit: the segment index, no face
+            values.push_back(Value::record({{"distance", Value::of(h.distance)}, {"point", vector(h.point, "Vector3")},
+                {"index", Value::of(double(*h.index))}, {"face", Value{}}, {"faceIndex", Value{}},
+                {"barycoord", Value{}}, {"object", foundObject(store, h.object)}}));
+            continue;
+        }
         std::vector<std::pair<std::string, Value>> fields = {
             {"distance", Value::of(h.distance)}, {"point", vector(h.point, "Vector3")},
             {"object", foundObject(store, h.object)}, {"faceIndex", Value::of(double(h.faceIndex))},
@@ -1062,6 +1047,92 @@ void registerAnimationMixer(ClassBinding& b) {
     b.setters["timeScale"] = [](void* self, const Value& v) { as<AnimationMixer>(self)->timeScale = number(v); };
 }
 
+/**
+ * three's PropertyBinding over the engine's (engine/animation/property_binding.h), for every back end.
+ * `bind()` answers the reason a path did not bind (empty when it did); the shared facade
+ * (three-native/src/property-binding.ts) routes it to three's console function and returns nothing.
+ * A PropertyBinding built with no arguments is the facade's helper for the static parseTrackName
+ * and findNode.
+ */
+Value textValue(std::string text) { return Value{Value::Kind::String, 0, std::move(text)}; }
+
+struct BoundProperty {
+    std::optional<animation::PropertyBinding> binding;
+};
+
+void registerPropertyBinding(ClassBinding& b) {
+    using animation::ParsedPath;
+    const auto shared = [](Store& store, const Value& arg) {
+        std::shared_ptr<Object3D> root = objectArg(store, arg).weak_from_this().lock();
+        if (!root) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: the root is not shared-owned"};
+        return root;
+    };
+    const auto path = [](const Value& v) {
+        if (v.kind != Value::Kind::String) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: expected a track path string"};
+        return v.text;
+    };
+    const auto node = [](Store& store, Object3D* object) -> Value {
+        if (!object) return Value{};
+        auto owner = object->weak_from_this().lock();
+        if (!owner) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: node has no shared owner"};
+        return store.share(std::string(object->type()), std::move(owner));
+    };
+    b.ctor = [shared, path](const Args& a, Store& store) -> std::shared_ptr<void> {
+        auto bound = std::make_shared<BoundProperty>();
+        if (a.empty()) return bound;
+        if (a.size() != 2) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: construct with root and path"};
+        const std::string track = path(a.at(1));
+        ParsedPath parsed;
+        std::string error;
+        if (!animation::parseTrackName(track, parsed, error)) throw Unsupported{error};
+        bound->binding.emplace(shared(store, a.at(0)), track);
+        return bound;
+    };
+    const auto binding = [](void* self) -> animation::PropertyBinding& {
+        auto& bound = *as<BoundProperty>(self);
+        if (!bound.binding) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: this helper has no root and path"};
+        return *bound.binding;
+    };
+    b.methods["bind"] = [binding](void* self, const Args&, Store&) {
+        auto& property = binding(self);
+        property.bind();
+        return textValue(property.diagnostic);
+    };
+    b.methods["unbind"] = [binding](void* self, const Args&, Store&) {
+        binding(self).unbind();
+        return Value{};
+    };
+    b.getters["path"] = [binding](void* self) { return textValue(binding(self).path); };
+    b.methods["targetObject"] = [binding, node](void* self, const Args&, Store& store) -> Value {
+        auto& property = binding(self);
+        if (auto material = property.targetMaterial()) {
+            std::string cls(material->typeName());  // read before the move: argument order is unspecified
+            return store.share(std::move(cls), std::move(material));
+        }
+        return node(store, property.targetNode().get());
+    };
+    b.methods["parseTrackName"] = [path](void*, const Args& a, Store&) {
+        ParsedPath parsed;
+        std::string error;
+        if (a.size() != 1 || !animation::parseTrackName(path(a.at(0)), parsed, error))
+            throw Unsupported{error.empty() ? "TN_NATIVE_PROPERTY_BINDING: expected one track path" : error};
+        std::vector<std::pair<std::string, Value>> fields;
+        for (const auto& [name, part] : std::vector<std::pair<const char*, std::optional<std::string>>>{
+                 {"nodeName", parsed.nodeName}, {"objectName", parsed.objectName}, {"objectIndex", parsed.objectIndex},
+                 {"propertyName", parsed.propertyName}, {"propertyIndex", parsed.propertyIndex}})
+            fields.emplace_back(name, part ? textValue(*part) : Value::undefined());
+        return Value::record(std::move(fields));
+    };
+    b.methods["findNode"] = [shared, path, node](void*, const Args& a, Store& store) {
+        if (a.empty() || a.size() > 2) throw Unsupported{"TN_NATIVE_PROPERTY_BINDING: expected root and node name"};
+        const auto root = shared(store, a.at(0));
+        // An absent name (`undefined`, which a back end may pass as null or leave off) finds the root.
+        const bool named = a.size() == 2 && a.at(1).kind != Value::Kind::Undefined && a.at(1).kind != Value::Kind::Null;
+        const auto name = named ? std::optional<std::string>{path(a.at(1))} : std::optional<std::string>{};
+        return node(store, animation::findNode(*root, name));
+    };
+}
+
 void registerAnimationAction(ClassBinding& b) {
     using namespace tn::engine::animation;
     for (const char* name : {"play", "stop", "reset"}) {
@@ -1206,38 +1277,6 @@ void registerKeyframeTrack(ClassBinding& b, tn::engine::animation::TrackType typ
 // three's AnimationClip(name, duration = -1, tracks, blendMode). The clip holds copies of the
 // tracks it is handed, and `tracks` answers each held track as itself.
 // ponytail: editing a track after it is in a clip does not reach the clip; three's clip shares it.
-// three's PropertyBinding over the engine's (animation/property_binding.h): what an animation audit
-// constructs to ask whether a track path reaches a property. bind() answers the reason it did not
-// (empty when it bound), which the language back end hands to three's console function as three's
-// bind() does; parsedPath is parseTrackName's record as JSON, or {"error": ...} where three throws.
-void registerPropertyBinding(ClassBinding& b) {
-    b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
-        if (a.size() != 2 || a.at(1).kind != Value::Kind::String)
-            throw Unsupported{"PropertyBinding needs a root object and a track path"};
-        std::shared_ptr<Object3D> root = objectArg(store, a.at(0)).shared_from_this();
-        return std::make_shared<tn::engine::animation::PropertyBinding>(root, a.at(1).text);
-    };
-    b.methods["bind"] = [](void* self, const Args&, Store&) {
-        auto* binding = as<tn::engine::animation::PropertyBinding>(self);
-        binding->bind();
-        return Value{Value::Kind::String, 0, binding->diagnostic};
-    };
-    b.methods["unbind"] = [](void* self, const Args&, Store&) {
-        as<tn::engine::animation::PropertyBinding>(self)->unbind();
-        return Value{Value::Kind::Undefined};
-    };
-    b.members["targetObject"] = [](void* self, const Args&, Store& store) -> Value {
-        const auto* binding = as<tn::engine::animation::PropertyBinding>(self);
-        if (auto material = binding->targetMaterial()) return store.share(std::string(material->typeName()), material);
-        if (auto node = binding->targetNode()) return store.share(std::string(node->type()), node);
-        return Value{};
-    };
-    b.getters["parsedPath"] = [](void* self) {
-        return Value{Value::Kind::String, 0,
-                     tn::engine::animation::parsedPathJson(as<tn::engine::animation::PropertyBinding>(self)->path)};
-    };
-}
-
 void registerAnimationClip(ClassBinding& b) {
     using namespace tn::engine::animation;
     b.ctor = [](const Args& a, Store& store) {
@@ -1351,7 +1390,8 @@ Object3D& objectArg(Store& store, const Value& arg) {
                                            "Scene",           "Camera",          "PerspectiveCamera",
                                            "OrthographicCamera", "AmbientLight", "DirectionalLight",
                                            "HemisphereLight", "InstancedMesh",      "PointLight",
-                                           "Sprite", "SpotLight",       "Bone",               "SkinnedMesh", "LOD"};
+                                           "Sprite", "SpotLight",       "Bone",               "SkinnedMesh", "LOD",
+                                           "Line", "LineSegments"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
     for (const char* cls : kClasses) {
@@ -1396,6 +1436,23 @@ void registerSceneBindings(Registry& classes) {
     registerLOD(classes["LOD"]);
     registerMesh(classes["Mesh"]);
     registerInstancedMesh(classes["InstancedMesh"]);
+    for (const char* name : {"Line", "LineSegments"}) {
+        auto& line = classes[name];
+        registerMesh(line);
+        line.methods.erase("getVertexPosition");  // three's Line is no Mesh: it has no vertex reader
+        const bool segments = std::string_view(name) == "LineSegments";
+        line.ctor = [segments](const Args& a, Store& store) {
+            auto geometry = !a.empty() && a.at(0).kind == Value::Kind::Ref ? geometryArg(store, a.at(0))
+                                                                           : std::make_shared<BufferGeometry>();
+            auto material = a.size() >= 2 && a.at(1).kind == Value::Kind::Ref ? materialArg(store, a.at(1)) : nullptr;
+            if (!material) {  // three's default: a new LineBasicMaterial
+                material = std::make_shared<Material>(MaterialType::Basic);
+                material->lineMaterial = true;
+            }
+            if (segments) return std::static_pointer_cast<void>(std::make_shared<LineSegments>(geometry, material));
+            return std::static_pointer_cast<void>(std::make_shared<Line>(geometry, material));
+        };
+    }
     auto& sprite = classes["Sprite"];
     registerMesh(sprite);
     sprite.methods.erase("getVertexPosition");  // three's Sprite is no Mesh: it has no vertex reader
@@ -1415,11 +1472,22 @@ void registerSceneBindings(Registry& classes) {
     }
     registerBone(classes["Bone"]);
     registerSkeleton(classes["Skeleton"]);
+    // three's SkeletonUtils namespace: clone(root) copies the hierarchy, shares mesh resources and
+    // remaps each skin to the cloned bones. A namespace class, exported as its one instance.
+    ClassBinding& skeletonUtils = classes["SkeletonUtils"];
+    skeletonUtils.ctor = [](const Args&, Store&) { return std::make_shared<int>(0); };
+    skeletonUtils.methods["clone"] = [](void*, const Args& a, Store& store) {
+        std::string error;
+        std::shared_ptr<Object3D> copy = cloneSkeleton(objectArg(store, a.at(0)), error);
+        if (!copy) throw Unsupported{error};
+        const std::string type(copy->type());
+        return store.adopt(type, std::static_pointer_cast<void>(copy));
+    };
     registerSkinnedMesh(classes["SkinnedMesh"]);
     registerAnimationMixer(classes["AnimationMixer"]);
     registerAnimationAction(classes["AnimationAction"]);
-    registerAnimationClip(classes["AnimationClip"]);
     registerPropertyBinding(classes["PropertyBinding"]);
+    registerAnimationClip(classes["AnimationClip"]);
     registerKeyframeTrack(classes["QuaternionKeyframeTrack"], tn::engine::animation::TrackType::Quaternion);
     registerKeyframeTrack(classes["VectorKeyframeTrack"], tn::engine::animation::TrackType::Vector);
     registerKeyframeTrack(classes["NumberKeyframeTrack"], tn::engine::animation::TrackType::Number);

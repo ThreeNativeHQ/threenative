@@ -111,10 +111,14 @@ describe("TSL on the browser back end", () => {
     const sample = (tsl.texture as Fn)(sea, (tsl.uv as Fn)());
     expect(calls.map(({ name }) => name)).toEqual(["vec3", "uv", "texture"]);
     expect(calls[0]?.args).toEqual([{ kind: "vector", numbers: [1, 2, 3] }]);
+    // An engine Texture crosses as itself: the engine samples its texels, or names its map when it
+    // has none. A plain object (a pass node's { name: "scene" }) still names a map.
     expect(calls[2]?.args).toEqual([
-      { kind: "named", text: "sea" },
+      { kind: "handle", ref: expect.objectContaining({ key: expect.stringMatching(/^Texture:/) }) },
       { kind: "node", node: 2 },
     ]);
+    (tsl.texture as Fn)({ name: "scene" }, (tsl.uv as Fn)());
+    expect(calls[4]?.args[0]).toEqual({ kind: "named", text: "scene" });
 
     const material = new (classes.MeshBasicNodeMaterial as Constructor)();
     material.colorNode = sample;
@@ -139,6 +143,67 @@ describe("TSL on the browser back end", () => {
     values.y = 5; // Midway: origin.value.set(camera.x, camera.z)
     tsl.sync();
     expect(uniforms).toEqual(["1=2.5", "2=4,5"]);
+  });
+
+  it("runs a uniform's onRenderUpdate/onFrameUpdate before each frame's lanes, as three's UniformNode", () => {
+    const uniforms: string[] = [];
+    const runtime = tslRuntime([], [], uniforms);
+    const tsl = defineTsl(runtime);
+    const ticks = (tsl.exports.uniform as Fn)(0);
+    let seen: unknown;
+    // Midway's ocean: center.onRenderUpdate(() => syncTexture()); a returned value becomes .value.
+    expect(
+      (ticks.onRenderUpdate as Fn)(function (this: unknown, frame: { frameId: number }) {
+        seen = this;
+        return frame.frameId * 10;
+      }),
+    ).toBe(ticks);
+    const side = (tsl.exports.uniform as Fn)(7);
+    let frames = 0;
+    (side.onFrameUpdate as Fn)(() => {
+      frames++;
+    });
+    tsl.sync();
+    tsl.sync();
+    expect(seen).toBe(ticks);
+    expect(ticks.value).toBe(20);
+    expect(side.value).toBe(7); // undefined keeps the value
+    expect(frames).toBe(2);
+    expect(uniforms).toEqual(["1=10", "1=20"]);
+    expect(() => (side.onObjectUpdate as Fn)(() => 1)).toThrow(/TN_TSL_UPDATE_UNSUPPORTED/);
+  });
+
+  it("reads uniformArray entries each render, as three's UniformArrayNode reads its array", () => {
+    const uniforms: string[] = [];
+    const runtime = tslRuntime([], [], uniforms);
+    const values: Record<string, EngineValue> = { x: 0, y: 0, z: 0, w: 0 };
+    const { classes } = defineBrowserClasses(registry, engineRuntime(runtime, values), catalog);
+    const tsl = defineTsl(runtime);
+    // Midway's ocean: uniformArray(ships, "vec4") and shipNodes.element(i) for each ship.
+    const ships = [new (classes.Vector4 as Constructor)(), new (classes.Vector4 as Constructor)()];
+    const array = (tsl.exports.uniformArray as Fn)(ships, "vec4");
+    const first = (array.element as Fn)(1);
+    expect((array.element as Fn)(1)).toBe(first);
+    Object.assign(values, { x: 3, y: 4, z: 5, w: 6 });
+    tsl.sync();
+    expect(uniforms.at(-1)).toMatch(/^\d+=3,4,5,6$/);
+    expect(() => (array.element as Fn)(first)).toThrow(/TN_TSL_UNIFORM_ARRAY/);
+    expect(() => (array.element as Fn)(2)).toThrow(/TN_TSL_UNIFORM_ARRAY/);
+  });
+
+  it("answers every swizzle three does: xyzw, rgba and stpq, one to four lanes", () => {
+    const calls: ICall[] = [];
+    const tsl = defineTsl(tslRuntime(calls, [])).exports;
+    const v = (tsl.vec3 as Fn)(1, 2, 3);
+    for (const alias of ["xz", "zxy", "st", "bgr", "xxxx"]) expect(v[alias], alias).toBeDefined();
+    expect(v.xyzwx).toBeUndefined();
+    expect(calls.map((c) => c.name).filter((n) => n.startsWith("swizzle:"))).toEqual([
+      "swizzle:xz",
+      "swizzle:zxy",
+      "swizzle:xy",
+      "swizzle:zyx",
+      "swizzle:xxxx",
+    ]);
   });
 
   it("runs Fn, If, Else and Loop callbacks inside engine scopes, as V8's adapter does", () => {

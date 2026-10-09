@@ -3,13 +3,13 @@
  * it was made from: a number is replaced by `.value = x`; a three Color or VectorN stays the same
  * object, so `origin.value.set(x, z)` edits it in place, as Midway's ocean does. `sync()` pushes the
  * edited objects' lanes before a frame draws; a number goes through at once. Either way the engine
- * updates its uniform data and keeps the program. `onRenderUpdate(callback)` runs the callback in
- * `sync()`, which each renderer calls once per render, and a value it returns becomes `.value`, as
- * three's UniformNode.onUpdate does.
+ * updates its uniform data and keeps the program.
  */
 
 interface IUniformState {
   value: unknown;
+  /** three's `node.update`, set by onRenderUpdate/onFrameUpdate; its result becomes `.value`. */
+  update?: (frame: { frameId: number }) => unknown;
 }
 
 /** One float per lane: a number, a Color's r, g, b, or a VectorN's x, y, z, w. */
@@ -27,27 +27,26 @@ export function uniformLanes(value: unknown): number[] {
 
 /**
  * Wraps a back end's `uniform` so each uniform node it returns answers `.value` (an accessor on the
- * node itself: a V8 node has no prototype of its own to carry it). `setValues` writes a node's lanes
- * into the engine.
+ * node itself: a V8 node has no prototype of its own to carry it) and three's update hooks. `setValues`
+ * writes a node's lanes into the engine. `sync()` runs once per render: the update callbacks first,
+ * then the edited objects' lanes.
  */
 export function liveUniforms<TNode extends object>(
   uniform: (value: unknown) => TNode,
   setValues: (node: TNode, lanes: readonly number[]) => void,
 ): {
   uniform: (value: unknown) => TNode;
-  uniformArray: (values: readonly unknown[]) => {
-    array: readonly unknown[];
-    element(index: unknown): TNode;
-  };
+  uniformArray: (
+    values: unknown[],
+    type?: string,
+  ) => { array: unknown[]; element(index: unknown): TNode };
   sync(): void;
 } {
   const states = new WeakMap<object, IUniformState>();
   const objects = new Set<WeakRef<TNode>>();
-  const updates = new Map<
-    WeakRef<TNode>,
-    (this: TNode, frame: undefined, node: TNode) => unknown
-  >();
-  const api = {
+  const updating = new Set<WeakRef<TNode>>();
+  let frameId = 0;
+  const live = {
     uniform(value: unknown): TNode {
       const node = uniform(value);
       const state: IUniformState = { value };
@@ -63,46 +62,81 @@ export function liveUniforms<TNode extends object>(
           setValues(node, uniformLanes(state.value));
         },
       });
-      // ponytail: every registered uniform updates on every render, used or not, and the callback
-      // gets no NodeFrame; three runs only the uniforms a drawn material reads, with its frame.
-      Object.defineProperty(node, "onRenderUpdate", {
-        configurable: true,
-        value(callback: (this: TNode, frame: undefined, node: TNode) => unknown) {
-          updates.set(new WeakRef(node), callback);
-          return node;
+      if (typeof value === "object" && value !== null) objects.add(new WeakRef(node));
+      // three's UniformNode.onUpdate: the callback runs with the node as `this` and its result,
+      // unless undefined, becomes the value. ponytail: FRAME and RENDER both run once per sync (one
+      // per render call); a game that renders twice a frame runs a FRAME callback twice.
+      const onUpdate = (
+        callback: (this: TNode, frame: unknown, node: TNode) => unknown,
+        updateType: string,
+      ) => {
+        if (updateType !== "frame" && updateType !== "render")
+          throw new Error(
+            `TN_TSL_UPDATE_UNSUPPORTED: a native uniform updates per frame or render, not per '${updateType}'`,
+          );
+        if (state.update === undefined) updating.add(new WeakRef(node));
+        state.update = (frame) => callback.call(node, frame, node);
+        return node;
+      };
+      Object.defineProperties(node, {
+        onUpdate: { configurable: true, value: onUpdate },
+        onFrameUpdate: {
+          configurable: true,
+          value: (callback: never) => onUpdate(callback, "frame"),
+        },
+        onRenderUpdate: {
+          configurable: true,
+          value: (callback: never) => onUpdate(callback, "render"),
+        },
+        onObjectUpdate: {
+          configurable: true,
+          value: (callback: never) => onUpdate(callback, "object"),
         },
       });
-      if (typeof value === "object" && value !== null) objects.add(new WeakRef(node));
       return node;
     },
     /**
-     * three's uniformArray(values): `element(i)` is element i's live uniform, so a game that edits
-     * values[i] in place (Midway's ship wakes) sees it next frame, as three's per-frame array upload.
-     * ponytail: one uniform per element and a constant index only; a node index is refused. Add a
-     * native array uniform if a game indexes one with a node.
+     * three's uniformArray(values): `element(i)` at a constant index is a uniform that reads
+     * `values[i]` before each render, as UniformArrayNode copies its array per update. ponytail: a
+     * node index needs an engine uniform array; it is refused by name.
      */
-    uniformArray(values: readonly unknown[]) {
-      const elements = values.map((value) => api.uniform(value));
+    uniformArray(values: unknown[]) {
+      if (!Array.isArray(values))
+        throw new TypeError("TN_TSL_UNIFORM_ARRAY: uniformArray takes an array");
+      const elements = new Map<number, TNode>();
       return {
         array: values,
         element(index: unknown): TNode {
-          const element = typeof index === "number" ? elements[index] : undefined;
-          if (element === undefined)
-            throw new TypeError(
-              `TN_TSL_UNIFORM_ARRAY_INDEX: uniformArray.element needs a constant index below ${String(elements.length)}`,
+          if (
+            typeof index !== "number" ||
+            !Number.isInteger(index) ||
+            index < 0 ||
+            index >= values.length
+          )
+            throw new RangeError(
+              `TN_TSL_UNIFORM_ARRAY: element needs a constant index in [0, ${values.length})`,
             );
-          return element;
+          let node = elements.get(index);
+          if (node === undefined) {
+            node = live.uniform(values[index]);
+            (
+              node as unknown as { onRenderUpdate: (callback: () => unknown) => void }
+            ).onRenderUpdate(() => values[index]);
+            elements.set(index, node);
+          }
+          return node;
         },
       };
     },
     sync() {
-      for (const [ref, callback] of updates) {
+      const frame = { frameId: ++frameId };
+      for (const ref of updating) {
         const node = ref.deref();
         if (node === undefined) {
-          updates.delete(ref);
+          updating.delete(ref);
           continue;
         }
-        const next = callback.call(node, undefined, node);
+        const next = states.get(node)?.update?.(frame);
         if (next !== undefined) (node as { value: unknown }).value = next;
       }
       for (const ref of objects) {
@@ -115,5 +149,5 @@ export function liveUniforms<TNode extends object>(
       }
     },
   };
-  return api;
+  return live;
 }

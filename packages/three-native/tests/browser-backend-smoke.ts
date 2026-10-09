@@ -248,29 +248,9 @@ engine.collect();
   check(heard.includes("listener:0,1,5"), `listener pose ${heard.join(" ")}`);
   check(heard.includes("voice:-4,0,1"), `voice pose ${heard.join(" ")}`);
 }
-// attribute.array is a view of the engine's memory; over a fixed-size heap, memory growth would
-// detach a kept view, so the getter refuses by name (checked below) and the checks that read arrays
-// need a module whose heap is resizable (none is built so: GPUQueue uploads reject resizable views).
-const resizable = (abi.HEAPU8.buffer as unknown as { resizable?: boolean }).resizable === true;
-if (!resizable) {
-  const web = (await bindWebEngine(createTnAbi, [
-    "Float32BufferAttribute",
-  ])) as unknown as typeof THREE;
-  const attribute = new web.Float32BufferAttribute([1, 2, 3] as never, 3);
-  let refused = "";
-  try {
-    void attribute.array;
-  } catch (error) {
-    refused = String(error);
-  }
-  check(
-    refused.includes("TN_WASM_ATTRIBUTE_VIEW_UNSAFE"),
-    `attribute.array refuses by name: ${refused}`,
-  );
-}
 // The engine's Shape and ExtrudeGeometry on the web: a hole pushed onto shape.holes is cut, and the
 // options object reaches the generator; positions, normals and uvs equal the pinned three's.
-if (resizable) {
+{
   type Ctor = new (...args: unknown[]) => Record<string, unknown>;
   const names = ["Shape", "Path", "Vector2", "ExtrudeGeometry", "ShapeGeometry", "BufferGeometry"];
   const web = (await bindWebEngine(createTnAbi, names)) as Record<string, Ctor>;
@@ -309,9 +289,318 @@ if (resizable) {
     "extrude is a BufferGeometry",
   );
 }
-// three's attribute.array is the attribute's own typed array: of its scalar type, one per attribute,
-// and an element write is what the engine reads back.
-if (resizable) {
+// The templates' check (src/render/materialAssignments.ts): a material whose hooks are three's
+// defaults reads them from Material.prototype, and a game's own hook is told apart (PRD-546).
+{
+  type Hooks = { onBeforeCompile: unknown; customProgramCacheKey: () => unknown };
+  const web = (await bindWebEngine(createTnAbi, ["MeshStandardMaterial", "Material"])) as Record<
+    string,
+    new () => Hooks
+  >;
+  const base = (web.Material as unknown as { prototype: Hooks }).prototype;
+  const lit = new (web.MeshStandardMaterial as new () => Hooks)();
+  check(
+    lit.onBeforeCompile === base.onBeforeCompile &&
+      lit.customProgramCacheKey === base.customProgramCacheKey &&
+      typeof lit.customProgramCacheKey() === "string",
+    "Material hooks read three's defaults",
+  );
+  lit.onBeforeCompile = () => {};
+  check(lit.onBeforeCompile !== base.onBeforeCompile, "a game's onBeforeCompile is its own");
+}
+// three's CanvasTexture is the engine's own class (PRD-546): three's Texture defaults (flipped, linear,
+// mipmapped) on the canvas's pixels, and a needsUpdate re-reads the canvas.
+{
+  const web = (await bindWebEngine(createTnAbi, ["CanvasTexture", "Texture"])) as Record<
+    string,
+    new (
+      ...args: unknown[]
+    ) => Record<string, unknown>
+  >;
+  let reads = 0;
+  const canvas = {
+    width: 2,
+    height: 1,
+    getContext: () => ({
+      getImageData: () => {
+        reads++;
+        return { data: new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]), width: 2, height: 1 };
+      },
+    }),
+  };
+  const texture = new (web.CanvasTexture as new (...args: unknown[]) => Record<string, unknown>)(
+    canvas,
+  );
+  check(
+    texture.isCanvasTexture === true &&
+      texture instanceof (web.Texture as new () => object) &&
+      texture.generateMipmaps === true &&
+      texture.flipY === true &&
+      texture.magFilter === 1006 &&
+      texture.minFilter === 1008 &&
+      texture.image === canvas,
+    "CanvasTexture carries three's Texture defaults",
+  );
+  texture.needsUpdate = true;
+  check(reads === 2, "CanvasTexture re-reads its canvas on needsUpdate");
+}
+// The mixer's EventDispatcher on the Wasm engine, as on V8: listeners live in JS and the engine calls
+// back for `finished` and `loop` while something listens (the minimal template's AnimationPlayer).
+{
+  type Fn = (...args: unknown[]) => unknown;
+  type Ctor = new (
+    ...args: unknown[]
+  ) => {
+    clipAction: Fn;
+    update: Fn;
+    addEventListener: Fn;
+    removeEventListener: Fn;
+    hasEventListener: Fn;
+  };
+  const web = (await bindWebEngine(createTnAbi, [
+    "AnimationMixer",
+    "AnimationClip",
+    "VectorKeyframeTrack",
+    "Object3D",
+    "LoopOnce",
+    "LoopRepeat",
+  ])) as Record<string, unknown>;
+  const root = new (web.Object3D as Ctor)();
+  const track = new (web.VectorKeyframeTrack as Ctor)(".position", [0, 1], [0, 0, 0, 1, 2, 3]);
+  const clip = new (web.AnimationClip as Ctor)("move", 1, [track]);
+  const mixer = new (web.AnimationMixer as Ctor)(root);
+  const action = mixer.clipAction(clip) as {
+    setLoop(mode: unknown, repetitions: number): unknown;
+    play(): unknown;
+    reset(): unknown;
+    clampWhenFinished: boolean;
+  };
+  action.setLoop(web.LoopOnce, 1);
+  action.clampWhenFinished = true;
+  action.play();
+  const events: Record<string, unknown>[] = [];
+  const onFinished = (event: Record<string, unknown>) => events.push({ ...event });
+  mixer.addEventListener("finished", onFinished);
+  check(mixer.hasEventListener("finished", onFinished) === true, "mixer listener registered");
+  mixer.update(0.5);
+  check(events.length === 0, "no finished event mid-clip");
+  mixer.update(1);
+  check(
+    events.length === 1 &&
+      events[0]?.type === "finished" &&
+      events[0]?.action === action &&
+      events[0]?.direction === 1 &&
+      events[0]?.target === mixer,
+    "finished event reaches its listener with its action and target",
+  );
+  mixer.removeEventListener("finished", onFinished);
+  check(mixer.hasEventListener("finished", onFinished) === false, "mixer listener removed");
+  const loops: unknown[] = [];
+  mixer.addEventListener("loop", (event: Record<string, unknown>) => loops.push(event.loopDelta));
+  action.reset();
+  action.setLoop(web.LoopRepeat, Number.POSITIVE_INFINITY);
+  action.play();
+  mixer.update(1.25);
+  check(loops.length === 1 && loops[0] === 1, "loop event");
+}
+// three's MathUtils is a namespace object, not a constructor: its functions are called on the export
+// itself (the minimal template's Player wraps its heading with MathUtils.euclideanModulo).
+{
+  const web = (await bindWebEngine(createTnAbi, ["MathUtils"])) as {
+    MathUtils: {
+      euclideanModulo(n: number, m: number): number;
+      clamp(v: number, a: number, b: number): number;
+    };
+  };
+  check(typeof web.MathUtils === "object", "MathUtils is a namespace object");
+  check(web.MathUtils.euclideanModulo(-1, 3) === 2, "MathUtils.euclideanModulo");
+  check(web.MathUtils.clamp(5, 0, 1) === 1, "MathUtils.clamp");
+}
+// three's SkeletonUtils.clone through the engine's namespace (the minimal template's mannequin): a
+// cloned skin is bound to the cloned bones, never to its source's.
+{
+  // biome-ignore lint/suspicious/noExplicitAny: engine objects typed as three's at runtime only
+  type Obj = Record<string, any>;
+  const web = (await bindWebEngine(createTnAbi, [
+    "SkeletonUtils",
+    "Group",
+    "Bone",
+    "SkinnedMesh",
+    "Skeleton",
+    "BoxGeometry",
+    "MeshStandardMaterial",
+  ])) as Record<
+    "Group" | "Bone" | "SkinnedMesh" | "Skeleton" | "BoxGeometry" | "MeshStandardMaterial",
+    new (
+      ...args: unknown[]
+    ) => Obj
+  > & { SkeletonUtils: Obj };
+  const root: Obj = new web.Group();
+  const hip: Obj = new web.Bone();
+  hip.name = "hip";
+  root.add(hip);
+  const mesh: Obj = new web.SkinnedMesh(new web.BoxGeometry(), new web.MeshStandardMaterial());
+  mesh.name = "skin";
+  root.add(mesh);
+  root.updateMatrixWorld(true);
+  mesh.bind(new web.Skeleton([hip]));
+  check(typeof web.SkeletonUtils === "object", "SkeletonUtils is a namespace object");
+  const copy: Obj = web.SkeletonUtils.clone(root);
+  const copyHip = copy.getObjectByName("hip");
+  const copyMesh = copy.getObjectByName("skin");
+  check(
+    copy !== root && copyHip !== hip && copyMesh !== mesh,
+    "SkeletonUtils.clone copies the hierarchy",
+  );
+  check(
+    copyMesh.skeleton.bones[0] === copyHip && mesh.skeleton.bones[0] === hip,
+    "SkeletonUtils.clone remaps the skin",
+  );
+}
+// Reads that need no engine call (Wasm): a math field the engine holds in place (`x`, `r`, `radius`,
+// `elements`) comes from its memory, and a fixed member (`position`, `matrixWorld`) is the same
+// object every read. Writes still go through the engine, and memory reads see them, and see what the
+// engine itself computes (updateMatrixWorld).
+{
+  // biome-ignore lint/suspicious/noExplicitAny: engine objects typed as three's at runtime only
+  type Any = Record<string, any>;
+  const web = (await bindWebEngine(createTnAbi, [
+    "Object3D",
+    "Vector3",
+    "Sphere",
+    "Color",
+  ])) as Record<string, new (...args: unknown[]) => Any>;
+  const object = new (web.Object3D as new () => Any)();
+  const sphere = new (web.Sphere as new (...a: unknown[]) => Any)(
+    new (web.Vector3 as new (...a: unknown[]) => Any)(1, 2, 3),
+    4,
+  );
+  const colour = new (web.Color as new (...a: unknown[]) => Any)(0.25, 0.5, 0.75);
+  object.position.set(1, 2, 3);
+  object.updateMatrixWorld(true);
+  const counts = new Map<string, number>();
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = counts;
+  const position = object.position;
+  for (let i = 0; i < 50; i++) {
+    void object.position.x;
+    void object.matrixWorld.elements;
+    void sphere.radius;
+    void colour.g;
+  }
+  const reads = [...counts.values()].reduce((sum, n) => sum + n, 0);
+  object.position.x = 7; // a write crosses
+  object.updateMatrixWorld(true);
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = undefined;
+  check(object.position === position, "a fixed member is the same object every read");
+  check(
+    object.position.x === 7 && object.matrixWorld.elements[12] === 7,
+    "memory reads see engine writes and updates",
+  );
+  check(
+    sphere.radius === 4 && colour.g === 0.5 && sphere.center.z === 3,
+    "math fields read in place",
+  );
+  // Each object's first read asks for its address (position, matrixWorld, its elements' owner, sphere,
+  // colour) and each fixed member is fetched once; nothing per read after that.
+  check(
+    reads <= 8,
+    `50 rounds of field reads cost ${reads} engine calls (${[...counts.keys()].join(", ")})`,
+  );
+}
+// traverse and traverseVisible are one engine walk (`__walk`), in three's order: a frame's scene walks
+// cost one crossing each, not two per object (the minimal template made 330 such calls a frame).
+{
+  type Node3D = Record<string, unknown> & {
+    name: string;
+    visible: boolean;
+    add(...children: object[]): void;
+    traverse(callback: (object: Node3D) => void): void;
+    traverseVisible(callback: (object: Node3D) => void): void;
+  };
+  const web = (await bindWebEngine(createTnAbi, ["Group", "Object3D"])) as Record<
+    string,
+    new () => Node3D
+  >;
+  const made = (name: string) => {
+    const node = new (web.Object3D as new () => Node3D)();
+    node.name = name;
+    return node;
+  };
+  const root = new (web.Group as new () => Node3D)();
+  root.name = "root";
+  const a = made("a");
+  const b = made("b");
+  const a1 = made("a1");
+  const b1 = made("b1");
+  root.add(a, b);
+  a.add(a1);
+  b.add(b1);
+  b.visible = false;
+  const counts = new Map<string, number>();
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = counts;
+  const order: string[] = [];
+  root.traverse((object) => order.push(object.name));
+  const visible: string[] = [];
+  root.traverseVisible((object) => visible.push(object.name));
+  (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts = undefined;
+  const crossings = [...counts.values()].reduce((sum, n) => sum + n, 0);
+  check(order.join() === "root,a,a1,b,b1", `traverse order: ${order.join()}`);
+  check(
+    visible.join() === "root,a,a1",
+    `traverseVisible skips a hidden subtree: ${visible.join()}`,
+  );
+  // Two walks, and the callbacks read `name` (a crossing each): 2 + 8 names.
+  check(
+    crossings === 10,
+    `two walks cost two engine calls plus the names read: ${crossings} (${[...counts.keys()].join(", ")})`,
+  );
+}
+// three's type flags on the scene classes (PRD-540): a game, three's own code and the playtest
+// bridge find lights, cameras and bones by `isLight`, `isCamera`, `isBone`, never by class.
+{
+  const flagged = [
+    "DirectionalLight",
+    "PointLight",
+    "SpotLight",
+    "AmbientLight",
+    "HemisphereLight",
+    "PerspectiveCamera",
+    "OrthographicCamera",
+    "Bone",
+    "SkinnedMesh",
+    "InstancedMesh",
+    "Sprite",
+    "LineSegments",
+    "LOD",
+    "Scene",
+    "Group",
+  ];
+  const web = (await bindWebEngine(createTnAbi, flagged)) as Record<string, new () => object>;
+  const flags = (name: string) => {
+    const prototype = web[name]?.prototype as Record<string, unknown>;
+    return (flag: string) => prototype[flag] === true;
+  };
+  for (const light of flagged.slice(0, 5))
+    check(
+      flags(light)("isLight") && flags(light)(`is${light}`) && flags(light)("isObject3D"),
+      `${light} flags`,
+    );
+  for (const camera of ["PerspectiveCamera", "OrthographicCamera"])
+    check(flags(camera)("isCamera") && flags(camera)(`is${camera}`), `${camera} flags`);
+  for (const [name, inherited] of [
+    ["SkinnedMesh", "isMesh"],
+    ["InstancedMesh", "isMesh"],
+    ["LineSegments", "isLine"],
+  ] as const)
+    check(flags(name)(`is${name}`) && flags(name)(inherited), `${name} flags`);
+  for (const name of ["Bone", "Sprite", "LOD", "Scene", "Group"])
+    check(flags(name)(`is${name}`), `${name} flag`);
+  check(!flags("Group")("isLight") && !flags("Bone")("isMesh"), "flags stay on their own classes");
+}
+// three's attribute.array is the attribute's own JS typed array (PRD-540): of its scalar type, one
+// per attribute, kept across Wasm memory growth; an element write is what the engine reads back
+// before its next call, BufferAttribute keeps the array it is handed, and needsUpdate sends a write.
+{
   let grown: TnAbiModule | undefined;
   const web = (await bindWebEngine(async () => {
     grown = await createTnAbi();
@@ -330,7 +619,7 @@ if (resizable) {
   const p = g.getAttribute("position") as InstanceType<typeof THREE.BufferAttribute>;
   const a = p.array;
   a[3] = 5;
-  // A view a game keeps stays the attribute's across memory growth: grow the heap by 64 MB.
+  // A kept array stays the attribute's across memory growth: grow the heap by 64 MB.
   const heap = grown as TnAbiModule;
   const before = heap.HEAPU8.buffer.byteLength;
   heap._free(heap._malloc(64 << 20));
@@ -338,23 +627,32 @@ if (resizable) {
   a[4] = 7;
   check(
     a.length === 9 && a[3] === 5 && p.getY(1) === 7,
-    `a kept view survives growth: ${String(a.length)}`,
+    `a kept array survives growth: ${String(a.length)}`,
   );
   g.computeBoundingBox();
+  g.translate(1, 0, 0);
   const index = new web.BoxGeometry().getIndex() as InstanceType<typeof THREE.BufferAttribute>;
-  const wide = new web.BufferAttribute(new Uint32Array([7, 8]), 1);
+  const handed = new Uint32Array([7, 8]);
+  const wide = new web.BufferAttribute(handed, 1);
   wide.array[1] = 9;
+  const late = new web.Float32BufferAttribute([0, 0, 0] as never, 3);
+  const lateArray = late.array;
+  lateArray[2] = 4;
+  (late as unknown as { needsUpdate: boolean }).needsUpdate = true;
   const got = [
     a instanceof Float32Array,
     p.array === a,
     p.getX(1),
     g.boundingBox?.max.x,
+    a[3],
     index.array instanceof Uint16Array,
     index.array.length,
-    wide.array instanceof Uint32Array,
+    wide.array === handed,
     wide.getX(1),
+    late.getZ(0),
+    late.version,
   ].join();
-  check(got === "true,true,5,5,true,36,true,9", `attribute arrays ${got}`);
+  check(got === "true,true,6,6,6,true,36,true,9,4,1", `attribute arrays ${got}`);
 }
 // three's geometry.clone() is a deep copy of the same class, dispose() leaves the CPU data usable,
 // and morphAttributes reads back the attributes it was given, on the web as on V8.
@@ -385,7 +683,7 @@ if (resizable) {
 }
 // BufferGeometryUtils.mergeGeometries over the web engine's geometries equals three's over its own:
 // indexed parts with groups and morph targets, the arrays' types included.
-if (resizable) {
+{
   // biome-ignore lint/suspicious/noExplicitAny: three's and the engine's classes, compared by value.
   type Loose = any;
   const fromCore = createRequire(path.join(import.meta.dirname, "../../core/package.json"));
@@ -460,4 +758,4 @@ if (runtime.tsl !== undefined) {
   }
   check(wrong.includes("reflector"), `reflector refuses a camera as its target: ${wrong}`);
 }
-process.stdout.write(`TN_BROWSER_BACKEND_OK resizable=${resizable ? 1 : 0}\n`);
+process.stdout.write("TN_BROWSER_BACKEND_OK\n");

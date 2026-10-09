@@ -47,6 +47,8 @@ const char* opName(Op op) {
         case Op::Equal: return "equal";
         case Op::Select: return "select";
         case Op::Construct: return "construct";
+        case Op::ShiftRight: return "shiftRight";
+        case Op::BitXor: return "bitXor";
         default: return "?";
     }
 }
@@ -173,6 +175,25 @@ ExprId Program::sub(ExprId a, ExprId b, Where where) { return arithmetic(Op::Sub
 ExprId Program::mul(ExprId a, ExprId b, Where where) { return arithmetic(Op::Mul, "mul", a, b, where); }
 ExprId Program::div(ExprId a, ExprId b, Where where) { return arithmetic(Op::Div, "div", a, b, where); }
 
+// Both operands are one integer type, as WGSL's >> and ^ require.
+ExprId Program::shiftRight(ExprId a, ExprId b, Where where) {
+    if (a == kInvalid || b == kInvalid) return kInvalid;
+    const Type ta = exprs_[a].type;
+    const Type tb = exprs_[b].type;
+    const auto integral = [](Type t) { return (t.scalar == Type::Scalar::U32 || t.scalar == Type::Scalar::I32) && !t.isMatrix(); };
+    if (!integral(ta) || ta != tb) return fail("shiftRight", "operands " + ta.name() + " and " + tb.name() + " are not one integer type", where);
+    return pure(Expr{Op::ShiftRight, ta, {a, b}, 2});
+}
+
+ExprId Program::bitXor(ExprId a, ExprId b, Where where) {
+    if (a == kInvalid || b == kInvalid) return kInvalid;
+    const Type ta = exprs_[a].type;
+    const Type tb = exprs_[b].type;
+    const auto integral = [](Type t) { return (t.scalar == Type::Scalar::U32 || t.scalar == Type::Scalar::I32) && !t.isMatrix(); };
+    if (!integral(ta) || ta != tb) return fail("bitXor", "operands " + ta.name() + " and " + tb.name() + " are not one integer type", where);
+    return pure(Expr{Op::BitXor, ta, {a, b}, 2});
+}
+
 ExprId Program::neg(ExprId a, Where where) {
     if (a == kInvalid) return kInvalid;
     const Type t = exprs_[a].type;
@@ -266,8 +287,8 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
     auto floating = [&](size_t i) { return type(i).scalar == Type::Scalar::F32 && !type(i).isMatrix(); };
     Type result{};
     std::string error;
-    const std::string_view unary[] = {"abs", "sign", "sin", "cos", "asin", "floor", "fract", "sqrt", "exp", "exp2", "log2", "normalize", "dFdx", "dFdy"};
-    const std::string_view binary[] = {"min", "max", "pow", "step", "atan2"};
+    const std::string_view unary[] = {"abs", "sin", "cos", "asin", "floor", "fract", "sqrt", "exp", "exp2", "log2", "normalize", "dFdx", "dFdy", "sign", "atan", "fwidth"};
+    const std::string_view binary[] = {"min", "max", "pow", "step", "atan2", "mod"};
     bool known = false;
     for (std::string_view name : unary) {
         if (function != name) continue;
@@ -336,7 +357,7 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
                                           where.file_name(), where.line()});
         return kInvalid;
     }
-    if (error.empty() && (function == "dFdx" || function == "dFdy") && stage_ != Stage::Fragment) {
+    if (error.empty() && (function == "dFdx" || function == "dFdy" || function == "fwidth") && stage_ != Stage::Fragment) {
         error = "screen-space derivatives exist only in the fragment stage";
     }
     if (!error.empty()) return fail(function, error, where);

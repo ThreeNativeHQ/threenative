@@ -107,5 +107,9 @@ class SkinnedMesh : public Mesh {
 /** SkeletonUtils.clone: copy the hierarchy, share mesh resources, remap each skin to cloned bones.
  * Unsupported node kinds and bones outside the supplied root fail by name. */
 std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& error);
+/** Object3D.clone(recursive): three's `new this.constructor().copy(this, recursive)`. Meshes share
+ *  their geometry and material, and a SkinnedMesh keeps its source's skeleton (only SkeletonUtils
+ *  remaps bones). Null, with `error` naming the kind, for a class whose copy is not ported. */
+std::shared_ptr<Object3D> cloneObject(const Object3D& source, bool recursive, std::string& error);
 
 } // namespace tn::engine

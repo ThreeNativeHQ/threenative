@@ -390,29 +390,33 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         tsl::Build build(v);
         position = nodeType(v, graph::lower(variant.nodes.positionNode, v, {{"positionLocal", position}}), Type::vec(3));
     }
-    const ExprId instanceColor = !variant.instanceColor ? kInvalid : variant.instanceStorage
+    ExprId instanceColor = !variant.instanceColor ? kInvalid : variant.instanceStorage
         ? v.swizzle(v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(4)}))), "xyz")
         : v.attribute("instanceColor", Type::vec(3));
+    // setupDiffuseColor: colorNode.mul(vertexColor()), a vec4 whose alpha is 1 for an rgb attribute. The
+    // instance colour is constant over a triangle, so their product interpolates as three's two factors.
+    if (variant.vertexColors) {
+        ExprId vertexColor = v.attribute("color", Type::vec(variant.vertexColors));
+        if (variant.vertexColors == 3) vertexColor = v.construct(Type::vec(4), {vertexColor, v.constant(1.0f)});
+        instanceColor = instanceColor == kInvalid ? vertexColor
+            : v.mul(v.construct(Type::vec(4), {instanceColor, v.constant(1.0f)}), vertexColor);
+    }
     // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
     const ExprId uv = (variant.map || variant.normalMap || variant.pbrMaps) && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
 
+// NodeMaterial.setupVertex: a vertexNode is the clip-space position itself; positionLocal (after
+// morph, skinning, instancing and positionNode) is what it reads.
+static ExprId clipPosition(Program& v, const VertexVariant& variant, const LocalVertex& local, ExprId clip) {
+    if (!variant.nodes.vertexNode) return clip;
+    tsl::Build build(v);
+    return nodeType(v, graph::lower(variant.nodes.vertexNode, v, {{"positionLocal", v.swizzle(local.position, "xyz")}}),
+                    Type::vec(4));
+}
+
 static void outputInstanceColor(Program& v, const LocalVertex& local) {
     if (local.instanceColor != kInvalid) v.output("instanceColor", local.instanceColor);
-}
-
-// three's vertexColor(): the geometry's `color` attribute, passed through as a varying.
-static void outputVertexColor(Program& v, const VertexVariant& variant) {
-    if (variant.vertexColors) v.output("vertexColor", v.attribute("color", Type::vec(variant.vertexColors)));
-}
-
-// NodeMaterial.setupDiffuseColor with vertexColors: the colour node times vertexColor() (a vec3
-// colour widens to alpha 1, as three's vertexColor() does).
-static ExprId vertexColored(Program& f, const VertexVariant& variant, ExprId diffuse) {
-    if (!variant.vertexColors) return diffuse;
-    const ExprId color = f.varying("vertexColor", Type::vec(variant.vertexColors));
-    return f.mul(diffuse, variant.vertexColors == 4 ? color : f.construct(Type::vec(4), {color, f.constant(1.0f)}));
 }
 
 // A map's uv varying, written after instanceColor so both stages agree on the location order.
@@ -456,9 +460,12 @@ static ExprId srgbDecode(Program& f, ExprId channel) {
 // back face. Called after the fragment's other varyings exist, so `uv` takes the vertex stage's slot.
 static ExprId perturbNormal2Arb(Program& f, ExprId eye, ExprId uv, ExprId surfaceNormal, ExprId mapN);
 
+// The tint varying: the instance colour (vec3), or a vec4 once a vertex colour multiplies it.
+static Type tintType(const VertexVariant& variant) { return Type::vec(variant.vertexColors ? 4 : 3); }
+
 static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
     const ExprId eye = f.varying("positionView", Type::vec(3));
-    if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
+    if (variant.tinted()) f.varying("instanceColor", tintType(variant));
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform("normalUvTransform", Type::mat(3, 3));
     const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
@@ -492,7 +499,7 @@ static ExprId perturbNormal2Arb(Program& f, ExprId eye, ExprId uv, ExprId surfac
 // instanceColor before uv so the fragment's varyings keep the vertex stage's order.
 static ExprId pbrTexel(Program& f, const VertexVariant& variant, PbrMap map) {
     const std::string name = kPbrMapNames[map];
-    if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
+    if (variant.tinted()) f.varying("instanceColor", tintType(variant));
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform(name + "UvTransform", Type::mat(3, 3));
     return f.sample(f.texture2d(name), f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy"));
@@ -503,7 +510,7 @@ static ExprId pbrTexel(Program& f, const VertexVariant& variant, PbrMap map) {
 // stepped by its screen derivatives (dHdxy_fwd), then perturbNormalArb around the material normal.
 static ExprId bumpedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
     const ExprId eye = f.varying("positionView", Type::vec(3));
-    if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
+    if (variant.tinted()) f.varying("instanceColor", tintType(variant));
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform(std::string(kPbrMapNames[kBumpMap]) + "UvTransform", Type::mat(3, 3));
     const uint32_t map = f.texture2d(kPbrMapNames[kBumpMap]);
@@ -559,7 +566,9 @@ static ExprId mapTexel(Program& f, const VertexVariant& variant) {
 // setupDiffuseColor: an instanced mesh with instanceColor multiplies the material colour by it.
 static ExprId materialColor(Program& f, const VertexVariant& variant, ExprId diffuse) {
     const ExprId color = f.swizzle(diffuse, "xyz");
-    return variant.instanceColor ? f.mul(f.varying("instanceColor", Type::vec(3)), color) : color;
+    if (!variant.tinted()) return color;
+    const ExprId tint = f.varying("instanceColor", tintType(variant));
+    return f.mul(variant.vertexColors ? f.swizzle(tint, "xyz") : tint, color);
 }
 
 // negateOnBackSide for DoubleSide: three's normalView is the geometry normal times faceDirection
@@ -569,15 +578,6 @@ static ExprId facedNormal(Program& f, const VertexVariant& variant, ExprId norma
     if (!variant.doubleSide) return normal;
     const ExprId front = f.select(f.builtin("frontFacing"), f.constant(1.0f), f.constant(0.0f));
     return f.mul(normal, f.sub(f.mul(front, f.constant(2.0f)), f.constant(1.0f)));
-}
-
-// NodeMaterial.setupVertex: a vertexNode is the clip position itself (vec4), replacing projection *
-// view * model; positionLocal there is the vertex after positionNode, morphs, skinning and instancing.
-static ExprId clipPosition(Program& v, const VertexVariant& variant, const LocalVertex& local, ExprId clip) {
-    if (!variant.nodes.vertexNode) return clip;
-    tsl::Build build(v);
-    return nodeType(v, graph::lower(variant.nodes.vertexNode, v, {{"positionLocal", v.swizzle(local.position, "xyz")}}),
-                    Type::vec(4));
 }
 
 // The node slots replace upstream's material accessors, not their already-mapped results.
@@ -593,6 +593,7 @@ static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId f
 
 static ExprId diffuseAlpha(Program& f, const VertexVariant& variant, ExprId diffuse, ExprId texel) {
     ExprId alpha = f.swizzle(diffuse, "w");
+    if (variant.vertexColors) alpha = f.mul(alpha, f.swizzle(f.varying("instanceColor", tintType(variant)), "w"));
     if (variant.nodes.colorNode) {
         alpha = f.mul(alpha, nodeValue(f, variant.nodes.opacityNode, Type::f32(),
                                        f.swizzle(f.uniform("diffuse", Type::vec(4)), "w")));
@@ -629,7 +630,7 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     for (const auto& node : variant.nodes.graphs()) collect(node);
     for (const auto& [name, type] : out.fragment.varyings()) {
         if (name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
-            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
+            (name == "instanceColor" && variant.tinted()) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
@@ -889,7 +890,6 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
     if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
     outputInstanceColor(v, local);
-    outputVertexColor(v, variant);
     outputMapUv(v, local);
 
     Program& f = out.fragment;
@@ -907,7 +907,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    const ExprId diffuse = vertexColored(f, variant, nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4))));
+    const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
@@ -1166,7 +1166,6 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
     if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
     outputInstanceColor(v, local);
-    outputVertexColor(v, variant);
     outputMapUv(v, local);
 
     Program& f = out.fragment;
@@ -1179,7 +1178,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    const ExprId diffuse = vertexColored(f, variant, nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4))));
+    const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
@@ -1261,10 +1260,9 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
         v.output("backgroundDirection", normalWorld);
     }
     outputInstanceColor(v, local);
-    outputVertexColor(v, variant);
     if (!variant.background) outputMapUv(v, local);
     Program& f = out.fragment;
-    const ExprId diffuse = vertexColored(f, variant, nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4))));
+    const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     ExprId texel = kInvalid;
     if (variant.background) {
         const ExprId normal = f.call("normalize", {f.varying("backgroundDirection", Type::vec(3))});

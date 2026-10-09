@@ -51,9 +51,14 @@ interface IRegistryClass {
 
 interface IRegistryDump {
   readonly classes: Record<string, IRegistryClass>;
+  readonly constants?: readonly string[];
 }
 
 const SUPPORTED = { kind: "supported" } as const;
+const NOT_IMPLEMENTED = {
+  kind: "partial" as const,
+  gaps: ["native-not-implemented"] as string[],
+};
 const NOT_BOUND = { kind: "partial" as const, gaps: ["native-not-bound"] as string[] };
 
 const unknown: string[] = [];
@@ -66,10 +71,11 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
   "Scene.background": "Color | Texture | null",
   "SkinnedMesh.bindMode": '"attached" | "detached"',
   "SkinnedMesh.boundingBox": "Box3 | null",
+  // @types/three spells Line's members over its own type parameters, which no entry publishes.
+  "Line.geometry": "BufferGeometry",
+  "Line.material": "Material",
   "AnimationClip.tracks":
     "Array<{ name: string; times: number[]; values: number[]; ValueTypeName: string }>",
-  // parseTrackName's record as canonical JSON; the Wasm facade parses it (property-binding.ts).
-  "PropertyBinding.parsedPath": "string",
 };
 
 /** Bound methods whose binding signature differs from three's richer overloads. */
@@ -87,6 +93,30 @@ const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns
   "AnimationMixer.hasEventListener": [{ parameters: LISTENER, returns: "boolean" }],
   "AnimationMixer.dispatchEvent": [
     { parameters: [{ name: "event", type: "BaseEvent", optional: false }], returns: "void" },
+  ],
+  // three sets `targetObject` when it binds and @types/three does not declare it; the engine answers
+  // it as a call, which the shared facade (src/property-binding.ts) publishes as three's property.
+  "PropertyBinding.targetObject": [{ parameters: [], returns: "Object3D | Material | null" }],
+  // three's statics, answered by a root-less engine helper the shared facade calls.
+  "PropertyBinding.parseTrackName": [
+    {
+      parameters: [{ name: "trackName", type: "string", optional: false }],
+      returns:
+        "{ nodeName: string; objectName: string; objectIndex: string; propertyName: string; propertyIndex: string }",
+    },
+  ],
+  // three's addon namespace utils/SkeletonUtils (not in @types/three's class chain).
+  "SkeletonUtils.clone": [
+    { parameters: [{ name: "source", type: "Object3D", optional: false }], returns: "Object3D" },
+  ],
+  "PropertyBinding.findNode": [
+    {
+      parameters: [
+        { name: "root", type: "Object3D", optional: false },
+        { name: "nodeName", type: "string", optional: true },
+      ],
+      returns: "Object3D | null",
+    },
   ],
   // The native port intersects Object3D geometry, independent of @types/three's generic overloads.
   "Raycaster.intersectObject": [
@@ -183,14 +213,15 @@ const UNDECLARED_FIELDS: Record<string, string> = {
   "SpriteNodeMaterial.emissiveNode": "Node | null",
   "SpriteNodeMaterial.roughnessNode": "Node | null",
   "SpriteNodeMaterial.metalnessNode": "Node | null",
-  // three's bind() sets it; @types/three does not declare it. core's clip audit reads it.
-  "PropertyBinding.targetObject": "Object3D | Material | null",
 };
+
+/** A `__` member is engine-internal (a back end calls it, as `__walk`); three's surface never has it. */
+const published = (member: string): boolean => !member.startsWith("__");
 
 function registryMembers(binding: IRegistryClass): Set<string> {
   return new Set([
-    ...binding.methods,
-    ...binding.getters.filter((name) => !name.includes(".")),
+    ...binding.methods.filter(published),
+    ...binding.getters.filter((name) => !name.includes(".") && published(name)),
     ...binding.members.filter((name) => !name.includes(".")),
     ...binding.callbacks,
   ]);
@@ -586,7 +617,7 @@ function addMissingMembers(dump: IRegistryDump, byName: Map<string, MutableClass
     const binding = dump.classes[name];
     if (entry === undefined || binding === undefined) continue;
     const covered = effectiveSupported(entry, byName);
-    for (const member of binding.methods) {
+    for (const member of binding.methods.filter(published)) {
       if (covered.has(member)) continue;
       const method = methodFor(name, member);
       if (method === null) continue;
@@ -594,7 +625,7 @@ function addMissingMembers(dump: IRegistryDump, byName: Map<string, MutableClass
       covered.add(member);
     }
     const getters = [
-      ...binding.getters.filter((member) => !member.includes(".")),
+      ...binding.getters.filter((member) => !member.includes(".") && published(member)),
       ...binding.members.filter((member) => !member.includes(".")),
     ];
     for (const member of getters) {
@@ -604,6 +635,19 @@ function addMissingMembers(dump: IRegistryDump, byName: Map<string, MutableClass
       entry.fields.push(field);
       covered.add(member);
     }
+  }
+}
+
+/** A catalog constant is supported exactly when the engine's constant table (the dump) lists it. */
+function syncConstants(catalog: MutableCatalog, dumped: readonly string[]): void {
+  const listed = new Set(dumped);
+  const constants = new Map<string, Writable<CatalogEntry>>();
+  for (const entry of catalog.entries)
+    if (entry.kind === "constant") constants.set(entry.name, entry);
+  for (const name of dumped) if (!constants.has(name)) unknown.push(`constant.${name}`);
+  for (const [name, entry] of constants) {
+    if (listed.has(name)) entry.status = SUPPORTED;
+    else if (entry.status.kind === "supported") entry.status = NOT_IMPLEMENTED;
   }
 }
 
@@ -617,6 +661,8 @@ function main(): void {
   const catalog = JSON.parse(readFileSync(CATALOG_PATH, "utf8")) as MutableCatalog;
   const byName = new Map<string, MutableClass>();
   for (const entry of catalog.entries) if (entry.kind === "class") byName.set(entry.name, entry);
+
+  syncConstants(catalog, dump.constants ?? []);
 
   if (
     dump.classes.MeshBasicNodeMaterial !== undefined ||

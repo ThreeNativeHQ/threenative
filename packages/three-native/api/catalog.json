@@ -538,8 +538,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "string",
       "value": "\"attached\""
@@ -3197,10 +3196,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_CANVASTEXTURE"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Texture",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -3210,10 +3208,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_CAPSULEGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -3517,8 +3514,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1001"
@@ -5236,10 +5232,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_DODECAHEDRONGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -5359,8 +5354,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "303"
@@ -5881,8 +5875,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1015"
@@ -6453,8 +6446,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1016"
@@ -6504,10 +6496,9 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_ICOSAHEDRONGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -7300,13 +7291,54 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_LINE"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Object3D",
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "morphTargetInfluences",
+          "type": "number[] | undefined",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "geometry",
+          "type": "BufferGeometry",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "material",
+          "type": "Material",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "updateMorphTargets",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "Line3",
@@ -7576,23 +7608,235 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_LINEBASICMATERIAL"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Material",
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "alphaTest",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "blending",
+          "type": "Blending",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthTest",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "fog",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "id",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "opacity",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "side",
+          "type": "Side",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "toneMapped",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "transparent",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "visible",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "color",
+          "type": "Color",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "map",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "vertexColors",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "forceSinglePass",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "polygonOffset",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "polygonOffsetFactor",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "polygonOffsetUnits",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "LineSegments",
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_LINESEGMENTS"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Line",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -7602,8 +7846,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1006"
@@ -7635,8 +7878,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1008"
@@ -10850,6 +11092,25 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -11072,6 +11333,15 @@
           }
         },
         {
+          "name": "vertexColors",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "forceSinglePass",
           "type": "boolean",
           "mutable": true,
@@ -11081,8 +11351,8 @@
           }
         },
         {
-          "name": "vertexColors",
-          "type": "boolean",
+          "name": "vertexNode",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -11115,15 +11385,6 @@
           "status": {
             "kind": "supported"
           }
-        },
-        {
-          "name": "vertexNode",
-          "type": "Node | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
         }
       ],
       "methods": [
@@ -11133,6 +11394,25 @@
           "overloads": [
             {
               "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
               "returns": "this"
             }
           ],
@@ -11963,6 +12243,25 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -12302,6 +12601,15 @@
           }
         },
         {
+          "name": "vertexColors",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "forceSinglePass",
           "type": "boolean",
           "mutable": true,
@@ -12311,8 +12619,17 @@
           }
         },
         {
-          "name": "vertexColors",
-          "type": "boolean",
+          "name": "vertexNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "bumpScale",
+          "type": "number",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -12347,24 +12664,6 @@
           }
         },
         {
-          "name": "vertexNode",
-          "type": "Node | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "bumpScale",
-          "type": "number",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
           "name": "bumpMap",
           "type": "Texture | null",
           "mutable": true,
@@ -12381,6 +12680,25 @@
           "overloads": [
             {
               "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
               "returns": "this"
             }
           ],
@@ -12501,8 +12819,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1003"
@@ -12630,8 +12947,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "0"
@@ -14272,10 +14588,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_OCTAHEDRONGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -16818,8 +17133,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1023"
@@ -17485,8 +17799,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1000"
@@ -17586,8 +17899,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "string",
       "value": "\"srgb\""
@@ -18917,7 +19229,7 @@
           }
         },
         {
-          "name": "forceSinglePass",
+          "name": "vertexColors",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -18926,7 +19238,7 @@
           }
         },
         {
-          "name": "vertexColors",
+          "name": "forceSinglePass",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -18969,6 +19281,25 @@
           "overloads": [
             {
               "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
               "returns": "this"
             }
           ],
@@ -19205,6 +19536,15 @@
           }
         },
         {
+          "name": "vertexColors",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "forceSinglePass",
           "type": "boolean",
           "mutable": true,
@@ -19214,8 +19554,8 @@
           }
         },
         {
-          "name": "vertexColors",
-          "type": "boolean",
+          "name": "vertexNode",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -19248,15 +19588,6 @@
           "status": {
             "kind": "supported"
           }
-        },
-        {
-          "name": "vertexNode",
-          "type": "Node | null",
-          "mutable": true,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
         }
       ],
       "methods": [
@@ -19266,6 +19597,25 @@
           "overloads": [
             {
               "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
               "returns": "this"
             }
           ],
@@ -19877,10 +20227,9 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_TORUSKNOTGEOMETRY"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "BufferGeometry",
       "constructor": [],
       "fields": [],
       "methods": []
@@ -20419,8 +20768,7 @@
       "kind": "constant",
       "source": "three",
       "status": {
-        "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "kind": "supported"
       },
       "type": "number",
       "value": "1009"
@@ -25453,7 +25801,7 @@
           }
         },
         {
-          "name": "forceSinglePass",
+          "name": "vertexColors",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -25462,7 +25810,7 @@
           }
         },
         {
-          "name": "vertexColors",
+          "name": "forceSinglePass",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -25505,6 +25853,25 @@
           "overloads": [
             {
               "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
               "returns": "this"
             }
           ],
@@ -25714,7 +26081,7 @@
           }
         },
         {
-          "name": "forceSinglePass",
+          "name": "vertexColors",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -25723,7 +26090,7 @@
           }
         },
         {
-          "name": "vertexColors",
+          "name": "forceSinglePass",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -25766,6 +26133,25 @@
           "overloads": [
             {
               "parameters": [],
+              "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "copy",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Material",
+                  "optional": false
+                }
+              ],
               "returns": "this"
             }
           ],
@@ -27344,17 +27730,8 @@
       "constructor": [],
       "fields": [
         {
-          "name": "parsedPath",
+          "name": "path",
           "type": "string",
-          "mutable": false,
-          "lifetime": "owned",
-          "status": {
-            "kind": "supported"
-          }
-        },
-        {
-          "name": "targetObject",
-          "type": "Object3D | Material | null",
           "mutable": false,
           "lifetime": "owned",
           "status": {
@@ -27377,12 +27754,100 @@
           }
         },
         {
+          "name": "findNode",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "root",
+                  "type": "Object3D",
+                  "optional": false
+                },
+                {
+                  "name": "nodeName",
+                  "type": "string",
+                  "optional": true
+                }
+              ],
+              "returns": "Object3D | null"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "parseTrackName",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "trackName",
+                  "type": "string",
+                  "optional": false
+                }
+              ],
+              "returns": "{ nodeName: string; objectName: string; objectIndex: string; propertyName: string; propertyIndex: string }"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "targetObject",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "Object3D | Material | null"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "unbind",
           "async": false,
           "overloads": [
             {
               "parameters": [],
               "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
+    },
+    {
+      "name": "SkeletonUtils",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": null,
+      "constructor": [],
+      "fields": [],
+      "methods": [
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "source",
+                  "type": "Object3D",
+                  "optional": false
+                }
+              ],
+              "returns": "Object3D"
             }
           ],
           "status": {

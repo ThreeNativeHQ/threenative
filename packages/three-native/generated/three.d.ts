@@ -92,7 +92,7 @@ timeScale: number;
   uncacheRoot(root: Object3D): void;
 }
 
-/** Catalog partial (native-not-implemented): three/AttachedBindMode. */
+/** Catalog supported: three/AttachedBindMode. */
 export declare const AttachedBindMode: "attached";
 
 /** Catalog partial (native-not-implemented): three/AttributeGPUType. */
@@ -406,6 +406,16 @@ readonly projectionMatrix: Matrix4;
 readonly projectionMatrixInverse: Matrix4;
 }
 
+/** Catalog supported: three/CanvasTexture. */
+export declare class CanvasTexture extends Texture {
+constructor();
+}
+
+/** Catalog supported: three/CapsuleGeometry. */
+export declare class CapsuleGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog supported: three/CatmullRomCurve3. */
 export declare class CatmullRomCurve3 {
 constructor();
@@ -445,7 +455,7 @@ export declare class CircleGeometry extends BufferGeometry {
 constructor();
 }
 
-/** Catalog partial (native-not-implemented): three/ClampToEdgeWrapping. */
+/** Catalog supported: three/ClampToEdgeWrapping. */
 export declare const ClampToEdgeWrapping: 1001;
 
 /** Catalog supported: three/Color. */
@@ -645,6 +655,11 @@ target: Object3D;
 readonly shadow: DirectionalLightShadow;
 }
 
+/** Catalog supported: three/DodecahedronGeometry. */
+export declare class DodecahedronGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog supported: three/DoubleSide. */
 export declare const DoubleSide: 2;
 
@@ -672,7 +687,7 @@ export declare const EqualDepth: 4;
 /** Catalog partial (native-not-implemented): three/EqualStencilFunc. */
 export declare const EqualStencilFunc: 514;
 
-/** Catalog partial (native-not-implemented): three/EquirectangularReflectionMapping. */
+/** Catalog supported: three/EquirectangularReflectionMapping. */
 export declare const EquirectangularReflectionMapping: 303;
 
 /** Catalog partial (native-not-implemented): three/EquirectangularRefractionMapping. */
@@ -743,7 +758,7 @@ export declare class Float32BufferAttribute extends BufferAttribute {
 constructor(array: TypedArray, itemSize: number, normalized?: boolean);
 }
 
-/** Catalog partial (native-not-implemented): three/FloatType. */
+/** Catalog supported: three/FloatType. */
 export declare const FloatType: 1015;
 
 /** Catalog supported: three/Fog. */
@@ -824,7 +839,7 @@ readonly isGroup: true;
 /** Catalog partial (native-not-implemented): three/HSL. */
 export type HSL = { h: number; s: number; l: number; };
 
-/** Catalog partial (native-not-implemented): three/HalfFloatType. */
+/** Catalog supported: three/HalfFloatType. */
 export declare const HalfFloatType: 1016;
 
 /** Catalog supported: three/webgpu/HemisphereLight. */
@@ -833,6 +848,11 @@ constructor();
 intensity: number;
 color: Color;
 groundColor: Color;
+}
+
+/** Catalog supported: three/webgpu/IcosahedronGeometry. */
+export declare class IcosahedronGeometry extends BufferGeometry {
+constructor();
 }
 
 /** Catalog partial (native-not-implemented): three/IncrementStencilOp. */
@@ -949,6 +969,16 @@ export declare const LessEqualStencilFunc: 515;
 /** Catalog partial (native-not-implemented): three/LessStencilFunc. */
 export declare const LessStencilFunc: 513;
 
+/** Catalog supported: three/Line. */
+export declare class Line extends Object3D {
+constructor();
+readonly morphTargetInfluences: number[] | undefined;
+geometry: BufferGeometry;
+material: Material;
+
+  updateMorphTargets(): void;
+}
+
 /** Catalog partial (native-not-implemented): three/Line3. */
 export declare class Line3 {
 constructor(start?: Vector3, end?: Vector3);
@@ -982,7 +1012,41 @@ end: Vector3;
   equals(line: Line3): boolean;
 }
 
-/** Catalog partial (native-not-implemented): three/LinearFilter. */
+/** Catalog supported: three/LineBasicMaterial. */
+export declare class LineBasicMaterial extends Material {
+constructor();
+alphaTest: number;
+blending: Blending;
+depthTest: boolean;
+depthWrite: boolean;
+fog: boolean;
+readonly id: number;
+name: string;
+opacity: number;
+side: Side;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+visible: boolean;
+color: Color;
+map: Texture | null;
+vertexColors: boolean;
+forceSinglePass: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
+
+  clone(): this;
+
+  copy(source: Material): this;
+}
+
+/** Catalog supported: three/LineSegments. */
+export declare class LineSegments extends Line {
+constructor();
+}
+
+/** Catalog supported: three/LinearFilter. */
 export declare const LinearFilter: 1006;
 
 /** Catalog partial (native-not-implemented): three/LinearMipMapLinearFilter. */
@@ -991,7 +1055,7 @@ export declare const LinearMipMapLinearFilter: 1008;
 /** Catalog partial (native-not-implemented): three/LinearMipMapNearestFilter. */
 export declare const LinearMipMapNearestFilter: 1007;
 
-/** Catalog partial (native-not-implemented): three/LinearMipmapLinearFilter. */
+/** Catalog supported: three/LinearMipmapLinearFilter. */
 export declare const LinearMipmapLinearFilter: 1008;
 
 /** Catalog partial (native-not-implemented): three/LinearMipmapNearestFilter. */
@@ -1333,6 +1397,8 @@ readonly type: string;
   setValues(values?: MeshBasicMaterialParameters): void;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (shader-parameters): three/MeshBasicMaterialParameters. */
@@ -1363,14 +1429,16 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
-forceSinglePass: boolean;
 vertexColors: boolean;
+forceSinglePass: boolean;
+vertexNode: Node | null;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
-vertexNode: Node | null;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1453,6 +1521,8 @@ readonly type: string;
   setValues(values?: MeshStandardMaterialParameters): void;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (shader-parameters): three/MeshStandardMaterialParameters. */
@@ -1496,16 +1566,18 @@ normalScale: Vector2;
 aoMapIntensity: number;
 aoMap: Texture | null;
 emissiveMap: Texture | null;
-forceSinglePass: boolean;
 vertexColors: boolean;
+forceSinglePass: boolean;
+vertexNode: Node | null;
+bumpScale: number;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
-vertexNode: Node | null;
-bumpScale: number;
 bumpMap: Texture | null;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -1538,7 +1610,7 @@ export declare const MultiplyBlending: 4;
 /** Catalog partial (native-not-implemented): three/MultiplyOperation. */
 export declare const MultiplyOperation: 0;
 
-/** Catalog partial (native-not-implemented): three/NearestFilter. */
+/** Catalog supported: three/NearestFilter. */
 export declare const NearestFilter: 1003;
 
 /** Catalog partial (native-not-implemented): three/NearestMipMapLinearFilter. */
@@ -1574,7 +1646,7 @@ export declare const NoColorSpace: "";
 /** Catalog partial (native-not-implemented): three/NoNormalPacking. */
 export declare const NoNormalPacking: "";
 
-/** Catalog partial (native-not-implemented): three/NoToneMapping. */
+/** Catalog supported: three/NoToneMapping. */
 export declare const NoToneMapping: 0;
 
 /** Catalog partial (graph-authoring-only, constructor-not-bound): three/webgpu/Node. */
@@ -1745,6 +1817,11 @@ readonly revision: number;
 
 /** Catalog partial (native-not-implemented): three/ObjectSpaceNormalMap. */
 export declare const ObjectSpaceNormalMap: 1;
+
+/** Catalog supported: three/OctahedronGeometry. */
+export declare class OctahedronGeometry extends BufferGeometry {
+constructor();
+}
 
 /** Catalog partial (native-not-implemented): three/OneFactor. */
 export declare const OneFactor: 201;
@@ -2023,7 +2100,7 @@ export type RGB = { r: number; g: number; b: number; };
 /** Catalog partial (native-not-implemented): three/RGBADepthPacking. */
 export declare const RGBADepthPacking: 3201;
 
-/** Catalog partial (native-not-implemented): three/RGBAFormat. */
+/** Catalog supported: three/RGBAFormat. */
 export declare const RGBAFormat: 1023;
 
 /** Catalog partial (native-not-implemented): three/RGBAIntegerFormat. */
@@ -2158,7 +2235,7 @@ export declare const RedIntegerFormat: 1029;
 /** Catalog partial (native-not-implemented): three/ReinhardToneMapping. */
 export declare const ReinhardToneMapping: 2;
 
-/** Catalog partial (native-not-implemented): three/RepeatWrapping. */
+/** Catalog supported: three/RepeatWrapping. */
 export declare const RepeatWrapping: 1000;
 
 /** Catalog partial (native-not-implemented): three/ReplaceStencilOp. */
@@ -2189,7 +2266,7 @@ export declare const SIGNED_RED_RGTC1_Format: 36284;
 /** Catalog partial (native-not-implemented): three/SIGNED_RG11_EAC_Format. */
 export declare const SIGNED_RG11_EAC_Format: 37491;
 
-/** Catalog partial (native-not-implemented): three/SRGBColorSpace. */
+/** Catalog supported: three/SRGBColorSpace. */
 export declare const SRGBColorSpace: "srgb";
 
 /** Catalog partial (native-not-implemented): three/SRGBTransfer. */
@@ -2366,13 +2443,15 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
-forceSinglePass: boolean;
 vertexColors: boolean;
+forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2402,14 +2481,16 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
-forceSinglePass: boolean;
 vertexColors: boolean;
+forceSinglePass: boolean;
+vertexNode: Node | null;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
-vertexNode: Node | null;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -2499,6 +2580,11 @@ export declare class TorusGeometry extends BufferGeometry {
 constructor();
 }
 
+/** Catalog supported: three/TorusKnotGeometry. */
+export declare class TorusKnotGeometry extends BufferGeometry {
+constructor();
+}
+
 /** Catalog partial (native-not-implemented): three/Triangle. */
 export declare class Triangle {
 constructor(a?: Vector3, b?: Vector3, c?: Vector3);
@@ -2559,7 +2645,7 @@ export type TypedArray = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array
 /** Catalog partial (native-not-implemented): three/UVMapping. */
 export declare const UVMapping: 300;
 
-/** Catalog partial (native-not-implemented): three/UnsignedByteType. */
+/** Catalog supported: three/UnsignedByteType. */
 export declare const UnsignedByteType: 1009;
 
 /** Catalog partial (native-not-implemented): three/UnsignedInt101111Type. */
@@ -3054,13 +3140,15 @@ fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
-forceSinglePass: boolean;
 vertexColors: boolean;
+forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -3087,13 +3175,15 @@ fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
-forceSinglePass: boolean;
 vertexColors: boolean;
+forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */
@@ -3293,10 +3383,22 @@ readonly mapSize: Vector2;
 /** Catalog supported: three/PropertyBinding. */
 export declare class PropertyBinding {
 constructor();
-readonly parsedPath: string;
-readonly targetObject: Object3D | Material | null;
+readonly path: string;
 
   bind(): void;
 
+  findNode(root: Object3D, nodeName?: string): Object3D | null;
+
+  parseTrackName(trackName: string): { nodeName: string; objectName: string; objectIndex: string; propertyName: string; propertyIndex: string };
+
+  targetObject(): Object3D | Material | null;
+
   unbind(): void;
+}
+
+/** Catalog supported: three/SkeletonUtils. */
+export declare class SkeletonUtils {
+constructor();
+
+  clone(source: Object3D): Object3D;
 }

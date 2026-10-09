@@ -37,7 +37,7 @@ describe("liveUniforms", () => {
     wake.x = 50;
     live.sync();
     expect(written).toContainEqual([50, 6, 7, 8]);
-    expect(() => array.element(2)).toThrow("TN_TSL_UNIFORM_ARRAY_INDEX");
-    expect(() => array.element({})).toThrow("TN_TSL_UNIFORM_ARRAY_INDEX");
+    expect(() => array.element(2)).toThrow("TN_TSL_UNIFORM_ARRAY:");
+    expect(() => array.element({})).toThrow("TN_TSL_UNIFORM_ARRAY:");
   });
 });

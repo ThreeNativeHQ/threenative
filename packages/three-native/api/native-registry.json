@@ -3,6 +3,7 @@
     "AmbientLight": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -130,7 +131,20 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "color",
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "AnimationAction": {
       "constructor": false,
@@ -184,7 +198,10 @@
         "zeroSlopeAtStart"
       ],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "AnimationClip": {
       "constructor": true,
@@ -192,7 +209,10 @@
       "getters": ["duration", "name"],
       "setters": [],
       "members": ["tracks"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "AnimationMixer": {
       "constructor": true,
@@ -215,11 +235,14 @@
       "setters": ["timeScale"],
       "members": [],
       "callbacks": [],
-      "events": ["finished", "loop"]
+      "events": ["finished", "loop"],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Bone": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -337,7 +360,19 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "Box3": {
       "constructor": true,
@@ -375,7 +410,10 @@
       "getters": ["max.x", "max.y", "max.z", "min.x", "min.y", "min.z"],
       "setters": ["max.x", "max.y", "max.z", "min.x", "min.y", "min.z"],
       "members": ["max", "min"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["max", "min"],
+      "fields": {}
     },
     "BoxGeometry": {
       "constructor": true,
@@ -446,7 +484,10 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "BufferAttribute": {
       "constructor": true,
@@ -489,7 +530,10 @@
       ],
       "setters": ["name", "needsUpdate", "usage"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "BufferGeometry": {
       "constructor": true,
@@ -560,11 +604,15 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Camera": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -688,7 +736,142 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "matrixWorldInverse",
+        "position",
+        "projectionMatrix",
+        "projectionMatrixInverse",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
+    },
+    "CanvasTexture": {
+      "constructor": true,
+      "methods": [],
+      "getters": [
+        "anisotropy",
+        "colorSpace",
+        "flipY",
+        "generateMipmaps",
+        "magFilter",
+        "mapping",
+        "minFilter",
+        "name",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "version",
+        "wrapS",
+        "wrapT"
+      ],
+      "setters": [
+        "anisotropy",
+        "colorSpace",
+        "flipY",
+        "generateMipmaps",
+        "image.data",
+        "magFilter",
+        "mapping",
+        "minFilter",
+        "name",
+        "needsUpdate",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "wrapS",
+        "wrapT"
+      ],
+      "members": ["offset", "repeat", "source"],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["offset", "repeat", "source"],
+      "fields": {}
+    },
+    "CapsuleGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "clone",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "dispose",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
+      ],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "CatmullRomCurve3": {
       "constructor": true,
@@ -707,7 +890,10 @@
       "getters": ["arcLengthDivisions", "closed", "curveType", "tension", "type"],
       "setters": ["arcLengthDivisions", "closed", "curveType", "tension"],
       "members": ["points"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "CircleGeometry": {
       "constructor": true,
@@ -778,7 +964,10 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Color": {
       "constructor": true,
@@ -816,10 +1005,13 @@
         "sub",
         "toArray"
       ],
-      "getters": ["b", "g", "r"],
+      "getters": ["__address", "b", "g", "r"],
       "setters": ["b", "g", "r"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": { "b": [16, 1], "g": [8, 1], "r": [0, 1] }
     },
     "ConeGeometry": {
       "constructor": true,
@@ -890,7 +1082,10 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "CylinderGeometry": {
       "constructor": true,
@@ -961,7 +1156,10 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "DataTexture": {
       "constructor": true,
@@ -1004,11 +1202,15 @@
         "wrapT"
       ],
       "members": ["offset", "repeat", "source"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["offset", "repeat", "source"],
+      "fields": {}
     },
     "DirectionalLight": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -1169,7 +1371,21 @@
         "target",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "color",
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "shadow",
+        "up"
+      ],
+      "fields": {}
     },
     "DirectionalLightShadow": {
       "constructor": false,
@@ -1177,7 +1393,84 @@
       "getters": ["bias", "intensity", "normalBias", "radius"],
       "setters": ["bias", "intensity", "normalBias", "radius"],
       "members": ["camera", "mapSize"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["camera", "mapSize"],
+      "fields": {}
+    },
+    "DodecahedronGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "clone",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "dispose",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
+      ],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Euler": {
       "constructor": true,
@@ -1193,10 +1486,13 @@
         "setFromVector3",
         "toArray"
       ],
-      "getters": ["order", "x", "y", "z"],
+      "getters": ["__address", "order", "x", "y", "z"],
       "setters": ["order", "x", "y", "z"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": { "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "ExtrudeGeometry": {
       "constructor": true,
@@ -1267,7 +1563,10 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Float32BufferAttribute": {
       "constructor": true,
@@ -1310,7 +1609,10 @@
       ],
       "setters": ["name", "needsUpdate", "usage"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Fog": {
       "constructor": true,
@@ -1318,7 +1620,10 @@
       "getters": ["color.b", "color.g", "color.r", "far", "near"],
       "setters": ["color.b", "color.g", "color.r", "far", "near"],
       "members": ["color"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "FogExp2": {
       "constructor": true,
@@ -1326,7 +1631,10 @@
       "getters": ["color.b", "color.g", "color.r", "density"],
       "setters": ["color.b", "color.g", "color.r", "density"],
       "members": ["color"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Frustum": {
       "constructor": true,
@@ -1374,11 +1682,15 @@
         "planes.5.constant"
       ],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Group": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -1496,11 +1808,24 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "HemisphereLight": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -1636,7 +1961,95 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "color",
+        "groundColor",
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
+    },
+    "IcosahedronGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "clone",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "dispose",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
+      ],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "InstancedBufferAttribute": {
       "constructor": true,
@@ -1680,7 +2093,10 @@
       ],
       "setters": ["name", "needsUpdate", "usage"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "InstancedBufferGeometry": {
       "constructor": true,
@@ -1753,11 +2169,15 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "InstancedMesh": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -2022,11 +2442,24 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "LOD": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "addLevel",
         "applyMatrix4",
@@ -2152,7 +2585,19 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "LatheGeometry": {
       "constructor": true,
@@ -2223,7 +2668,10 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Layers": {
       "constructor": true,
@@ -2240,7 +2688,604 @@
       "getters": ["mask"],
       "setters": ["mask"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
+    },
+    "Line": {
+      "constructor": true,
+      "methods": [
+        "__walk",
+        "add",
+        "applyMatrix4",
+        "applyQuaternion",
+        "attach",
+        "clear",
+        "clone",
+        "copy",
+        "getObjectById",
+        "getObjectByName",
+        "getWorldDirection",
+        "getWorldPosition",
+        "getWorldQuaternion",
+        "getWorldScale",
+        "localToWorld",
+        "lookAt",
+        "remove",
+        "removeFromParent",
+        "rotateOnAxis",
+        "rotateOnWorldAxis",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "setRotationFromAxisAngle",
+        "setRotationFromEuler",
+        "setRotationFromMatrix",
+        "setRotationFromQuaternion",
+        "translateOnAxis",
+        "translateX",
+        "translateY",
+        "translateZ",
+        "updateMatrix",
+        "updateMatrixWorld",
+        "updateMorphTargets",
+        "updateWorldMatrix",
+        "worldToLocal"
+      ],
+      "getters": [
+        "castShadow",
+        "frustumCulled",
+        "id",
+        "layers.mask",
+        "matrix.elements",
+        "matrixAutoUpdate",
+        "matrixWorld.elements",
+        "matrixWorldAutoUpdate",
+        "matrixWorldNeedsUpdate",
+        "morphTargetInfluences",
+        "morphTargetInfluences.0",
+        "morphTargetInfluences.1",
+        "morphTargetInfluences.10",
+        "morphTargetInfluences.11",
+        "morphTargetInfluences.12",
+        "morphTargetInfluences.13",
+        "morphTargetInfluences.14",
+        "morphTargetInfluences.15",
+        "morphTargetInfluences.16",
+        "morphTargetInfluences.17",
+        "morphTargetInfluences.18",
+        "morphTargetInfluences.19",
+        "morphTargetInfluences.2",
+        "morphTargetInfluences.20",
+        "morphTargetInfluences.21",
+        "morphTargetInfluences.22",
+        "morphTargetInfluences.23",
+        "morphTargetInfluences.24",
+        "morphTargetInfluences.25",
+        "morphTargetInfluences.26",
+        "morphTargetInfluences.27",
+        "morphTargetInfluences.28",
+        "morphTargetInfluences.29",
+        "morphTargetInfluences.3",
+        "morphTargetInfluences.30",
+        "morphTargetInfluences.31",
+        "morphTargetInfluences.32",
+        "morphTargetInfluences.33",
+        "morphTargetInfluences.34",
+        "morphTargetInfluences.35",
+        "morphTargetInfluences.36",
+        "morphTargetInfluences.37",
+        "morphTargetInfluences.38",
+        "morphTargetInfluences.39",
+        "morphTargetInfluences.4",
+        "morphTargetInfluences.40",
+        "morphTargetInfluences.41",
+        "morphTargetInfluences.42",
+        "morphTargetInfluences.43",
+        "morphTargetInfluences.44",
+        "morphTargetInfluences.45",
+        "morphTargetInfluences.46",
+        "morphTargetInfluences.47",
+        "morphTargetInfluences.48",
+        "morphTargetInfluences.49",
+        "morphTargetInfluences.5",
+        "morphTargetInfluences.50",
+        "morphTargetInfluences.51",
+        "morphTargetInfluences.52",
+        "morphTargetInfluences.53",
+        "morphTargetInfluences.54",
+        "morphTargetInfluences.55",
+        "morphTargetInfluences.56",
+        "morphTargetInfluences.57",
+        "morphTargetInfluences.58",
+        "morphTargetInfluences.59",
+        "morphTargetInfluences.6",
+        "morphTargetInfluences.60",
+        "morphTargetInfluences.61",
+        "morphTargetInfluences.62",
+        "morphTargetInfluences.63",
+        "morphTargetInfluences.7",
+        "morphTargetInfluences.8",
+        "morphTargetInfluences.9",
+        "name",
+        "pivot.x",
+        "pivot.y",
+        "pivot.z",
+        "position.x",
+        "position.y",
+        "position.z",
+        "quaternion.w",
+        "quaternion.x",
+        "quaternion.y",
+        "quaternion.z",
+        "receiveShadow",
+        "renderOrder",
+        "revision",
+        "rotation.order",
+        "rotation.x",
+        "rotation.y",
+        "rotation.z",
+        "scale.x",
+        "scale.y",
+        "scale.z",
+        "type",
+        "up.x",
+        "up.y",
+        "up.z",
+        "uuid",
+        "visible"
+      ],
+      "setters": [
+        "castShadow",
+        "frustumCulled",
+        "geometry",
+        "layers.mask",
+        "material",
+        "matrixAutoUpdate",
+        "matrixWorldAutoUpdate",
+        "morphTargetInfluences.0",
+        "morphTargetInfluences.1",
+        "morphTargetInfluences.10",
+        "morphTargetInfluences.11",
+        "morphTargetInfluences.12",
+        "morphTargetInfluences.13",
+        "morphTargetInfluences.14",
+        "morphTargetInfluences.15",
+        "morphTargetInfluences.16",
+        "morphTargetInfluences.17",
+        "morphTargetInfluences.18",
+        "morphTargetInfluences.19",
+        "morphTargetInfluences.2",
+        "morphTargetInfluences.20",
+        "morphTargetInfluences.21",
+        "morphTargetInfluences.22",
+        "morphTargetInfluences.23",
+        "morphTargetInfluences.24",
+        "morphTargetInfluences.25",
+        "morphTargetInfluences.26",
+        "morphTargetInfluences.27",
+        "morphTargetInfluences.28",
+        "morphTargetInfluences.29",
+        "morphTargetInfluences.3",
+        "morphTargetInfluences.30",
+        "morphTargetInfluences.31",
+        "morphTargetInfluences.32",
+        "morphTargetInfluences.33",
+        "morphTargetInfluences.34",
+        "morphTargetInfluences.35",
+        "morphTargetInfluences.36",
+        "morphTargetInfluences.37",
+        "morphTargetInfluences.38",
+        "morphTargetInfluences.39",
+        "morphTargetInfluences.4",
+        "morphTargetInfluences.40",
+        "morphTargetInfluences.41",
+        "morphTargetInfluences.42",
+        "morphTargetInfluences.43",
+        "morphTargetInfluences.44",
+        "morphTargetInfluences.45",
+        "morphTargetInfluences.46",
+        "morphTargetInfluences.47",
+        "morphTargetInfluences.48",
+        "morphTargetInfluences.49",
+        "morphTargetInfluences.5",
+        "morphTargetInfluences.50",
+        "morphTargetInfluences.51",
+        "morphTargetInfluences.52",
+        "morphTargetInfluences.53",
+        "morphTargetInfluences.54",
+        "morphTargetInfluences.55",
+        "morphTargetInfluences.56",
+        "morphTargetInfluences.57",
+        "morphTargetInfluences.58",
+        "morphTargetInfluences.59",
+        "morphTargetInfluences.6",
+        "morphTargetInfluences.60",
+        "morphTargetInfluences.61",
+        "morphTargetInfluences.62",
+        "morphTargetInfluences.63",
+        "morphTargetInfluences.7",
+        "morphTargetInfluences.8",
+        "morphTargetInfluences.9",
+        "name",
+        "pivot.x",
+        "pivot.y",
+        "pivot.z",
+        "position.x",
+        "position.y",
+        "position.z",
+        "quaternion.w",
+        "quaternion.x",
+        "quaternion.y",
+        "quaternion.z",
+        "receiveShadow",
+        "renderOrder",
+        "rotation.order",
+        "rotation.x",
+        "rotation.y",
+        "rotation.z",
+        "scale.x",
+        "scale.y",
+        "scale.z",
+        "up.x",
+        "up.y",
+        "up.z",
+        "uuid",
+        "visible"
+      ],
+      "members": [
+        "children",
+        "geometry",
+        "layers",
+        "material",
+        "matrix",
+        "matrixWorld",
+        "parent",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
+    },
+    "LineBasicMaterial": {
+      "constructor": true,
+      "methods": ["clone", "copy"],
+      "getters": [
+        "alphaTest",
+        "blending",
+        "color.b",
+        "color.g",
+        "color.r",
+        "depthTest",
+        "depthWrite",
+        "fog",
+        "forceSinglePass",
+        "id",
+        "name",
+        "opacity",
+        "polygonOffset",
+        "polygonOffsetFactor",
+        "polygonOffsetUnits",
+        "side",
+        "toneMapped",
+        "transparent",
+        "type",
+        "vertexColors",
+        "visible"
+      ],
+      "setters": [
+        "alphaTest",
+        "blending",
+        "color",
+        "color.b",
+        "color.g",
+        "color.r",
+        "depthTest",
+        "depthWrite",
+        "fog",
+        "forceSinglePass",
+        "map",
+        "name",
+        "needsUpdate",
+        "opacity",
+        "polygonOffset",
+        "polygonOffsetFactor",
+        "polygonOffsetUnits",
+        "side",
+        "toneMapped",
+        "transparent",
+        "vertexColors",
+        "visible"
+      ],
+      "members": ["color", "map"],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["color"],
+      "fields": {}
+    },
+    "LineSegments": {
+      "constructor": true,
+      "methods": [
+        "__walk",
+        "add",
+        "applyMatrix4",
+        "applyQuaternion",
+        "attach",
+        "clear",
+        "clone",
+        "copy",
+        "getObjectById",
+        "getObjectByName",
+        "getWorldDirection",
+        "getWorldPosition",
+        "getWorldQuaternion",
+        "getWorldScale",
+        "localToWorld",
+        "lookAt",
+        "remove",
+        "removeFromParent",
+        "rotateOnAxis",
+        "rotateOnWorldAxis",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "setRotationFromAxisAngle",
+        "setRotationFromEuler",
+        "setRotationFromMatrix",
+        "setRotationFromQuaternion",
+        "translateOnAxis",
+        "translateX",
+        "translateY",
+        "translateZ",
+        "updateMatrix",
+        "updateMatrixWorld",
+        "updateMorphTargets",
+        "updateWorldMatrix",
+        "worldToLocal"
+      ],
+      "getters": [
+        "castShadow",
+        "frustumCulled",
+        "id",
+        "layers.mask",
+        "matrix.elements",
+        "matrixAutoUpdate",
+        "matrixWorld.elements",
+        "matrixWorldAutoUpdate",
+        "matrixWorldNeedsUpdate",
+        "morphTargetInfluences",
+        "morphTargetInfluences.0",
+        "morphTargetInfluences.1",
+        "morphTargetInfluences.10",
+        "morphTargetInfluences.11",
+        "morphTargetInfluences.12",
+        "morphTargetInfluences.13",
+        "morphTargetInfluences.14",
+        "morphTargetInfluences.15",
+        "morphTargetInfluences.16",
+        "morphTargetInfluences.17",
+        "morphTargetInfluences.18",
+        "morphTargetInfluences.19",
+        "morphTargetInfluences.2",
+        "morphTargetInfluences.20",
+        "morphTargetInfluences.21",
+        "morphTargetInfluences.22",
+        "morphTargetInfluences.23",
+        "morphTargetInfluences.24",
+        "morphTargetInfluences.25",
+        "morphTargetInfluences.26",
+        "morphTargetInfluences.27",
+        "morphTargetInfluences.28",
+        "morphTargetInfluences.29",
+        "morphTargetInfluences.3",
+        "morphTargetInfluences.30",
+        "morphTargetInfluences.31",
+        "morphTargetInfluences.32",
+        "morphTargetInfluences.33",
+        "morphTargetInfluences.34",
+        "morphTargetInfluences.35",
+        "morphTargetInfluences.36",
+        "morphTargetInfluences.37",
+        "morphTargetInfluences.38",
+        "morphTargetInfluences.39",
+        "morphTargetInfluences.4",
+        "morphTargetInfluences.40",
+        "morphTargetInfluences.41",
+        "morphTargetInfluences.42",
+        "morphTargetInfluences.43",
+        "morphTargetInfluences.44",
+        "morphTargetInfluences.45",
+        "morphTargetInfluences.46",
+        "morphTargetInfluences.47",
+        "morphTargetInfluences.48",
+        "morphTargetInfluences.49",
+        "morphTargetInfluences.5",
+        "morphTargetInfluences.50",
+        "morphTargetInfluences.51",
+        "morphTargetInfluences.52",
+        "morphTargetInfluences.53",
+        "morphTargetInfluences.54",
+        "morphTargetInfluences.55",
+        "morphTargetInfluences.56",
+        "morphTargetInfluences.57",
+        "morphTargetInfluences.58",
+        "morphTargetInfluences.59",
+        "morphTargetInfluences.6",
+        "morphTargetInfluences.60",
+        "morphTargetInfluences.61",
+        "morphTargetInfluences.62",
+        "morphTargetInfluences.63",
+        "morphTargetInfluences.7",
+        "morphTargetInfluences.8",
+        "morphTargetInfluences.9",
+        "name",
+        "pivot.x",
+        "pivot.y",
+        "pivot.z",
+        "position.x",
+        "position.y",
+        "position.z",
+        "quaternion.w",
+        "quaternion.x",
+        "quaternion.y",
+        "quaternion.z",
+        "receiveShadow",
+        "renderOrder",
+        "revision",
+        "rotation.order",
+        "rotation.x",
+        "rotation.y",
+        "rotation.z",
+        "scale.x",
+        "scale.y",
+        "scale.z",
+        "type",
+        "up.x",
+        "up.y",
+        "up.z",
+        "uuid",
+        "visible"
+      ],
+      "setters": [
+        "castShadow",
+        "frustumCulled",
+        "geometry",
+        "layers.mask",
+        "material",
+        "matrixAutoUpdate",
+        "matrixWorldAutoUpdate",
+        "morphTargetInfluences.0",
+        "morphTargetInfluences.1",
+        "morphTargetInfluences.10",
+        "morphTargetInfluences.11",
+        "morphTargetInfluences.12",
+        "morphTargetInfluences.13",
+        "morphTargetInfluences.14",
+        "morphTargetInfluences.15",
+        "morphTargetInfluences.16",
+        "morphTargetInfluences.17",
+        "morphTargetInfluences.18",
+        "morphTargetInfluences.19",
+        "morphTargetInfluences.2",
+        "morphTargetInfluences.20",
+        "morphTargetInfluences.21",
+        "morphTargetInfluences.22",
+        "morphTargetInfluences.23",
+        "morphTargetInfluences.24",
+        "morphTargetInfluences.25",
+        "morphTargetInfluences.26",
+        "morphTargetInfluences.27",
+        "morphTargetInfluences.28",
+        "morphTargetInfluences.29",
+        "morphTargetInfluences.3",
+        "morphTargetInfluences.30",
+        "morphTargetInfluences.31",
+        "morphTargetInfluences.32",
+        "morphTargetInfluences.33",
+        "morphTargetInfluences.34",
+        "morphTargetInfluences.35",
+        "morphTargetInfluences.36",
+        "morphTargetInfluences.37",
+        "morphTargetInfluences.38",
+        "morphTargetInfluences.39",
+        "morphTargetInfluences.4",
+        "morphTargetInfluences.40",
+        "morphTargetInfluences.41",
+        "morphTargetInfluences.42",
+        "morphTargetInfluences.43",
+        "morphTargetInfluences.44",
+        "morphTargetInfluences.45",
+        "morphTargetInfluences.46",
+        "morphTargetInfluences.47",
+        "morphTargetInfluences.48",
+        "morphTargetInfluences.49",
+        "morphTargetInfluences.5",
+        "morphTargetInfluences.50",
+        "morphTargetInfluences.51",
+        "morphTargetInfluences.52",
+        "morphTargetInfluences.53",
+        "morphTargetInfluences.54",
+        "morphTargetInfluences.55",
+        "morphTargetInfluences.56",
+        "morphTargetInfluences.57",
+        "morphTargetInfluences.58",
+        "morphTargetInfluences.59",
+        "morphTargetInfluences.6",
+        "morphTargetInfluences.60",
+        "morphTargetInfluences.61",
+        "morphTargetInfluences.62",
+        "morphTargetInfluences.63",
+        "morphTargetInfluences.7",
+        "morphTargetInfluences.8",
+        "morphTargetInfluences.9",
+        "name",
+        "pivot.x",
+        "pivot.y",
+        "pivot.z",
+        "position.x",
+        "position.y",
+        "position.z",
+        "quaternion.w",
+        "quaternion.x",
+        "quaternion.y",
+        "quaternion.z",
+        "receiveShadow",
+        "renderOrder",
+        "rotation.order",
+        "rotation.x",
+        "rotation.y",
+        "rotation.z",
+        "scale.x",
+        "scale.y",
+        "scale.z",
+        "up.x",
+        "up.y",
+        "up.z",
+        "uuid",
+        "visible"
+      ],
+      "members": [
+        "children",
+        "geometry",
+        "layers",
+        "material",
+        "matrix",
+        "matrixWorld",
+        "parent",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "MathUtils": {
       "constructor": true,
@@ -2248,7 +3293,10 @@
       "getters": [],
       "setters": [],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Matrix3": {
       "constructor": true,
@@ -2278,10 +3326,13 @@
         "translate",
         "transpose"
       ],
-      "getters": ["elements"],
+      "getters": ["__address", "elements"],
       "setters": [],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": { "elements": [0, 9] }
     },
     "Matrix4": {
       "constructor": true,
@@ -2324,14 +3375,18 @@
         "toArray",
         "transpose"
       ],
-      "getters": ["elements"],
+      "getters": ["__address", "elements"],
       "setters": [],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": { "elements": [0, 16] }
     },
     "Mesh": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -2584,11 +3639,23 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "MeshBasicMaterial": {
       "constructor": true,
-      "methods": ["clone"],
+      "methods": ["clone", "copy"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2637,11 +3704,14 @@
         "visible"
       ],
       "members": ["color", "map"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["color"],
+      "fields": {}
     },
     "MeshBasicNodeMaterial": {
       "constructor": true,
-      "methods": ["clone"],
+      "methods": ["clone", "copy"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2706,11 +3776,14 @@
         "visible"
       ],
       "members": ["color", "map"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["color"],
+      "fields": {}
     },
     "MeshLambertMaterial": {
       "constructor": true,
-      "methods": ["clone"],
+      "methods": ["clone", "copy"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2770,11 +3843,14 @@
         "visible"
       ],
       "members": ["color", "emissive", "map", "normalMap", "normalScale"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["color", "emissive", "normalScale"],
+      "fields": {}
     },
     "MeshPhongMaterial": {
       "constructor": true,
-      "methods": ["clone"],
+      "methods": ["clone", "copy"],
       "getters": [
         "alphaTest",
         "blending",
@@ -2843,11 +3919,14 @@
         "visible"
       ],
       "members": ["color", "emissive", "map", "normalMap", "normalScale", "specular"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["color", "emissive", "normalScale", "specular"],
+      "fields": {}
     },
     "MeshPhysicalMaterial": {
       "constructor": true,
-      "methods": ["clone"],
+      "methods": ["clone", "copy"],
       "getters": [
         "alphaTest",
         "anisotropy",
@@ -2973,11 +4052,14 @@
         "specularColorMap",
         "specularIntensityMap"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["clearcoatNormalScale", "color", "emissive", "normalScale", "specularColor"],
+      "fields": {}
     },
     "MeshStandardMaterial": {
       "constructor": true,
-      "methods": ["clone"],
+      "methods": ["clone", "copy"],
       "getters": [
         "alphaTest",
         "aoMapIntensity",
@@ -3065,11 +4147,14 @@
         "normalScale",
         "roughnessMap"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["color", "emissive", "normalScale"],
+      "fields": {}
     },
     "MeshStandardNodeMaterial": {
       "constructor": true,
-      "methods": ["clone"],
+      "methods": ["clone", "copy"],
       "getters": [
         "alphaTest",
         "aoMapIntensity",
@@ -3173,7 +4258,10 @@
         "normalScale",
         "roughnessMap"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["color", "emissive", "normalScale"],
+      "fields": {}
     },
     "NumberKeyframeTrack": {
       "constructor": true,
@@ -3181,11 +4269,15 @@
       "getters": ["ValueTypeName", "name", "times", "values"],
       "setters": [],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Object3D": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -3303,11 +4395,98 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
+    },
+    "OctahedronGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "clone",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "dispose",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
+      ],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "OrthographicCamera": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -3448,7 +4627,22 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "matrixWorldInverse",
+        "position",
+        "projectionMatrix",
+        "projectionMatrixInverse",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "Path": {
       "constructor": true,
@@ -3470,11 +4664,15 @@
       "getters": ["autoClose", "type"],
       "setters": ["autoClose"],
       "members": ["currentPoint"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["currentPoint"],
+      "fields": {}
     },
     "PerspectiveCamera": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -3623,7 +4821,22 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "matrixWorldInverse",
+        "position",
+        "projectionMatrix",
+        "projectionMatrixInverse",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "Plane": {
       "constructor": true,
@@ -3648,7 +4861,10 @@
       "getters": ["constant", "normal.x", "normal.y", "normal.z"],
       "setters": ["constant", "normal.x", "normal.y", "normal.z"],
       "members": ["normal"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["normal"],
+      "fields": {}
     },
     "PlaneGeometry": {
       "constructor": true,
@@ -3719,11 +4935,15 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "PointLight": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -3878,7 +5098,21 @@
         "shadow",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "color",
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "shadow",
+        "up"
+      ],
+      "fields": {}
     },
     "PointLightShadow": {
       "constructor": false,
@@ -3886,15 +5120,21 @@
       "getters": ["bias", "intensity", "normalBias", "radius"],
       "setters": ["bias", "intensity", "normalBias", "radius"],
       "members": ["camera", "mapSize"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["camera", "mapSize"],
+      "fields": {}
     },
     "PropertyBinding": {
       "constructor": true,
-      "methods": ["bind", "unbind"],
-      "getters": ["parsedPath"],
+      "methods": ["bind", "findNode", "parseTrackName", "targetObject", "unbind"],
+      "getters": ["path"],
       "setters": [],
-      "members": ["targetObject"],
-      "callbacks": []
+      "members": [],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Quaternion": {
       "constructor": true,
@@ -3924,10 +5164,13 @@
         "slerpQuaternions",
         "toArray"
       ],
-      "getters": ["w", "x", "y", "z"],
+      "getters": ["__address", "w", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": { "w": [24, 1], "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "QuaternionKeyframeTrack": {
       "constructor": true,
@@ -3935,7 +5178,10 @@
       "getters": ["ValueTypeName", "name", "times", "values"],
       "setters": [],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Ray": {
       "constructor": true,
@@ -3964,7 +5210,10 @@
       "getters": ["direction.x", "direction.y", "direction.z", "origin.x", "origin.y", "origin.z"],
       "setters": ["direction.x", "direction.y", "direction.z", "origin.x", "origin.y", "origin.z"],
       "members": ["direction", "origin"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["direction", "origin"],
+      "fields": {}
     },
     "Raycaster": {
       "constructor": true,
@@ -3972,7 +5221,10 @@
       "getters": ["far", "near"],
       "setters": ["camera", "far", "near"],
       "members": ["camera", "layers", "ray"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["layers", "ray"],
+      "fields": {}
     },
     "RingGeometry": {
       "constructor": true,
@@ -4043,7 +5295,10 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "RoundedBoxGeometry": {
       "constructor": true,
@@ -4114,11 +5369,15 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Scene": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -4262,7 +5521,19 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "Shape": {
       "constructor": true,
@@ -4284,7 +5555,10 @@
       "getters": ["autoClose", "type"],
       "setters": ["autoClose", "holes"],
       "members": ["currentPoint", "holes"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["currentPoint"],
+      "fields": {}
     },
     "ShapeGeometry": {
       "constructor": true,
@@ -4355,7 +5629,10 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Skeleton": {
       "constructor": true,
@@ -4363,11 +5640,26 @@
       "getters": ["boneMatrices", "bones.length"],
       "setters": [],
       "members": ["bones"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
+    },
+    "SkeletonUtils": {
+      "constructor": true,
+      "methods": ["clone"],
+      "getters": [],
+      "setters": [],
+      "members": [],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "SkinnedMesh": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -4632,7 +5924,21 @@
         "skeleton",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "bindMatrix",
+        "bindMatrixInverse",
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "Source": {
       "constructor": false,
@@ -4640,7 +5946,10 @@
       "getters": ["version"],
       "setters": ["needsUpdate"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Sphere": {
       "constructor": true,
@@ -4663,10 +5972,13 @@
         "translate",
         "union"
       ],
-      "getters": ["center.x", "center.y", "center.z", "radius"],
+      "getters": ["__address", "center.x", "center.y", "center.z", "radius"],
       "setters": ["center.x", "center.y", "center.z", "radius"],
       "members": ["center"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["center"],
+      "fields": { "radius": [24, 1] }
     },
     "SphereGeometry": {
       "constructor": true,
@@ -4737,11 +6049,15 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "SpotLight": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -4901,7 +6217,22 @@
         "target",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "color",
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "shadow",
+        "target",
+        "up"
+      ],
+      "fields": {}
     },
     "SpotLightShadow": {
       "constructor": false,
@@ -4909,11 +6240,15 @@
       "getters": ["bias", "focus", "intensity", "normalBias", "radius"],
       "setters": ["bias", "focus", "intensity", "normalBias", "radius"],
       "members": ["camera", "mapSize"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["camera", "mapSize"],
+      "fields": {}
     },
     "Sprite": {
       "constructor": true,
       "methods": [
+        "__walk",
         "add",
         "applyMatrix4",
         "applyQuaternion",
@@ -5171,11 +6506,23 @@
         "scale",
         "up"
       ],
-      "callbacks": ["onBeforeRender"]
+      "callbacks": ["onBeforeRender"],
+      "events": [],
+      "fixedMembers": [
+        "layers",
+        "matrix",
+        "matrixWorld",
+        "position",
+        "quaternion",
+        "rotation",
+        "scale",
+        "up"
+      ],
+      "fields": {}
     },
     "SpriteMaterial": {
       "constructor": true,
-      "methods": ["clone"],
+      "methods": ["clone", "copy"],
       "getters": [
         "alphaTest",
         "blending",
@@ -5228,11 +6575,14 @@
         "visible"
       ],
       "members": ["color", "map"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["color"],
+      "fields": {}
     },
     "SpriteNodeMaterial": {
       "constructor": true,
-      "methods": ["clone"],
+      "methods": ["clone", "copy"],
       "getters": [
         "alphaTest",
         "blending",
@@ -5301,7 +6651,10 @@
         "visible"
       ],
       "members": ["color", "map"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["color"],
+      "fields": {}
     },
     "Texture": {
       "constructor": true,
@@ -5343,7 +6696,10 @@
         "wrapT"
       ],
       "members": ["offset", "repeat", "source"],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["offset", "repeat", "source"],
+      "fields": {}
     },
     "TorusGeometry": {
       "constructor": true,
@@ -5414,7 +6770,84 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
+    },
+    "TorusKnotGeometry": {
+      "constructor": true,
+      "methods": [
+        "addGroup",
+        "applyMatrix4",
+        "center",
+        "clearGroups",
+        "clone",
+        "computeBoundingBox",
+        "computeBoundingSphere",
+        "computeVertexNormals",
+        "deleteAttribute",
+        "dispose",
+        "getAttribute",
+        "getIndex",
+        "hasAttribute",
+        "normalizeNormals",
+        "rotateX",
+        "rotateY",
+        "rotateZ",
+        "scale",
+        "setAttribute",
+        "setDrawRange",
+        "setIndex",
+        "toNonIndexed",
+        "translate"
+      ],
+      "getters": [
+        "attributes.color.array",
+        "attributes.normal.array",
+        "attributes.position.array",
+        "attributes.uv.array",
+        "boundingBox.max.x",
+        "boundingBox.max.y",
+        "boundingBox.max.z",
+        "boundingBox.min.x",
+        "boundingBox.min.y",
+        "boundingBox.min.z",
+        "boundingSphere.center.x",
+        "boundingSphere.center.y",
+        "boundingSphere.center.z",
+        "boundingSphere.radius",
+        "drawRange.count",
+        "drawRange.start",
+        "groups",
+        "id",
+        "index.array",
+        "morphTargetsRelative",
+        "name",
+        "parameters",
+        "revision",
+        "type"
+      ],
+      "setters": [
+        "morphAttributes.normal",
+        "morphAttributes.position",
+        "morphTargetsRelative",
+        "name"
+      ],
+      "members": [
+        "attributes.normal",
+        "attributes.position",
+        "attributes.uv",
+        "boundingBox",
+        "boundingSphere",
+        "index",
+        "morphAttributes.normal",
+        "morphAttributes.position"
+      ],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "TubeGeometry": {
       "constructor": true,
@@ -5485,7 +6918,10 @@
         "morphAttributes.normal",
         "morphAttributes.position"
       ],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     },
     "Vector2": {
       "constructor": true,
@@ -5540,10 +6976,13 @@
         "subVectors",
         "toArray"
       ],
-      "getters": ["height", "width", "x", "y"],
+      "getters": ["__address", "height", "width", "x", "y"],
       "setters": ["height", "width", "x", "y"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": { "x": [0, 1], "y": [8, 1] }
     },
     "Vector3": {
       "constructor": true,
@@ -5618,10 +7057,13 @@
         "transformDirection",
         "unproject"
       ],
-      "getters": ["x", "y", "z"],
+      "getters": ["__address", "x", "y", "z"],
       "setters": ["x", "y", "z"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": { "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "Vector4": {
       "constructor": true,
@@ -5674,10 +7116,13 @@
         "subVectors",
         "toArray"
       ],
-      "getters": ["height", "w", "width", "x", "y", "z"],
+      "getters": ["__address", "height", "w", "width", "x", "y", "z"],
       "setters": ["w", "x", "y", "z"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": { "w": [24, 1], "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "VectorKeyframeTrack": {
       "constructor": true,
@@ -5685,7 +7130,43 @@
       "getters": ["ValueTypeName", "name", "times", "values"],
       "setters": [],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": [],
+      "fields": {}
     }
-  }
+  },
+  "constants": [
+    "ACESFilmicToneMapping",
+    "AdditiveBlending",
+    "AgXToneMapping",
+    "AttachedBindMode",
+    "BackSide",
+    "ClampToEdgeWrapping",
+    "DoubleSide",
+    "DynamicDrawUsage",
+    "EquirectangularReflectionMapping",
+    "FloatType",
+    "FrontSide",
+    "HalfFloatType",
+    "LinearFilter",
+    "LinearMipmapLinearFilter",
+    "LinearSRGBColorSpace",
+    "LoopOnce",
+    "LoopPingPong",
+    "LoopRepeat",
+    "NearestFilter",
+    "NeutralToneMapping",
+    "NoBlending",
+    "NoColorSpace",
+    "NoToneMapping",
+    "NormalBlending",
+    "PCFShadowMap",
+    "PCFSoftShadowMap",
+    "RGBAFormat",
+    "RepeatWrapping",
+    "SRGBColorSpace",
+    "StaticDrawUsage",
+    "UnsignedByteType"
+  ]
 }

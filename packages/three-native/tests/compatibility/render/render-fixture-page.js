@@ -77,7 +77,21 @@ async function build(fixture, renderer, request) {
       const Constructor = three[op.class];
       if (typeof Constructor !== "function")
         throw new Error(`TN_FIXTURE_CLASS_UNKNOWN: ${op.class} is not exported by three/webgpu`);
-      bound.set(op.id, new Constructor(...op.args.map((arg) => argument(arg, bound))));
+      const args = op.args.map((arg) => argument(arg, bound));
+      // A CanvasTexture fixture names its canvas by its pixels, as the engine back ends pass them
+      // (pixels, width, height, ...): the reference draws them into a real canvas first.
+      if (op.class === "CanvasTexture") {
+        const [pixels, width, height, ...rest] = args;
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas
+          .getContext("2d")
+          .putImageData(new ImageData(Uint8ClampedArray.from(pixels), width, height), 0, 0);
+        bound.set(op.id, new Constructor(canvas, ...rest));
+        continue;
+      }
+      bound.set(op.id, new Constructor(...args));
       continue;
     }
     const target = bound.get(op.id);

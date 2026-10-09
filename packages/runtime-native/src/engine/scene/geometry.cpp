@@ -469,6 +469,12 @@ std::shared_ptr<BufferAttribute> BufferAttribute::clone() const {
     return copy;
 }
 
+namespace {
+
+std::shared_ptr<BufferAttribute> cloneAttribute(const BufferAttribute& source) { return source.clone(); }
+
+}  // namespace
+
 std::shared_ptr<BufferGeometry> BufferGeometry::clone() const {
     auto geometry = std::make_shared<BufferGeometry>();
     geometry->type = type;

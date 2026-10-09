@@ -15,6 +15,7 @@ import {
   If,
   Loop,
   abs,
+  atan,
   attribute,
   cameraPosition,
   cameraProjectionMatrix,
@@ -28,19 +29,25 @@ import {
   float,
   floor,
   fract,
+  time as frameTime,
+  fwidth,
   getCurrentStack,
+  hash,
   instanceIndex,
   instancedArray,
   int,
   length,
+  mat2,
   max,
   min,
   mix,
+  mod,
   normalWorld,
   normalize,
   positionGeometry,
   positionLocal,
   pow,
+  saturation,
   select,
   setCurrentStack,
   sin,
@@ -91,6 +98,7 @@ const TYPES: Record<string, string> = {
   bvec2: "vec2<bool>",
   bvec3: "vec3<bool>",
   bvec4: "vec4<bool>",
+  mat2: "mat2x2<f32>",
   mat3: "mat3x3<f32>",
   mat4: "mat4x4<f32>",
 };
@@ -125,7 +133,8 @@ function printfG(value: number): string {
 function constant(value: number, type: string): string {
   if (type === "f32") return `${printfG(Math.fround(value))}f:f32`;
   if (type === "i32") return `${value}i:i32`;
-  if (type === "u32") return `construct<u32>(${value}i:i32):u32`;
+  // The i32 bit pattern, as the IR dump prints a u32 constant above 2^31.
+  if (type === "u32") return `construct<u32>(${value | 0}i:i32):u32`;
   if (type === "bool") return `${value ? "true" : "false"}:bool`;
   return `UNMAPPED_CONST:${type}`;
 }
@@ -157,6 +166,8 @@ const RENAMES: Record<string, string> = {
   v_normalViewGeometry: "normalView",
 };
 const renamed = (name: string) => RENAMES[name] ?? name;
+/** Upstream builtins that are unnamed uniforms the renderer fills each frame, bound by these names. */
+const BUILTIN_UNIFORMS = new Map<unknown, string>([[frameTime, "time"]]);
 
 const OPERATORS: Record<string, string> = {
   "+": "add",
@@ -165,6 +176,9 @@ const OPERATORS: Record<string, string> = {
   "/": "div",
   "<": "less",
   "==": "equal",
+  "%": "mod",
+  "^": "bitXor",
+  ">>": "shiftRight",
 };
 
 function canon(node: TslNode, fragment: boolean): string {
@@ -202,7 +216,7 @@ function canon(node: TslNode, fragment: boolean): string {
         .join(", ")}):${type}`;
     }
     case "UniformNode":
-      return `uniform:${renamed(node.name as string)}:${typeOf(node)}`;
+      return `uniform:${renamed(BUILTIN_UNIFORMS.get(node) ?? (node.name as string))}:${typeOf(node)}`;
     case "AttributeNode":
       if (fragment)
         return `varying:${(node as unknown as { _attributeName: string })._attributeName}:${typeOf(node)}`;
@@ -217,13 +231,37 @@ function canon(node: TslNode, fragment: boolean): string {
       if (op === ">") return `less(${child("bNode")}, ${child("aNode")}):${type}`;
       const name = OPERATORS[op];
       if (name === undefined) return `UNMAPPED_OP:${op}`;
-      return `${name}(${child("aNode")}, ${child("bNode")}):${type}`;
+      // OperatorNode.generate builds a numeric constant operand as the other operand's integer type, so
+      // a u32 operation keeps the constant's exact integer (747796405 is not an f32).
+      const operand = (key: string, other: string) => {
+        const value = node[key] as TslNode;
+        const integer = typeOf(node[other] as TslNode) === "u32";
+        if (integer && value.constructor.type === "ConstNode" && typeof value.value === "number")
+          return constant(value.value, "u32");
+        return child(key);
+      };
+      return `${name}(${operand("aNode", "bNode")}, ${operand("bNode", "aNode")}):${type}`;
     }
     case "MathNode": {
       const method = node.method as string;
-      const args = ["aNode", "bNode", "cNode"].filter((key) => node[key] != null).map(child);
+      const keys = ["aNode", "bNode", "cNode"].filter((key) => node[key] != null);
+      const args = keys.map(child);
       if (method === "negate") return `neg(${args[0]}):${typeOf(node)}`;
-      return `${method}(${args.join(", ")}):${typeOf(node)}`;
+      // MathNode.generate: on WebGPU, atan with two operands is atan2.
+      const name = method === "atan" && node.bNode != null ? "atan2" : method;
+      // MathNode.generate builds each operand as the widest operand type, so a scalar operand of a
+      // vector call is splatted. Cross and mix's scalar third operand are built as they are.
+      const types = keys.map((key) => typeOf(node[key] as TslNode));
+      const widest = types.find((type) => /^vec\d</.test(type));
+      const splat = (index: number) =>
+        widest !== undefined &&
+        method !== "cross" &&
+        !/^vec\d</.test(types[index] as string) &&
+        !(method === "mix" && index === 2);
+      const parts = args.map((arg, index) =>
+        splat(index) ? `construct<${widest}>(${arg}):${widest}` : arg,
+      );
+      return `${name}(${parts.join(", ")}):${typeOf(node)}`;
     }
     case "SplitNode":
       return `${child("node")}.${node.components as string}:${typeOf(node)}`;
@@ -288,6 +326,13 @@ export const CORPUS: [string, string, unknown][] = [
   ["normal-world", "color", vec4(normalWorld, 1)],
   ["varying-fragment", "color", vec4(varying(positionGeometry.mul(u), "scaled"), 1)],
   ["varying-vertex", "position", vec4(varying(positionGeometry.mul(u), "scaled"), 1)],
+  ["atan", "color", vec4(atan(u), atan(time, u), 0, 1)],
+  ["mod", "color", vec4(mod(positionLocal, tint), mod(u, time))],
+  ["fwidth", "color", vec4(fwidth(uv()), fwidth(u), 1)],
+  ["saturation", "color", vec4(saturation(tint, u), 1)],
+  ["mat2", "color", vec4(mat2(vec2(1, 0), vec2(0, 1)).mul(vec2(u, time)), 0, 1)],
+  ["hash", "color", vec4(hash(u), 0, 0, 1)],
+  ["time", "color", vec4(frameTime, 0, 0, 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

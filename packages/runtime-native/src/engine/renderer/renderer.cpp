@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "engine/renderer/pipeline_cache.h"
 
 #include <algorithm>
 #include <cctype>
@@ -105,8 +106,9 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 // Authored uniform data accompanies the graph, not the cached program. Both colour and shadow
 // draws bind it, so a graph positionNode has exactly the same deformation in the two passes.
 void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
-              const shader::MaterialNodes& nodes) {
+              const shader::MaterialNodes& nodes, float time) {
     std::map<std::string, std::vector<float>> values;
+    values.emplace("time", std::vector<float>{time});  // three's `time`: the frame's elapsed seconds
     for (const auto& node : nodes.graphs()) for (const auto& [name, value] : shader::graph::uniforms(node)) {
         const auto [it, fresh] = values.emplace(name, value);
         if (!fresh && it->second != value) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + name);
@@ -206,20 +208,27 @@ WGPUFilterMode filterMode(uint16_t filter) {
         ? WGPUFilterMode_Linear : WGPUFilterMode_Nearest;
 }
 
+// A Line or LineSegments draw: its topology, no culling, and an indexed strip's index format.
+void lineTopology(PipelineTarget& target, const DrawItem& item) {
+    if (item.topology == WGPUPrimitiveTopology_TriangleList) return;
+    target.topology = item.topology;
+    target.cull = WGPUCullMode_None;
+    if (item.topology == WGPUPrimitiveTopology_LineStrip && item.indices)
+        target.stripIndexFormat = item.indices->scalar() == Scalar::U32 ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16;
+}
+
 // three's Texture.updateMatrix: Matrix3.setUvTransform(offset.x, offset.y, repeat.x, repeat.y,
-// rotation, center.x, center.y), column-major, as the fragment's mat3x3 uniform reads it.
+// rotation, center.x, center.y). Its elements are column-major, as the fragment's mat3x3 uniform reads them.
 std::array<double, 9> uvTransformOf(const Texture& t) {
-    const double c = std::cos(t.rotation), s = std::sin(t.rotation);
-    const double cx = t.center.x, cy = t.center.y, sx = t.repeat.x, sy = t.repeat.y, tx = t.offset.x, ty = t.offset.y;
-    return {sx * c, sx * s, -sx * (c * cx + s * cy) + cx + tx,   // column 0
-            -sy * s, sy * c, -sy * (-s * cx + c * cy) + cy + ty,  // column 1
-            0, 0, 1};
+    return tn::engine::Matrix3()
+        .setUvTransform(t.offset.x, t.offset.y, t.repeat.x, t.repeat.y, t.rotation, t.center.x, t.center.y)
+        .elements;
 }
 
 // A program that samples a material `map` or an environment cannot have one shared fragment group:
 // each draw's group binds its own texture and sampler. Its group[1] is left null and built per draw.
-// A TSL texture(textureObject, uv) binding (tsl_call's "tslTex<id>"): the draw's own texture.
-bool graphTextureBinding(std::string_view name) { return name.rfind("t_tslTex", 0) == 0; }
+// A TSL texture(object, uv) binding (tsl_call's "nodeMap<id>"): the draw's own texture, in either stage.
+bool graphTextureBinding(std::string_view name) { return name.rfind("t_nodeMap", 0) == 0; }
 
 // Bit i set: the vertex stage's attribute i is one of the draw's InstancedBufferAttributes.
 uint64_t instanceStepMask(const shader::StageModule& vertex, const DrawItem& item) {
@@ -523,6 +532,7 @@ Renderer::~Renderer() {
     mainBundle_ = viewportBundle_ = nullptr;
     if (timestamps_) wgpuQuerySetRelease(timestamps_);
     for (auto& [key, program] : programs_) {
+        if (!program) continue;  // a refused program
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
             if (program->layouts[g]) wgpuBindGroupLayoutRelease(program->layouts[g]);
@@ -795,7 +805,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
     desc.layout = layout;
     desc.entryCount = entries.size();
     desc.entries = entries.data();
-    return wgpuDeviceCreateBindGroup(device_, &desc);
+    return createBindGroup(device_, &desc);
 }
 
 const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
@@ -1270,7 +1280,7 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
         groupDesc.layout = envLayout_;
         groupDesc.entryCount = 3;
         groupDesc.entries = entries;
-        WGPUBindGroup group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
+        WGPUBindGroup group = createBindGroup(device_, &groupDesc);
         WGPURenderPassColorAttachment color = {};
         color.view = passes[p].target;
         color.loadOp = p == 0 ? WGPULoadOp_Clear : WGPULoadOp_Load;
@@ -1355,43 +1365,58 @@ void Renderer::buildLayouts(Program& program) {
     }
 }
 
-Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
+Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
                                      bool softShadows) {
     const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights + (softShadows ? "|soft" : "");
-    if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
+    const auto refuse = [&](const std::string& reason) -> Program* {
+        if (std::find(diagnostics_.begin(), diagnostics_.end(), reason) == diagnostics_.end()) diagnostics_.push_back(reason);
+        return nullptr;
+    };
+    if (const auto found = programs_.find(key); found != programs_.end())
+        return found->second ? found->second.get() : refuse(refusedPrograms_.at(key));
+    const auto refuseBuild = [&](const std::string& why) {
+        programs_[key] = nullptr;
+        return refuse(refusedPrograms_[key] = "TN_NATIVE_SHADER_INVALID: material program " + key.substr(0, 120) +
+                                              (key.size() > 120 ? "...: " : ": ") + why);
+    };
     const shader::LightLayout layout{lights, softShadows};
     shader::StandardPrograms source;
-    switch (kind) {
-    case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, vv, layout); break;
-    case MaterialKind::Basic: source = vv.sprite ? shader::buildSprite(vv) : shader::buildBasic(vv); break;
-    case MaterialKind::Lambert: source = shader::buildLambert(vv, layout); break;
-    case MaterialKind::Phong: source = shader::buildPhong(vv, layout); break;
-    case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, vv, layout); break;
+    try {
+        switch (kind) {
+        case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, vv, layout); break;
+        case MaterialKind::Basic: source = vv.sprite ? shader::buildSprite(vv) : shader::buildBasic(vv); break;
+        case MaterialKind::Lambert: source = shader::buildLambert(vv, layout); break;
+        case MaterialKind::Phong: source = shader::buildPhong(vv, layout); break;
+        case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, vv, layout); break;
+        }
+    } catch (const std::exception& error) {
+        return refuseBuild(error.what());  // a graph the builder refuses (TN_TSL_VARYING_CONFLICT, ...)
     }
+    // The first construction diagnostic names the node; the WGSL error only says there was one.
+    for (const shader::Program* stage : {&source.vertex, &source.fragment})
+        if (!stage->diagnostics().empty()) {
+            const auto& d = stage->diagnostics().front();
+            return refuseBuild(d.code + ": " + d.node + ": " + d.reason);
+        }
     source.vertex.setInvariantPosition(vv.invariantPosition);
     shader::StageModule vertex = shader::buildStage(source.vertex, 0);
     shader::StageModule fragment = shader::buildStage(source.fragment, 1);
     if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
-        // The first generator error names what the graph asked for that WGSL cannot express.
-        std::string reason = (!vertex.wgsl.ok() ? vertex.wgsl.errors : fragment.wgsl.errors).front();
-        for (const shader::Program* stage : {&source.vertex, &source.fragment})
-            if (!stage->diagnostics().empty()) {
-                const shader::Diagnostic& d = stage->diagnostics().front();
-                reason = d.code + " " + d.node + ": " + d.reason;
-                break;
-            }
-        throw std::runtime_error("TN_NATIVE_SHADER_INVALID: " + reason + " (material program " + key + ")");
+        const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
+        return refuseBuild(errors.empty() ? "no reason" : errors.front());
     }
-    return add(key, std::move(vertex), std::move(fragment));
+    return &add(key, std::move(vertex), std::move(fragment));
 }
 
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
     shader::VertexVariant kind = variant;
     kind.instanceColor = false;
+    kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
+    kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
     kind.map = false;           // ...nor a diffuse map: no uv passes through the depth program
     const std::string key = "depth|" + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
@@ -1427,6 +1452,7 @@ void Renderer::rebuildGroups() {
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
     for (auto& [key, program] : programs_) {
+        if (!program) continue;  // a refused program
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
             program->groups[g] = (g == 1 && perDrawFragment(program->fragment)) || (g == 0 && perDrawVertex(program->vertex))
@@ -1479,6 +1505,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     geometry_.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
     diagnostics_.clear();
+    frameTime_ = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
 
     WGPUCommandEncoderDescriptor encoderDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
@@ -1555,7 +1582,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             std::string signature = std::to_string(item.positions->version());
             if (item.instanceMatrices) signature += ":instances:" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
             if (item.nodes.positionNode) {
-                signature += shader::graph::key(item.nodes.positionNode);
+                signature += "#" + std::to_string(shader::graph::keyId(item.nodes.positionNode));
                 for (const auto& [name, values] : shader::graph::uniforms(item.nodes.positionNode)) {
                     signature += name;
                     signature.append(reinterpret_cast<const char*>(values.data()), values.size() * sizeof(float));
@@ -1741,6 +1768,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
+        v.vertexColors = item.colorSize;
         v.instanceStorage = v.instanced;
         v.skinned = item.boneMatrices != nullptr;
         v.skinnedPalette = item.boneStride != 0;
@@ -1775,11 +1803,13 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
-        Program& program = this->program(item.kind, variantOf(item),
-                                         item.kind == MaterialKind::Basic ? ""
-                                         : item.receiveShadow            ? lightKinds
-                                                                         : unshadowedKinds,
-                                         item.receiveShadow && lights.softShadows);
+        Program* built = this->program(item.kind, variantOf(item),
+                                       item.kind == MaterialKind::Basic ? ""
+                                       : item.receiveShadow            ? lightKinds
+                                                                       : unshadowedKinds,
+                                       item.receiveShadow && lights.softShadows);
+        if (!built) continue;
+        Program& program = *built;
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;
@@ -1796,6 +1826,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         target.frontFace = item.frontFace();
         target.skinIndex = skinIndexFormat(item);
         target.instanceStepMask = instanceStepMask(program.vertex, item);
+        lineTopology(target, item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
         if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
         const uint64_t v = frameUniforms_.size();
@@ -1903,8 +1934,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             if (field.name == "spriteNoAttenuation") put(frameUniforms_, v, &field,
                 std::array<double, 1>{!item.spriteSizeAttenuation && camera.projectionMatrix[11] == -1 ? 1.0 : 0.0});
         }
-        putNodes(frameUniforms_, v, program.vertex, item.nodes);
-        putNodes(frameUniforms_, f, program.fragment, item.nodes);
+        putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_);
+        putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
     }
 
@@ -1955,7 +1986,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
             put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
-            putNodes(frameUniforms_, v, program.vertex, item.nodes);
+            putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_);
             pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
         }
         }
@@ -1982,6 +2013,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             target.layout = velocity.pipelineLayout; target.depthWrite = false;
+            lineTopology(target, item);
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             const auto pipeline = pipelines_.get(velocity.vertex, &velocity.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
@@ -2027,15 +2059,16 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         if (found != mapGroups_.end()) return found->second;
         return mapGroups_.emplace(vertexKey, bindGroup(p.program->layouts[0], p.program->vertex, uniformBuffer_,
                                   lutView_, lutSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                  nullptr, nullptr, nullptr, nullptr, &p.item->graphTextures)).first->second;
+                                  nullptr, nullptr, nullptr, nullptr, p.item->nodeTextures)).first->second;
     };
     const auto graphKeyOf = [&](const DrawItem& item) {
         std::string key;
-        for (const auto& [label, texture] : item.graphTextures) {
-            const MaterialTexture* gpu = materialTexture(*texture);
-            key += "|" + label + "," + std::to_string(reinterpret_cast<uintptr_t>(gpu->view)) + "," +
-                   std::to_string(reinterpret_cast<uintptr_t>(gpu->sampler));
-        }
+        if (item.nodeTextures)
+            for (const auto& [label, texture] : *item.nodeTextures) {
+                const MaterialTexture* gpu = materialTexture(*texture);
+                key += "|" + label + "," + std::to_string(reinterpret_cast<uintptr_t>(gpu->view)) + "," +
+                       std::to_string(reinterpret_cast<uintptr_t>(gpu->sampler));
+            }
         return key;
     };
     for (ShadowPass& pass : shadowPasses)
@@ -2045,7 +2078,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
         const bool readsPbr = std::any_of(p.item->pbrMaps.begin(), p.item->pbrMaps.end(), [](const Texture* t) { return t; });
-        const GraphTextures* graphTextures = p.item->graphTextures.empty() ? nullptr : &p.item->graphTextures;
+        const GraphTextures* graphTextures = p.item->nodeTextures;
         std::string graphKey = graphKeyOf(*p.item);
         p.vertexGroup = vertexGroupOf(p, graphKey);
         const bool viewport = readsViewport(p.program->fragment);
@@ -2390,6 +2423,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
+    if (postEffects_ && postEffects_->syncScales()) releaseOutputGroup();
     if (postEffects_) postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_);
     outputPass(encoder, timed, presentTarget, presentFormat);
     if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 6, gpu_.buffer(timestampResolve_), 0);
@@ -2421,6 +2455,9 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureVie
     WGPURenderPipeline pipeline = pipelines_.get(outputVertex_, &outputFragment_, outputTarget);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
+    if (post_)
+        for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
+    postUniforms_["time"] = {frameTime_};
     for (const auto& field : outputFragment_.uniforms) {
         const auto value = postUniforms_.find(field.name);
         if (value == postUniforms_.end()) continue;

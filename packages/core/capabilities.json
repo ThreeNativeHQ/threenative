@@ -7541,6 +7541,11 @@
         "source": "three"
       },
       {
+        "symbol": "AttachedBindMode",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "BackSide",
         "kind": "constant",
         "source": "three"
@@ -7576,6 +7581,16 @@
         "source": "three"
       },
       {
+        "symbol": "CanvasTexture",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "CapsuleGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "CatmullRomCurve3",
         "kind": "class",
         "source": "three"
@@ -7583,6 +7598,11 @@
       {
         "symbol": "CircleGeometry",
         "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "ClampToEdgeWrapping",
+        "kind": "constant",
         "source": "three"
       },
       {
@@ -7616,12 +7636,22 @@
         "source": "three"
       },
       {
+        "symbol": "DodecahedronGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "DoubleSide",
         "kind": "constant",
         "source": "three"
       },
       {
         "symbol": "DynamicDrawUsage",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "EquirectangularReflectionMapping",
         "kind": "constant",
         "source": "three"
       },
@@ -7644,6 +7674,11 @@
         "symbol": "Float32BufferAttribute",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "FloatType",
+        "kind": "constant",
+        "source": "three"
       },
       {
         "symbol": "Fog",
@@ -7671,7 +7706,17 @@
         "source": "three"
       },
       {
+        "symbol": "HalfFloatType",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "HemisphereLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "IcosahedronGeometry",
         "kind": "class",
         "source": "three/webgpu"
       },
@@ -7708,6 +7753,31 @@
       {
         "symbol": "Layers",
         "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "Line",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "LineBasicMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "LineSegments",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "LinearFilter",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
+        "symbol": "LinearMipmapLinearFilter",
+        "kind": "constant",
         "source": "three"
       },
       {
@@ -7786,6 +7856,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "NearestFilter",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "NeutralToneMapping",
         "kind": "constant",
         "source": "three"
@@ -7801,6 +7876,11 @@
         "source": "three"
       },
       {
+        "symbol": "NoToneMapping",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "NormalBlending",
         "kind": "constant",
         "source": "three"
@@ -7812,6 +7892,11 @@
       },
       {
         "symbol": "Object3D",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "OctahedronGeometry",
         "kind": "class",
         "source": "three"
       },
@@ -7876,6 +7961,11 @@
         "source": "three"
       },
       {
+        "symbol": "RGBAFormat",
+        "kind": "constant",
+        "source": "three"
+      },
+      {
         "symbol": "Ray",
         "kind": "class",
         "source": "three"
@@ -7883,6 +7973,11 @@
       {
         "symbol": "Raycaster",
         "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "RepeatWrapping",
+        "kind": "constant",
         "source": "three"
       },
       {
@@ -7894,6 +7989,11 @@
         "symbol": "RoundedBoxGeometry",
         "kind": "class",
         "source": "three/addons/geometries/RoundedBoxGeometry.js"
+      },
+      {
+        "symbol": "SRGBColorSpace",
+        "kind": "constant",
+        "source": "three"
       },
       {
         "symbol": "Scene",
@@ -7914,6 +8014,11 @@
         "symbol": "Skeleton",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "SkeletonUtils",
+        "kind": "class",
+        "source": "three"
       },
       {
         "symbol": "SkinnedMesh",
@@ -7976,8 +8081,18 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "TorusKnotGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "TubeGeometry",
         "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "UnsignedByteType",
+        "kind": "constant",
         "source": "three"
       },
       {

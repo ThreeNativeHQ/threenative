@@ -29,13 +29,17 @@ interface IRegistryClass {
 
 interface IRegistryDump {
   readonly classes: Record<string, IRegistryClass>;
+  readonly constants?: readonly string[];
 }
+
+/** A `__` member is engine-internal (a back end calls it, as `__walk`); three's surface never has it. */
+const published = (member: string): boolean => !member.startsWith("__");
 
 /** Top-level getters and member objects are catalog members; a dotted path is a protocol path. */
 function registryMembers(binding: IRegistryClass): string[] {
   return [
-    ...binding.methods,
-    ...binding.getters.filter((name) => !name.includes(".")),
+    ...binding.methods.filter(published),
+    ...binding.getters.filter((name) => !name.includes(".") && published(name)),
     ...binding.members.filter((name) => !name.includes(".")),
     ...binding.callbacks,
   ];
@@ -102,6 +106,14 @@ describe("the catalog and the binding registry", () => {
     }
     const names = [...table.matchAll(/TN_CATALOG_TYPE\("([^"]+)"/gu)].map((match) => match[1]);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("the supported constants are the registry's constants", () => {
+    const constants = loadCatalog(REPO).entries.filter((entry) => entry.kind === "constant");
+    const supported = constants
+      .filter((entry) => entry.status.kind === "supported")
+      .map((entry) => entry.name);
+    expect(sorted(supported)).toEqual(sorted(dump.constants ?? []));
   });
 
   it("publishes DirectionalLight.target as assignable", () => {

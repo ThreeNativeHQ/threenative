@@ -195,6 +195,8 @@ ExprId Lowerer::emit(Node node) {
                 case BinOp::Less: return program_.less(a, b);
                 case BinOp::Greater: return program_.less(b, a);
                 case BinOp::Equal: return program_.equal(a, b);
+                case BinOp::ShiftRight: return program_.shiftRight(a, b);
+                case BinOp::BitXor: return program_.bitXor(a, b);
             }
             return kInvalid;
         }
@@ -407,6 +409,8 @@ Node add(Node a, Node b) { return makeBinary(BinOp::Add, std::move(a), std::move
 Node sub(Node a, Node b) { return makeBinary(BinOp::Sub, std::move(a), std::move(b)); }
 Node mul(Node a, Node b) { return makeBinary(BinOp::Mul, std::move(a), std::move(b)); }
 Node div(Node a, Node b) { return makeBinary(BinOp::Div, std::move(a), std::move(b)); }
+Node shiftRight(Node a, Node b) { return makeBinary(BinOp::ShiftRight, std::move(a), std::move(b)); }
+Node bitXor(Node a, Node b) { return makeBinary(BinOp::BitXor, std::move(a), std::move(b)); }
 Node lessThan(Node a, Node b) { return makeBinary(BinOp::Less, std::move(a), std::move(b)); }
 Node greaterThan(Node a, Node b) { return makeBinary(BinOp::Greater, std::move(a), std::move(b)); }
 Node equal(Node a, Node b) { return makeBinary(BinOp::Equal, std::move(a), std::move(b)); }
@@ -442,9 +446,12 @@ Node texture(std::string_view map, Node uvs) {
     return data;
 }
 
-Node textureObject(std::shared_ptr<const void> object, std::string_view name, Node uvs) {
-    auto data = std::const_pointer_cast<NodeData>(texture(name, std::move(uvs)));
-    data->object = std::move(object);
+Node objectTexture(std::shared_ptr<const void> texture, std::string name, Node uvs) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Texture;
+    data->name = std::move(name);
+    data->object = std::move(texture);
+    data->args = {std::move(uvs)};
     return data;
 }
 
@@ -510,6 +517,16 @@ Node instanceIndex() { return builtin("instanceIndex"); }
 
 Node vec2(std::initializer_list<Node> parts) { return makeJoin(2, parts); }
 Node vec3(std::initializer_list<Node> parts) { return makeJoin(3, parts); }
+Node splat(Node scalar, uint8_t lanes) {
+    auto data = makeNode(Kind::Convert, Type::vec(lanes));
+    data->args = {std::move(scalar)};
+    return data;
+}
+Node mat2(std::initializer_list<Node> parts) {
+    auto data = makeJoin(2, parts);
+    data->type = Type::mat(2, 2);
+    return data;
+}
 Node vec4(std::initializer_list<Node> parts) { return makeJoin(4, parts); }
 
 #define TN_GRAPH_UNARY(name) Node name(Node a) { return makeMath(#name, {std::move(a)}); }
@@ -527,6 +544,11 @@ TN_GRAPH_UNARY(exp2)
 TN_GRAPH_UNARY(log2)
 TN_GRAPH_UNARY(normalize)
 TN_GRAPH_UNARY(length)
+TN_GRAPH_UNARY(dFdx)
+TN_GRAPH_UNARY(dFdy)
+TN_GRAPH_UNARY(sign)
+TN_GRAPH_UNARY(atan)
+TN_GRAPH_UNARY(fwidth)
 TN_GRAPH_BINARY(min)
 TN_GRAPH_BINARY(max)
 TN_GRAPH_BINARY(pow)
@@ -534,6 +556,8 @@ TN_GRAPH_BINARY(step)
 TN_GRAPH_BINARY(dot)
 TN_GRAPH_BINARY(distance)
 TN_GRAPH_BINARY(cross)
+TN_GRAPH_BINARY(atan2)
+TN_GRAPH_BINARY(mod)
 TN_GRAPH_TERNARY(mix)
 TN_GRAPH_TERNARY(clamp)
 TN_GRAPH_TERNARY(smoothstep)
@@ -631,7 +655,14 @@ ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std:
     return lowerer.expression(graph);
 }
 
+namespace {
+uint64_t keySerializations = 0;
+}
+
+uint64_t keyBuilds() { return keySerializations; }
+
 std::string key(const Graph& graph) {
+    ++keySerializations;
     std::unordered_map<const NodeData*, size_t> ids;
     std::string out;
     const auto text = [&](const std::string& s) { out += std::to_string(s.size()) + ":" + s; };
@@ -655,19 +686,51 @@ std::string key(const Graph& graph) {
     return out;
 }
 
+uint64_t keyId(const Graph& graph) {
+    if (!graph) return 0;
+    if (graph->memo.keyId == 0) {
+        // ponytail: one process-wide table, never pruned; it holds one entry per distinct structure.
+        static std::unordered_map<std::string, uint64_t> interned;
+        graph->memo.keyId = interned.emplace(key(graph), interned.size() + 1).first->second;
+    }
+    return graph->memo.keyId;
+}
+
+namespace {
+/** Every uniform node reachable from the graph, in first-visit order, found once per node. */
+const std::vector<Node>& uniformList(const Graph& graph) {
+    if (!graph->memo.uniforms) {
+        auto list = std::make_shared<std::vector<Node>>();
+        std::unordered_set<const NodeData*> seen;
+        const std::function<void(Node)> visit = [&](Node n) {
+            if (!n || !seen.insert(n.get()).second) return;
+            if (n->kind == Kind::Uniform) list->push_back(n);
+            for (const auto* children : {&n->args, &n->body, &n->otherwise})
+                for (const auto& child : *children) visit(child);
+        };
+        visit(graph);
+        graph->memo.uniforms = std::move(list);
+    }
+    return *graph->memo.uniforms;
+}
+}  // namespace
+
+std::vector<Node> uniformNodes(const Graph& graph) {
+    std::vector<Node> result;
+    if (!graph) return result;
+    for (const Node& n : uniformList(graph))
+        if (!n->values.empty()) result.push_back(n);
+    return result;
+}
+
 std::map<std::string, std::vector<float>> uniforms(const Graph& graph) {
     std::map<std::string, std::vector<float>> result;
-    std::unordered_set<const NodeData*> seen;
-    const std::function<void(Node)> visit = [&](Node n) {
-        if (!n || !seen.insert(n.get()).second) return;
-        if (n->kind == Kind::Uniform && !n->values.empty()) {
-            const auto [it, fresh] = result.emplace(n->name, n->values);
-            if (!fresh && it->second != n->values) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + n->name);
-        }
-        for (const auto* list : {&n->args, &n->body, &n->otherwise})
-            for (const auto& child : *list) visit(child);
-    };
-    visit(graph);
+    if (!graph) return result;
+    for (const Node& n : uniformList(graph)) {
+        if (n->values.empty()) continue;
+        const auto [it, fresh] = result.emplace(n->name, n->values);
+        if (!fresh && it->second != n->values) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + n->name);
+    }
     return result;
 }
 

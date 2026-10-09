@@ -26,7 +26,7 @@ namespace {
 struct GraphFind {
     const Texture* texture = nullptr;
     std::shared_ptr<const void> reflector;
-    GraphTextures textures;  // texture(textureObject, uv) reads, by binding name
+    std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples, by binding
 };
 
 GraphFind findGraphSources(const Material& material) {
@@ -41,7 +41,8 @@ GraphFind findGraphSources(const Material& material) {
             found.texture = texture;
         } else if (node->kind == shader::graph::Kind::Texture && node->object) {
             const auto* texture = static_cast<const Texture*>(node->object.get());
-            if (std::none_of(found.textures.begin(), found.textures.end(), [&](const auto& t) { return t.first == node->name; }))
+            if (std::none_of(found.textures.begin(), found.textures.end(),
+                             [&](const auto& entry) { return entry.first == node->name; }))
                 found.textures.emplace_back(node->name, texture);
         } else if (node->kind == shader::graph::Kind::Reflector) {
             if (found.reflector && found.reflector != node->object)
@@ -415,6 +416,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.kind = kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
     d.transparent = material->transparent;
+    d.forceSinglePass = material->forceSinglePass;
     d.depthWrite = material->depthWrite;
     d.materialKey = material;
     d.positionNode = material->positionNode;
@@ -430,6 +432,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     r.draw->params = paramsOf(*r.material);
     d.material = &r.draw->params;
     d.transparent = r.material->transparent;
+    d.forceSinglePass = r.material->forceSinglePass;
     d.depthWrite = r.material->depthWrite;
     d.side = static_cast<uint8_t>(r.material->side);
     d.blending = static_cast<uint8_t>(r.material->blending);
@@ -467,7 +470,8 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
     GraphSources& cached = graphSources_[&material];
     if (cached.roots != roots || cached.version != material.version()) {
         GraphFind found = findGraphSources(material);
-        cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector), std::move(found.textures)};
+        cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
+                              std::move(found.textures)};
     }
     return cached;
 }
@@ -486,10 +490,11 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             auto& lod = static_cast<LOD&>(object);
             if (lod.autoUpdate) lod.update(camera);
         }
-        if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite") {
+        if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
+            type == "LineSegments") {
             const auto& mesh = static_cast<const Mesh&>(object);
             const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
-                                 !mesh.material->transparent && !mesh.material->positionNode &&
+                                 !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                  !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
                                  !mesh.geometry->instanced &&
                                  (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
@@ -533,6 +538,11 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                         d.instanceColors = instanced.instanceColor ? instanced.instanceColor->store.get() : nullptr;
                         d.instanceCount = static_cast<uint32_t>(
                             std::min<uint64_t>(instanced.count, instanced.instanceMatrix->count()));
+                    }
+                    if (type == "Line" || type == "LineSegments") {
+                        DrawItem& d = items.back();
+                        d.topology = type == "Line" ? WGPUPrimitiveTopology_LineStrip : WGPUPrimitiveTopology_LineList;
+                        d.castShadow = false;  // ponytail: three's shadow pass draws lines; no corpus line casts one
                     }
                     if (type == "Sprite") {
                         const auto& sprite = static_cast<const Sprite&>(mesh);
@@ -1092,11 +1102,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
         const GraphSources& sources = graphSources(source);
         item.pmremMap = sources.texture;
         item.reflector = sources.reflector.get();
-        item.graphTextures = sources.textures;
-        // A texture node's image comes from the game; one not decoded yet is refused by name.
-        for (const auto& [name, texture] : item.graphTextures)
-            if (!texture->hasImage())
-                throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a TSL texture() reads a texture with no image");
+        item.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
         if (item.pmremMap) {
             Matrix4 rotation;
             if (world && world->environment && source.maps.find("envMap") == source.maps.end())
@@ -1116,10 +1122,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     }
     // three's Renderer.renderObject: a transparent DoubleSide material (forceSinglePass false) draws
     // twice, its BackSide pass and then its FrontSide pass, so the far half composites under the near.
-    const auto twoPass = [](const DrawItem& d) {
-        const auto* material = static_cast<const Material*>(d.materialKey);
-        return d.transparent && d.side == 2 && !(material && material->forceSinglePass);
-    };
+    const auto twoPass = [](const DrawItem& d) { return d.transparent && d.side == 2 && !d.forceSinglePass; };
     if (std::any_of(items.begin(), items.end(), twoPass)) {
         std::vector<DrawItem> passes;
         passes.reserve(items.size() + 8);

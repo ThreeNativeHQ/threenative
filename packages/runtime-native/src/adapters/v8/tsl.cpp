@@ -2,8 +2,8 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/tsl_call.h"
 
-#include <functional>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -120,14 +120,7 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
     // pmremTexture prefilters the texture object itself, not a map the material names; reflector
     // takes its target and virtual camera.
-    // texture(textureObject): an unnamed engine Texture is bound by identity (a named one names its map).
-    const bool unnamedTexture = [&] {
-        if (!texture || w || !value->IsObject()) return false;
-        v8::Local<v8::Value> label;
-        if (!value.As<v8::Object>()->Get(ctx, str(isolate_, "name")).ToLocal(&label)) throw JsFailure{};
-        return label->IsUndefined() || (label->IsString() && label.As<v8::String>()->Length() == 0);
-    }();
-    if ((index == 0 && name == "pmremTexture") || (index < 2 && name == "reflector") || unnamedTexture) {
+    if ((index == 0 && name == "pmremTexture") || (index < 2 && name == "reflector")) {
         tn_handle_t handle{};
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object == nullptr) throw std::runtime_error(name + " needs an engine object as argument " + std::to_string(index));
@@ -137,6 +130,12 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (value->IsString()) return abi::TslArg::of(text(isolate_, value));
     if (!value->IsObject()) return abi::TslArg::other();
     const auto object = value.As<v8::Object>();
+    // texture(engineTexture, uv) samples that texture itself; a plain object names a material map.
+    if (texture) {
+        tn_handle_t handle{};
+        const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
+        if (object != nullptr) return abi::TslArg::objectOf(object->cls, object->ptr);
+    }
     if (texture || textureLoad) {
         v8::Local<v8::Value> label;
         if (!object->Get(ctx, str(isolate_, "name")).ToLocal(&label)) throw JsFailure{};
@@ -371,51 +370,44 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     const auto node = v8::ObjectTemplate::New(isolate_);
     node->SetInternalFieldCount(2);
     for (const char* name : {"add", "sub", "mul", "div", "negate", "lessThan", "greaterThan", "equal", "setName",
-                             "toVar", "assign", "addAssign", "subAssign", "mulAssign", "divAssign", "element", "Else", "abs", "sin", "cos", "floor", "fract",
+                             "toVar", "assign", "element", "Else", "abs", "sin", "cos", "floor", "fract",
                              "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
-                             "flipX", "flipY", "flipZ", "flipW", "level", "dFdx", "dFdy", "lengthSq"})
+                             "flipX", "flipY", "flipZ", "flipW", "addAssign", "subAssign", "mulAssign",
+                             "divAssign", "dFdx", "dFdy", "sign", "cbrt", "atan", "mod", "fwidth", "transformDirection",
+                             "level", "lengthSq"})
         node->Set(str(isolate_, name), function(context, name, true));
-    // TSL's swizzles: every one- to four-lane pattern over xyzw, and the same over rgba (three's
-    // SwizzleNode accepts any of them), each as its xyzw lanes.
-    const std::function<void(const std::string&)> swizzles = [&](const std::string& lanes) {
-        if (!lanes.empty()) {
-            std::string colour = lanes;
-            for (char& lane : colour) lane = "rgba"[std::string("xyzw").find(lane)];
-            for (const std::string& alias : {lanes, colour}) {
+    // three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, read as xyzw lanes.
+    const std::function<void(const char*, const std::string&, const std::string&)> swizzles =
+        [&](const char* set, const std::string& alias, const std::string& lanes) {
+            if (!alias.empty()) {
                 auto data = std::make_unique<Call>(Call{this, "swizzle:" + lanes, true});
                 node->SetAccessorProperty(str(isolate_, alias),
                     v8::FunctionTemplate::New(isolate_, dispatch, v8::External::New(isolate_, data.get())));
                 calls_.push_back(std::move(data));
             }
-        }
-        if (lanes.size() < 4) for (const char lane : std::string("xyzw")) swizzles(lanes + lane);
-    };
-    swizzles("");
+            if (alias.size() < 4)
+                for (int i = 0; i < 4; ++i) swizzles(set, alias + set[i], lanes + "xyzw"[i]);
+        };
+    for (const char* set : {"xyzw", "rgba", "stpq"}) swizzles(set, "", "");
     nodeTemplate_.Reset(isolate_, node);
     const auto module = v8::Object::New(isolate_);
     for (const char* name : {"float",      "int",   "uint",    "vec2",      "vec3",   "vec4",     "uniform",
                              "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",     "instancedArray",
                              "add",        "sub",   "mul",     "div",       "negate", "lessThan", "greaterThan",
                              "equal",      "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
-                             "exp",        "exp2",  "log2",    "normalize", "length", "min",      "max",
+                             "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",
+                             "mod", "fwidth", "saturation", "mat2", "hash",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "ao", "denoise", "smaa", "bloom", "oneMinus", "varying", "setUniform",
-                             "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector"})
+                             "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())
         module->Set(context, str(isolate_, name), wrap(std::move(node))).Check();
-    // three's ScreenNode coordinate (the fragment's pixel position) and its geometry attributes.
-    module->Set(context, str(isolate_, "screenCoordinate"), wrap(g::swizzle(g::builtin("position"), "xy"))).Check();
-    module->Set(context, str(isolate_, "normalGeometry"), wrap(g::attribute("normal", Type::vec(3)))).Check();
-    module->Set(context, str(isolate_, "tangentGeometry"), wrap(g::attribute("tangent", Type::vec(4)))).Check();
-    // positionViewDirection: normalize(-positionView), the standard programs' view-space varying.
-    module->Set(context, str(isolate_, "positionViewDirection"),
-                wrap(g::normalize(g::negate(g::varying("positionView", Type::vec(3)))))).Check();
     // The existing V8 hosts execute bundled scripts with globals; they have no ES module resolver.
     target->Set(context, str(isolate_, "tsl"), module).Check();
 }

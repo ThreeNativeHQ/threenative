@@ -196,3 +196,41 @@ export function defineObjectSurface(classes: ISurfaceClasses): void {
     if (!Object.hasOwn(material.prototype, flag)) (material.prototype as Prototype)[flag] = true;
   }
 }
+
+// three's scene classes and the `is<Class>` flag each one defines; every light is also `isLight`.
+const FLAGGED_CLASSES = [
+  "Object3D",
+  "Scene",
+  "Group",
+  "Mesh",
+  "SkinnedMesh",
+  "InstancedMesh",
+  "Bone",
+  "LOD",
+  "Sprite",
+  "Line",
+  "LineSegments",
+  "Points",
+  "Camera",
+  "PerspectiveCamera",
+  "OrthographicCamera",
+  "AmbientLight",
+  "DirectionalLight",
+  "HemisphereLight",
+  "PointLight",
+  "SpotLight",
+] as const;
+
+/**
+ * Puts three's type flags (`isMesh`, `isCamera`, `isLight`, ...) on a back end's scene classes. A
+ * subclass inherits its parent's through the prototype chain, as in three; a missing class is skipped.
+ */
+export function defineTypeFlags(classes: Readonly<Record<string, unknown>>): void {
+  for (const name of FLAGGED_CLASSES) {
+    const cls = classes[name] as Constructor | undefined;
+    if (typeof cls !== "function") continue;
+    const flags = name.endsWith("Light") ? [`is${name}`, "isLight"] : [`is${name}`];
+    for (const flag of flags)
+      Object.defineProperty(cls.prototype, flag, { configurable: true, value: true });
+  }
+}

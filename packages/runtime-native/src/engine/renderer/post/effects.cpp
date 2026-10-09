@@ -1,4 +1,5 @@
 #include "effects.h"
+#include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/foundation/math/Matrix.h"
@@ -142,7 +143,16 @@ PostEffects::~PostEffects() {
     }
     wgpuSamplerRelease(linear_);
 }
+void PostEffects::releaseGroups() {
+    for (auto& pass : passes_) {
+        if (pass.group)
+            wgpuBindGroupRelease(pass.group);
+        pass.group = nullptr;
+        pass.groupEntries.clear();
+    }
+}
 void PostEffects::clearTargets() {
+    releaseGroups();
     for (auto& [name, target] : targets_) {
         wgpuTextureViewRelease(target.view);
         wgpuTextureRelease(target.texture);
@@ -171,6 +181,20 @@ void PostEffects::resize(uint32_t width, uint32_t height) {
                                      WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding);
         target.view = wgpuTextureCreateView(target.texture, nullptr);
     }
+}
+bool PostEffects::syncScales() {
+    bool changed = false;
+    for (auto& pass : passes_)
+        if (pass.source.effect && pass.source.effect->resolutionScale != pass.source.resolutionScale) {
+            pass.source.resolutionScale = pass.source.effect->resolutionScale;
+            changed = true;
+        }
+    if (!changed || !width_ || !height_)
+        return false;
+    const uint32_t width = width_, height = height_;
+    width_ = height_ = 0;
+    resize(width, height);
+    return true;
 }
 void PostEffects::input(const std::string& name, WGPUTextureView view) {
     if (name == "scene" || name == "depth" || targets_.contains(name) || images_.contains(name))
@@ -238,6 +262,8 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
         const auto& stages = pass.source.package.variants.at(0).stages;
         const auto& fragment = stages[1];
         auto values = pass.source.uniforms;
+        for (const auto& node : pass.source.live)
+            values[node->name] = node->values;
         if (pass.source.effect)
             for (const auto& [name, value] : pass.source.effect->parameters)
                 if (name != "sampleVectors") values[name] = value;
@@ -276,11 +302,22 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
             }
             entries.push_back(entry);
         }
-        WGPUBindGroupDescriptor groupDesc{};
-        groupDesc.layout = pass.layout;
-        groupDesc.entryCount = entries.size();
-        groupDesc.entries = entries.data();
-        const auto group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
+        const auto same = [](const WGPUBindGroupEntry& a, const WGPUBindGroupEntry& b) {
+            return a.binding == b.binding && a.buffer == b.buffer && a.offset == b.offset && a.size == b.size &&
+                   a.sampler == b.sampler && a.textureView == b.textureView;
+        };
+        if (!pass.group || !std::equal(entries.begin(), entries.end(), pass.groupEntries.begin(),
+                                       pass.groupEntries.end(), same)) {
+            if (pass.group)
+                wgpuBindGroupRelease(pass.group);
+            WGPUBindGroupDescriptor groupDesc{};
+            groupDesc.layout = pass.layout;
+            groupDesc.entryCount = entries.size();
+            groupDesc.entries = entries.data();
+            pass.group = createBindGroup(device_, &groupDesc);
+            pass.groupEntries = entries;
+        }
+        const auto group = pass.group;
         WGPURenderPassColorAttachment color{};
         color.view = target.view;
         color.loadOp = WGPULoadOp_Clear;
@@ -299,7 +336,6 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
         wgpuRenderPassEncoderDraw(render, 3, 1, 0, 0);
         wgpuRenderPassEncoderEnd(render);
         wgpuRenderPassEncoderRelease(render);
-        wgpuBindGroupRelease(group);
         pass.rendered = true;
     }
 }

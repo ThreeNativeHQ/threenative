@@ -318,6 +318,11 @@ tn_status_t tn_object_create(tn_context_t* context, uint16_t type, tn_handle_t* 
     return ok(diagnostic);
 }
 
+void tn_object_engine_references(const tn_handle_t* objects, uint32_t count, uint32_t* out_counts) {
+    if (!objects || !out_counts) return;
+    for (uint32_t i = 0; i < count; ++i) out_counts[i] = tn::abi::engineReferences(objects[i]);
+}
+
 tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t* diagnostic) {
     tn_context* context = contextFor(object.context);
     if (!context) return report(diagnostic, TN_ERROR_INVALID_HANDLE, 0, "TN_HANDLE_CONTEXT: no live context owns this handle");

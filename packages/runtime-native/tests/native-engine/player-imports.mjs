@@ -26,7 +26,7 @@ const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
-  "ExtrudeGeometry", "SpriteMaterial", ...constants];
+  "ExtrudeGeometry", "SpriteMaterial", "Line", "LineSegments", "LineBasicMaterial", ...constants];
 const panel = (T) => {
   const shape = new T.Shape();
   shape.moveTo(-0.3, -0.2); shape.lineTo(0.25, -0.2); shape.quadraticCurveTo(0.3, -0.2, 0.3, -0.15);
@@ -45,6 +45,7 @@ import { ${names.join(", ")} } from "three";
 const THREE = { ${names.join(", ")} };
 import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, NodeUpdateType, WebGPURenderer } from "three/webgpu";
 import { screenCoordinate, positionGeometry, normalGeometry, tangentGeometry, positionViewDirection } from "three/tsl";
+import { atan, mod, fwidth, saturation, mat2, hash, time } from "three/tsl";
 import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
@@ -56,6 +57,8 @@ const camera = new THREE.PerspectiveCamera();
 check(camera instanceof THREE.Camera && camera instanceof THREE.Object3D, "camera inheritance");
 const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshStandardMaterial());
 check(mesh instanceof THREE.Object3D && mesh.isMesh && mesh.isObject3D, "mesh identity");
+const segments = new THREE.LineSegments();
+check(segments instanceof THREE.Line && segments instanceof THREE.Object3D && segments.isLineSegments && segments.isLine, "line inheritance");
 check(new THREE.SkinnedMesh() instanceof THREE.Mesh, "skinned inheritance");
 check(new THREE.CylinderGeometry() instanceof THREE.BufferGeometry, "geometry inheritance");
 const profile = [[0.055, 0], [0.098, 0], [0.103, 0.025], [0.091, 0.18]];
@@ -130,6 +133,25 @@ check(orm.roughnessMap === paramTexture && orm.metalnessMap === paramTexture && 
   orm.emissiveMap === paramTexture && orm.aoMapIntensity === 0.6, "packed ORM and emissive map parameters");
 const twin = painted.clone();
 check(twin instanceof THREE.MeshStandardMaterial && twin !== painted && twin.map === painted.map && twin.roughness === painted.roughness, "material clone");
+// Midway's WaterEffects: base.index.clone() and attributes.position.clone() into a new geometry.
+const cloneSource = new THREE.BufferAttribute(new Float32Array([1, 2, 3, 4]), 2).setUsage(THREE.DynamicDrawUsage);
+const cloneCopy = cloneSource.clone();
+check(cloneCopy instanceof THREE.BufferAttribute && cloneCopy !== cloneSource && cloneCopy.itemSize === 2 && cloneCopy.count === 2 &&
+  cloneCopy.getX(1) === 3 && cloneCopy.usage === THREE.DynamicDrawUsage, "attribute clone");
+cloneCopy.setX(0, 9);
+check(cloneSource.getX(0) === 1, "attribute clone owns its array");
+const plane = new THREE.PlaneGeometry(1, 1);
+check(plane.index.clone().count === 6 && plane.attributes.position.clone().count === 4, "index and position clone");
+// Midway's cloneModel: gltf.scene.clone(true) shares geometry and material; clone(false) is shallow.
+const world = new THREE.Scene(), part = new THREE.Object3D();
+part.position.set(1, 2, 3);
+part.add(new THREE.Mesh(plane, painted));
+world.add(part);
+const twinWorld = world.clone(true);
+check(twinWorld instanceof THREE.Scene && twinWorld !== world && twinWorld.children.length === 1 &&
+  twinWorld.children[0] !== part && twinWorld.children[0].position.y === 2 &&
+  twinWorld.children[0].children[0].geometry === plane && twinWorld.children[0].children[0].material === painted, "Object3D clone");
+check(part.clone(false).children.length === 0 && part.clone().children.length === 1, "clone recursion");
 twin.roughness = 0.95;
 check(painted.roughness !== 0.95, "a clone is independent");
 const sprite = new THREE.SpriteMaterial({ transparent: false });
@@ -159,6 +181,22 @@ let visited = 0; scene.traverse(object => { check(object instanceof THREE.Object
 check(visited === 2, "native traversal");
 const binding = new THREE.PropertyBinding(scene, '.position'); binding.bind();
 check(binding.targetObject === scene && THREE.PropertyBinding.findNode(scene, undefined) === scene, "native PropertyBinding");
+{
+  // three's PropertyBinding surface over the engine (three-native/src/property-binding.ts): the statics,
+  // targetObject as a property, and a failed bind reported through setConsoleFunction's function.
+  const rig = new THREE.Object3D(); const hip = new THREE.Object3D(); hip.name = "hip"; rig.add(hip);
+  check(THREE.PropertyBinding.parseTrackName("hip.position[x]").propertyIndex === "x", "track parsing");
+  check(THREE.PropertyBinding.findNode(rig, "hip") === hip, "node search");
+  const previous = THREE.getConsoleFunction(); const messages = [];
+  THREE.setConsoleFunction((type, message) => messages.push([type, message]));
+  const track = new THREE.PropertyBinding(rig, "hip.position"); track.bind();
+  check(track.targetObject === hip && messages.length === 0, "track target");
+  track.unbind(); hip.name = "renamed"; track.bind();
+  check(track.targetObject === null && messages.length === 1 && messages[0][0] === "error" &&
+    messages[0][1].includes("No target node found"), "rebind diagnostic through the console function");
+  THREE.setConsoleFunction(previous);
+  check(THREE.getConsoleFunction() === previous, "console hook restoration");
+}
 const copied = clone(mesh);
 check(copied instanceof THREE.Mesh && copied.geometry === mesh.geometry && copied.material === mesh.material, "clone native resources");
 const ray = new THREE.Raycaster(new THREE.Vector3(0.2, -0.3, 5), new THREE.Vector3(0, 0, -1));
@@ -197,6 +235,7 @@ basic.colorNode = mirror.sample(screenUV.flipX()).rgb.add(mirror.rgb);
 check(cameraViewMatrix !== undefined, "camera view uniform");
 check(NodeUpdateType.FRAME === "frame" && NodeUpdateType.RENDER === "render", "NodeUpdateType");
 basic.colorNode = vec3(screenCoordinate.mul(0.001), positionViewDirection.z);
+check([atan(1), mod(1, 2), fwidth(1), saturation(vec3(1, 0, 0)), hash(1), time].every((node) => node && typeof node.mul === "function") && typeof mat2 === "function", "TSL atan, mod, fwidth, saturation, mat2, hash and time");
 basic.positionNode = positionGeometry.add(normalGeometry.mul(tangentGeometry.w.mul(0)));
 check(basic.colorNode !== null && basic.positionNode !== null, "screen coordinate, geometry attributes, view direction");
 const hex = new THREE.Color(0xff0000);
@@ -232,6 +271,21 @@ const vertex = new THREE.Vector3();
 check(new THREE.Mesh(rounded, lit).getVertexPosition(0, vertex) === vertex && vertex.equals(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0)), "getVertexPosition");
 const graph = Fn(() => float(0.5).pow(2).min(1).max(0).smoothstep(0, 1).mix(1, 0.5))();
 basic.opacityNode = clamp(graph, 0, 1);
+// Midway's ocean and whitewater: += on a variable, screen derivatives, sign and cbrt.
+const summed = Fn(() => {
+  const height = float(0).toVar();
+  height.addAssign(float(0.25));
+  height.subAssign(0.05);
+  height.mulAssign(2);
+  height.divAssign(float(4));
+  return height.add(uv().x.dFdx().abs()).add(uv().y.dFdy().sign()).add(float(-8).cbrt());
+})();
+check(summed && typeof summed.addAssign === "function" && typeof summed.cbrt === "function", "assign forms, dFdx, sign, cbrt");
+// Every swizzle three answers, as Midway's ocean reads positionWorld.xz.
+const lanes = vec3(1, 2, 3);
+check(lanes.xz && lanes.zxy && lanes.st && lanes.bgr && lanes.xxxx && lanes.xyzwx === undefined, "swizzles");
+basic.alphaTestNode = summed.clamp();
+basic.alphaTestNode = clamp(summed, 0.1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
   check(THREE[name] === expected, name + " differs from pinned Three.js");
 // three's audio classes are engine objects over the player's WebAudio, and the native tick pushes
@@ -322,6 +376,7 @@ await mkdir(resolve(work, "audio"));
 const audioPackage = resolve(work, "audio/assets.tnpk");
 await writeFile(audioPackage, writeNativePackage([
   { name: "beep.ogg", kind: 1, data: Buffer.from("OggS!"), uploadSize: 0 },
+  { name: "/assets/audio/engine.ogg", kind: 1, data: Buffer.from("OggS!"), uploadSize: 0 },
   { name: "sky.jpg", kind: 2, data: Buffer.alloc(16), uploadSize: 4 },
 ]));
 await writeFile(entry, `
@@ -336,15 +391,43 @@ try { globalThis.tn.loadAsset("audio", "sky.jpg"); } catch (error) { mismatch = 
 check(mismatch, "a texture entry is not audio");
 // A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
 // both pending, and any refusal before it rejects inside this check's microtasks.
+// "audio/engine.ogg" is not a package name: core's source fallback finds it under assets/, as the
+// web loader does for a game without a manifest (Midway's cues).
 for (const [name, decoding] of [["assets.audio", createAssetLoader().audio("beep.ogg")],
+  ["assets.audio from source", createAssetLoader().audio("audio/engine.ogg")],
   ["AudioLoader", new AudioLoader().loadAsync("beep.ogg")]])
   decoding.catch((error) => { globalThis.tn.__startupError = name + " refused: " + error.message; });
+createAssetLoader({ sourcePath: "" }).audio("audio/engine.ogg").then(
+  () => { globalThis.tn.__startupError = "an empty sourcePath still fell back"; },
+  (error) => { if (!/TN_NATIVE_ASSET_MISSING/.test(error.message)) globalThis.tn.__startupError = error.message; });
 globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
 `);
 await bundleNativeEngine({ entry, outfile, boot: false });
 const audioRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8",
   env: { ...process.env, SDL_AUDIO_DRIVER: "dummy", TN_NATIVE_ASSET_PACKAGE: audioPackage } });
 assert.equal(audioRun.status, 0, `${audioRun.stdout}\n${audioRun.stderr}`);
+// An async boot publishes its scene ticks later, as Midway's does after its audio decodes settle;
+// the player keeps the event loop turning until the scene arrives instead of refusing it.
+await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { Scene, PerspectiveCamera } from "three";
+setTimeout(() => { globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); }, 500);
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const lateRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+assert.equal(lateRun.status, 0, `${lateRun.stdout}\n${lateRun.stderr}`);
+await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { Scene, PerspectiveCamera } from "three";
+// A pass node publishes the scene while start() is still running; __booting holds the check.
+globalThis.tn.__booting = true;
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera();
+setTimeout(() => { globalThis.tn.__startupError = "late failure"; }, 500);
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const lateFailure = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
+assert.equal(lateFailure.status, 1);
+assert.match(lateFailure.stderr, /core startup failed: late failure/);
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");
   process.exit(0);
@@ -418,7 +501,10 @@ contact.radius.value = 0.35; contact.resolutionScale = 0.5;
 check(contact.radius.value === Math.fround(0.35) && contact.resolutionScale === 0.5 && contact.getTextureNode() === contact, "GTAO uniforms");
 const occlusion = denoise(contact.getTextureNode(), sceneDepth, sceneNormal, camera);
 let composed = scenePass.getTextureNode().mul(occlusion.r);
-composed = composed.add(bloom(convertToTexture(composed), 0.22, 0.6, 1));
+const glow = bloom(convertToTexture(composed), 0.22, 0.6, 1);
+glow.strength.value = 0.5;
+check(glow.strength.value === 0.5 && glow.radius.value === Math.fround(0.6) && glow.threshold.value === 1, "bloom uniforms");
+composed = composed.add(glow);
 const fall = screenUV.sub(0.5).length().oneMinus();
 pipeline.outputNode = smaa(composed.mul(fall));
 pipeline.render(); pipeline.render();

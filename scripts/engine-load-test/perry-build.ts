@@ -154,7 +154,9 @@ export async function linkPerryGame(out: string) {
     { encoding: "utf8", timeout: 120_000 },
   );
   if (disassemble.status !== 0)
-    throw new Error(`TN_WEB_BENCH_PERRY_DISASSEMBLE: ${disassemble.stderr}`);
+    throw new Error(
+      `TN_WEB_BENCH_PERRY_DISASSEMBLE: ${disassemble.error?.message ?? disassemble.stderr} (set EMSDK, or put wasm-dis on PATH)`,
+    );
   let wat = await readFile(watFile, "utf8");
   // The pinned compiler registers its literal names in order. Make that verified ABI table
   // constant before whole-module inlining, so per-element dispatch folds to numeric operations.

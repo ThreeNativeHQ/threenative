@@ -43,7 +43,11 @@ describe("bindUpstreamExports", () => {
     // import name to bind; every class it does export binds to the engine's.
     const exported = Object.keys(classes).filter((name) => names.includes(name));
     expect(exported.length).toBeGreaterThan(0);
-    for (const name of exported) expect(bound[name], name).toBe(classes[name]);
+    // three's MathUtils and SkeletonUtils are namespace objects: the one instance of the engine class.
+    for (const name of exported)
+      if (name === "MathUtils" || name === "SkeletonUtils")
+        expect(bound[name], name).toBeInstanceOf(classes[name] as new () => object);
+      else expect(bound[name], name).toBe(classes[name]);
     expect(bound.ACESFilmicToneMapping).toBe(4);
     expect(bound.SRGBColorSpace).toBe("srgb");
   });

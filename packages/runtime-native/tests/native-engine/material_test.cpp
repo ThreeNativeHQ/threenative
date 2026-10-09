@@ -2,11 +2,13 @@
 #include "engine/shader/standard.h"
 #include "engine/shader/wgsl.h"
 #include "engine/shader/package.h"
+#include "engine/shader/graph/post_effects.h"
 
 #include <bit>
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
+#include <set>
 #include <string>
 
 using namespace tn::engine::shader;
@@ -271,23 +273,53 @@ void builds() {
 // The program key of a material's node slots is what caches its programs: the empty-slot shortcut
 // must give exactly the text the general serializer gives, for empty and for filled slots.
 void nodeKey() {
-    const auto general = [](const MaterialNodes& nodes) {
-        std::string out;
-        for (const auto& node : nodes.graphs()) { const auto k = graph::key(node); out += std::to_string(k.size()) + ":" + k; }
-        return out;
-    };
+    // The program key names each graph by its interned structure: equal structures built apart share
+    // it, a different structure or an emptied slot changes it, and its length does not grow with the
+    // graph (the renderer builds it for every draw of every frame).
     MaterialNodes empty;
-    CHECK(graph::key(nullptr) == "null;");
-    CHECK(empty.key() == general(empty) && !empty.key().empty());
+    CHECK(graph::key(nullptr) == "null;" && graph::keyId(nullptr) == 0);
+    CHECK(!empty.key().empty() && empty.key() == MaterialNodes{}.key());
+    const auto build = [](int terms) {
+        graph::Node n = graph::float_(1);
+        for (int i = 0; i < terms; ++i) n = graph::add(n, graph::float_(double(i)));
+        return n;
+    };
     MaterialNodes filled;
-    filled.roughnessNode = std::make_shared<graph::NodeData>();
-    filled.colorNode = std::make_shared<graph::NodeData>();
-    CHECK(filled.key() == general(filled) && filled.key() != empty.key());
+    filled.roughnessNode = build(3);
+    filled.colorNode = build(2);
+    MaterialNodes twin;
+    twin.roughnessNode = build(3);
+    twin.colorNode = build(2);
+    CHECK(filled.key() == twin.key() && filled.key() != empty.key());
     MaterialNodes other = filled;
     other.colorNode.reset();
-    CHECK(other.key() == general(other) && other.key() != filled.key());
+    CHECK(other.key() != filled.key());
+    MaterialNodes changed = filled;
+    changed.colorNode = build(4);
+    CHECK(changed.key() != filled.key());
+    MaterialNodes large = filled;
+    large.colorNode = build(2000);
+    CHECK(large.key().size() < filled.key().size() + 8 && graph::key(large.colorNode).size() > 10000);
+    // A copied node, then edited, never answers its source's interned key.
+    auto copy = std::make_shared<graph::NodeData>(*filled.colorNode);
+    copy->args.push_back(graph::float_(9));
+    CHECK(graph::keyId(copy) != graph::keyId(filled.colorNode));
+}
+
+// A render target is one pass, however many times the graph samples it: the bloom chain is its
+// high-pass, two blur directions for each of five mips and the composite, 12 passes. Each blur tap
+// samples its source through a copy of the target node; counting copies once rendered the 22-tap
+// mip's source 43 times a direction, 283 passes a frame for the template's chain.
+void bloomPasses() {
+    const auto colour = graph::texture("scene", graph::uv());
+    const auto passes = graph::postPasses(graph::add(colour, graph::bloom(colour, 0.7, 0.5, 0.2)));
+    std::set<std::string> outputs;
+    for (const auto& pass : passes) outputs.insert(pass.output);
+    std::fprintf(stderr, "bloom: %zu passes, %zu distinct outputs\n", passes.size(), outputs.size());
+    CHECK(passes.size() == 12);
+    CHECK(outputs.size() == passes.size());
 }
 
 }  // namespace
 
-TN_TEST_MAIN({"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey})
+TN_TEST_MAIN({"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses})

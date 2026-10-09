@@ -6,7 +6,7 @@ import { numberBits, pinnedThreeVersion } from "../../../../three-native/src/fix
 
 interface IObjectSpec {
   name: string;
-  kind: "group" | "mesh" | "instanced";
+  kind: "group" | "mesh" | "instanced" | "line" | "segments";
   position?: number[];
   rotation?: number[];
   scale?: number[];
@@ -60,7 +60,10 @@ function build(spec: IObjectSpec): three.Object3D {
   else {
     const g = geometry(spec);
     const m = new three.MeshBasicMaterial({ side: spec.side ?? three.FrontSide });
-    if (spec.kind === "instanced") {
+    if (spec.kind === "line" || spec.kind === "segments") {
+      const LineClass = spec.kind === "line" ? three.Line : three.LineSegments;
+      o = new LineClass(g, new three.LineBasicMaterial());
+    } else if (spec.kind === "instanced") {
       const mesh = new three.InstancedMesh(g, m, 3);
       for (let i = 0; i < 3; i++) {
         const matrix = new three.Matrix4().makeRotationY(i * 0.2);
@@ -92,7 +95,8 @@ function hit(h: three.Intersection) {
     distance: numberBits(h.distance),
     point: vec(h.point),
     object: h.object.name,
-    faceIndex: h.faceIndex,
+    faceIndex: h.faceIndex ?? null,
+    index: h.index ?? null,
     face: h.face
       ? {
           a: h.face.a,
@@ -106,7 +110,7 @@ function hit(h: three.Intersection) {
     uv1: h.uv1 ? vec(h.uv1) : null,
     normal: h.normal ? vec(h.normal) : null,
     instanceId: h.instanceId ?? null,
-    barycoord: "barycoord" in h ? vec(h.barycoord as three.Vector3) : null,
+    barycoord: h.barycoord ? vec(h.barycoord as three.Vector3) : null,
   };
 }
 const specs: IObjectSpec[] = [
@@ -144,6 +148,10 @@ const specs: IObjectSpec[] = [
   { name: "sphere-out", kind: "mesh", position: [30, 0, 0], sphere: 0.01 },
 ];
 specs.push({ name: "clipped-box", kind: "mesh", side: 2, position: [35, 0, 0], clippedBox: true });
+// Lines hit within raycaster.params.Line.threshold (1) of a segment: a strip over the indexed quad,
+// and non-indexed segments, scaled so the threshold shrinks to local space.
+specs.push({ name: "line", kind: "line", position: [40, 0, 0], scale: [1.5, 1.5, 1.5] });
+specs.push({ name: "segments", kind: "segments", position: [45, 0, 0], indexed: false });
 const sceneSpec: IObjectSpec = {
   name: "root",
   kind: "group",

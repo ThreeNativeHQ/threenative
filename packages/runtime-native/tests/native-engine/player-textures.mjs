@@ -105,9 +105,11 @@ const canvas = { width: 2, height: 1, getContext: (kind) => kind === "2d" ? {
   getImageData: () => { reads++; return { data: new Uint8ClampedArray(8).fill(200) }; } } : null };
 const drawn = new THREE.CanvasTexture(canvas);
 check(drawn.isCanvasTexture && drawn instanceof THREE.Texture && drawn.flipY === true && drawn.image === canvas, "canvas texture");
+check(reads === 1, "canvas read once when built");
 const drawnVersion = drawn.version;
 drawn.needsUpdate = true;
-check(reads === 3 && drawn.version === drawnVersion + 1, "canvas re-read on needsUpdate");
+check(reads === 2 && drawn.version === drawnVersion + 1, "canvas re-read on needsUpdate");
+check(drawn.generateMipmaps === true && drawn.minFilter === THREE.LinearMipmapLinearFilter, "canvas texture mip chain");
 refuses(() => new THREE.CanvasTexture({ width: 1, height: 1 }), /TN_NATIVE_CANVAS_TEXTURE_SOURCE/, "canvas without 2D context");
 class Label extends THREE.CanvasTexture {}
 const label = new Label(canvas);
@@ -130,6 +132,21 @@ globalThis.tn.__startupError = "TEXTURES_CHECK: the async checks did not finish"
   // A relative URL reaches a web-root file, as the web serves assets/x from /assets/x.
   check(new THREE.Texture(await loader.loadAsync("assets/cockpit/dial.png")) instanceof THREE.Texture, "relative web-root URL");
   await rejects(() => loader.loadAsync("/assets/cockpit/absent.png"), /TN_NATIVE_ASSET_MISSING/, "missing bitmap");
+
+  // TextureLoader returns the package texture at once, upright as three's <img> path leaves it.
+  const textures = new THREE.TextureLoader().setPath("/assets/");
+  const loaded = await textures.loadAsync("cockpit/dial.png");
+  check(loaded instanceof THREE.Texture && loaded.flipY === true, "texture loader");
+  let called;
+  const immediate = textures.load("cockpit/dial.png", (texture) => { called = texture; });
+  check(immediate instanceof THREE.Texture && called === undefined, "texture loader returns before onLoad");
+  await Promise.resolve();
+  check(called === immediate, "texture loader onLoad");
+  await rejects(() => textures.loadAsync("cockpit/absent.png"), /TN_NATIVE_ASSET_MISSING/, "missing texture");
+  let failed;
+  textures.load("cockpit/absent.png", undefined, undefined, (error) => { failed = error; });
+  await Promise.resolve();
+  check(/TN_NATIVE_ASSET_MISSING/.test(String(failed?.message)), "texture loader onError");
 
   // createImageBitmap decodes encoded bytes through the engine decoder, as three's loader calls it.
   check(typeof createImageBitmap === "function", "createImageBitmap installed");

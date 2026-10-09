@@ -1,71 +1,62 @@
 /**
- * three's PropertyBinding statics and console hook on the Wasm engine (PRD-540). The engine binds
- * the class (its bind() answers why a path did not bind, empty when it did); this hands that reason
- * to three's console function, as three's bind() warns through it, and adds parseTrackName (the
- * engine's parser, read back from a throwaway binding) and findNode. core's clip audit binds every
- * track this way before a model's clips play.
+ * three's PropertyBinding and console function over the engine's PropertyBinding, for both back ends
+ * (the V8 player and the Wasm engine). The engine binds; this keeps three's JS surface: the static
+ * `parseTrackName` and `findNode`, `targetObject` as a property, and a failed bind reported through
+ * `setConsoleFunction`'s function (three's utils `error()`), or `console.error` without one.
  */
 
 type ConsoleFunction = (type: string, message: string, ...params: unknown[]) => void;
 
-interface INativeBinding {
+interface IEngineBinding {
   bind(): string;
-  readonly parsedPath: string;
+  targetObject(): unknown;
+  parseTrackName(path: string): Record<string, string | undefined>;
+  findNode(root: unknown, nodeName?: string): unknown;
 }
 
-interface INamedObject {
-  readonly name: string;
-  getObjectByName(name: string): object | undefined;
-}
+type EngineClass = (new (...args: unknown[]) => object) & Record<string, unknown>;
 
-interface IParsedPath {
-  nodeName?: string;
-  objectName?: string;
-  objectIndex?: string;
-  propertyName: string;
-  propertyIndex?: string;
-}
+export function definePropertyBinding(Native: EngineClass) {
+  let consoleFunction: ConsoleFunction | null = null;
+  const prototype = Native.prototype as IEngineBinding;
+  const bind = prototype.bind;
+  const target = prototype.targetObject;
+  // One engine object with no root answers the statics.
+  let helper: IEngineBinding | undefined;
+  const statics = (): IEngineBinding => {
+    helper ??= new Native() as unknown as IEngineBinding;
+    return helper;
+  };
 
-export function definePropertyBinding(
-  Native: new (root: object, path: string) => INativeBinding,
-  Object3D: new () => object,
-): {
-  getConsoleFunction(): ConsoleFunction | null;
-  setConsoleFunction(hook: ConsoleFunction | null | undefined): void;
-} {
-  let hook: ConsoleFunction | null = null;
-  const nativeBind = Native.prototype.bind;
-  Object.defineProperty(Native.prototype, "bind", {
-    configurable: true,
-    writable: true,
-    value(this: INativeBinding): void {
-      const reason = nativeBind.call(this);
-      if (reason === "") return;
-      if (hook !== null) hook("error", `THREE.PropertyBinding: ${reason}`);
-      else console.error(`THREE.PropertyBinding: ${reason}`);
+  Object.defineProperties(prototype, {
+    bind: {
+      configurable: true,
+      writable: true,
+      value(this: IEngineBinding): void {
+        const reason = bind.call(this);
+        if (reason === "") return;
+        if (consoleFunction !== null) consoleFunction("error", reason);
+        else console.error(reason);
+      },
+    },
+    targetObject: {
+      configurable: true,
+      get(this: IEngineBinding): unknown {
+        return target.call(this);
+      },
     },
   });
   Object.assign(Native, {
-    parseTrackName(trackName: string): IParsedPath {
-      const parsed = JSON.parse(new Native(new Object3D(), trackName).parsedPath) as
-        | { error: string }
-        | Record<string, string | null>;
-      if ("error" in parsed && typeof parsed.error === "string") throw new Error(parsed.error);
-      const record: Record<string, string | undefined> = {};
-      for (const [key, value] of Object.entries(parsed)) record[key] = value ?? undefined;
-      return record as unknown as IParsedPath;
-    },
-    findNode(root: INamedObject, nodeName: string | number | undefined): object | null {
-      if (nodeName === undefined || nodeName === "" || nodeName === "." || nodeName === -1)
-        return root;
-      if (nodeName === root.name) return root;
-      return root.getObjectByName(String(nodeName)) ?? null;
-    },
+    parseTrackName: (path: string) => statics().parseTrackName(path),
+    findNode: (root: unknown, nodeName?: string) => statics().findNode(root, nodeName),
   });
+
+  const PropertyBinding = Native;
   return {
-    getConsoleFunction: () => hook,
-    setConsoleFunction: (next) => {
-      hook = next ?? null;
+    PropertyBinding,
+    getConsoleFunction: (): ConsoleFunction | null => consoleFunction,
+    setConsoleFunction: (fn: ConsoleFunction | null | undefined): void => {
+      consoleFunction = fn ?? null;
     },
   };
 }

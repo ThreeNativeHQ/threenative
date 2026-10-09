@@ -35,7 +35,7 @@ enum class Kind : uint8_t {
 };
 
 enum class UnOp : uint8_t { Negate };
-enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal };
+enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal, ShiftRight, BitXor };
 
 struct NodeData {
     Kind kind = Kind::Constant;
@@ -55,6 +55,17 @@ struct NodeData {
     std::vector<Node> otherwise;
     double scale = 1;
     uint32_t width = 0, height = 0; // RTT: zero means drawing-buffer size
+    /**
+     * What the renderer asks of a graph every draw, worked out once: its interned structural key and
+     * its uniform nodes. A copied node (then edited) starts with none, so it never reads its source's.
+     */
+    struct Memo {
+        mutable uint64_t keyId = 0;
+        mutable std::shared_ptr<const std::vector<std::shared_ptr<const NodeData>>> uniforms;
+        Memo() = default;
+        Memo(const Memo&) {}
+        Memo& operator=(const Memo&) { return *this; }
+    } memo;
 };
 
 Node float_(double value);
@@ -84,11 +95,18 @@ Node instanceIndex();
 Node vec2(std::initializer_list<Node> parts);
 Node vec3(std::initializer_list<Node> parts);
 Node vec4(std::initializer_list<Node> parts);
+/** A scalar widened to `lanes` as a generator's operand splat: one constructor part, constant or not. */
+Node splat(Node scalar, uint8_t lanes);
+/** TSL's mat2 over two column vectors, or four scalars in column-major order. */
+Node mat2(std::initializer_list<Node> parts);
 
 Node add(Node a, Node b);
 Node sub(Node a, Node b);
 Node mul(Node a, Node b);
 Node div(Node a, Node b);
+/** TSL's `>>` and `^` on one integer type (r185's OperatorNode). */
+Node shiftRight(Node a, Node b);
+Node bitXor(Node a, Node b);
 Node negate(Node a);
 Node lessThan(Node a, Node b);
 Node greaterThan(Node a, Node b);
@@ -98,6 +116,11 @@ Node swizzle(Node value, std::string_view lanes);
 Node texture(std::string_view map, Node uvs);
 /** TSL's texture(textureObject, uv): that engine Texture itself, bound under `name`, not a material slot. */
 Node textureObject(std::shared_ptr<const void> texture, std::string_view name, Node uvs);
+/**
+ * TSL's `texture(object, uv)` over an engine Texture the material does not own as a map: sampled
+ * under `name`, the binding the renderer fills from `texture` per draw (RenderDatabase::graphSources).
+ */
+Node objectTexture(std::shared_ptr<const void> texture, std::string name, Node uvs);
 /**
  * TSL's `pmremTexture(texture, direction, level)`: the texture's PMREM (prefiltered radiance, cubeUV
  * layout) sampled along `direction` at roughness `level`. `texture` is the engine Texture the
@@ -124,6 +147,11 @@ TN_GRAPH_UNARY(exp2)
 TN_GRAPH_UNARY(log2)
 TN_GRAPH_UNARY(normalize)
 TN_GRAPH_UNARY(length)
+TN_GRAPH_UNARY(dFdx)
+TN_GRAPH_UNARY(dFdy)
+TN_GRAPH_UNARY(sign)
+TN_GRAPH_UNARY(atan)
+TN_GRAPH_UNARY(fwidth)
 TN_GRAPH_BINARY(min)
 TN_GRAPH_BINARY(max)
 TN_GRAPH_BINARY(pow)
@@ -131,6 +159,8 @@ TN_GRAPH_BINARY(step)
 TN_GRAPH_BINARY(dot)
 TN_GRAPH_BINARY(distance)
 TN_GRAPH_BINARY(cross)
+TN_GRAPH_BINARY(atan2)
+TN_GRAPH_BINARY(mod)
 TN_GRAPH_TERNARY(mix)
 TN_GRAPH_TERNARY(clamp)
 TN_GRAPH_TERNARY(smoothstep)
@@ -181,7 +211,13 @@ ExprId lower(const Graph& graph, Program& program,
              const std::unordered_map<std::string, ExprId>& inputs = {});
 /** Canonical DAG serialization, independent of addresses; includes sharing and every operation. */
 std::string key(const Graph& graph);
+/** How many times key() has serialized a graph in this process; a steady frame serializes none. */
+uint64_t keyBuilds();
+/** key(graph) interned: equal structures answer the same id, computed once per node (0 for null). */
+uint64_t keyId(const Graph& graph);
 /** Named uniform data reachable from the graph. Conflicting values fail rather than pick one. */
 std::map<std::string, std::vector<float>> uniforms(const Graph& graph);
+/** The graph's authored uniform nodes (each with a value), so a pass reads `uniform.value` every frame. */
+std::vector<Node> uniformNodes(const Graph& graph);
 
 }  // namespace tn::engine::shader::graph

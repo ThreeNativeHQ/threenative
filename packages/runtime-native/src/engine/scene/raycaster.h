@@ -22,6 +22,8 @@ struct Intersection {
     Vector3 barycoord;
     Object3D* object = nullptr;
     std::optional<uint32_t> instanceId;
+    /** A Line hit: the segment's first vertex index; its face, faceIndex and barycoord are null. */
+    std::optional<uint64_t> index;
 };
 class Raycaster {
 public:
@@ -29,6 +31,7 @@ public:
               double far = std::numeric_limits<double>::infinity()) : ray(origin, direction), near(near), far(far) {}
     Ray ray;
     double near = 0, far = std::numeric_limits<double>::infinity();
+    double lineThreshold = 1;  // three's params.Line.threshold
     Camera* camera = nullptr;
     std::shared_ptr<Object3D> cameraOwner; // Bound cameras stay alive while the caster uses them.
     Layers layers;

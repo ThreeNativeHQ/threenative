@@ -1,4 +1,6 @@
 #pragma once
+
+#include <vector>
 #include "engine/shader/graph/post_effects.h"
 #include "engine/renderer/pipeline_cache.h"
 #include <webgpu/webgpu.h>
@@ -14,6 +16,9 @@ class PostEffects {
     PostEffects(const PostEffects&) = delete;
     PostEffects& operator=(const PostEffects&) = delete;
     void resize(uint32_t width, uint32_t height);
+    /** Takes each live effect's current `resolutionScale` (set after install, as three reads it every
+     *  frame) and rebuilds the targets when one changed; true when the targets are new. */
+    bool syncScales();
     void input(const std::string& name, WGPUTextureView view);
     /** True when any pass reads the named resource ("normal" asks the renderer for a normal target). */
     bool reads(const std::string& name) const;
@@ -39,7 +44,12 @@ class PostEffects {
         WGPUBindGroupLayout layout = nullptr;
         WGPUPipelineLayout pipelineLayout = nullptr;
         bool rendered = false;
+        // The bind group of the last frame and what it binds: reused while every entry is the same,
+        // dropped with the targets (a released view's handle can come back for a new one).
+        WGPUBindGroup group = nullptr;
+        std::vector<WGPUBindGroupEntry> groupEntries;
     };
+    void releaseGroups();
     void clearTargets();
     WGPUDevice device_;
     WGPUQueue queue_;

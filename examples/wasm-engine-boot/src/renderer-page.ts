@@ -63,6 +63,16 @@ const probe = {
   /** AnimationMixer "finished" events on the Wasm engine, as core's AnimationPlayer listens. */
   finished: 0,
   ticks: 0,
+  /**
+   * Setup work added since frame 10 (the scenario's warm-up): pipeline compiles, pipeline text-key
+   * lookups, bind groups, graph-key serializations and programs. A steady frame adds none; -1 until
+   * frame 10 has drawn.
+   */
+  steadyCompiles: -1,
+  steadyTextKeys: -1,
+  steadyBindGroups: -1,
+  steadyGraphKeys: -1,
+  steadyPrograms: -1,
 };
 const started = performance.now();
 
@@ -255,6 +265,12 @@ try {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFShadowMap;
 
+  // The engine's setup-work counters (three-native's renderer.info.engine; not in three's Info type).
+  type EngineCounters = Record<
+    "compiles" | "textLookups" | "bindGroups" | "graphKeys" | "programs",
+    number
+  >;
+  let baseline: EngineCounters | undefined;
   const frame = () => {
     probe.ticks += 1;
     box.rotation.y += 0.02;
@@ -266,6 +282,15 @@ try {
       probe.frames += 1;
       probe.draws = renderer.info.render.drawCalls;
       probe.triangles = renderer.info.render.triangles;
+      const engine = (renderer.info as unknown as { engine: EngineCounters }).engine;
+      if (probe.frames === 10) baseline = { ...engine };
+      if (baseline !== undefined) {
+        probe.steadyCompiles = engine.compiles - baseline.compiles;
+        probe.steadyTextKeys = engine.textLookups - baseline.textLookups;
+        probe.steadyBindGroups = engine.bindGroups - baseline.bindGroups;
+        probe.steadyGraphKeys = engine.graphKeys - baseline.graphKeys;
+        probe.steadyPrograms = engine.programs - baseline.programs;
+      }
       requestAnimationFrame(frame);
     } catch (error) {
       probe.error = error instanceof Error ? error.message : String(error);

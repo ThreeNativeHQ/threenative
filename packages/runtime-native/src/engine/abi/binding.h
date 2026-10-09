@@ -68,9 +68,15 @@ struct Object {
 
 /** Only registered classes backed by engine::Material may unwrap as that base type. */
 inline bool isMaterialClass(std::string_view cls) {
-    return cls == "SpriteMaterial" || cls == "SpriteNodeMaterial" || cls == "Material" || cls == "MeshBasicMaterial" || cls == "MeshLambertMaterial" ||
+    return cls == "SpriteMaterial" || cls == "SpriteNodeMaterial" || cls == "LineBasicMaterial" || cls == "Material" ||
+           cls == "MeshBasicMaterial" || cls == "MeshLambertMaterial" ||
            cls == "MeshPhongMaterial" || cls == "MeshStandardMaterial" || cls == "MeshPhysicalMaterial" ||
            cls == "MeshBasicNodeMaterial" || cls == "MeshStandardNodeMaterial";
+}
+
+/** The engine texture classes a texture argument (a map, a background, a TSL texture) may be. */
+inline bool isTextureClass(std::string_view cls) {
+    return cls == "Texture" || cls == "DataTexture" || cls == "CanvasTexture";
 }
 
 inline bool acceptsClass(std::string_view actual, std::string_view expected) {
@@ -135,6 +141,11 @@ struct ClassBinding {
     // object for the owner's whole life, so a caller may keep the Ref it got the first time. A member
     // that can be reassigned (`mesh.material`, `geometry.attributes.position`) is never listed.
     std::set<std::string> fixedMembers;
+    // Doubles the object holds in place (`x`, `r`, `radius`, `elements`): byte offset from `self` and
+    // count. A back end that shares the engine's memory (Wasm) reads them there instead of calling
+    // the getter of the same name; writes still go through the setter, which the engine reacts to.
+    // A class with fields also answers the engine-internal getter `__address` (self, as a number).
+    std::map<std::string, std::pair<uint32_t, uint32_t>> fields;
     // Callbacks a language sets on the object (`onBeforeRender`): set through tn_set_callback, never
     // a Value, because the engine calls back into the language that set them.
     std::map<std::string, std::function<void(void* self, tn::engine::RenderCallback)>> callbacks;
@@ -190,6 +201,38 @@ public:
         Object* object = find(arg);
         if (!object || !acceptsClass(object->cls, cls)) throw Unsupported{std::string("argument is not a ") + cls};
         return *static_cast<T*>(object->ptr.get());
+    }
+
+    /**
+     * A read-only argument (`v.copy(source)`, `v.add(other)`): an engine `cls`, or, for a vector, any
+     * plain object with its fields, as three's methods read `source.x`, `source.y`... A missing field
+     * reads NaN: three stores the `undefined` and its arithmetic then reads NaN. A plain object is
+     * read into `scratch`.
+     * Never for an output argument (`getWorldPosition(target)`), which three writes into.
+     */
+    template <typename T>
+    const T& in(const Value& arg, const char* cls, T& scratch) {
+        constexpr bool vector = std::is_same_v<T, engine::Vector2> || std::is_same_v<T, engine::Vector3> ||
+                                std::is_same_v<T, engine::Vector4>;
+        if constexpr (vector) {
+            if (arg.kind == Value::Kind::Record) {
+                const auto field = [&](const char* name) {
+                    for (const auto& [key, value] : arg.fields) {
+                        if (key != name) continue;
+                        if (value.kind != Value::Kind::Number)
+                            throw Unsupported{std::string("argument is not a ") + cls + ": " + name + " is not a number"};
+                        return value.number;
+                    }
+                    return std::numeric_limits<double>::quiet_NaN();
+                };
+                scratch.x = field("x");
+                scratch.y = field("y");
+                if constexpr (!std::is_same_v<T, engine::Vector2>) scratch.z = field("z");
+                if constexpr (std::is_same_v<T, engine::Vector4>) scratch.w = field("w");
+                return scratch;
+            }
+        }
+        return ref<T>(arg, cls);
     }
 };
 

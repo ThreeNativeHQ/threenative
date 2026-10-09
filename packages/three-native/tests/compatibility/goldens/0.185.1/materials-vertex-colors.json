@@ -1,46 +1,30 @@
 {
   "name": "materials-vertex-colors",
   "threeVersion": "0.185.1",
-  "adaptedFrom": "original — material.vertexColors on a plane whose four corners carry a color attribute (vec3): a lit MeshStandardMaterial and a MeshBasicMaterial tinted red, each multiplying its colour by three's vertexColor()",
+  "adaptedFrom": "original — vertexColors: an rgb color attribute on a MeshBasicMaterial plane and on a lit MeshStandardMaterial box, an rgba one on a transparent plane (alpha multiplies opacity), and a control plane whose material leaves vertexColors off",
   "blocked": null,
   "observations": [
     {
       "index": 0,
-      "id": "camera",
-      "kind": "numbers",
-      "path": "projectionMatrix.elements",
-      "value": "n:3ff4c8dc2e423980,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ffbb67ae8584cab,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
-      "decimal": "1.299038105676658, 0, 0, 0, 0, 1.7320508075688774, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+      "id": "basicMat",
+      "kind": "boolean",
+      "path": "vertexColors",
+      "value": "b:1",
+      "decimal": "true"
     },
     {
       "index": 1,
-      "id": "camera",
-      "kind": "numbers",
-      "path": "matrixWorld.elements",
-      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:3ff6666666666666,n:400999999999999a,n:3ff0000000000000",
-      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1.4, 3.2, 1"
-    },
-    {
-      "index": 2,
-      "id": "light",
-      "kind": "numbers",
-      "path": "matrixWorld.elements",
-      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:4000000000000000,n:4008000000000000,n:3ff0000000000000,n:3ff0000000000000",
-      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 3, 1, 1"
-    },
-    {
-      "index": 3,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:85fc94d6364d3937be1fdd0b8692e072c8376559b903c2037351ec9530093d33",
-      "decimal": "85fc94d6364d3937be1fdd0b8692e072c8376559b903c2037351ec9530093d33"
+      "value": "s:eae4776e44a6359de75e36f5bdd448347098983d5a11eb7e303a0ed949377248",
+      "decimal": "eae4776e44a6359de75e36f5bdd448347098983d5a11eb7e303a0ed949377248"
     }
   ],
   "render": {
     "png": "materials-vertex-colors.png",
-    "pngSha256": "85fc94d6364d3937be1fdd0b8692e072c8376559b903c2037351ec9530093d33",
+    "pngSha256": "eae4776e44a6359de75e36f5bdd448347098983d5a11eb7e303a0ed949377248",
     "width": 320,
-    "height": 240,
+    "height": 128,
     "adapter": {
       "architecture": "turing",
       "description": "",

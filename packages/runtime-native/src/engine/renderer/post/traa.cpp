@@ -1,4 +1,5 @@
 #include "traa.h"
+#include "engine/renderer/pipeline_cache.h"
 #include "engine/foundation/math/Matrix.h"
 #include "mystral/webgpu_compat.h"
 #include <algorithm>
@@ -291,7 +292,7 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     entries[3].textureView = velocityView_; entries[4].textureView = historyView_;
     entries[5].textureView = historyDepthView_; entries[6].sampler = sampler_;
     WGPUBindGroupDescriptor groupDesc{}; groupDesc.layout = layout; groupDesc.entryCount = 7; groupDesc.entries = entries;
-    auto group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
+    auto group = createBindGroup(device_, &groupDesc);
     WGPURenderPassColorAttachment color{}; color.view = resolveView_;
     color.loadOp = WGPULoadOp_Clear; color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)

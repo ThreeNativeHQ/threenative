@@ -30,7 +30,17 @@ struct PipelineTarget {
     // Bit i: vertex attribute i (in the stage's attribute order) steps per instance
     // (an InstancedBufferAttribute), beside instanceMatrix* and instanceColor.
     uint64_t instanceStepMask = 0;
+    WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
+    WGPUIndexFormat stripIndexFormat = WGPUIndexFormat_Undefined;  // an indexed line strip's index format
 };
+
+/**
+ * Every bind group the renderer creates goes through here, so a steady frame can be held to creating
+ * none (render_database_test steady_state): a per-frame group is a regression, not a cost to tune.
+ */
+WGPUBindGroup createBindGroup(WGPUDevice device, const WGPUBindGroupDescriptor* descriptor);
+/** How many bind groups createBindGroup has made in this process. */
+uint64_t bindGroupsCreated();
 
 /**
  * Render pipelines by what they are made of (PRD-514): the stages' WGSL text — deterministic by

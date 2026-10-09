@@ -22,7 +22,8 @@ import {
 import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
-import { Material, defineObjectSurface } from "./object-surface.js";
+import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
+import { definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
@@ -53,6 +54,8 @@ function constantValue(entry: CatalogEntry): unknown {
   return typeof entry.value === "string" ? JSON.parse(entry.value) : entry.value;
 }
 
+const NAMESPACES = new Set(["MathUtils", "SkeletonUtils"]);
+
 /** Binds each upstream export name to an engine class, a catalog constant, or a refusal. */
 export function bindUpstreamExports(
   names: readonly string[],
@@ -67,7 +70,12 @@ export function bindUpstreamExports(
   const bound: Record<string, unknown> = {};
   for (const name of names) {
     const entry = entries.get(name);
-    if (Object.hasOwn(classes, name)) bound[name] = classes[name];
+    // three's MathUtils and SkeletonUtils are namespace objects: the engine binds each as a class,
+    // exported as its one instance (as the V8 player's core-three.mjs does).
+    if (Object.hasOwn(classes, name))
+      bound[name] = NAMESPACES.has(name)
+        ? new (classes[name] as new () => object)()
+        : classes[name];
     else if (entry !== undefined && constantValue(entry) !== undefined)
       bound[name] = constantValue(entry);
     else
@@ -88,11 +96,12 @@ export async function bindWebEngine(
 ): Promise<Record<string, unknown>> {
   const module = await createModule();
   const runtime = createWasmRuntime(module);
-  const { classes, wrap } = defineBrowserClasses(
+  const { classes, wrap, collect } = defineBrowserClasses(
     registry as IRegistryDump,
     runtime,
     catalogJson as unknown as ICatalog,
   );
+  defineTypeFlags(classes);
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
   const entries = (catalogJson as unknown as ICatalog).entries;
   const extending = (base: string) =>
@@ -121,18 +130,9 @@ export async function bindWebEngine(
     ...tsl?.exports,
   };
   bound.Material = Material;
-  // three's MathUtils is a namespace of functions; the engine binds them as one class's methods, so
-  // the export is an instance of it, as on the V8 player (core-three.mjs).
-  if (classes.MathUtils !== undefined) bound.MathUtils = new classes.MathUtils();
-  // three's PropertyBinding statics and console hook over the engine's binding (property-binding.ts).
-  if (classes.PropertyBinding !== undefined && classes.Object3D !== undefined)
-    Object.assign(
-      bound,
-      definePropertyBinding(
-        classes.PropertyBinding as never,
-        classes.Object3D as unknown as new () => object,
-      ),
-    );
+  // three's PropertyBinding statics and console function over the engine class (shared with V8).
+  if (classes.PropertyBinding !== undefined)
+    Object.assign(bound, definePropertyBinding(classes.PropertyBinding as never));
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
   // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
   const audio = defineAudioClasses({
@@ -146,9 +146,11 @@ export async function bindWebEngine(
   const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
   Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
-  // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio.
+  // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
+  // and the wrapper safe point runs (collect: held while the engine references them).
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, () => {
+      collect();
       tsl?.sync();
       audio.updateAudio();
     });
@@ -165,7 +167,17 @@ export async function bindWebEngine(
     // The engine's TSL functions three does not export by name (ao, bloom, ...), for the shared post
     // effects (addons/post-effects-web.ts), and three's RenderPipeline over the web host.
     bound.__tnTsl = tsl.exports;
-    bound.RenderPipeline = defineRenderPipeline(runtime.tsl);
+    // three's pass() and mrt() over the engine's scene pass, as on the V8 player: RenderPipeline
+    // draws the scene and camera the pass points at.
+    const target: { scene?: unknown; camera?: unknown } = {};
+    bound.RenderPipeline = defineRenderPipeline(runtime.tsl, target);
+    Object.assign(
+      bound,
+      definePass(tsl.exports as never, (scene, camera) => {
+        target.scene = scene;
+        target.camera = camera;
+      }),
+    );
   }
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
@@ -181,18 +193,22 @@ export function withTextureSources(
   return { ...classes, ...defineTextureSources(classes, runtime), DataUtils };
 }
 
+interface IPipelineRenderer {
+  [RENDER_AGAIN]?: () => void;
+  render?(scene: unknown, camera: unknown): void;
+}
+
 /**
  * three's RenderPipeline on the Wasm engine, as on the V8 player: render() hands the output graph to
- * the web host, which draws it between the scene and the output, then draws the renderer's last
- * scene. ponytail: the scene comes from the renderer's last render() until `pass(scene, camera)` is
- * in the shared table (lane-531); then it comes from the graph.
+ * the web host, which draws it between the scene and the output, over the scene and camera the
+ * graph's `pass(scene, camera)` points at (`target`), else the renderer's last scene.
  */
-function defineRenderPipeline(tsl: ITslRuntime) {
+function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camera?: unknown }) {
   return class RenderPipeline {
     outputNode: unknown;
-    readonly renderer: { [RENDER_AGAIN]?: () => void };
+    readonly renderer: IPipelineRenderer;
 
-    constructor(renderer: { [RENDER_AGAIN]?: () => void }, outputNode?: unknown) {
+    constructor(renderer: IPipelineRenderer, outputNode?: unknown) {
       this.renderer = renderer;
       this.outputNode = outputNode;
     }
@@ -201,7 +217,9 @@ function defineRenderPipeline(tsl: ITslRuntime) {
       if (!isTslNode(this.outputNode))
         throw new TypeError("TN_WASM_POST: RenderPipeline.outputNode is not a TSL node");
       tsl.setPost(this.outputNode[TSL_NODE]);
-      this.renderer[RENDER_AGAIN]?.();
+      if (target.scene !== undefined && target.camera !== undefined && this.renderer.render)
+        this.renderer.render(target.scene, target.camera);
+      else this.renderer[RENDER_AGAIN]?.();
     }
 
     dispose(): void {

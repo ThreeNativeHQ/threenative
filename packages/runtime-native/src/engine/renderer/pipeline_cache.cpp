@@ -41,22 +41,37 @@ bool PipelineCache::IdKey::operator==(const IdKey& o) const {
            target.depthWrite == o.target.depthWrite && target.layout == o.target.layout &&
            target.skinIndex == o.target.skinIndex && target.frontFace == o.target.frontFace &&
            target.depthCompare == o.target.depthCompare && target.depthBias == o.target.depthBias &&
-           target.depthBiasSlopeScale == o.target.depthBiasSlopeScale && target.instanceStepMask == o.target.instanceStepMask;
+           target.depthBiasSlopeScale == o.target.depthBiasSlopeScale && target.instanceStepMask == o.target.instanceStepMask &&
+           target.topology == o.target.topology && target.stripIndexFormat == o.target.stripIndexFormat;
 }
 
+namespace {
+uint64_t bindGroupCount = 0;
+}
+
+WGPUBindGroup createBindGroup(WGPUDevice device, const WGPUBindGroupDescriptor* descriptor) {
+    ++bindGroupCount;
+    return wgpuDeviceCreateBindGroup(device, descriptor);
+}
+
+uint64_t bindGroupsCreated() { return bindGroupCount; }
+
 size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
-    size_t h = 0;
+    // 64-bit on every target: size_t is 32 bits on wasm32, where `size << 32` was undefined and gave
+    // equal keys different hashes, so every lookup missed and the alias map grew each frame.
+    uint64_t h = 0;
     const auto mix = [&](uint64_t v) { h = (h ^ v) * 0x9e3779b97f4a7c15ull; h ^= h >> 29; };
     mix(key.vertex);
     mix(key.fragment);
-    mix(key.vertexSize ^ key.fragmentSize << 32);
+    mix(uint64_t(key.vertexSize) ^ uint64_t(key.fragmentSize) << 32);
     mix(uint64_t(key.target.color) | uint64_t(key.target.depth) << 32);
     mix(uint64_t(key.target.cull) | uint64_t(key.target.frontFace) << 8 | uint64_t(key.target.depthCompare) << 16 |
         uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58);
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
     mix(uint64_t(uint32_t(key.target.depthBias)) | uint64_t(std::bit_cast<uint32_t>(key.target.depthBiasSlopeScale)) << 32);
     mix(key.target.instanceStepMask);
-    return h;
+    mix(uint64_t(key.target.topology) | uint64_t(key.target.stripIndexFormat) << 32);
+    return size_t(h ^ h >> 32);
 }
 
 WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const shader::StageModule* fragment,
@@ -77,7 +92,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
            ':' + std::to_string(reinterpret_cast<uintptr_t>(target.layout)) + ':' + std::to_string(target.skinIndex) +
            ':' + std::to_string(target.frontFace) + ':' + std::to_string(target.depthCompare) + ':' +
            std::to_string(target.depthBias) + ':' + std::to_string(std::bit_cast<uint32_t>(target.depthBiasSlopeScale)) +
-           ':' + std::to_string(target.instanceStepMask);
+           ':' + std::to_string(target.instanceStepMask) + ':' + std::to_string(target.topology) + ':' +
+           std::to_string(target.stripIndexFormat);
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
         if (named) byId_.emplace(idKey, found->second);  // the same text under another id
         return found->second;
@@ -115,7 +131,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     WGPU_SET_ENTRY_POINT(desc.vertex, "main");
     desc.vertex.bufferCount = buffers.size();
     desc.vertex.buffers = buffers.data();
-    desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    desc.primitive.topology = target.topology;
+    desc.primitive.stripIndexFormat = target.stripIndexFormat;
     desc.primitive.cullMode = target.cull;
     desc.primitive.frontFace = target.frontFace;
     desc.multisample.count = 1;

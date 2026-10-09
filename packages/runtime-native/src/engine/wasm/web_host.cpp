@@ -5,6 +5,10 @@
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
 #include "engine/renderer/render_database.h"
+#include "engine/shader/graph/graph.h"
+
+#include <cstdio>
+#include <set>
 #if TN_WEB_GLTF
 #include "engine/assets/gltf/loader.h"
 #endif
@@ -194,6 +198,11 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     }
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(frame.texture);
+    // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
+    // so a page that draws less than its scene says why.
+    static std::set<std::string> reported;
+    for (const std::string& diagnostic : renderer->diagnostics())
+        if (reported.insert(diagnostic).second) std::fprintf(stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
     if (!refused.empty()) return fail(refused);
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
     return 0;
@@ -286,8 +295,21 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
 #endif
 }
 
-/** The last frame's draws (0) and triangles (1), as three's `renderer.info.render` reports them. */
+/**
+ * The last frame's draws (0) and triangles (1), as three's `renderer.info.render` reports them, then
+ * the setup work done so far, which a steady frame must not add to: pipeline compiles (2), pipeline
+ * text-key lookups (3), bind groups created (4), graph keys serialized (5) and programs built (6).
+ */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
-    return field == 0 ? double(renderer->lastFrame().draws) : double(renderer->lastFrame().triangles);
+    switch (field) {
+        case 0: return double(renderer->lastFrame().draws);
+        case 1: return double(renderer->lastFrame().triangles);
+        case 2: return double(renderer->pipelines().compiles());
+        case 3: return double(renderer->pipelines().textLookups());
+        case 4: return double(bindGroupsCreated());
+        case 5: return double(shader::graph::keyBuilds());
+        case 6: return double(renderer->programCount());
+        default: return 0;
+    }
 }

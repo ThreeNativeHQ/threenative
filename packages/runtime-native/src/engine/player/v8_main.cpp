@@ -21,11 +21,10 @@
 //
 // `tn.input.isDown(key)` is true while `key` is held; `key` is a DOM key ("w", "ArrowLeft", ...),
 // the names the endpoint's injected input carries.
-// `tn.children(object)` and `tn.traverse(object, callback, visibleOnly)` expose the native scene
-// walk to the core import shim. They enumerate native objects; no JS scene graph is maintained.
 #include <libplatform/libplatform.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -89,66 +88,6 @@ void isDownCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     info.GetReturnValue().Set(held->count(name) != 0);
 }
 
-void sceneWalkCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
-    auto& adapter = *static_cast<tn::adapters::v8adapter::Adapter*>(info.Data().As<v8::External>()->Value());
-    auto* isolate = info.GetIsolate();
-    const auto ctx = isolate->GetCurrentContext();
-    tn_handle_t root{};
-    if (!adapter.unwrap(info[0], root)) {
-        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_CORE_SCENE: expected a native Object3D")));
-        return;
-    }
-    auto* binding = tn::abi::objectOf(root);
-    // Only scene classes carry the parent's member; reject math/material handles before casting.
-    tn_value_t parent{};
-    tn_diagnostic_t diagnostic{nullptr, 0};
-    if (binding == nullptr || tn_get(root, "parent", &parent, &diagnostic) != TN_OK) {
-        tn_diagnostic_release(&diagnostic);
-        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_CORE_SCENE: expected a scene object")));
-        return;
-    }
-    tn_diagnostic_release(&diagnostic);
-    auto* object = static_cast<Object3D*>(binding->ptr.get());
-    const bool walking = info.Length() > 1;
-    if (walking && !info[1]->IsFunction()) {
-        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_CORE_SCENE: expected a traversal callback")));
-        return;
-    }
-    std::vector<Object3D*> objects;
-    if (walking) {
-        const auto collect = [](Object3D& child, void* out) {
-            static_cast<std::vector<Object3D*>*>(out)->push_back(&child);
-        };
-        if (info[2]->IsTrue()) object->traverseVisible(collect, &objects);
-        else object->traverse(collect, &objects);
-    } else objects = object->children;
-    auto array = v8::Array::New(isolate, static_cast<int>(objects.size()));
-    // ponytail: O(n²) ID lookup for this tiny scene; add bulk reflection if traversal cost matters.
-    for (size_t i = 0; i < objects.size(); ++i) {
-        tn_value_t id{};
-        id.kind = TN_VALUE_NUMBER;
-        id.number = static_cast<double>(objects[i]->id());
-        tn_value_t result{};
-        if (tn_invoke(root, "getObjectById", &id, 1, &result, &diagnostic) != TN_OK || result.kind != TN_VALUE_HANDLE) {
-            tn_diagnostic_release(&diagnostic);
-            isolate->ThrowException(v8::Exception::Error(v8str(isolate, "TN_CORE_SCENE: child lookup failed")));
-            return;
-        }
-        tn_diagnostic_release(&diagnostic);
-        auto child = adapter.wrap(result.handle);
-        if (!array->Set(ctx, static_cast<uint32_t>(i), child).FromMaybe(false)) return;
-    }
-    // Root every wrapper before callbacks: a callback may detach a later child from the scene.
-    if (walking) {
-        for (uint32_t i = 0; i < array->Length(); ++i) {
-            v8::Local<v8::Value> child;
-            if (!array->Get(ctx, i).ToLocal(&child)) return;
-            v8::Local<v8::Value> ignored;
-            if (!info[1].As<v8::Function>()->Call(ctx, info[0], 1, &child).ToLocal(&ignored)) return;
-        }
-    } else info.GetReturnValue().Set(array);
-}
-
 void logCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     for (int i = 0; i < info.Length(); ++i) {
         v8::String::Utf8Value message(info.GetIsolate(), info[i]);
@@ -170,6 +109,9 @@ class V8Game {
     bool observe(const std::string& method, const json::Value* argument, json::Value& result, std::string& error);
     json::Value resource(const std::string& id, uint64_t tick) const;
 
+    /** Binds the scene and camera the game last published (`tn.scene`/`tn.camera`): 1 bound, 0 not
+     *  published yet (an async boot still loading), -1 a startup error or a value of the wrong kind. */
+    int view(std::string& error);
     Object3D* scene() const { return scene_; }
     Camera* camera() const { return camera_; }
     bool shadowMapEnabled() const { return shadowMap_; }
@@ -581,9 +523,6 @@ bool V8Game::start(const std::string& path, std::string& error) {
     platform->Set(ctx, v8str(isolate_, "formFactor"), v8str(isolate_, "desktop")).Check();
     platform->Set(ctx, v8str(isolate_, "maxTouchPoints"), v8::Integer::New(isolate_, 0)).Check();
     host->Set(ctx, v8str(isolate_, "platform"), platform).Check();
-    const auto sceneWalk = v8::Function::New(ctx, &sceneWalkCallback, v8::External::New(isolate_, adapter_.get())).ToLocalChecked();
-    host->Set(ctx, v8str(isolate_, "children"), sceneWalk).Check();
-    host->Set(ctx, v8str(isolate_, "traverse"), sceneWalk).Check();
     host->Set(ctx, v8str(isolate_, "log"), v8::Function::New(ctx, &logCallback).ToLocalChecked()).Check();
     auto self = v8::External::New(isolate_, this);
     host->Set(ctx, v8str(isolate_, "loadAsset"), v8::Function::New(ctx, &loadAsset, self).ToLocalChecked()).Check();
@@ -601,42 +540,64 @@ bool V8Game::start(const std::string& path, std::string& error) {
         return error = std::string("the game bundle failed: ") + (*message ? *message : "?"), false;
     }
     isolate_->PerformMicrotaskCheckpoint();
-    v8::Local<v8::Value> startupError;
-    if (host->Get(ctx, v8str(isolate_, "__startupError")).ToLocal(&startupError) && !startupError->IsUndefined()) {
+    const auto failed = [&] {
+        v8::Local<v8::Value> startupError;
+        if (!host->Get(ctx, v8str(isolate_, "__startupError")).ToLocal(&startupError) || startupError->IsUndefined())
+            return false;
         v8::String::Utf8Value message(isolate_, startupError);
-        return error = std::string("core startup failed: ") + (*message ? *message : "?"), false;
-    }
+        error = std::string("core startup failed: ") + (*message ? *message : "?");
+        return true;
+    };
+    if (failed()) return false;
 
     v8::Local<v8::Value> tnValue;
     if (!ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocal(&tnValue) || !tnValue->IsObject())
         return error = "the game bundle left no `tn` host object", false;
     v8::Local<v8::Object> tn = tnValue.As<v8::Object>();
-    const auto binding = [&](const char* field, tn::binding::Object*& out) {
-        v8::Local<v8::Value> value;
-        tn_handle_t handle{};
-        if (!tn->Get(ctx, v8str(isolate_, field)).ToLocal(&value) || !adapter_->unwrap(value, handle))
-            return false;
-        out = tn::abi::objectOf(handle);
-        return out != nullptr;
-    };
-    tn::binding::Object* scene = nullptr;
-    tn::binding::Object* camera = nullptr;
-    if (!binding("scene", scene) || scene->cls != "Scene")
-        return error = "tn.scene is not a Scene", false;
-    if (!binding("camera", camera) || (camera->cls != "PerspectiveCamera" && camera->cls != "OrthographicCamera"))
-        return error = "tn.camera is not a camera", false;
     v8::Local<v8::Value> update;
     if (!tn->Get(ctx, v8str(isolate_, "__update")).ToLocal(&update) || !update->IsFunction())
         return error = "the game bundle registered no tn.onUpdate(fn)", false;
     update_.Reset(isolate_, update.As<v8::Function>());
+    return view(error) >= 0;
+}
 
+int V8Game::view(std::string& error) {
+    v8::Isolate::Scope isolateScope(isolate_);
+    v8::HandleScope scope(isolate_);
+    v8::Local<v8::Context> ctx = js_.Get(isolate_);
+    v8::Context::Scope contextScope(ctx);
+    v8::Local<v8::Value> tnValue, startupError, sceneValue, cameraValue;
+    if (!ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocal(&tnValue) || !tnValue->IsObject())
+        return error = "the game bundle left no `tn` host object", -1;
+    v8::Local<v8::Object> tn = tnValue.As<v8::Object>();
+    // An async boot that fails after start() returned reports through the same field.
+    if (tn->Get(ctx, v8str(isolate_, "__startupError")).ToLocal(&startupError) && !startupError->IsUndefined()) {
+        v8::String::Utf8Value message(isolate_, startupError);
+        return error = std::string("core startup failed: ") + (*message ? *message : "?"), -1;
+    }
+    if (!tn->Get(ctx, v8str(isolate_, "scene")).ToLocal(&sceneValue) ||
+        !tn->Get(ctx, v8str(isolate_, "camera")).ToLocal(&cameraValue))
+        return error = "tn.scene or tn.camera could not be read", -1;
+    // The bundle's boot holds `__booting` until start() settles: a pass node publishes the scene
+    // while start() is still loading, and only a settled start is a booted game.
+    v8::Local<v8::Value> booting;
+    if (sceneValue->IsNullOrUndefined() || cameraValue->IsNullOrUndefined() ||
+        (tn->Get(ctx, v8str(isolate_, "__booting")).ToLocal(&booting) && booting->IsTrue()))
+        return 0;
+    tn_handle_t handle{};
+    tn::binding::Object* scene = adapter_->unwrap(sceneValue, handle) ? tn::abi::objectOf(handle) : nullptr;
+    if (scene == nullptr || scene->cls != "Scene")
+        return error = "tn.scene is not a Scene", -1;
+    tn::binding::Object* camera = adapter_->unwrap(cameraValue, handle) ? tn::abi::objectOf(handle) : nullptr;
+    if (camera == nullptr || (camera->cls != "PerspectiveCamera" && camera->cls != "OrthographicCamera"))
+        return error = "tn.camera is not a camera", -1;
     sceneHold_ = scene->ptr;
     cameraHold_ = camera->ptr;
     scene_ = static_cast<Scene*>(scene->ptr.get());
     camera_ = camera->cls == "PerspectiveCamera"
                   ? static_cast<Camera*>(static_cast<PerspectiveCamera*>(camera->ptr.get()))
                   : static_cast<Camera*>(static_cast<OrthographicCamera*>(camera->ptr.get()));
-    return true;
+    return 1;
 }
 
 V8Game::~V8Game() {
@@ -681,7 +642,10 @@ void V8Game::tick(double dt) {
     v8::Local<v8::Value> argument = v8::Number::New(isolate_, dt);
     v8::Local<v8::Value> ignored;
     if (!update_.Get(isolate_)->Call(ctx, ctx->Global(), 1, &argument).ToLocal(&ignored)) {
-        v8::String::Utf8Value message(isolate_, tryCatch.Exception());
+        // The stack (message first) names the game call that threw, not only what it threw.
+        v8::Local<v8::Value> stack;
+        const bool traced = tryCatch.StackTrace(ctx).ToLocal(&stack) && stack->IsString();
+        v8::String::Utf8Value message(isolate_, traced ? stack : tryCatch.Exception());
         std::printf("[Playtest] TN_V8_UPDATE_FAILED: %s\n", *message ? *message : "the update threw");
     }
 }
@@ -753,6 +717,9 @@ std::vector<std::pair<std::string, std::string>> adapterIdentity() {
 }
 
 int main(int argc, char** argv) {
+    // The game's log is a stream tools read live; a pipe would otherwise hold it until exit, and a
+    // killed player would lose it.
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
     std::string gamePath;
     std::string checkRequest;
     bool checkGame = false;
@@ -785,6 +752,25 @@ int main(int argc, char** argv) {
     // Boot the real bundle and validate its native handles without opening a GPU/window.
     // This establishes startup only; a desktop playtest still proves the journey and rendering.
     if (checkGame) {
+        // An async boot (audio decodes, timers) publishes its scene ticks later. A check has no frame
+        // loop, so it turns fixed ticks in real time itself, for at most two minutes.
+        // ponytail: spins between ticks; the engine thread never sleeps (native_engine_no_blocking_waits).
+        const auto begin = std::chrono::steady_clock::now();
+        int bound = game.scene() != nullptr ? 1 : 0;
+        for (uint64_t ticks = 0; bound == 0; bound = game.view(error)) {
+            const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+            if (elapsed > 120) {
+                error = "the game published no scene within 120 s";
+                bound = -1;
+                break;
+            }
+            if (elapsed * 60 >= double(ticks + 1)) {
+                game.tick(1.0 / 60.0);
+                ++ticks;
+            }
+        }
+        if (bound < 0)
+            return std::fprintf(stderr, "TN_PLAYER_V8_GAME: %s\n", error.c_str()), 1;
         if (!checkRequest.empty()) {
             inspect::Host host;
             host.scene = game.scene(); host.gameRuntime = "v8";
@@ -818,5 +804,10 @@ int main(int argc, char** argv) {
     configured.resource = [&game](const std::string& id, uint64_t tick) { return game.resource(id, tick); };
     configured.afterRender = [&game] { game.safePoint(); };
     configured.attach = [&game](inspect::Endpoint& endpoint) { game.attach(endpoint); };
+    configured.view = [&game](Object3D*& scene, Camera*& camera, std::string& error) {
+        const int bound = game.view(error);
+        if (bound > 0) { scene = game.scene(); camera = game.camera(); }
+        return bound;
+    };
     return player::run(configured);
 }

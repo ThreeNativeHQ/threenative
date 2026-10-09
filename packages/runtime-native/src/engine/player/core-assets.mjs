@@ -3,6 +3,17 @@ import { audio } from "./core-audio.mjs";
 export function createAssetLoader(options = {}) {
   if (Object.keys(options).some((key) => !["renderer", "basePath", "manifest", "sourcePath"].includes(key)))
     throw new Error("TN_NATIVE_ASSET_OPTIONS_UNSUPPORTED: this player accepts cooked package paths only");
+  // core's fallback for a game without a manifest: the verbatim path, then `<sourcePath>/<path>`.
+  const sourcePath = (options.sourcePath ?? "assets").replace(/^\/+|\/+$/g, "");
+  const read = (kind, path) => {
+    try {
+      return [globalThis.tn.loadAsset(kind, path), "manifest"];
+    } catch (error) {
+      if (!sourcePath || !/TN_NATIVE_ASSET_MISSING/.test(String(error?.message))) throw error;
+      try { return [globalThis.tn.loadAsset(kind, `${sourcePath}/${path.replace(/^\/+/, "")}`), "source"]; }
+      catch { throw error; }
+    }
+  };
   const cache = new Map();
   const pending = new Set();
   const resolved = new Map();
@@ -16,10 +27,10 @@ export function createAssetLoader(options = {}) {
     progress.requested++;
     pending.add(path);
     const result = Promise.resolve().then(() => {
-      const record = globalThis.tn.loadAsset(kind, path);
+      const [record, via] = read(kind, path);
       progress.requestedBytes += record.bytes;
       progress.settledBytes += record.bytes;
-      resolved.set(path, { url: record.url, via: "manifest" });
+      resolved.set(path, { url: record.url, via });
       // Audio is a Buffer entry of encoded bytes; the shared context decodes it, as three's AudioLoader does.
       return kind === "audio" ? audio.AudioContext.getContext().decodeAudioData(record.value) : record.value;
     }).finally(() => { pending.delete(path); progress.settled++; });

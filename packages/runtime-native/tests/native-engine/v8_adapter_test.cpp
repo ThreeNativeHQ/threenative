@@ -459,7 +459,19 @@ void catalogCoverage() {
         CHECK(tn_type_id(name.c_str()) == 0);
         CHECK(!global->HasOwnProperty(ctx, key(name)).FromMaybe(true));
     }
-    CHECK(installed.size() + numbers.size() + strings.size() + recordTypes.size() + enums.size() ==
+    // Every constant of the engine's table is installed with its value; the spot values above are
+    // in it. The catalog publishes exactly the table's constants (sync-native-status).
+    std::set<std::string> tableConstants;
+    for (const auto& constant : tn::engine::kThreeConstants) {
+        v8::Local<v8::Value> value;
+        CHECK(global->Get(ctx, key(constant.name)).ToLocal(&value));
+        if (constant.text) CHECK(value->IsString() && text(value) == constant.text);
+        else CHECK(value->IsNumber() && value.As<v8::Number>()->Value() == constant.number);
+        tableConstants.insert(constant.name);
+    }
+    for (const auto& [name, want] : numbers) CHECK(tableConstants.count(name) == 1);
+    for (const auto& [name, want] : strings) CHECK(tableConstants.count(name) == 1);
+    CHECK(installed.size() + tableConstants.size() + recordTypes.size() + enums.size() ==
           tn_engine_version().capability_count);
 
     // Every class's prototype exposes exactly its registry members: methods, top-level getters and
@@ -633,7 +645,7 @@ void tslApi() {
         {"tsl.float(0.25).smoothstep(0,1)", g::smoothstep(g::float_(0), g::float_(1), g::float_(0.25))},
         {"tsl.float(0.25).clamp(0,1)", g::clamp(g::float_(0.25), g::float_(0), g::float_(1))},
         {"tsl.screenUV", g::screenUV()},
-        {"tsl.materialColor", g::uniform("diffuse", tn::engine::shader::Type::vec(4))},
+        {"tsl.materialColor", g::swizzle(g::uniform("diffuse", tn::engine::shader::Type::vec(4)), "xyz")},
         {"tsl.materialEmissive", g::uniform("emissive", tn::engine::shader::Type::vec(3))},
         {"tsl.materialMetalness", g::uniform("metalness", tn::engine::shader::Type::f32())},
         {"tsl.materialRoughness", g::uniform("roughness", tn::engine::shader::Type::f32())},
@@ -685,6 +697,34 @@ void tslApi() {
         CHECK(s::WgslEmitter::emit(programs.vertex).ok() && s::WgslEmitter::emit(programs.fragment, 1).ok());
         if (vertex.find("attribute:world") != std::string::npos || vertex.find("output world =") == std::string::npos)
             std::fprintf(stderr, "TSL basic vertex:\n%s\n", vertex.c_str());
+    } else CHECK(false);
+
+    // The templates' rim light (render/backlightMaterial.ts): normalView and positionViewDirection are
+    // nodes, and cameraViewMatrix.transformDirection(direction) is three's normalize((M * vec4(d, 0)).xyz).
+    v8::Local<v8::Value> rim;
+    const bool rimRan = v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(rt.isolate, R"JS((() => {
+        const m = new MeshStandardNodeMaterial();
+        const N = tsl.normalView.normalize(), V = tsl.positionViewDirection.normalize();
+        const L = tsl.cameraViewMatrix.transformDirection(tsl.uniform(new Vector3(0, 1, 0)));
+        const T = tsl.transformDirection(tsl.vec3(1, 0, 0), tsl.cameraViewMatrix);
+        // materialColor is three's vec3 colour: the rim tints by it and mixes it as reflectance.
+        const reflectance = tsl.mix(tsl.vec3(0.04), tsl.materialColor, tsl.materialMetalness);
+        m.emissiveNode = tsl.vec3(tsl.dot(N, V)).mul(tsl.dot(L, N)).add(T)
+            .mul(tsl.clamp(tsl.materialColor, 0, 1)).add(reflectance).add(tsl.materialEmissive);
+        return m;
+    })())JS")).ToLocalChecked()->Run(ctx).ToLocal(&rim);
+    CHECK(rimRan);
+    tn_handle_t rimMaterial{};
+    if (rimRan && adapter.unwrap(rim, rimMaterial)) {
+        namespace s = tn::engine::shader;
+        s::VertexVariant variant;
+        variant.nodes.emissiveNode = tn::abi::shaderNode(rimMaterial, "emissiveNode");
+        const auto programs = s::buildStandard(s::StandardMaterial{}, variant);
+        CHECK(programs.diagnostics.empty() && programs.vertex.ok() && programs.fragment.ok());
+        const std::string fragment = programs.fragment.dump(true);
+        CHECK(fragment.find("varying:normalView") != std::string::npos);
+        CHECK(fragment.find("varying:positionView") != std::string::npos);
+        CHECK(s::WgslEmitter::emit(programs.vertex).ok() && s::WgslEmitter::emit(programs.fragment, 1).ok());
     } else CHECK(false);
 
     // Two different nodes under one explicit varying name are refused, not silently merged.
@@ -756,6 +796,17 @@ void nodeMaterials() {
                 m.colorNode = null;
                 if (m.colorNode !== null) return 'clear';
             }
+            // three's Material.copy: a node material takes a plain material's values, keeping its class and id.
+            const source = new MeshStandardMaterial({ color: 0x336699, roughness: 0.25, metalness: 0.75, transparent: true, side: DoubleSide });
+            source.map = new DataTexture(new Uint8Array(4), 1, 1);
+            source.name = 'hull';
+            const target = new MeshStandardNodeMaterial();
+            const targetId = target.id;
+            if (target.copy(source) !== target) return 'copy chains';
+            if (target.type !== 'MeshStandardNodeMaterial' || target.id !== targetId) return 'copy identity';
+            if (target.color.getHex() !== 0x336699 || target.roughness !== 0.25 || target.metalness !== 0.75 ||
+                !target.transparent || target.side !== DoubleSide || target.map !== source.map || target.name !== 'hull')
+                return 'copy values';
             const held = new MeshBasicNodeMaterial();
             (() => { held.colorNode = tsl.vec4(tsl.uv(), tsl.uniform(0.35), 1); })();
             gc(); gc();
@@ -1027,7 +1078,7 @@ void skeletal() {
         const mesh = new SkinnedMesh(new BoxGeometry(), new MeshStandardMaterial());
         mesh.name='skin'; root.add(mesh); root.updateMatrixWorld(true);
         mesh.bind(new Skeleton([hip])); mesh.bindMode='detached';
-        const copy = __tnCloneSkeleton(root);
+        const copy = new SkeletonUtils().clone(root);
         const copyHip = copy.getObjectByName('hip');
         const copyMesh = copy.getObjectByName('skin');
         check(copy instanceof Group && copy !== root, 'clone root');
@@ -1040,25 +1091,25 @@ void skeletal() {
         copyHip.position.x=3; copy.updateMatrixWorld(true); copyMesh.skeleton.update();
         mesh.skeleton.update();
         check(hip.position.x===0 && copyMesh.skeleton.boneMatrices[12]===3 && mesh.skeleton.boneMatrices[12]===0, 'independent palette');
-        check(PropertyBinding.parseTrackName('hip.position[x]').propertyIndex==='x', 'native track parsing');
-        check(PropertyBinding.findNode(root, 'hip')===hip && PropertyBinding.findNode(root, undefined)===root, 'native node search');
-        const previous = getConsoleFunction(); const messages=[];
-        setConsoleFunction((type, message) => messages.push([type, message]));
-        const binding=new PropertyBinding(root, 'hip.position'); binding.bind();
-        check(binding.targetObject===hip && messages.length===0, 'native track target');
-        hip.name='renamed'; binding.bind(); check(binding.targetObject===hip, 'cached target');
-        binding.unbind(); binding.bind();
-        check(binding.targetObject===null && messages.length===1 && messages[0][0]==='error' && messages[0][1].includes('No target node found'), 'native rebind diagnostic');
+        // The engine surface of PropertyBinding; three's statics, targetObject property and console
+        // function are the shared facade's, checked through the player in player-imports.mjs.
+        const helper = new PropertyBinding();
+        check(helper.parseTrackName('hip.position[x]').propertyIndex==='x', 'native track parsing');
+        check(helper.findNode(root, 'hip')===hip && helper.findNode(root, undefined)===root, 'native node search');
+        const binding=new PropertyBinding(root, 'hip.position');
+        check(binding.bind()==='' && binding.targetObject()===hip, 'native track target');
+        hip.name='renamed'; binding.bind(); check(binding.targetObject()===hip, 'cached target');
+        binding.unbind();
+        check(binding.bind().includes('No target node found') && binding.targetObject()===null, 'native rebind diagnostic');
         hip.name='hip';
         const materialBinding=new PropertyBinding(root, 'skin.material.roughness'); materialBinding.bind();
-        check(materialBinding.targetObject===mesh.material, 'native material target');
-        const unsupportedBinding=new PropertyBinding(root, 'hip.noSuchProperty'); unsupportedBinding.bind();
-        check(unsupportedBinding.targetObject===null && messages[1][1].includes('TN_NATIVE_ANIMATION_PATH_UNSUPPORTED'), 'unsupported path diagnostic');
-        setConsoleFunction(previous); check(getConsoleFunction()===previous, 'console hook restoration');
+        check(materialBinding.targetObject()===mesh.material, 'native material target');
+        const unsupportedBinding=new PropertyBinding(root, 'hip.noSuchProperty');
+        check(unsupportedBinding.bind().includes('TN_NATIVE_ANIMATION_PATH_UNSUPPORTED') && unsupportedBinding.targetObject()===null, 'unsupported path diagnostic');
         const external = new Bone(); external.name='external'; mesh.bind(new Skeleton([external]));
-        let refused=false; try { __tnCloneSkeleton(root); } catch(e) { refused=e.message.includes('TN_NATIVE_SKELETON_CLONE_EXTERNAL_BONE: external'); }
+        let refused=false; try { new SkeletonUtils().clone(root); } catch(e) { refused=e.message.includes('TN_NATIVE_SKELETON_CLONE_EXTERNAL_BONE: external'); }
         check(refused, 'external bone refusal');
-        refused=false; try { __tnCloneSkeleton(tsl.float(1)); } catch(e) { refused=e instanceof TypeError; }
+        refused=false; try { new SkeletonUtils().clone(tsl.float(1)); } catch(e) { refused=e instanceof TypeError; }
         check(refused, 'non-scene wrapper refusal');
         check(nativeClip.name==='walk' && nativeClip.duration===1, 'native clip');
         const track=nativeClip.tracks[0];
