@@ -121,9 +121,9 @@ qualifying run. A PR can still opt in to qualifying on the merge path with a lab
 ## Execution Phases
 
 #### Phase 1: No load reds in the gate
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/create-threenative/__tests__/fixtures/auto-exposure/proof.ts`, `.github/workflows/integration.yml`, `.github/workflows/performance-regression.yml`, the `test-unit` specs that phase 1 classifies as load reds.
-**Implementation:** Wait on rendered updates with a timeout scaled to the measured frame rate, not a fixed 60 s. Move `velocity` from `integration.yml` to `performance-regression.yml`. For each repeated `test-unit` red, read three failing logs; a red that also fails on an idle `tn-local` run is a code red and leaves this PRD.
+**Implementation:** Wait on rendered updates with a timeout scaled to the measured frame rate, not a fixed 60 s. Move `velocity` from `integration.yml` to `performance-regression.yml`. For each repeated `test-unit` red, read three failing logs; a red that also fails on an idle `tn-local` run is a code red and leaves this PRD. Committed so far: the temporal-off cost arm. The two red merge groups of 2026-10-09 (37874560157, 37883642740) both fail first on `integration / velocity` with `TN_PLAYTEST_RESOURCE_ASSERTION_FAILED … 'p95NoiseExcessMs'` (`scripts/verify-velocity-history.ts:189`), which is a measurement of noise on a runner twenty other jobs share. That arm now runs on the scheduled `performance-regression.yml` lane (`--variant=cost`) and the merge path runs only the correctness arm (`--variant=history`), so the lane keeps typing and unit-checking the cost code without measuring on a loaded machine. The auto-exposure frame-rate budget and the `test-unit` triage are still open, and all three boxes below need a CI run id.
 - [ ] `integration / auto-exposure` passes 10 of 10 runs on a `tn-local` slot under a parallel full board. proof: CI run ids.
 - [ ] `velocity` runs on the hardware lane and is absent from `merge_group` jobs. proof: `performance-regression.yml` run id plus a merge-group job list.
 - [ ] No `test-unit` spec times out in 10 consecutive merge groups. proof: `node scripts/ci-merge-latency.mjs` first-failing-job column.

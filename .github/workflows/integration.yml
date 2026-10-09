@@ -426,7 +426,10 @@ jobs:
       - name: Check the exact source-wired fixture types
         run: pnpm exec tsc --noEmit -p examples/abyss-framework/velocity.tsconfig.json
       - name: Render actual authored batch velocity and missing-history control
-        run: pnpm exec tsx scripts/verify-velocity-history.ts
+        # PRD-550 phase 1. The temporal-off cost arm lives in performance-regression.yml: it prices
+        # actual frame submission against split-control noise, which a runner shared by twenty jobs
+        # cannot hold, and its `p95NoiseExcessMs` red was other people's load.
+        run: pnpm exec tsx scripts/verify-velocity-history.ts --variant=history
       - name: Retain runtime PNGs, readbacks and exact adapter provenance
         if: always()
         uses: actions/upload-artifact@v7
