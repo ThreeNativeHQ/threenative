@@ -2,6 +2,7 @@
 // Tsl::call unchanged: each case builds the graph node the upstream TSL call means.
 #include "engine/abi/tsl_call.h"
 #include "engine/renderer/reflector.h"
+#include "engine/scene/texture.h"
 
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/graph/post_effects.h"
@@ -270,6 +271,13 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     if (name == "texture") {
         arity(2);
+        // texture(textureObject, uv): the game's own Texture, bound by its identity (three's TextureNode).
+        if (args[0].kind == TslArg::Kind::Object) {
+            if (!args[0].object || (args[0].cls != "Texture" && args[0].cls != "DataTexture"))
+                throw std::runtime_error("texture needs an engine Texture");
+            const auto* texture = static_cast<const engine::Texture*>(args[0].object.get());
+            return g::textureObject(args[0].object, "tslTex" + std::to_string(texture->ident.value()), arg(1));
+        }
         if (args[0].kind != TslArg::Kind::Named)
             throw std::runtime_error("expected a texture with a name");
         if (args[0].text.empty())
@@ -279,6 +287,16 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "uv") {
         arity(0);
         return g::uv();
+    }
+    // TextureNode.level(n): the same texture read at an explicit mip level.
+    if (method && name == "level") {
+        arity(1);
+        const auto source = lhs();
+        if (source->kind != g::Kind::Texture || source->args.size() != 1)
+            throw std::runtime_error("level needs a texture node");
+        auto node = std::make_shared<g::NodeData>(*source);
+        node->args = {source->args[0], arg(0)};
+        return node;
     }
     // r185's camera accessors (accessors/Camera.js) for a single camera: render-group uniforms by
     // their upstream names, which the renderer fills per draw (kSlotNames).

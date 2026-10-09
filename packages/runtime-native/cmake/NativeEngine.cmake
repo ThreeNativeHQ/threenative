@@ -173,7 +173,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "render_skinned:skinned-*" "render_morph:morph-*" "render_gltf:gltf-model-*"
                 "render_post_addons:tsl-post-ao,tsl-post-ao-raw,tsl-post-bloom,tsl-post-smaa,tsl-post-template-high"
                 "render_data_textures:textures-data-*" "render_materialx:materialx-*"
-                "render_pmrem:pmrem-*" "render_screen_uv:screen-uv"
+                "render_pmrem:pmrem-*" "render_screen_uv:screen-uv" "render_tsl_texture:tsl-texture-object"
                 "render_reflector:reflector-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
             list(GET render_pair 0 render_name)

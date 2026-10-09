@@ -119,7 +119,14 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
     // pmremTexture prefilters the texture object itself, not a map the material names; reflector
     // takes its target and virtual camera.
-    if ((index == 0 && name == "pmremTexture") || (index < 2 && name == "reflector")) {
+    // texture(textureObject): an unnamed engine Texture is bound by identity (a named one names its map).
+    const bool unnamedTexture = [&] {
+        if (!texture || w || !value->IsObject()) return false;
+        v8::Local<v8::Value> label;
+        if (!value.As<v8::Object>()->Get(ctx, str(isolate_, "name")).ToLocal(&label)) throw JsFailure{};
+        return label->IsUndefined() || (label->IsString() && label.As<v8::String>()->Length() == 0);
+    }();
+    if ((index == 0 && name == "pmremTexture") || (index < 2 && name == "reflector") || unnamedTexture) {
         tn_handle_t handle{};
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object == nullptr) throw std::runtime_error(name + " needs an engine object as argument " + std::to_string(index));
@@ -367,7 +374,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
-                             "flipX", "flipY", "flipZ", "flipW"})
+                             "flipX", "flipY", "flipZ", "flipW", "level"})
         node->Set(str(isolate_, name), function(context, name, true));
     for (const char* lanes : {"x", "y", "z", "w", "xy", "xyz", "zyx", "yx"}) {
         auto data = std::make_unique<Call>(Call{this, std::string("swizzle:") + lanes, true});
@@ -377,7 +384,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
         calls_.push_back(std::move(data));
     }
     for (const auto& [alias, lanes] : std::vector<std::pair<const char*, const char*>>{
-        {"r", "x"}, {"g", "y"}, {"b", "z"}, {"a", "w"}, {"rg", "xy"}, {"rgb", "xyz"}, {"rgba", "xyzw"}}) {
+        {"r", "x"}, {"g", "y"}, {"b", "z"}, {"a", "w"}, {"rg", "xy"}, {"rgb", "xyz"}, {"rgba", "xyzw"}, {"ba", "zw"}}) {
         auto data = std::make_unique<Call>(Call{this, std::string("swizzle:") + lanes, true});
         node->SetAccessorProperty(str(isolate_, alias),
             v8::FunctionTemplate::New(isolate_, dispatch, v8::External::New(isolate_, data.get())));

@@ -41,6 +41,7 @@ import {
   screenUV,
   sin,
   smoothstep,
+  texture,
   uint,
   uniform,
   uv,
@@ -497,6 +498,18 @@ async function temporalFixture({ renderer, scene, camera, traaDump }, firstCutFr
 }
 
 /** Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity. */
+/** An RGBA8 DataTexture with linear filtering, its texels from `texel(x, y)` -> [r, g, b]. */
+function dataTexture(width, height, texel) {
+  const pixels = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; ++y)
+    for (let x = 0; x < width; ++x) pixels.set([...texel(x, y), 255], (y * width + x) * 4);
+  const map = new DataTexture(pixels, width, height);
+  map.magFilter = LinearFilter;
+  map.minFilter = LinearFilter;
+  map.needsUpdate = true;
+  return map;
+}
+
 function equirectSky() {
   const width = 128;
   const height = 64;
@@ -645,6 +658,16 @@ export const programs = {
   },
   async "screen-uv"({ target }) {
     target.colorNode = vec4(screenUV.flipX(), screenUV.x.mul(screenUV.y), 1);
+  },
+  /** texture(textureObject, uv) on unnamed textures, as Midway's ocean: a vertex displacement read
+   *  at level 0 and a fragment colour. */
+  async "tsl-texture-object"({ target }) {
+    const ramp = dataTexture(8, 4, (x, y) => [x * 36, y * 80, 200 - x * 20]);
+    const bumps = dataTexture(8, 8, (x, y) => [((x + y) % 4) * 80, 0, 0]);
+    target.positionNode = positionLocal.add(
+      vec3(0, 0, texture(bumps, uv()).level(float(0)).r.mul(0.4)),
+    );
+    target.colorNode = vec4(texture(ramp, uv()).rgb, 1);
   },
   async "pmrem-texture"({ target }) {
     target.colorNode = vec4(

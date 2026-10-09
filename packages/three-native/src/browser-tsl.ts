@@ -150,6 +150,7 @@ const METHODS = [
   "flipY",
   "flipZ",
   "flipW",
+  "level",
 ] as const;
 const SWIZZLES: Readonly<Record<string, string>> = {
   x: "x",
@@ -167,6 +168,7 @@ const SWIZZLES: Readonly<Record<string, string>> = {
   rg: "xy",
   rgb: "xyz",
   rgba: "xyzw",
+  ba: "zw",
 };
 interface ITslNode {
   readonly [TSL_NODE]: number;
@@ -206,7 +208,15 @@ export function defineTsl(runtime: ITslRuntime): {
     if (value === null || value === undefined) return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
-    // A texture names its map by the object's `name`; textureLoad also takes a texture node.
+    // texture(textureObject): an unnamed engine Texture crosses as itself and is bound by identity;
+    // a named one names its material map, and textureLoad also takes a texture node.
+    if (
+      index === 0 &&
+      name === "texture" &&
+      engineRef(value) !== undefined &&
+      ((value as { name?: unknown }).name ?? "") === ""
+    )
+      return { kind: "handle", ref: engineRef(value) as IEngineRef };
     if (index === 0 && (name === "texture" || name === "textureLoad") && typeof value === "object")
       return { kind: "named", text: String((value as { name?: unknown } | null)?.name ?? "") };
     if (typeof value === "object" && value !== null && engineRef(value) !== undefined) {

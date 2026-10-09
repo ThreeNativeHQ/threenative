@@ -15,7 +15,7 @@ import {
   Scene,
   SphereGeometry,
 } from "three";
-import { uniform, vec4 } from "three/tsl";
+import { float, positionLocal, texture, uniform, uv, vec3, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
 
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
@@ -113,7 +113,20 @@ try {
     new MeshStandardMaterial({ color: 0xf0e0c0, map: checker }),
   );
   ball.position.set(0.15, -0.9, 0.6);
-  scene.add(box, tile, ball);
+  // texture(textureObject, uv) on an unnamed DataTexture, as Midway's ocean: a level-0 vertex read
+  // displaces the slab and a fragment read colours it.
+  const pixels = new Uint8Array(4 * 4 * 4);
+  for (let i = 0; i < 16; ++i) pixels.set([(i % 4) * 80, Math.floor(i / 4) * 80, 160, 255], i * 4);
+  const grid = new DataTexture(pixels, 4, 4);
+  grid.needsUpdate = true;
+  const textured = new MeshBasicNodeMaterial();
+  textured.positionNode = positionLocal.add(
+    vec3(0, texture(grid, uv()).level(float(0)).r.mul(0.2), 0),
+  );
+  textured.colorNode = vec4(texture(grid, uv()).rgb, 1);
+  const slab = new Mesh(new BoxGeometry(0.8, 0.3, 0.8, 4, 1, 4), textured);
+  slab.position.set(-1.2, -0.9, 0.4);
+  scene.add(box, tile, ball, slab);
   const sun = new DirectionalLight(0xffffff, 3);
   sun.position.set(3, 5, 4);
   scene.add(sun, new AmbientLight(0xffffff, 0.4));

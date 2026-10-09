@@ -217,10 +217,19 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
 
 // A program that samples a material `map` or an environment cannot have one shared fragment group:
 // each draw's group binds its own texture and sampler. Its group[1] is left null and built per draw.
+// A TSL texture(textureObject, uv) binding (tsl_call's "tslTex<id>"): the draw's own texture.
+bool graphTextureBinding(std::string_view name) { return name.rfind("t_tslTex", 0) == 0; }
+
 bool perDrawFragment(const shader::StageModule& stage) {
     for (const shader::Binding& binding : stage.bindings)
-        if (binding.name == "t_map" || binding.name == "t_env") return true;
+        if (binding.name == "t_map" || binding.name == "t_env" || graphTextureBinding(binding.name)) return true;
     return false;
+}
+
+// A vertex stage that samples a graph texture (a positionNode's displacement map) binds it per draw.
+bool perDrawVertex(const shader::StageModule& stage) {
+    return std::any_of(stage.bindings.begin(), stage.bindings.end(),
+                       [](const shader::Binding& binding) { return graphTextureBinding(binding.name); });
 }
 
 // The PMREM generator's shaders, three's PMREMGenerator/PMREMUtils WGSL, ported operation for
@@ -679,7 +688,15 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                                   WGPUTextureView normalView, WGPUSampler normalSampler,
                                   const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps,
                                   WGPUTextureView pmremView, WGPUSampler pmremSampler,
-                                  WGPUTextureView reflectorView, WGPUSampler reflectorSampler) {
+                                  WGPUTextureView reflectorView, WGPUSampler reflectorSampler,
+                                  const GraphTextures* graphTextures) {
+    // A graph texture's GPU texture, by its `t_<name>` / `smp_<name>` binding; null for any other.
+    const auto graph = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
+        if (!graphTextures) return nullptr;
+        for (const auto& [label, texture] : *graphTextures)
+            if (name == (sampler ? "smp_" : "t_") + label) return materialTexture(*texture);
+        return nullptr;
+    };
     // A PbrMap's texture or sampler, by its `t_<name>` / `smp_<name>` binding; null for any other.
     const auto pbr = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
         if (!pbrMaps) return nullptr;
@@ -715,6 +732,11 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             if (b.kind == shader::BindingKind::Texture)
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;
+        } else if (graphTextureBinding(b.kind == shader::BindingKind::Sampler ? "t_" + b.name.substr(4) : b.name)) {
+            const MaterialTexture* texture = graph(b.name, b.kind == shader::BindingKind::Sampler);
+            if (!texture) throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name + " has no texture this draw");
+            if (b.kind == shader::BindingKind::Texture) e.textureView = texture->view;
+            else e.sampler = texture->sampler;
         } else if (b.kind == shader::BindingKind::Texture) {
             const auto postView = postEffects_ ? postEffects_->view(b.name.substr(2)) : nullptr;
             const MaterialTexture* pbrTexture = pbr(b.name, false);
@@ -1339,6 +1361,7 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     if (uniformCapacity_ != 0) {
         for (int g = 0; g < 2; ++g) {
             if (g == 1 && perDrawFragment(built->fragment)) continue;  // per-draw groups instead
+            if (g == 0 && perDrawVertex(built->vertex)) continue;
             built->groups[g] = bindGroup(built->layouts[g], g == 0 ? built->vertex : built->fragment, uniformBuffer_,
                                          lutView_, lutSampler_);
         }
@@ -1355,7 +1378,7 @@ void Renderer::rebuildGroups() {
     for (auto& [key, program] : programs_) {
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
-            program->groups[g] = (g == 1 && perDrawFragment(program->fragment))
+            program->groups[g] = (g == 1 && perDrawFragment(program->fragment)) || (g == 0 && perDrawVertex(program->vertex))
                                      ? nullptr
                                      : bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
                                                  uniformBuffer_, lutView_, lutSampler_);
@@ -1693,6 +1716,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         WGPURenderPipeline pipeline;
         uint32_t vertexOffset, fragmentOffset;
         WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
+        WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
     };
     std::vector<Planned> plan, velocityPlan;
     plan.reserve(opaque.size());
@@ -1934,12 +1958,38 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, 0, storage.data.data(), storage.data.size() * 4);
     }
 
+    // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
+    // draw, in the main pass and the shadow passes alike; `graphKey` names the draw's textures.
+    const auto vertexGroupOf = [&](const Planned& p, const std::string& graphKey) -> WGPUBindGroup {
+        if (!perDrawVertex(p.program->vertex)) return nullptr;
+        const std::string vertexKey = "vertex|" + std::to_string(reinterpret_cast<uintptr_t>(p.program)) + graphKey;
+        const auto found = mapGroups_.find(vertexKey);
+        if (found != mapGroups_.end()) return found->second;
+        return mapGroups_.emplace(vertexKey, bindGroup(p.program->layouts[0], p.program->vertex, uniformBuffer_,
+                                  lutView_, lutSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                  nullptr, nullptr, nullptr, nullptr, &p.item->graphTextures)).first->second;
+    };
+    const auto graphKeyOf = [&](const DrawItem& item) {
+        std::string key;
+        for (const auto& [label, texture] : item.graphTextures) {
+            const MaterialTexture* gpu = materialTexture(*texture);
+            key += "|" + label + "," + std::to_string(reinterpret_cast<uintptr_t>(gpu->view)) + "," +
+                   std::to_string(reinterpret_cast<uintptr_t>(gpu->sampler));
+        }
+        return key;
+    };
+    for (ShadowPass& pass : shadowPasses)
+        for (Planned& draw : pass.draws) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
         const bool readsPbr = std::any_of(p.item->pbrMaps.begin(), p.item->pbrMaps.end(), [](const Texture* t) { return t; });
+        const GraphTextures* graphTextures = p.item->graphTextures.empty() ? nullptr : &p.item->graphTextures;
+        const std::string graphKey = graphKeyOf(*p.item);
+        p.vertexGroup = vertexGroupOf(p, graphKey);
         if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
-            !p.item->reflectorView) continue;
+            !p.item->reflectorView && !graphTextures) continue;
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
         std::array<const MaterialTexture*, shader::kPbrMapCount> pbrTextures{};
         for (int k = 0; k < shader::kPbrMapCount; ++k)
@@ -1962,6 +2012,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         for (const MaterialTexture* texture : pbrTextures)
             pbrKey += "|" + std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->view : nullptr)) + "," +
                       std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->sampler : nullptr));
+        pbrKey += graphKey;
         const auto found = mapGroups_.find(key + pbrKey);
         p.mapGroup = found != mapGroups_.end()
                          ? found->second
@@ -1969,7 +2020,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                                              lutView_, lutSampler_, mapView, mapSampler, envView, envSampler,
                                                          normal ? normal->view : nullptr, normal ? normal->sampler : nullptr, &pbrTextures,
                                                          pmrem ? pmrem->view : nullptr, pmrem ? pmrem->sampler : nullptr,
-                                                         p.item->reflectorView, p.item->reflectorSampler))
+                                                         p.item->reflectorView, p.item->reflectorSampler, graphTextures))
                                .first->second;
     }
 
@@ -2062,7 +2113,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             TN_ENCODE(SetVertexBuffer, a.location, gpu_.buffer(buffer), offset, store.byteLength() - offset);
             if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
         }
-        TN_ENCODE(SetBindGroup, 0, p.program->groups[0], 1, &p.vertexOffset);
+        TN_ENCODE(SetBindGroup, 0, p.vertexGroup ? p.vertexGroup : p.program->groups[0], 1, &p.vertexOffset);
         // The depth program's fragment group is empty: no uniform block, no dynamic offset.
         const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
         TN_ENCODE(SetBindGroup, 1, p.mapGroup ? p.mapGroup : p.program->groups[1],
@@ -2166,7 +2217,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     for (const Planned& p : plan) {
         const DrawItem& item = *p.item;
         bundleKey.insert(bundleKey.end(), {reinterpret_cast<uintptr_t>(p.pipeline),
-            reinterpret_cast<uintptr_t>(p.program->groups[0]),
+            reinterpret_cast<uintptr_t>(p.vertexGroup ? p.vertexGroup : p.program->groups[0]),
             reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
             p.vertexOffset, p.fragmentOffset, item.instanceCount});
         for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights}) {

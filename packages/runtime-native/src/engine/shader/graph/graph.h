@@ -94,6 +94,8 @@ Node equal(Node a, Node b);
 Node select(Node condition, Node whenTrue, Node whenFalse);
 Node swizzle(Node value, std::string_view lanes);
 Node texture(std::string_view map, Node uvs);
+/** TSL's texture(textureObject, uv): that engine Texture itself, bound under `name`, not a material slot. */
+Node textureObject(std::shared_ptr<const void> texture, std::string_view name, Node uvs);
 /**
  * TSL's `pmremTexture(texture, direction, level)`: the texture's PMREM (prefiltered radiance, cubeUV
  * layout) sampled along `direction` at roughness `level`. `texture` is the engine Texture the

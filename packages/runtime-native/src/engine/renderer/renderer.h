@@ -38,6 +38,9 @@ class Texture;  // the material's diffuse `map` (engine/scene/texture.h)
 /** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
 enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 
+/** A material graph's texture(textureObject, uv) reads: the binding name ("tex<id>") and the texture. */
+using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
+
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
     bool background = false;
@@ -68,6 +71,8 @@ struct DrawItem {
     /** A node graph's pmremTexture source: prefiltered as an environment is, sampled as "pmrem". */
     const Texture* pmremMap = nullptr;
     Matrix pmremRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};  // three's materialEnvRotation
+    /** A node graph's texture(textureObject, uv) reads, bound as `t_<name>` / `smp_<name>`. */
+    GraphTextures graphTextures;
     /** A node graph's reflector (an engine::Reflector) and the view of its mirrored pass, sampled as "reflector". */
     const void* reflector = nullptr;
     WGPUTextureView reflectorView = nullptr;
@@ -371,7 +376,8 @@ private:
                             WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr,
                             const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps = nullptr,
                             WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
-                            WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr);
+                            WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr,
+                            const GraphTextures* graphTextures = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         Handle gpu;

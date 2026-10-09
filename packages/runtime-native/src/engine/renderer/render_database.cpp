@@ -26,6 +26,7 @@ namespace {
 struct GraphFind {
     const Texture* texture = nullptr;
     std::shared_ptr<const void> reflector;
+    GraphTextures textures;  // texture(textureObject, uv) reads, by binding name
 };
 
 GraphFind findGraphSources(const Material& material) {
@@ -38,6 +39,10 @@ GraphFind findGraphSources(const Material& material) {
             if (found.texture && found.texture != texture)
                 throw std::runtime_error("TN_NATIVE_PMREM_UNSUPPORTED: one material samples two pmremTexture sources");
             found.texture = texture;
+        } else if (node->kind == shader::graph::Kind::Texture && node->object) {
+            const auto* texture = static_cast<const Texture*>(node->object.get());
+            if (std::none_of(found.textures.begin(), found.textures.end(), [&](const auto& t) { return t.first == node->name; }))
+                found.textures.emplace_back(node->name, texture);
         } else if (node->kind == shader::graph::Kind::Reflector) {
             if (found.reflector && found.reflector != node->object)
                 throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: one material samples two reflectors");
@@ -414,7 +419,7 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
     GraphSources& cached = graphSources_[&material];
     if (cached.roots != roots || cached.version != material.version()) {
         GraphFind found = findGraphSources(material);
-        cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector)};
+        cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector), std::move(found.textures)};
     }
     return cached;
 }
@@ -1038,6 +1043,11 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
         const GraphSources& sources = graphSources(source);
         item.pmremMap = sources.texture;
         item.reflector = sources.reflector.get();
+        item.graphTextures = sources.textures;
+        // A texture node's image comes from the game; one not decoded yet is refused by name.
+        for (const auto& [name, texture] : item.graphTextures)
+            if (!texture->hasImage())
+                throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a TSL texture() reads a texture with no image");
         if (item.pmremMap) {
             Matrix4 rotation;
             if (world && world->environment && source.maps.find("envMap") == source.maps.end())

@@ -35,6 +35,22 @@ inline engine::Material* materialOf(binding::Object& object) {
     return static_cast<engine::Material*>(object.ptr.get());
 }
 
+/** The JS programs' dataTexture(): RGBA8, linear filtering, texels from `texel(x, y)`. */
+template <typename Texel>
+std::shared_ptr<engine::DataTexture> dataTexture(uint32_t width, uint32_t height, Texel texel) {
+    auto map = std::make_shared<engine::DataTexture>();
+    map->width = width; map->height = height; map->data.resize(std::size_t(width) * height * 4);
+    for (uint32_t y = 0; y < height; ++y) for (uint32_t x = 0; x < width; ++x) {
+        const auto rgb = texel(x, y);
+        const auto at = (std::size_t(y) * width + x) * 4;
+        map->data[at] = rgb[0]; map->data[at + 1] = rgb[1]; map->data[at + 2] = rgb[2]; map->data[at + 3] = 255;
+    }
+    map->magFilter = static_cast<uint16_t>(engine::TextureFilter::Linear);
+    map->minFilter = static_cast<uint16_t>(engine::TextureFilter::Linear);
+    map->needsUpdate();
+    return map;
+}
+
 /** The equirectangular sky of the JS programs' equirectSky(): asymmetric bands. */
 inline std::shared_ptr<engine::DataTexture> equirectSky() {
     auto sky = std::make_shared<engine::DataTexture>();
@@ -400,6 +416,22 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         const abi::TslArg receiver = abi::TslArg::of(screen);
         const auto flipped = abi::tslCall("flipX", &receiver, {}, serial);
         material->nodes.colorNode = g::vec4({flipped, g::mul(g::swizzle(screen, "x"), g::swizzle(screen, "y")), g::float_(1)});
+    } else if (program == "tsl-texture-object") {
+        // Through the shared TSL table: texture(textureObject, uv) and .level(0), as V8 and Wasm build them.
+        uint64_t serial = 0;
+        using Rgb = std::array<uint8_t, 3>;
+        const auto ramp = tsl_detail::dataTexture(8, 4, [](uint32_t tx, uint32_t ty) {
+            return Rgb{uint8_t(tx * 36), uint8_t(ty * 80), uint8_t(200 - tx * 20)}; });
+        const auto bumps = tsl_detail::dataTexture(8, 8, [](uint32_t tx, uint32_t ty) {
+            return Rgb{uint8_t(((tx + ty) % 4) * 80), 0, 0}; });
+        const auto sample = [&serial](std::shared_ptr<engine::DataTexture> map) {
+            return abi::tslCall("texture", nullptr, {abi::TslArg::objectOf("DataTexture", std::move(map)), abi::TslArg::of(g::uv())}, serial);
+        };
+        const abi::TslArg bump = abi::TslArg::of(sample(bumps));
+        const auto level = abi::tslCall("level", &bump, {abi::TslArg::of(0.0)}, serial);
+        material->nodes.positionNode = g::add(g::positionLocal(),
+            g::vec3({g::float_(0), g::float_(0), g::mul(g::swizzle(level, "x"), g::float_(0.4))}));
+        material->nodes.colorNode = g::vec4({g::swizzle(sample(ramp), "xyz"), g::float_(1)});
     } else if (program == "pmrem-texture") {
         uint64_t serial = 0;
         const auto positionWorld = g::varying("positionWorld", Type::vec(3));

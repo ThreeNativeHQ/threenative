@@ -247,6 +247,12 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Texture: {
             const ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
+            // TextureNode.level(n): an explicit mip, which a vertex stage needs.
+            if (d.args.size() == 2) {
+                const ExprId level = expression(d.args[1]);
+                if (level == kInvalid) return kInvalid;
+                return program_.sampleLevel(program_.texture2d(d.name), coordinate, level);
+            }
             return program_.sample(program_.expr(coordinate).type == Type::vec(3)
                                        ? program_.texture3d(d.name) : program_.texture2d(d.name), coordinate);
         }
@@ -422,6 +428,12 @@ Node texture(std::string_view map, Node uvs) {
     data->kind = Kind::Texture;
     data->name = std::string(map);
     data->args = {std::move(uvs)};
+    return data;
+}
+
+Node textureObject(std::shared_ptr<const void> object, std::string_view name, Node uvs) {
+    auto data = std::const_pointer_cast<NodeData>(texture(name, std::move(uvs)));
+    data->object = std::move(object);
     return data;
 }
 
