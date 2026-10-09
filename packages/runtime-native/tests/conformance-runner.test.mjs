@@ -68,7 +68,7 @@ const runner = join(root, "conformance/run-conformance.mjs");
 const SDL3_AAR = `SDL3-${SDL3_ANDROID_VERSION}.aar`;
 
 function run(args, env = {}) {
-  return spawnSync(process.execPath, [runner, ...args], {
+  const proc = spawnSync(process.execPath, [runner, ...args], {
     cwd: root,
     encoding: "utf8",
     env: {
@@ -81,6 +81,12 @@ function run(args, env = {}) {
     },
     timeout: 120_000,
   });
+  assert.notEqual(
+    proc.status,
+    null,
+    `Conformance subprocess has no exit status: error=${proc.error?.code ?? "none"} (${proc.error?.message ?? "none"}); signal=${proc.signal ?? "none"}`,
+  );
+  return proc;
 }
 
 test("a software adapter blocks a hardware row instead of failing it", () => {
