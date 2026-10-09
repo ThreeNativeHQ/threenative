@@ -1366,6 +1366,7 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
     shader::VertexVariant kind = variant;
     kind.instanceColor = false;
+    kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
@@ -1717,6 +1718,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.doubleSide = item.side == 2;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
+        v.vertexColors = item.colorSize;
         v.instanceStorage = v.instanced;
         v.skinned = item.boneMatrices != nullptr;
         v.skinnedPalette = item.boneStride != 0;
@@ -2111,6 +2113,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             BufferStore* source = a.name == "position"        ? item.positions
                                   : a.name == "normal"        ? item.normals
                                   : a.name == "uv"            ? item.uvs
+                                  : a.name == "color"         ? item.colors
                                   : a.name == "instanceColor" ? item.instanceColors
                                   : a.name == "skinIndex"     ? item.skinIndices
                                   : a.name == "skinWeight"    ? item.skinWeights

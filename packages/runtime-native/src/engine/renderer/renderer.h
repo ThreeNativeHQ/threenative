@@ -47,6 +47,8 @@ struct DrawItem {
     BufferStore* positions = nullptr;    // vec3 float
     BufferStore* normals = nullptr;      // vec3 float; unused by Basic
     BufferStore* uvs = nullptr;          // vec2 float; only a mapped material's program reads it
+    BufferStore* colors = nullptr;       // material.vertexColors: the `color` attribute as float32
+    uint8_t colorSize = 0;               // its item size, 3 or 4; 0 without vertex colours
     BufferStore* indices = nullptr;      // u16 or u32; null draws non-indexed
     Matrix matrixWorld{};
     // A merged draw retains its first member's render-list origin when its model becomes identity.

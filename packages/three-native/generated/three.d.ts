@@ -1019,6 +1019,7 @@ readonly type: string;
 visible: boolean;
 color: Color;
 map: Texture | null;
+vertexColors: boolean;
 
   clone(): this;
 }
@@ -1409,6 +1410,7 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+vertexColors: boolean;
 
   clone(): this;
 }
@@ -1535,6 +1537,7 @@ normalScale: Vector2;
 aoMapIntensity: number;
 aoMap: Texture | null;
 emissiveMap: Texture | null;
+vertexColors: boolean;
 
   clone(): this;
 }
@@ -2402,6 +2405,7 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+vertexColors: boolean;
 
   clone(): this;
 }
@@ -2433,6 +2437,7 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+vertexColors: boolean;
 
   clone(): this;
 }
@@ -3084,6 +3089,7 @@ fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
+vertexColors: boolean;
 
   clone(): this;
 }
@@ -3112,6 +3118,7 @@ fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
+vertexColors: boolean;
 
   clone(): this;
 }
