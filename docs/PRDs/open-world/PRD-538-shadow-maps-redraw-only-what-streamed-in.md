@@ -20,7 +20,7 @@ Measured on Machinefall `map-walk`, desktop RTX 2080, live clock, PRD-478 branch
 
 A streamed cell changes a small part of the map, but `VirtualShadowNode` redraws the whole level for it. `invalidateRegion(region)` already says which part changed; today it only chooses *which levels* redraw.
 
-**Correction, 2026-10-08:** quiet-desktop runs show that PRD-478's early-route GPU p95 (9.2–9.8 ms) is the main pass, not this shadow map: `gpuMain` p50 is 8.6 ms there, drawing 8.2 M triangles of single-level trees that the asset cook gave no LOD chain (fixed in [PRD-539](../assets/PRD-539-card-lod-levels-keep-the-canopy.md)). This PRD still removes a 4–6 ms spike from each redraw frame, but PRD-478's AC-2 no longer depends on it.
+**Correction, 2026-10-08:** quiet-desktop runs show that PRD-478's early-route GPU p95 (9.2–9.8 ms) is the main pass, not this shadow map: `gpuMain` p50 is 8.6 ms there, drawing 8.2 M triangles of single-level trees that the asset cook gave no LOD chain (fixed in [PRD-541](../assets/PRD-541-card-lod-levels-keep-the-canopy.md)). This PRD still removes a 4–6 ms spike from each redraw frame, but PRD-478's AC-2 no longer depends on it.
 
 A longer delay is not the fix. It cuts renders but lets a newly streamed caster's shadow arrive late near the player, which PRD-478's AC-3 forbids.
 

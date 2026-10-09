@@ -1,6 +1,6 @@
 # PRD-541 — Card LOD levels keep the canopy
 
-**Status:** ABSORBED into PRD-478 (PR 437), 2026-10-08 — the owner asked for one PR. Its remaining boxes are tracked here and finish with PRD-478.
+**Status:** ABSORBED into PRD-478 (PR 473), 2026-10-08 — the owner asked for one PR. Its remaining boxes are tracked here and finish with PRD-478.
 **Priority:** P1 — Open: PRD-478's walking GPU p95 on Machinefall needs these trees to have a chain, and today a chain thins their needles visibly.
 **Complexity:** 5 (MEDIUM) — one cook stage (`packages/assets/src/lod/`), the model pass's self-check, a Machinefall re-cook with timing and blind raters
 **Owner:** João
@@ -31,7 +31,7 @@ Layer: the cook (`packages/assets/`). The game sets nothing; the scale is the ke
 
 ## Decisions
 
-- 2026-10-08, João: absorb this PRD's work into PRD-478's PR 437 (one PR, keep it simple); draft PR 463 closes.
+- 2026-10-08, João: absorb this PRD's work into PRD-478's PR (now 473) (one PR, keep it simple); draft PR 463 closes.
 - 2026-10-08, agent: a kept card scales by at most 2. The ratio levels (keep ≥ 0.25) reach full coverage under it. The terminal level keeps far fewer cards, and scaling them further would grow cards past the crown's silhouette, so it covers `4 × keep` of LOD0.
 
 ## Findings
