@@ -126,8 +126,7 @@ describe("compileAssets", () => {
   it("should write a hashed output and a manifest entry when an input exists", async () => {
     const root = await makeTempDir("threenative-compile-hashed-");
     await mkdir(path.join(root, "assets"));
-    // High-entropy pixels: the PNG stays large while the fixed-rate KTX2 encode shrinks,
-    // which is what the byte assertions below pin.
+    // A permissive floor isolates hashed publication from the quality-selection tests.
     const source = rgbaPng({
       blue: (x, y) => (x * 31 + y * 17) % 256,
       green: (x, y) => (x * 7 + y * 29) % 256,
@@ -137,7 +136,11 @@ describe("compileAssets", () => {
     });
     await writeFile(path.join(root, "assets", "rock.png"), source);
 
-    const result = await compileAssets({ cwd: root, transcoder: TRANSCODER });
+    const result = await compileAssets({
+      cwd: root,
+      transcoder: TRANSCODER,
+      config: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } },
+    });
 
     expect(result.written).toBe(1);
     const manifest = JSON.parse(
@@ -226,7 +229,12 @@ describe("compileAssets", () => {
 
     // The same config, the target that can decode it: compression ships.
     await rm(path.join(root, "public"), { force: true, recursive: true });
-    await compileAssets({ cwd: root, platform: "web", transcoder: TRANSCODER });
+    await compileAssets({
+      cwd: root,
+      platform: "web",
+      transcoder: TRANSCODER,
+      config: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } },
+    });
     const webManifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
     ) as { entries: Record<string, { output: string }> };
@@ -894,6 +902,24 @@ describe("compileAssets", () => {
       await expect(compileAssets({ config: badMaxSize, cwd: root })).rejects.toThrow(
         /assets\.textures\.maxSize must be a positive integer/u,
       );
+    }
+
+    for (const maxSize of [
+      null,
+      [],
+      { baseColorTexture: 0 },
+      { normalTexture: 3 },
+      { baseColorTexture: "2048" },
+      { baseColorTexture: Number.POSITIVE_INFINITY },
+      { mask: 1024 },
+      { unknownTexture: 1024 },
+    ]) {
+      await expect(
+        compileAssets({
+          config: { textures: { maxSize } } as unknown as IAssetSourceConfig,
+          cwd: root,
+        }),
+      ).rejects.toThrow(/TN_ASSETS_CONFIG_INVALID/u);
     }
 
     for (const value of [1, 2, 3]) {

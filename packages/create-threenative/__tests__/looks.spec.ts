@@ -261,12 +261,15 @@ describe("starter visual floor", () => {
     });
     expect(scenario.assert?.camera).toMatchObject({ entity: "camera.main", follows: "player" });
     expect(scenario.assert?.movement).toMatchObject({ entity: "player", minDistance: 4 });
-    // AO, bloom and vignette are the whole shipped chain, and each one is proved to have changed
-    // the graph output rather than being reported as applied.
+    // AO, bloom and vignette are the chain this kit ships, `grade` and `grain` are the two stages
+    // its own `src/render/grade.ts` adds, and each one is proved to have changed the graph output
+    // rather than being reported as applied.
     expect(scenario.assert?.renderChain?.stages?.includes).toEqual([
       "ambientOcclusion",
       "bloom",
       "vignette",
+      "grade",
+      "grain",
     ]);
     expect(Object.keys(scenario.assert?.renderChain?.contributions ?? {})).toEqual([
       "graphOutputChanged",

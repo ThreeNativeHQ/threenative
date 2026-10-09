@@ -4,6 +4,14 @@ import { getTextureColorSpace, listTextureInfo, listTextureSlots } from "@gltf-t
 import { read as readKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
 import { textureStats } from "../health.js";
+import {
+  COLOUR_SLOTS,
+  type IImageQualityFloor,
+  type IImageQualityOptions,
+  type ITextureQuality,
+  imageQuality,
+  measureKtx2,
+} from "../image-quality.js";
 import { encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
 import type { TextureCodec, TextureSkipReason } from "./texture.js";
@@ -16,9 +24,9 @@ import type { TextureCodec, TextureSkipReason } from "./texture.js";
  * instead of RGBA, and caps the resolution so a 4K texture an image model produced cannot
  * silently eat a phone's whole budget.
  *
- * Codec choice follows the declared use of the image, never a guess: a config override on the
- * glTF slot wins, then normal-map slots (UASTC survives normal data; ETC1S does not), then
- * alpha in the decoded pixels. Colour space comes from the slot too — `getTextureColorSpace`
+ * Slot constraints feed one measured ladder: normal/data slots retain UASTC/none, while
+ * colour escalates from ETC1S through RDO and plain UASTC. Alpha coverage is checked separately;
+ * a forced codec must still meet the floor. Colour space comes from the slot too — `getTextureColorSpace`
  * knows base colour and emissive are sRGB and that metallic-roughness and normals are data —
  * so a linear map is never encoded through a perceptual metric.
  *
@@ -34,7 +42,12 @@ export interface IModelTextureOverride {
   readonly slot: string;
 }
 
+export type TextureMaxSize = number | Readonly<Record<string, number>>;
+
 export interface IModelTexturesOptions {
+  readonly floor?: Partial<IImageQualityFloor>;
+  /** Internal reporting switch; selection still measures and enforces the floor. */
+  readonly measureQuality?: boolean;
   /**
    * Resolved by the compiler from the target's runtime capabilities, never by a project: the
    * target has no KTX2 decoder, so an over-cap embedded image is box-resampled and re-emitted as
@@ -46,7 +59,7 @@ export interface IModelTexturesOptions {
    * Longest edge an embedded image may keep, default 2048. Larger images are box-resampled
    * down preserving aspect ratio; smaller ones are never upscaled.
    */
-  readonly maxSize?: number;
+  readonly maxSize?: TextureMaxSize;
   readonly overrides?: readonly IModelTextureOverride[];
   /** ETC1S encoder quality 1–255, default 150. Ignored for UASTC. */
   readonly quality?: number;
@@ -54,6 +67,7 @@ export interface IModelTexturesOptions {
 
 /** What the stage did, recorded in the manifest and printed by the size report. */
 export interface IEmbeddedTextureSummary {
+  readonly quality: Readonly<Record<string, ITextureQuality>>;
   readonly bytesAfter: number;
   readonly bytesBefore: number;
   readonly count: number;
@@ -121,6 +135,27 @@ const CORE_SLOTS = [
   "normalTexture",
   "occlusionTexture",
 ] as const;
+
+/** Slot names supported by the installed glTF material extensions. */
+export const TEXTURE_SIZE_SLOTS: ReadonlySet<string> = new Set([
+  ...CORE_SLOTS,
+  ...NORMAL_SLOTS,
+  "diffuseTexture",
+  "specularColorTexture",
+  "sheenColorTexture",
+  "anisotropyTexture",
+  "clearcoatRoughnessTexture",
+  "clearcoatTexture",
+  "diffuseTransmissionColorTexture",
+  "diffuseTransmissionTexture",
+  "iridescenceTexture",
+  "iridescenceThicknessTexture",
+  "sheenRoughnessTexture",
+  "specularGlossinessTexture",
+  "specularTexture",
+  "thicknessTexture",
+  "transmissionTexture",
+]);
 
 type CoreSlot = (typeof CORE_SLOTS)[number];
 
@@ -345,6 +380,18 @@ export function resampleRgba(
   return output;
 }
 
+/** Shared images retain the largest consuming slot cap; unlisted slots keep the caller's default. */
+export function resolveTextureMaxSize(
+  maxSize: TextureMaxSize | undefined,
+  slots: readonly string[],
+  fallback = DEFAULT_MAX_SIZE,
+): number {
+  if (typeof maxSize === "number") return maxSize;
+  return Math.max(
+    ...(slots.length === 0 ? [fallback] : slots.map((slot) => maxSize?.[slot] ?? fallback)),
+  );
+}
+
 /** Longest edge clamped to the cap, aspect preserved, each edge a whole number of blocks. */
 export function cappedSize(
   width: number,
@@ -359,23 +406,127 @@ export function cappedSize(
   return { height: snap(height), width: snap(width) };
 }
 
-function rgbaHasAlpha(rgba: Uint8Array): boolean {
-  for (let offset = 3; offset < rgba.length; offset += 4) {
-    if ((rgba[offset] ?? 255) !== 255) return true;
-  }
-  return false;
+interface ICodecRung {
+  readonly codec: TextureCodec;
+  readonly rdoLambda?: number;
 }
 
-function chooseCodec(
+/** Unvalidated data slots retain UASTC/none until a slot-appropriate metric exists. */
+export function codecLadder(
   slots: readonly string[],
-  alpha: boolean,
-  options: IModelTexturesOptions,
-): TextureCodec {
-  for (const override of options.overrides ?? []) {
-    if (slots.includes(override.slot)) return override.codec;
+  forced?: TextureCodec,
+): readonly ICodecRung[] {
+  const data = slots.length === 0 || slots.some((slot) => !COLOUR_SLOTS.has(slot));
+  if (forced !== undefined) {
+    if (forced === "etc1s" && data)
+      throw new Error("TN_ASSETS_TEXTURE_SLOT_CODEC: ETC1S is forbidden for normal/data slots.");
+    return [{ codec: forced }];
   }
-  if (slots.some((slot) => NORMAL_SLOTS.has(slot))) return "uastc";
-  return alpha ? "uastc" : "etc1s";
+  return data
+    ? [{ codec: "uastc" }, { codec: "none" }]
+    : [
+        { codec: "etc1s" },
+        { codec: "uastc", rdoLambda: 3 },
+        { codec: "uastc", rdoLambda: 1 },
+        { codec: "uastc" },
+        { codec: "none" },
+      ];
+}
+
+/** Above this, a source ETC1S cannot beat skips the UASTC rungs; the RDO bound uses the same size. */
+const LARGE_LADDER_TEXELS = 256 * 256;
+
+/** Both compression passes retain the smallest eligible encoded candidate that passes. */
+export async function encodeTextureLadder(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  options: IImageQualityOptions & {
+    readonly forced?: TextureCodec;
+    /** Automatic source retention: candidates that cannot save bytes need no quality score. */
+    readonly maxBytes?: number;
+    readonly srgb: boolean;
+    readonly quality: number;
+  },
+): Promise<{
+  readonly encoded?: Uint8Array;
+  readonly codec: TextureCodec;
+  readonly quality: ITextureQuality;
+}> {
+  const slots = options.slots ?? ["baseColorTexture"];
+  let smallest: { encoded: Uint8Array; codec: TextureCodec; quality: ITextureQuality } | undefined;
+  let smallerThanSource = options.maxBytes === undefined;
+  let sourceWins = false;
+  for (const candidate of codecLadder(slots, options.forced)) {
+    if (candidate.codec === "none" && smallest !== undefined) return smallest;
+    if (sourceWins && candidate.codec !== "none") continue;
+    const rung =
+      candidate.codec === "etc1s"
+        ? `etc1s@${options.quality}`
+        : candidate.rdoLambda === undefined
+          ? candidate.codec
+          : `uastc+rdo λ${candidate.rdoLambda} +zstd`;
+    const encoded =
+      candidate.codec === "none"
+        ? undefined
+        : await encodeToKTX2(new Uint8Array([0]), {
+            generateMipmap: true,
+            imageDecoder: async () => ({ data, height, width }),
+            isUASTC: candidate.codec === "uastc",
+            isNormalMap: slots.some((slot) => NORMAL_SLOTS.has(slot)),
+            isPerceptual: options.srgb,
+            isSetKTX2SRGBTransferFunc: options.srgb,
+            qualityLevel: options.quality,
+            needSupercompression: true,
+            ...(candidate.rdoLambda === undefined ? {} : { rdoLambda: candidate.rdoLambda }),
+          });
+    if (encoded !== undefined && options.maxBytes !== undefined) {
+      if (encoded.byteLength >= options.maxBytes) {
+        // ponytail: ETC1S is the ladder's lowest bitrate, so on a large image the UASTC rungs it
+        // cannot beat are not encoded: the starter's 4096x2048 sky spent 50 s on three of them to
+        // ship its source anyway. Ceiling: a smooth image whose UASTC+RDO+zstd would undercut both
+        // ETC1S and the source ships the source; walk the full ladder if that case is measured.
+        if (candidate.codec === "etc1s" && width * height > LARGE_LADDER_TEXELS) sourceWins = true;
+        continue;
+      }
+      smallerThanSource = true;
+    }
+    // A larger candidate cannot replace the passing minimum, regardless of its score.
+    if (
+      encoded !== undefined &&
+      smallest !== undefined &&
+      encoded.byteLength >= smallest.encoded.byteLength
+    )
+      continue;
+    const score =
+      encoded === undefined
+        ? imageQuality(data, data, width, height, options)
+        : await measureKtx2(data, encoded, width, height, options);
+    if (
+      score.status !== "below-floor" &&
+      ((options.alphaThresholds?.length ?? 0) > 0 || score.alpha.meanAbsoluteError === 0)
+    ) {
+      const quality: ITextureQuality = {
+        ...score,
+        rung,
+        codec: candidate.codec,
+        sourceWidth: width,
+        sourceHeight: height,
+        ...(encoded === undefined
+          ? {
+              compressionSkipped: smallerThanSource
+                ? ("below-floor" as const)
+                : ("not-smaller" as const),
+            }
+          : {}),
+      };
+      if (encoded === undefined) return { codec: candidate.codec, quality };
+      if (smallest === undefined || encoded.byteLength < smallest.encoded.byteLength)
+        smallest = { encoded, codec: candidate.codec, quality };
+    }
+  }
+  if (smallest !== undefined) return smallest;
+  throw new Error("TN_ASSETS_TEXTURE_FLOOR: forced codec fails its configured floor.");
 }
 
 function gpuBytes(width: number, height: number, codec: string): number {
@@ -394,6 +545,7 @@ function messageOf(error: unknown): string {
  */
 /** An image the shared store supplied already encoded, with what its source measured. */
 export interface IRecalledTexture {
+  readonly quality?: ITextureQuality;
   readonly codec: string;
   readonly sourceBytes: number;
 }
@@ -408,10 +560,10 @@ export async function compressEmbeddedTextures(
   const textures = root.listTextures();
   if (textures.length === 0) return undefined;
   const decoderFree = options.decoderFree === true;
-  const maxSize = options.maxSize ?? DEFAULT_MAX_SIZE;
   const quality = Math.min(255, Math.max(1, Math.round(options.quality ?? DEFAULT_ETC1S_QUALITY)));
   const keys = textureKeys(root);
   const formats: Record<string, string> = {};
+  const scores: Record<string, ITextureQuality> = {};
   const skippedCompression: Record<string, TextureSkipReason> = {};
   let bytesBefore = 0;
   let bytesAfter = 0;
@@ -428,36 +580,33 @@ export async function compressEmbeddedTextures(
         `TN_ASSETS_MODEL_TEXTURE_MISSING: '${logicalPath}' declares texture '${key}' with no image data.`,
       );
     }
-    // Decoder-free store hit: the stored bytes are already the cooked PNG (or the authored bytes
-    // under the cap), so they are neither decoded nor resized again; the summary reports what the
-    // model's source measured and the file it resolved to.
-    const recalledFree = decoderFree ? recalled.get(index) : undefined;
-    if (recalledFree !== undefined) {
+    // Store hits replay the complete decision, including an uncompressed fallback, without a decode.
+    const fromStore = recalled.get(index);
+    if (fromStore !== undefined) {
       const shape = imageShape(image, texture.getMimeType());
-      bytesBefore += recalledFree.sourceBytes;
+      bytesBefore += fromStore.sourceBytes;
       bytesAfter += image.byteLength;
-      gpuBytesBefore += gpuBytes(shape.width, shape.height, "none");
-      gpuBytesAfter += gpuBytes(shape.width, shape.height, "none");
-      formats[key] = "none";
+      const score = fromStore.quality;
+      gpuBytesBefore += gpuBytes(
+        score?.sourceWidth ?? shape.width,
+        score?.sourceHeight ?? shape.height,
+        "none",
+      );
+      gpuBytesAfter += gpuBytes(shape.width, shape.height, fromStore.codec);
+      formats[key] = fromStore.codec;
+      if (score !== undefined) {
+        if (options.measureQuality !== false) scores[key] = score;
+        if (score.compressionSkipped !== undefined)
+          skippedCompression[key] = score.compressionSkipped;
+        if (shape.width !== score.sourceWidth || shape.height !== score.sourceHeight) resized += 1;
+      }
+      if (fromStore.codec !== "none") compressed += 1;
       continue;
     }
     // Already compressed upstream: left exactly as authored, and still counted so the
     // reported GPU total is the whole model rather than only the part this stage touched.
     if (texture.getMimeType() === "image/ktx2") {
       const shape = imageShape(image, "image/ktx2");
-      const fromStore = recalled.get(index);
-      if (fromStore !== undefined) {
-        // Recalled from the shared store: the summary reports what this model's source carried
-        // and what the store's encode saved, exactly as if the encode had run here — so the
-        // manifest entry is the same whether the image was encoded or found.
-        bytesBefore += fromStore.sourceBytes;
-        bytesAfter += image.byteLength;
-        gpuBytesBefore += gpuBytes(shape.width, shape.height, "none");
-        gpuBytesAfter += gpuBytes(shape.width, shape.height, fromStore.codec);
-        formats[key] = fromStore.codec;
-        compressed += 1;
-        continue;
-      }
       bytesBefore += image.byteLength;
       bytesAfter += image.byteLength;
       const already = gpuBytes(shape.width, shape.height, "uastc");
@@ -467,6 +616,7 @@ export async function compressEmbeddedTextures(
     }
 
     const slots = listTextureSlots(texture);
+    const maxSize = resolveTextureMaxSize(options.maxSize, slots);
     let decoded: { data: Uint8Array; height: number; width: number };
     try {
       decoded = await decodeImageBytes(
@@ -479,13 +629,25 @@ export async function compressEmbeddedTextures(
       );
     }
     const explicit = (options.overrides ?? []).some((override) => slots.includes(override.slot));
-    const codec = chooseCodec(slots, rgbaHasAlpha(decoded.data), options);
+    const forced = options.overrides?.find((override) => slots.includes(override.slot))?.codec;
+    const codec = codecLadder(slots, forced)[0]?.codec ?? "none";
     bytesBefore += image.byteLength;
     gpuBytesBefore += gpuBytes(decoded.width, decoded.height, "none");
     if (codec === "none") {
       bytesAfter += image.byteLength;
       gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
       formats[key] = "none";
+      if (options.measureQuality !== false)
+        scores[key] = {
+          ...imageQuality(decoded.data, decoded.data, decoded.width, decoded.height, {
+            ...textureQualitySemantics(texture),
+            floor: options.floor,
+          }),
+          rung: "none",
+          codec: "none",
+          sourceWidth: decoded.width,
+          sourceHeight: decoded.height,
+        };
       continue;
     }
     if (decoderFree) {
@@ -550,35 +712,73 @@ export async function compressEmbeddedTextures(
       gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
       formats[key] = "none";
       skippedCompression[key] = "block-size";
+      if (options.measureQuality !== false)
+        scores[key] = {
+          ...imageQuality(decoded.data, decoded.data, decoded.width, decoded.height, {
+            ...textureQualitySemantics(texture),
+            floor: options.floor,
+          }),
+          rung: "none",
+          codec: "none",
+          compressionSkipped: "block-size",
+          sourceWidth: decoded.width,
+          sourceHeight: decoded.height,
+        };
       continue;
     }
 
-    const normalMap = slots.some((slot) => NORMAL_SLOTS.has(slot));
-    const encoded = await encodeToKTX2(new Uint8Array([0]), {
-      generateMipmap: true,
-      imageDecoder: async () => ({ data, height: target.height, width: target.width }),
-      isPerceptual: srgb,
-      isSetKTX2SRGBTransferFunc: srgb,
-      ...(codec === "uastc"
-        ? { isUASTC: true, ...(normalMap ? { isNormalMap: true } : {}) }
-        : { isUASTC: false, qualityLevel: quality }),
+    const selected = await encodeTextureLadder(data, target.width, target.height, {
+      ...textureQualitySemantics(texture),
+      floor: options.floor,
+      srgb,
+      quality,
+      ...(!explicit &&
+      target.width === decoded.width &&
+      target.height === decoded.height &&
+      UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType())
+        ? { maxBytes: image.byteLength }
+        : {}),
+      ...(forced === undefined ? {} : { forced }),
     });
+    const encoded = selected.encoded;
     // A tiny source can cost less than the KTX2 container alone. Keep its exact bytes when
     // encoding cannot save download bytes *and* the authored container needs no extension to be
     // read; a WebP costs a decoder-free target the whole model, which is never the smaller cost.
     // A named codec override still requests GPU compression either way. The size increase is
     // reported by the existing `bytes before -> after` row of the build report.
     if (
-      encoded.byteLength >= image.byteLength &&
-      target.width === decoded.width &&
-      target.height === decoded.height &&
-      !explicit &&
-      UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType())
+      encoded === undefined ||
+      (encoded.byteLength >= image.byteLength &&
+        target.width === decoded.width &&
+        target.height === decoded.height &&
+        !explicit &&
+        UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType()))
     ) {
-      bytesAfter += image.byteLength;
-      gpuBytesAfter += gpuBytes(decoded.width, decoded.height, "none");
+      const downsampled = target.width !== decoded.width || target.height !== decoded.height;
+      let retained: Uint8Array = image;
+      if (downsampled) {
+        const png = new PNG({ height: target.height, width: target.width });
+        png.data = Buffer.from(data);
+        retained = PNG.sync.write(png);
+        texture.setImage(retained).setMimeType("image/png");
+      }
+      bytesAfter += retained.byteLength;
+      gpuBytesAfter += gpuBytes(target.width, target.height, "none");
       formats[key] = "none";
-      skippedCompression[key] = "not-smaller";
+      const reason = selected.quality.compressionSkipped ?? "not-smaller";
+      skippedCompression[key] = reason;
+      if (options.measureQuality !== false)
+        scores[key] = {
+          ...imageQuality(data, data, target.width, target.height, {
+            ...textureQualitySemantics(texture),
+            floor: options.floor,
+          }),
+          rung: "none",
+          codec: "none",
+          compressionSkipped: reason,
+          sourceWidth: decoded.width,
+          sourceHeight: decoded.height,
+        };
       continue;
     }
     const container = readKTX2(encoded);
@@ -587,10 +787,17 @@ export async function compressEmbeddedTextures(
         `TN_ASSETS_MIP_CHAIN_INCOMPLETE: embedded texture '${key}' of '${logicalPath}' encoded without a mip chain (${String(container.levelCount)} level(s)).`,
       );
     }
+    if (options.measureQuality !== false) {
+      scores[key] = {
+        ...selected.quality,
+        sourceWidth: decoded.width,
+        sourceHeight: decoded.height,
+      };
+    }
     texture.setImage(encoded).setMimeType("image/ktx2");
-    formats[key] = codec;
+    formats[key] = selected.codec;
     bytesAfter += encoded.byteLength;
-    gpuBytesAfter += gpuBytes(target.width, target.height, codec);
+    gpuBytesAfter += gpuBytes(target.width, target.height, selected.codec);
     compressed += 1;
   }
 
@@ -607,6 +814,7 @@ export async function compressEmbeddedTextures(
     document.disposeExtension(EXTTextureWebP.EXTENSION_NAME);
   }
   return {
+    quality: scores,
     bytesAfter,
     bytesBefore,
     count: textures.length,
@@ -615,5 +823,26 @@ export async function compressEmbeddedTextures(
     gpuBytesBefore,
     resized,
     skippedCompression,
+  };
+}
+
+/** Every consuming slot and MASK cutoff participates, including shared colour/data images. */
+export function textureQualitySemantics(texture: Texture): {
+  slots: string[];
+  alphaThresholds: number[];
+} {
+  return {
+    slots: [...listTextureSlots(texture)].sort(),
+    alphaThresholds: [
+      ...new Set(
+        texture.listParents().flatMap((parent) => {
+          if (parent.propertyType !== "Material") return [];
+          const material = parent as import("@gltf-transform/core").Material;
+          return material.getBaseColorTexture() === texture && material.getAlphaMode() === "MASK"
+            ? [material.getAlphaCutoff()]
+            : [];
+        }),
+      ),
+    ].sort((a, b) => a - b),
   };
 }

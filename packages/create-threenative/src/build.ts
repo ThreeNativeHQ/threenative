@@ -107,11 +107,13 @@ export async function assertNativeBundleCompatible(
     );
   }
   if (target === "desktop" && capabilities.webAssembly) return;
+  // Android V8 has WebAssembly for its admitted decoders; Rapier and Recast stay on the native
+  // backend there, so only the bare global is allowed.
   const wasm = [
-    ["WebAssembly", /\bWebAssembly\b/u],
-    ["Rapier WASM", /rapier_wasm|RAPIER_VERSION|rawrapier/u],
-    ["Recast WASM", /recast-navigation\.wasm|recastnavigationwasm/u],
-  ].filter(([, pattern]) => (pattern as RegExp).test(source));
+    ...(capabilities.webAssembly ? [] : [["WebAssembly", /\bWebAssembly\b/u] as const]),
+    ["Rapier WASM", /rapier_wasm|RAPIER_VERSION|rawrapier/u] as const,
+    ["Recast WASM", /recast-navigation\.wasm|recastnavigationwasm/u] as const,
+  ].filter(([, pattern]) => pattern.test(source));
   if (wasm.length === 0) return;
   throw new Error(
     `${target === "desktop" ? "TN_NATIVE_WASM_UNSUPPORTED" : "TN_NATIVE_WASM_ON_MOBILE"}: ${target} artifact ${capabilities.artifact} (${capabilities.engine}) bundle contains ${wasm.map(([label]) => label).join(", ")}. Move web-only WASM imports out of src/game.ts or provide a threenative-native conditional backend; mobile navigation is owned by PRD-052.`,
@@ -1064,31 +1066,60 @@ export function runtimeHasWebAssembly(
 }
 
 /**
+ * The Android engine the packager will compile or fetch: the `-PthreenativeJsEngine` Gradle
+ * property passed through `THREENATIVE_GRADLE_ARGS`, else the Gradle default `v8`. A value Gradle
+ * would refuse resolves to `unknown`, which is decoder-free.
+ */
+function androidEngine(env: NodeJS.ProcessEnv): "v8" | "quickjs" | "unknown" {
+  const value = (env.THREENATIVE_GRADLE_ARGS ?? "")
+    .split(" ")
+    .map((arg) => /^(?:-P|--project-prop=)threenativeJsEngine=(.*)$/u.exec(arg)?.[1])
+    .filter((entry) => entry !== undefined)
+    .at(-1);
+  const engine = (value ?? "v8").toLowerCase();
+  return engine === "v8" || engine === "quickjs" ? engine : "unknown";
+}
+
+/**
  * One conservative decision for cooking, validation and bundling. Only desktop's selected
  * executable is runnable here: a desktop packaging tool is never evidence about Android/iOS.
- * Mobile stays decoder-free until its selected artifact and packaged loaders are qualified.
+ * Android's engine is the one its Gradle build selects; Android V8 admits only the codecs its
+ * packaged loader has run on a device lane (KTX2 and Meshopt, PRD-485), Draco stays refused.
+ * iOS stays decoder-free until its selected artifact and packaged loaders are qualified.
  * Desktop V8 retains its existing decoder path; WASM alone does not qualify new codec targets.
  */
 export function resolveRuntimeAssetCapabilities(
   target: BuildTarget,
   binary?: string,
   probe: typeof spawnSync = spawnSync,
+  env: NodeJS.ProcessEnv = process.env,
 ) {
   const selected = target === "desktop" ? binary : undefined;
-  const engine = target === "web" ? "browser" : runtimeEngine(selected, probe);
-  const artifact = selected === undefined ? `${target}:unresolved` : path.resolve(selected);
+  const engine =
+    target === "web"
+      ? "browser"
+      : target === "android"
+        ? androidEngine(env)
+        : runtimeEngine(selected, probe);
+  const artifact =
+    target === "android"
+      ? `android:${engine}`
+      : selected === undefined
+        ? `${target}:unresolved`
+        : path.resolve(selected);
   let identity = artifact;
   if (selected !== undefined && existsSync(selected)) {
     identity = `${target}:sha256:${createHash("sha256").update(readFileSync(selected)).digest("hex")}`;
   }
   const webAssembly = engine === "v8" || engine === "browser";
   const bundled = target === "web" || (target === "desktop" && webAssembly);
+  const androidV8 = target === "android" && engine === "v8";
   return {
     artifact,
     identity,
     engine,
     webAssembly,
-    decoders: { ktx2: bundled, meshopt: bundled, draco: bundled },
+    decoders: { ktx2: bundled || androidV8, meshopt: bundled || androidV8, draco: bundled },
   };
 }
 
@@ -1098,6 +1129,7 @@ async function bundleNative(
   entry: string,
   target: NativeBuildTarget,
   nativeBackend: boolean,
+  decoders: { ktx2: boolean; meshopt: boolean; draco: boolean },
 ): Promise<string> {
   const output = path.join(cwd, ".threenative", "build", "game.js");
   await run(
@@ -1113,6 +1145,16 @@ async function bundleNative(
       "--output",
       output,
       ...(nativeBackend ? ["--native-backend"] : []),
+      // Only a mobile bundle reads it: desktop already chooses stubs through `--native-backend`.
+      ...(target === "android"
+        ? [
+            "--decoders",
+            Object.entries(decoders)
+              .filter(([, admitted]) => admitted)
+              .map(([codec]) => codec)
+              .join(","),
+          ]
+        : []),
     ],
     cwd,
   );
@@ -1239,7 +1281,14 @@ async function buildNative(
   const orientation = config.display.orientation;
   const configPath = await writePackagingConfig(cwd, config);
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
-  const bundle = await bundleNative(cwd, runtimeRoot, entry, target, !capabilities.webAssembly);
+  const bundle = await bundleNative(
+    cwd,
+    runtimeRoot,
+    entry,
+    target,
+    !capabilities.webAssembly,
+    capabilities.decoders,
+  );
   await assertNativeBundleCompatible(bundle, target, capabilities);
   // The compiled root the project configured, which `compileAssets` above baked into — not the
   // `public` default. A project whose cook profile writes elsewhere was packaging an empty

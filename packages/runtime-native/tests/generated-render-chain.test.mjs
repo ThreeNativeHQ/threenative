@@ -33,7 +33,11 @@ test("the conformance registry binds the composed render-chain scenario to deskt
   assert.ok(existsSync(scenarioPath), `scenario must exist: ${entry.scenario}`);
   const scenario = readJson(scenarioPath);
   assert.deepEqual(scenario.assert?.renderChain, {
-    stages: { includes: ["ambientOcclusion", "bloom", "vignette"] },
+    contributions: { graphOutputChanged: ["grade", "grain"] },
+    stages: {
+      includes: ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
+      order: ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
+    },
     tier: "high",
   });
   assert.deepEqual(scenario.artifacts, { screenshots: "after" });

@@ -31,6 +31,7 @@ import {
 } from "./content/model-dedupe.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
+import { readTextureQuality, resolveImageQualityFloor } from "./image-quality.js";
 import {
   type IModelLodOptions,
   type IModelLodOverride,
@@ -58,6 +59,7 @@ import type {
 import { globMatch } from "./passes/glob.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
+import { TEXTURE_SIZE_SLOTS, type TextureMaxSize } from "./passes/model-textures.js";
 import { modelPass } from "./passes/model.js";
 import type {
   IModelPassOptions,
@@ -77,6 +79,8 @@ import {
   formatModelSizes,
   formatPassCosts,
   formatSkippedCompression,
+  formatTextureQualityTotals,
+  formatTextureRungs,
   formatTextureSizes,
 } from "./report.js";
 import type {
@@ -248,7 +252,8 @@ export interface IAudioConfig {
 }
 
 export interface ITexturesConfig {
-  readonly maxSize?: number;
+  readonly floor?: ITexturePassOptions["floor"];
+  readonly maxSize?: TextureMaxSize;
   readonly overrides?: readonly ITextureOverride[];
   readonly quality?: number;
 }
@@ -339,6 +344,7 @@ export interface IBakeReceipt {
 }
 
 interface IAssetManifestEntry {
+  readonly quality?: import("./image-quality.js").ITextureQuality;
   readonly compressionSkipped?: TextureSkipReason;
   /** What the audio pass measured and did to one clip. */
   readonly audio?: IAudioRow;
@@ -768,6 +774,18 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
       )
     : undefined;
   return {
+    ...(isRecord(value.quality)
+      ? {
+          quality: Object.fromEntries(
+            Object.entries(value.quality).map(([key, score]) => {
+              const parsed = readTextureQuality(score);
+              if (parsed === undefined)
+                throw new Error(`TN_ASSETS_QUALITY_MISSING: invalid score for '${key}'.`);
+              return [key, parsed];
+            }),
+          ),
+        }
+      : {}),
     bytesAfter: value.bytesAfter as number,
     bytesBefore: value.bytesBefore as number,
     count: value.count as number,
@@ -776,7 +794,8 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
       ? {
           skippedCompression: Object.fromEntries(
             Object.entries(value.skippedCompression).filter(
-              ([, reason]) => reason === "block-size" || reason === "not-smaller",
+              ([, reason]) =>
+                reason === "block-size" || reason === "not-smaller" || reason === "below-floor",
             ),
           ) as Record<string, TextureSkipReason>,
         }
@@ -951,19 +970,39 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.textures must be "none" or an object.');
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "maxSize" && key !== "quality" && key !== "overrides") {
+    if (key !== "maxSize" && key !== "quality" && key !== "overrides" && key !== "floor") {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.textures.${key} is not recognised.`);
     }
   }
   return {
+    ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
     ...(raw.maxSize === undefined
       ? {}
-      : { maxSize: positiveTextureSize(raw.maxSize, "assets.textures.maxSize") }),
+      : {
+          maxSize: parseTextureMaxSize(raw.maxSize, "assets.textures.maxSize", positiveTextureSize),
+        }),
     ...(raw.quality === undefined
       ? {}
       : { quality: textureQuality(raw.quality, "assets.textures.quality") }),
     ...(raw.overrides === undefined ? {} : { overrides: validateTextureOverrides(raw.overrides) }),
   };
+}
+
+function parseTextureMaxSize(
+  value: unknown,
+  label: string,
+  validate: (value: unknown, label: string) => number,
+): TextureMaxSize {
+  if (!isRecord(value)) return validate(value, label);
+  return Object.fromEntries(
+    Object.entries(value).map(([slot, cap]) => {
+      if (!TEXTURE_SIZE_SLOTS.has(slot))
+        throw new Error(
+          `TN_ASSETS_CONFIG_INVALID: ${label}.${slot} must name a glTF texture slot.`,
+        );
+      return [slot, validate(cap, `${label}.${slot}`)];
+    }),
+  );
 }
 
 function positiveTextureSize(value: unknown, label: string): number {
@@ -1108,7 +1147,7 @@ function parseModelCompact(raw: unknown): boolean | IModelCompactOptions {
   };
 }
 
-const MODEL_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality"];
+const MODEL_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality", "floor"];
 
 function positiveInteger(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -1135,7 +1174,10 @@ function parseModelTextures(raw: unknown): IModelTexturesOptions | "none" {
     }
   }
   return {
-    ...(raw.maxSize === undefined ? {} : { maxSize: positiveInteger(raw.maxSize, "maxSize") }),
+    ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
+    ...(raw.maxSize === undefined
+      ? {}
+      : { maxSize: parseTextureMaxSize(raw.maxSize, "maxSize", positiveInteger) }),
     ...(raw.overrides === undefined
       ? {}
       : { overrides: validateModelTextureOverrides(raw.overrides) }),
@@ -1851,6 +1893,7 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
     JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
+    JSON.stringify(existing.quality) === JSON.stringify(entry.quality) &&
     JSON.stringify(existing.simplify) === JSON.stringify(entry.simplify) &&
     JSON.stringify(existing.lod) === JSON.stringify(entry.lod) &&
     existing.bytes === entry.bytes &&
@@ -2644,6 +2687,7 @@ export async function compileAssets(
       });
     } else {
       textureRows.push({
+        ...(entry.quality === undefined ? {} : { quality: entry.quality }),
         after: entry.bytes,
         before: entry.bytesBefore,
         // Read off the manifest entry, not off the pass: a cache hit reuses the previous entry
@@ -2728,12 +2772,14 @@ export async function compileAssets(
             bytesBefore: input.length,
             audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
+            quality: readTextureQuality(applied.entry.quality),
             compact: compactRow(applied.entry.compact),
             simplify: simplifyRow(applied.entry.simplify),
             lod: lodRow(applied.entry.lod),
             materials: materialRow(applied.entry.materials),
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
             ...(applied.entry.compressionSkipped === "block-size" ||
+            applied.entry.compressionSkipped === "below-floor" ||
             applied.entry.compressionSkipped === "not-smaller"
               ? { compressionSkipped: applied.entry.compressionSkipped }
               : {}),
@@ -2929,6 +2975,16 @@ export async function compileAssets(
   for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  const rungs = [
+    ...textureRows.map((row) => row.format ?? "none"),
+    ...modelRows.flatMap((row) => Object.values(row.embeddedTextures?.formats ?? {})),
+  ];
+  if (rungs.length > 0) console.log(formatTextureRungs(rungs));
+  const qualityScores = [
+    ...textureRows.flatMap((row) => (row.quality === undefined ? [] : [row.quality])),
+    ...modelRows.flatMap((row) => Object.values(row.embeddedTextures?.quality ?? {})),
+  ];
+  if (qualityScores.length > 0) console.log(formatTextureQualityTotals(qualityScores));
   const dedupe: IModelDedupeSummary | undefined =
     modelSources.length === 0
       ? undefined

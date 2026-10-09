@@ -136,6 +136,8 @@ it("extracts actual observed values and feeds the gate without rewriting capture
     labels[8],
     labels[16],
     labels[24],
+    // The walk's last frame: content that only appears there produces no transition to judge.
+    labels[32],
   ]);
   expect(manifest.walk[8]).toMatchObject({
     position: f.report.observations.componentSeries[8]?.snapshots.world.cameraPosition,
@@ -199,6 +201,8 @@ it("imports another game's route under the names it names", async () => {
     labels[8],
     labels[16],
     labels[24],
+    // The walk's last frame: content that only appears there produces no transition to judge.
+    labels[32],
   ]);
 });
 

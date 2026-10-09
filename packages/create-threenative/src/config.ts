@@ -155,7 +155,7 @@ export interface IThreeNativeModelsConfig {
   readonly textures?:
     | "none"
     | {
-        readonly maxSize?: number;
+        readonly maxSize?: number | Readonly<Record<string, number>>;
         readonly quality?: number;
         readonly overrides?: readonly {
           readonly slot: string;
@@ -1089,7 +1089,23 @@ function textureQuality(value: unknown, label: string): number {
   return value;
 }
 
-function textureMaxSize(value: unknown): number {
+function textureMaxSize(value: unknown): number | Readonly<Record<string, number>> {
+  if (isRecord(value))
+    return Object.fromEntries(
+      Object.entries(value).map(([slot, cap]) => {
+        if (
+          !/^[a-z][a-zA-Z]*Texture$/u.test(slot) ||
+          typeof cap !== "number" ||
+          !Number.isSafeInteger(cap) ||
+          cap < 4
+        )
+          fail(
+            "TN_CONFIG_ASSETS_INVALID",
+            `assets.textures.maxSize.${slot} must name a glTF texture slot with a positive integer cap of at least 4.`,
+          );
+        return [slot, cap];
+      }),
+    );
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 4) {
     fail(
       "TN_CONFIG_ASSETS_INVALID",

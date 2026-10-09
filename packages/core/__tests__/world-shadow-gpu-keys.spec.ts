@@ -43,7 +43,7 @@ import { type IWorldPackage, WorldCells } from "../src/world.js";
  * this map" is read off the meshes and their instance matrices. The other side is
  * `cullAndSelectShadow` on an input this file builds from the package: the placement spheres, the
  * cull distances and the gate table come from the manifest, and the key layout is this file's own,
- * so a kernel that read the wrong planes, centre, gate or level cannot agree with it by sharing the
+ * so a kernel that read the wrong planes, gate or level cannot agree with it by sharing the
  * mistake. Every frustum test below is three's own, applied here rather than through the reference.
  */
 
@@ -265,17 +265,12 @@ describe("a shadow level's GPU-key selection against the cluster path", () => {
         camera.updateMatrixWorld(true);
         camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
         const frustum = frustumOf(camera);
-        // The window centre this render is made against is where its own light target was put:
-        // `offsetU`/`offsetV` exist because a deferred level's map sits where it was drawn, so the
-        // followed centre is not the one its selection belongs to.
-        const centre = level.light.target.position;
         const extent = node.stats.perLevel[index]?.extent ?? 0;
         const held: ILevelRender = {
           draws: 0,
           gated: new Set<string>(),
           level: {
             base: 0,
-            centre: { x: centre.x, z: centre.z },
             gate: (MIN_CASTER_TEXELS * 2 * extent) / MAP_SIZE,
             planes: planesOf(camera),
           },
@@ -408,10 +403,11 @@ describe("a shadow level's GPU-key selection against the cluster path", () => {
     let drawnTotal = 0;
     for (const [index, held] of renders) {
       const levelCamera = (node.levelNodes[index] as unknown as ILevelNode).shadow.camera;
-      const { base, centre, gate, planes } = held.level;
-      const level: IShadowLevel = { base, centre, gate, planes };
+      const { base, gate, planes } = held.level;
+      const level: IShadowLevel = { base, gate, planes };
+      // The main camera's eye: a map draws each placement at the level the main pass draws it.
       const kernel: IKernelInput = {
-        camera: { planes, x: centre.x, y: 0, z: centre.z },
+        camera: { planes, x: FOLLOW.x, y: 0, z: FOLLOW.z },
         count: placements.length,
         placements: placements.map((one) => ({
           centre: new Float32Array([one.x, 0, one.z, one.radius]),
@@ -468,7 +464,7 @@ describe("a shadow level's GPU-key selection against the cluster path", () => {
         const found = owns(one);
         const beyond =
           found.cull !== undefined &&
-          Math.hypot(found.x - centre.x, found.z - centre.z) > found.cull;
+          Math.hypot(found.x - FOLLOW.x, found.z - FOLLOW.z) > found.cull;
         expect(
           inFrustum(levelCamera, found) === false || found.radius * 2 < gate || beyond,
           `level ${String(index)} dropped ${one}, which its own frustum holds and its own gate resolves`,
@@ -587,6 +583,7 @@ async function measureSubmissions(
   extents: readonly number[] = CLIP_EXTENTS,
   gpuScene = true,
   sceneAfter = 0,
+  mapSize = MAP_SIZE,
 ): Promise<IArmResult> {
   vi.stubGlobal("__tnShadowGpuKeys", keys ? 1 : 0);
   stubFixtureFetch();
@@ -597,7 +594,7 @@ async function measureSubmissions(
   scene.add(light, light.target);
   const node = new VirtualShadowNode(light, {
     clipExtents: [...extents],
-    mapSize: MAP_SIZE,
+    mapSize,
     marker: false,
     minCasterTexels: MIN_CASTER_TEXELS,
   });
@@ -727,6 +724,23 @@ async function measureSubmissions(
 }
 
 describe("a level render's own submissions with and without GPU keys", () => {
+  it("preserves the fallback caster submissions when the flag cannot mint GPU keys", async () => {
+    const off = await measureSubmissions(false, [250], false, 0, 4096);
+    const on = await measureSubmissions(true, [250], false, 0, 4096);
+    try {
+      expect(on.keys).toHaveLength(0);
+      expect(off.perLevel[0]?.casters).toBeGreaterThan(0);
+      expect(off.perLevel[0]?.stat?.drawsBy.small).toBeGreaterThan(0);
+      expect(on.perLevel.map(({ stat, ...draws }) => draws)).toEqual(
+        off.perLevel.map(({ stat, ...draws }) => draws),
+      );
+      expect(on.perLevel.map(({ stat }) => stat)).toEqual(off.perLevel.map(({ stat }) => stat));
+    } finally {
+      on.dispose();
+      off.dispose();
+    }
+  });
+
   /**
    * The loading screen's shape, which is the one a real game loads in: the ring is prewarmed and
    * streamed with no renderer at all, and the scene comes up on the first frame that has one, so
@@ -866,43 +880,6 @@ describe("a level render's own submissions with and without GPU keys", () => {
     expect(on.mainPass.far, "the flag emptied the far band").toBe(off.mainPass.far);
     on.dispose();
     off.dispose();
-  });
-
-  /**
-   * Machinefall's shape: one shadow level, `shadowExtents: [250]`, and a launch whose GPU scene
-   * cannot come up — `gpuScene: false`, or a backend the scene refuses. The world then mints no
-   * shadow key and keeps its caster halves, while the flag still publishes the provider, so the node
-   * keys the level and its camera carries the key layer *and* the cluster layer.
-   *
-   * That is the state a real game measured: `drawsBy.keys = 0` with `cluster`, `wide` and `small` all
-   * zero too, so the row read 330 draws while the render was also submitting the forest's cluster
-   * meshes — a bill that says the keys replaced the halves when nothing had. The counter has to follow
-   * what the level's own camera submits: the key bill when the world minted keys, the cluster bill
-   * when it did not, and never a zero standing in for either.
-   */
-  it("counts the caster halves a keyed level still submits, on a single level with no keys minted", async () => {
-    const on = await measureSubmissions(true, [250], false);
-    expect(on.perLevel.length, "the one level rendered").toBe(1);
-    expect(on.keys, "a world with the scene off mints no shadow key").toEqual([]);
-    const [one] = on.perLevel;
-    // The level's own row against the meshes the render submitted, mesh for mesh.
-    expect(one?.stat?.drawsBy.keys, "a keyed level with no keys counts none").toBe(0);
-    expect(
-      one?.stat?.drawsBy.cluster,
-      "a keyed level's own camera still draws the cluster layer",
-    ).toBe(one?.cluster);
-    expect(one?.cluster, "the world kept the cluster half it minted").toBeGreaterThan(0);
-    // The wide and small halves are on layers a keyed camera does not carry, so they are not submitted
-    // and are not counted — the bill is the submissions, not the world's whole caster set.
-    expect(one?.stat?.drawsBy.wide).toBe(0);
-    expect(one?.stat?.drawsBy.small).toBe(0);
-    expect(one?.stat?.draws).toBe((one?.cluster ?? 0) + (one?.proxies ?? 0) + (one?.layer0 ?? 0));
-    console.info(
-      `TN_SHADOW_KEY_BILL keys=${String(one?.stat?.drawsBy.keys)} cluster=${String(one?.stat?.drawsBy.cluster)} ` +
-        `draws=${String(one?.stat?.draws)} submitted=${String(one?.draws)} ` +
-        `wideCasters=${String((one?.casters ?? 0) - (one?.cluster ?? 0))}`,
-    );
-    on.dispose();
   });
 });
 

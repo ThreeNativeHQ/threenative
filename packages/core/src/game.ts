@@ -1387,6 +1387,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // does not get adaptive scaling.
     const initialTarget = resolveTargetFps(this.#config, getPlatform());
     let heldTargetFps = initialTarget.targetFps;
+    // Frame-share budgets elsewhere (the world's adaptive LOD) read the target, not the last frame.
+    renderer.noteTargetFps?.(initialTarget.targetFps);
     const scaler =
       renderer.surface().scaleSource === "auto" && initialTarget.targetFps > 0
         ? new ResolutionScaler({
@@ -1442,6 +1444,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 reported.presentedFps ??
                 (reported.presented.p50 > 0 ? 1_000 / reported.presented.p50 : undefined);
               const target = resolveTargetFps(this.#config, getPlatform(), measuredRefreshHz);
+              renderer.noteTargetFps?.(target.targetFps);
               if (
                 scaler !== undefined &&
                 target.targetFps > 0 &&
@@ -1590,13 +1593,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
       maxSteps: this.#config.maxSteps,
-      onRender: () => {
-        observeCompilation();
+      onBeginFrame: () => {
         // The engine owns this requestAnimationFrame loop instead of delegating to Three's
         // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
         // a concurrent internal renderer callback can otherwise leave stale work in the first
         // sample after a held playtest start.
         resetRendererPerformanceMetrics(renderer.raw);
+        renderer.beginFrame?.();
+      },
+      onRender: () => {
+        observeCompilation();
         renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
@@ -1817,6 +1823,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // negative residual — the tree reporting, correctly, that it had been handed a term from
           // outside the phase it is dividing up. The frame budget already carries this cost.
           renderer.resolveGpuFrame();
+          frameBudget?.addGpuPyramidMs(renderer.gpuPyramidMs?.());
           // The budget's GPU series is fed every frame, not read once per reported window. A
           // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
           // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the
@@ -1841,9 +1848,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // reflections, HUD) is the remainder. Compute is its own pool.
           if (gpuFrame !== undefined) {
             const computeMs = renderer.gpuComputeMs?.();
+            // The recorder hands out a frame only when every pass it recorded resolved, so `total`
+            // is the whole frame and never a partial sum; `main` and `shadow` are whole or zero.
+            // `other` is the remainder of the frame (post chain, reflection, HUD). `shadowPasses`
+            // rides along so a consumer can tell a frame that rendered a shadow from one that drew
+            // none, since a real render can resolve to 0 ms.
             frameBudget?.addGpuBucketMs({
               main: gpuFrame.main,
               shadow: gpuFrame.shadow,
+              shadowPasses: gpuFrame.shadowPasses,
               other: Math.max(0, gpuFrame.total - gpuFrame.main - gpuFrame.shadow),
               ...(computeMs === undefined ? {} : { compute: computeMs }),
             });
@@ -1882,7 +1895,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // so this charges the phase to the frame that paid it, one frame late rather than never.
         // Absent on the web target and on any host with no overlay, where the work is zero rather
         // than unknown, so an absent global must read as zero and not as a missing measurement.
-        if (frameCounters !== undefined) frameBudget?.addCounters(frameCounters.read());
+        // The boundary counts ride the span flag, but the simulation tick does not need them: it is
+        // fed every frame so a plain `TN_FRAME_BUDGET` log can join a window's start and end ticks
+        // without `TN_FRAME_SPANS`. `addCounters` keeps the last tick a caller did provide.
+        frameBudget?.addCounters({
+          ...(frameCounters?.read() ?? {}),
+          simulationTick: gameLoop.tick(),
+        });
         const uiHost = globalThis as { __tnUiCompositeMs?: () => number };
         frameBudget?.addUi(
           typeof uiHost.__tnUiCompositeMs === "function" ? (uiHost.__tnUiCompositeMs() ?? 0) : 0,

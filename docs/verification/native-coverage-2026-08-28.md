@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9765 | 7476 | 76.56% |
-| `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24693** | **19365** | **78.42%** |
+| `src/webgpu/` | 9799 | 7491 | 76.45% |
+| `src/webtransport/` | 1391 | 1069 | 76.85% |
+| `src/workers/` | 615 | 524 | 85.20% |
+| **TOTAL** | **24727** | **19368** | **78.33%** |
 
-Source digest: `sha256:e9ac6818315e0b800a5feda92dfe2e66d398d8ea80fa8ea2f5378458c77b7a65`
+Source digest: `sha256:291101c5b400db40999df44e6d0494e880376fed396840728a6863bcba0c6950`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -329,7 +329,7 @@ targets could not be built and are named below.
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 60 | 82.19% |
-| `src/audio/` | 1471 | 1296 | 88.10% |
+| `src/audio/` | 1471 | 1301 | 88.44% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
 | `src/cli/` | 1682 | 1238 | 73.60% |
 | `src/fs/` | 235 | 189 | 80.43% |
@@ -342,12 +342,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9741 | 7473 | 76.72% |
+| `src/webgpu/` | 9753 | 7485 | 76.75% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24445** | **19270** | **78.83%** |
+| `src/workers/` | 615 | 524 | 85.20% |
+| **TOTAL** | **24457** | **19284** | **78.85%** |
 
-Source digest: `sha256:fa76aa265ca265cd6cb73c9fe0b2935598faf97c0f8dcf034a2fa19ea5196a16`
+Source digest: `sha256:7654bd1bddb42b3dd5eead4c6d0ea07705d7fe51ed41af9e4045e68ebe9b87e8`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation

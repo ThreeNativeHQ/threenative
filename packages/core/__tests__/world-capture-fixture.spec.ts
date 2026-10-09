@@ -25,6 +25,7 @@ async function probe() {
   // catch dropped or invented diagnostics; WorldCells itself has separate engine tests.
   let stats = {
     admission: { backlog: 13, deferred: 2, spentMs: 3.75 },
+    bundle: { on: true, children: 11, reason: "default", records: 23 },
     evictions: 7,
     failures: 0,
     gpuScene: { on: false, reason: "renderer has no computeAsync", dispatches: 0 },
@@ -247,15 +248,26 @@ describe("PRD-477 world capture fixture", () => {
       );
       // Android uses the documented CLI --target android override of a web scenario.
       expect(scenario.target).toBe(target === "android" ? "web" : target);
-      expect(scenario.assert?.diagnostics).toMatchObject({
-        runtimeReady: true,
-        noRuntimeDiagnostics: true,
-        noConsoleErrors: true,
-      });
-      expect(resolveDiagnosticsPolicy(scenario.assert?.diagnostics, target)).toMatchObject({
-        noNetworkErrors: false,
-        networkErrorsOptOutReason: expect.stringContaining("no network observer"),
-      });
+      if (target === "desktop") {
+        // The desktop runner produces no runtimeDiagnostics, so the block is web-only there; the
+        // native run proves the world drew with bundles on instead (PRD-494, dcb5204ec).
+        expect(scenario.assert?.diagnostics).toBeUndefined();
+        expect(scenario.assert?.components).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ component: "bundleOn", equals: true }),
+          ]),
+        );
+      } else {
+        expect(scenario.assert?.diagnostics).toMatchObject({
+          runtimeReady: true,
+          noRuntimeDiagnostics: true,
+          noConsoleErrors: true,
+        });
+        expect(resolveDiagnosticsPolicy(scenario.assert?.diagnostics, target)).toMatchObject({
+          noNetworkErrors: false,
+          networkErrorsOptOutReason: expect.stringContaining("no network observer"),
+        });
+      }
       expect(scenario.assert?.components).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ component: "maxResidentCells", gte: 1, lte: 25 }),

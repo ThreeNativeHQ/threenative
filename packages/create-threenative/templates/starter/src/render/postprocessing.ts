@@ -10,14 +10,16 @@
 // run — a desktop that is dropping frames, a capture you want to compare — pass it:
 // `setupPost(renderer, scene, camera, { tier: "low" })`. Overriding does not silence the report:
 // `TN_QUALITY_TIER` names the tier that ran either way.
-import type { Camera, DirectionalLight, Scene } from "three";
+import { type Camera, type DirectionalLight, FloatType, type Scene } from "three";
+import { LUTCubeLoader } from "three/addons/loaders/LUTCubeLoader.js";
 import {
   type IAdaptiveQualityOptions,
   type IQualityWindow,
   createAdaptiveQuality,
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
-import { type QualityTier, qualityPreset } from "./quality.js";
+import { type IGradeTable, gradeStages } from "./grade.js";
+import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
 import type { FogMedium } from "./volumetricFog.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
@@ -28,6 +30,13 @@ interface IPostController {
   observe(window: IQualityWindow): void;
   dispose(): void;
 }
+
+/**
+ * This game's colour table, relative to the page so it resolves the same way served and packaged.
+ * `public/grade.cube` is written by `tools/make-grade-lut.mjs`, and replacing it with a `.cube`
+ * from any grading tool is the whole of "change the grade".
+ */
+const GRADE_TABLE_URL = "grade.cube";
 
 let active: IPostController | undefined;
 
@@ -62,6 +71,7 @@ export function setupPost(
   let disposed = false;
   let disposeGraph: (() => void) | undefined;
   let medium: FogMedium | undefined;
+  let table: IGradeTable | undefined;
   // The opt-in `traa` stage publishes its provider here once the chain has built it, so `debug()`
   // reports the live reconstruction state and a scene can reset history on a teleport.
   let temporal: TemporalAAProvider | undefined;
@@ -78,12 +88,18 @@ export function setupPost(
     const settings = qualityPreset(policy.tier);
     const world = new WorldEnvironment({
       ...settings,
-      authoredStages: (stage) =>
-        temporalAAStages(stage, {
+      // Two stages this game owns, not the chain's: `grade.ts` builds them, `WorldEnvironment`
+      // orders and reports them, and `quality.ts` decides whether each tier runs them. The opt-in
+      // `traa` stage is offered beside them and runs only when a tier names it.
+      authoredStageNames: ["grade", "grain"],
+      authoredStages: (stage) => [
+        ...gradeStages(gradePreset(policy.tier), table),
+        ...temporalAAStages(stage, {
           onProvider: (provider) => {
             temporal = provider;
           },
         }),
+      ],
     });
     const applied = world.apply(renderer, scene, camera, {
       godraysLight: environment.godraysLight,
@@ -95,6 +111,27 @@ export function setupPost(
     environment.onTierChanged?.(policy.tier);
   }
   apply();
+  // The table is a file, so it lands after the chain that would read it. Until then both stages
+  // are refused with a reason rather than grading nothing, and the chain is rebuilt once it does.
+  // `FloatType`, because the default 8-bit load *truncates* `value * 255` into a `Uint8Array`: an
+  // identity table then reads low by up to 0.875 of a step and the round trip through the grade is
+  // never the frame the game drew. A float table keeps the file's own numbers, so the arithmetic in
+  // `__tests__/grade.spec.ts` and the frame agree at one step.
+  const tableLoader = new LUTCubeLoader().setType(FloatType);
+  void tableLoader.loadAsync(GRADE_TABLE_URL).then(
+    (loaded) => {
+      table?.texture.dispose();
+      table = { size: loaded.size, texture: loaded.texture3D };
+      if (!disposed) apply();
+    },
+    (error: unknown) => {
+      // A missing table is this game's file, not the harness's: name it and leave the frame
+      // ungraded rather than reporting a stage as applied that never ran.
+      console.error(
+        `TN_GRADE_TABLE ${GRADE_TABLE_URL}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    },
+  );
   const source = environment.tier === undefined ? "platform" : "override";
   console.info(
     `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} software=${
@@ -125,6 +162,10 @@ export function setupPost(
       disposeGraph = undefined;
       medium?.dispose();
       medium = undefined;
+      // The table outlives any one chain — a tier change rebuilds the graph around the same one —
+      // so it is released here and not by a stage that would take it with the first replacement.
+      table?.texture.dispose();
+      table = undefined;
       temporal = undefined;
       if (active === controller) active = undefined;
     },

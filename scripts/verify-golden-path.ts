@@ -1021,7 +1021,9 @@ async function waitForDevServer(
   const correctiveCommand = formatCorrectiveCommand(
     goldenPathCorrectiveCommands(project, port).dev,
   );
-  const deadline = Date.now() + 30_000;
+  // The dev server answers only after the cold asset cook. One ETC1S encode of a template's
+  // 4096x2048 sky is 21 s on an idle desktop and passed 30 s on a loaded merge-queue runner (PR 473).
+  const deadline = Date.now() + 90_000;
   let lastError = "no response";
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {

@@ -169,6 +169,9 @@ export function worldCaptureManifest(
     }
   }
   const observed = frames.map(({ landmarks: _landmarks, ...frame }) => frame);
+  // The last walk pose is also scored at rest: content that only draws at the end of the route
+  // produces no transition, so a same-pose row is the only place its absence can be seen.
+  const walk = observed.slice(0, -1);
   return {
     schemaVersion: 1,
     world: worldName,
@@ -178,13 +181,13 @@ export function worldCaptureManifest(
     nearBandMeters,
     capture: "capture.json",
     landmarks,
-    samePose: [0, 8, 16, 24].map((index) => {
+    samePose: [...new Set([0, 8, 16, 24, walk.length - 1])].map((index) => {
       const frame = observed[index];
       assert(frame !== undefined, "missing same-pose frame");
       const { timeMs: _time, ...pose } = frame;
       return pose;
     }),
-    walk: observed.slice(0, 33),
+    walk,
   };
 }
 

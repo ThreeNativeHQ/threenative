@@ -47,6 +47,7 @@ import {
   type UniformNode,
 } from "three/webgpu";
 import { lodChainOf } from "../model-lod.js";
+import { shadowRedrawGpuMs } from "../render-pass-budget.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
 import {
   DirectionalClipmap,
@@ -119,6 +120,7 @@ export interface IVirtualShadowOptions {
    *
    * `false` puts every level back on the `refreshStep` it was given, which is also what a harness
    * that wants to count today's renders uses.
+   * `?tnAdaptiveRefresh=0` in the page URL makes the default `false` from the node's first setup.
    */
   readonly adaptiveRefresh?: boolean;
   /**
@@ -247,6 +249,12 @@ export interface IVirtualShadowStats {
   readonly rendersTotal: number;
   /** Of those, the renders taken because a level's window moved. */
   readonly byMove: number;
+  /**
+   * Pages every level's window travelled between its renders, over the node's lifetime: the sum of
+   * `|ΔminX| + |ΔminY|` at each render. Unlike `byMove` it does not depend on how many frames sampled
+   * the path, so two runs of one route at different frame rates report the same number.
+   */
+  readonly windowSteps: number;
   /** Of those, the renders taken because an invalidation asked and its level's delay had passed. */
   readonly byInvalidation: number;
   /**
@@ -405,6 +413,12 @@ const STATS_QUERY_EVERY = 60;
  * level that pays it is the one whose window is widest.
  */
 const BASE_INVALIDATION_DELAY = 0.25;
+/**
+ * Share of GPU time a level's invalidation redraws may take when the game left `invalidationDelay`
+ * to the engine: a redraw that cost `c` ms waits at least `c / share` ms after the last one. A 5 ms
+ * redraw never reaches the base delay; a 300 ms one on an integrated GPU waits 3 s instead of 0.25 s.
+ */
+const INVALIDATION_GPU_SHARE = 0.1;
 const DEFAULT_MIN_CASTER_TEXELS = 1.5;
 /**
  * The share of the display period a level's render may cost before adaptive refresh widens its
@@ -432,14 +446,16 @@ const MAX_MASS_WINDOW_WIDTHS = 1;
 const POOL_CASTERS = 1 << 0;
 
 /**
- * A mesh in the caster table, with the two channels the probe reads off the object rather than off
- * the geometry: the bounds three's own cull would use, which `Mesh` does not declare, and the
- * `casterPrewarmOwed` flag `WorldCells` writes (see `SharedBatch.awaitPrewarmDraw`).
+ * A mesh in the caster table, with the three channels the probe reads off the object rather than off
+ * the geometry: the bounds three's own cull would use, which `Mesh` does not declare, the
+ * `casterPrewarmOwed` flag `WorldCells` writes (see `SharedBatch.awaitPrewarmDraw`), and the
+ * `mainAdmitted` answer it publishes for a caster half (see `SharedBatch.setMainAdmitted`).
  */
 interface ICasterMesh extends Mesh {
   boundingBox?: Box3 | null;
   boundingSphere?: Sphere | null;
   casterPrewarmOwed?: boolean;
+  mainAdmitted?: boolean;
   chunkShadowProxy?: boolean;
   casterMinDiameter?: number;
   computeBoundingBox(): void;
@@ -466,7 +482,7 @@ const CASTER_STRIDE = CASTER_KEY_STRIDE + CASTER_WORLD_STRIDE;
 
 /**
  * What a world publishes on its root for a shadow level to draw a map from GPU-scene keys:
- * `(renderer, level) => void`, the level's own four numbers and the scene that selects against them.
+ * `(renderer, level) => void`, the level's own three numbers and the scene that selects against them.
  *
  * Engine-internal and duck-typed. `WorldCells` publishes it as `tnShadowGpuKeys`; nothing in a
  * template or a manifest names it, and this module cannot import the world package to name the type,
@@ -475,14 +491,13 @@ const CASTER_STRIDE = CASTER_KEY_STRIDE + CASTER_WORLD_STRIDE;
 type IShadowKeyDispatch = (renderer: unknown, level: IShadowLevelNumbers) => void;
 
 /**
- * One shadow map's own four numbers, duck-typed from `world-gpu-scene`'s `IShadowLevel`: the six
- * planes of this map's own shadow camera, the window centre its map was rendered with, its texel
- * gate in world metres, and the chain level it draws at. Typed here rather than imported for the
+ * One shadow map's own three numbers, duck-typed from `world-gpu-scene`'s `IShadowLevel`: the six
+ * planes of this map's own shadow camera, its texel gate in world metres, and the chain level it
+ * draws at. Typed here rather than imported for the
  * same reason as the dispatch above.
  */
 interface IShadowLevelNumbers {
   readonly planes: Float32Array;
-  readonly centre: { readonly x: number; readonly z: number };
   readonly gate: number;
   readonly base: number;
 }
@@ -620,9 +635,22 @@ const _shadowPlanes = new Float32Array(24);
  */
 const COARSEST_SHADOW_LEVEL = 1 << 20;
 
-/** What a caster is doing as far as a shadow level is concerned: 1 visible, 2 casting. */
-function casterFlag(mesh: { castShadow?: boolean; visible?: boolean }): number {
-  return (mesh.visible === true ? 1 : 0) | (mesh.castShadow === true ? 2 : 0);
+/** The state cached maps depend on: visible, casting, and admitted by the main pass. */
+function casterFlag(mesh: {
+  castShadow?: boolean;
+  mainAdmitted?: boolean;
+  userData?: { tnShadowSwap?: unknown };
+  visible?: boolean;
+}): number {
+  // A mesh marked tnShadowSwap trades visibility with a twin over the same ground — terrain's
+  // tile and merged block, or one LOD level for the next. That flip is not a change the cached map
+  // must redraw for (it measured ~80 % of a walk's flips); castShadow and mainAdmitted still are,
+  // and the next window move redraws whatever resolution difference a LOD step left behind.
+  return (
+    (mesh.visible === true || mesh.userData?.tnShadowSwap === true ? 1 : 0) |
+    (mesh.castShadow === true ? 2 : 0) |
+    (mesh.mainAdmitted === false ? 4 : 0)
+  );
 }
 
 /** The per-level entry of a scalar-or-array option, the last entry standing in for the rest. */
@@ -764,12 +792,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
   /** Cumulative level renders and the reason each took one; see `IVirtualShadowStats`. */
   #rendersTotal = 0;
   #byMove = 0;
+  #windowSteps = 0;
   #byInvalidation = 0;
   #coalesced = 0;
   /** Read from the URL once, for the `?tnShadowStats=1` marker cadence. */
   #statsRequested: boolean | undefined;
   /** URL-only, web-only diagnostic; native hosts have no URL switch or alternate path. */
   #levelsRequested: boolean | undefined;
+  /** The game's own `adaptiveRefresh`, so the URL switch read at setup never overrides it. */
+  readonly #adaptiveRefreshGiven: boolean | undefined;
+  /** Whether the game set `invalidationDelay`; only an engine-chosen delay stretches with GPU cost. */
+  readonly #invalidationDelayGiven: boolean;
   /**
    * The diagnostic's tint, one per material build, keyed weakly by the builder that owns it.
    *
@@ -815,8 +848,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
   /** The memo described by `CASTER_KEY_STRIDE`: per caster, the key it was computed from and the answer. */
   #casterMemo = new Float64Array(CASTER_STRIDE * 128);
   /**
-   * What `#pollCasters` last read off each table entry: 1 for `visible`, 2 for `castShadow`. Sized and
-   * filled by `#ensureCasters`, so the first poll after a build reports what the build already saw.
+   * What `#pollCasters` last read off each table entry: 1 for `visible`, 2 for `castShadow`,
+   * 4 for withheld admission. Filled by `#ensureCasters` after polling the old table.
    */
   #casterFlags = new Uint8Array(0);
   /**
@@ -837,6 +870,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // A removed caster's world matrix is the one it last drew with — the one the stale maps hold —
     // so it is read as it stands. An added one has not been composed into its parent yet.
     if (event.type !== "childremoved") child.updateWorldMatrix(true, false);
+    // A mesh that casts nothing cannot change a map by arriving or leaving, and terrain's swap twin
+    // (`tnShadowSwap`) only replaces ground already drawn. A streamed world adds and removes both on
+    // every rebuild: on one walk they were most of the region invalidations that redrew the level
+    // four times a second. A later `castShadow` flip is still the poll's to see.
+    const mesh = child as {
+      isMesh?: boolean;
+      castShadow?: boolean;
+      userData?: { tnShadowSwap?: unknown };
+    };
+    if (mesh.isMesh === true && (mesh.castShadow !== true || mesh.userData?.tnShadowSwap === true))
+      return;
     this.#askAboutCaster(child);
   };
   /** Casters the current level's size gate hid, restored the moment that render is over. */
@@ -960,6 +1004,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     });
     this.tracker = new ShadowInvalidationTracker(this.clipmap);
     const marker = options.marker ?? DEFAULT_MARKER_EVERY;
+    this.#adaptiveRefreshGiven = options.adaptiveRefresh;
+    this.#invalidationDelayGiven = options.invalidationDelay !== undefined;
     this.options = {
       adaptiveCasterGate: options.adaptiveCasterGate ?? true,
       adaptiveRefresh: options.adaptiveRefresh ?? true,
@@ -995,6 +1041,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       rendered: 0,
       rendersTotal: 0,
       reuseRatio: 1,
+      windowSteps: 0,
     };
   }
 
@@ -1138,6 +1185,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #ensureCasters(): void {
     const root = this.#root();
     if (this.#casterRoot === root && this.#casterStale === false) return;
+    // A streaming arrival can coincide with an older half's admission flip. Poll the old
+    // table before reseeding its flags, or that change disappears without invalidating its map.
+    this.#pollCasters();
     this.#casterRoot = root;
     this.#casterStale = false;
     for (const object of this.#casterObjects) {
@@ -1224,10 +1274,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /**
-   * What a game can change about a caster without touching the tree: its `visible` and its
-   * `castShadow`. A level that keeps its map across either keeps the shadow of geometry that casts
-   * nothing any more, which is the same ghost an eviction leaves and just as wrong. Both are read
-   * here, per frame, off the memoised table — one flag pair per caster, no matrix and no bounds —
+   * A caster can change visibility, casting or main-pass admission without touching the tree.
+   * A cached map must redraw when any of them flips, or it retains a removed shadow or omits a
+   * newly admitted one. Read per frame off the memoised table — one flag word per caster, no
+   * matrix and no bounds —
    * and a change asks for the levels covering that caster. The table is what cut 2 made cheap; this
    * reads it, it does not walk the world.
    *
@@ -1330,13 +1380,30 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // not import this one — the same channel as the `casterInstanceScale` read below.
     let prewarming = false;
     this.#ensureCasters();
-    const keyed = this.#gpuKeys !== undefined;
     const table = this.#casterTable;
+    // A launch flag can publish a provider before the backend can mint any keys. Keep the
+    // fallback's wide/small layers until there are actual key meshes to replace them.
+    const keyed =
+      this.#gpuKeys !== undefined &&
+      table.some(
+        (mesh) =>
+          mesh.visible &&
+          mesh.castShadow &&
+          (mesh.layers.mask & (1 << VIRTUAL_SHADOW_KEY_LAYER)) !== 0,
+      );
     const memo = this.#casterMemo;
     for (let entry = 0; entry < table.length; entry += 1) {
       const mesh = table[entry];
       if (mesh === undefined) continue;
       if (mesh.visible !== true) continue;
+      // Admission must gate the render, not just its bill: three still traverses a visible
+      // caster omitted below. Reuse the texel gate's restore buffer for each level render.
+      // This is placement admission, so an admitted off-frustum caster still casts.
+      if (mesh.mainAdmitted === false) {
+        mesh.visible = false;
+        this.#hidden.push(mesh);
+        continue;
+      }
       // A retained-part proxy applies this gate to each original source at the draw boundary.
       if (mesh.chunkShadowProxy === true) mesh.casterMinDiameter = gate;
       // Read before the gates below: the level is going to render both caster layers either way, and
@@ -1586,7 +1653,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #renderLevel(frame: NodeFrame, level: ILevel, mover: boolean, index = 0): void {
     // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
     const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
-    // The level's own keys, selected against this map's own four numbers, before the render that
+    // The level's own keys, selected against this map's own three numbers, before the render that
     // submits them. A mover map is never keyed: it draws the tracked casters and nothing else, so
     // a dispatch there would put the whole world into a 256² map of one moving object.
     if (mover === false) this.#dispatchKeys(frame, level, index);
@@ -1616,7 +1683,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /**
-   * Hand this level's set to whatever published keys on the world's root, in the four numbers that
+   * Hand this level's set to whatever published keys on the world's root, in the three numbers that
    * are the map's own and not the main camera's: its own light frustum, the window centre its map
    * was rendered with, the texel gate `#probe` just decided on, and the chain level it draws at.
    *
@@ -1648,7 +1715,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
       planes[offset + 2] = plane.normal.z;
       planes[offset + 3] = plane.constant;
     }
-    const target = level.light.target.position;
     // Every compute leaves the one node frame every node shares with its fields at their bare
     // defaults — `scene` among them, which `Nodes.getNodeFrame()` sets with no arguments
     // (three.webgpu.js:56215, reached from `Renderer.compute` at 62235) and nothing puts back; the
@@ -1661,7 +1727,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
     try {
       keys(frame.renderer, {
         base: index >= 1 && this.options.shadowLodBias ? COARSEST_SHADOW_LEVEL : 0,
-        centre: { x: target.x, z: target.z },
         gate: level.gateMetres,
         planes,
       });
@@ -2026,9 +2091,18 @@ export class VirtualShadowNode extends ShadowBaseNode {
   override setup(builder: NodeBuilder): Node | null | undefined {
     if (builder.renderer.shadowMap.enabled === false) return null;
     // Read once, like tnShadowStats. Build no diagnostic nodes unless the URL switch is on.
-    this.#levelsRequested ??= /[?&]tnShadowLevels=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(
-      globalThis.location?.search ?? "",
-    );
+    if (this.#levelsRequested === undefined) {
+      const search = globalThis.location?.search ?? "";
+      this.#levelsRequested = /[?&]tnShadowLevels=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(search);
+      // Counter runs: a fixed refreshStep, since the adaptive step follows measured render cost and
+      // two runs of one route would move their windows at different ticks. Set once, before a frame.
+      if (
+        this.#adaptiveRefreshGiven === undefined &&
+        /[?&]tnAdaptiveRefresh=(?:0|false)(?:&|$)/u.test(search)
+      ) {
+        (this.options as { adaptiveRefresh: boolean }).adaptiveRefresh = false;
+      }
+    }
     this.#init();
     const levels = this.#levels;
     const centerU = this.#centerU;
@@ -2160,10 +2234,23 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // every time a residency update invalidates them.
     if (this.#updating) return undefined;
     this.#updating = true;
+    // Three runs this from the draw of the first object that uses the node, and that draw can be the
+    // first object of a `BundleGroup` the main pass is recording. Three keeps that bundle in
+    // `_currentRenderBundle` and does not save it across the nested `render()` a level is: the
+    // level's draws would be filed under the main bundle, and the level's own bundles leave the
+    // field `null`, so the main bundle's remaining draws are recorded but never listed — a replay
+    // refreshes only listed draws, so those keep the camera they were recorded with. On Machinefall
+    // that froze a cell's chunk forest on screen for twenty walk steps. The levels render outside
+    // the record, and the record gets its bundle back.
+    // quality-allow: three 0.185 does not expose the bundle it is recording.
+    const host = frame.renderer as unknown as { _currentRenderBundle?: unknown };
+    const recording = host._currentRenderBundle;
+    if (recording !== undefined) host._currentRenderBundle = null;
     try {
       this.#updateFrame(frame);
     } finally {
       this.#updating = false;
+      if (recording !== undefined) host._currentRenderBundle = recording;
     }
     return undefined;
   }
@@ -2303,6 +2390,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
     }
     this.#regions.length = 0;
     const canRender = (frame as { renderer?: unknown }).renderer !== undefined;
+    // An engine-chosen delay also waits out the GPU cost of the last redraw, so a redraw that is a
+    // visible stall on a weak GPU is spaced to a share of the time instead of queued behind every
+    // streamed cell. Measured, so a fast GPU never reaches it; off with adaptive refresh.
+    const redrawMs =
+      this.#invalidationDelayGiven || !this.options.adaptiveRefresh
+        ? undefined
+        : shadowRedrawGpuMs((frame as { renderer?: unknown }).renderer);
+    const gpuDelay = redrawMs === undefined ? 0 : redrawMs / INVALIDATION_GPU_SHARE / 1000;
 
     let moved = 0;
     let invalidated = 0;
@@ -2362,7 +2457,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // *own* last render, so a burst spanning that delay is one render and a lone ask is one
         // render, and the level keeps the map and window it has in between — already right for
         // every static caster in it, missing only what streamed in since.
-        const delay = this.options.invalidationDelay[index] ?? 0;
+        const delay = Math.max(this.options.invalidationDelay[index] ?? 0, gpuDelay);
         const matured = level.dirty && now - level.lastRender >= delay;
         let reason: RenderReason = REASON_NONE;
         if (windowMoved) reason = REASON_MOVE;
@@ -2374,6 +2469,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // frame's single render and every other due level is deferred behind it.
         const grant = due && !budgetSpent;
         if (grant) {
+          // A level's first render places its window; only later renders are travel.
+          if (Number.isFinite(level.minX)) {
+            this.#windowSteps +=
+              Math.abs(window.minX - level.minX) + Math.abs(window.minY - level.minY);
+          }
           level.minX = window.minX;
           level.minY = window.minY;
           level.centerW = this.clipmap.centerLight.w;
@@ -2489,6 +2589,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       rendered,
       rendersTotal: this.#rendersTotal,
       reuseRatio: total === 0 ? 1 : this.#served / total,
+      windowSteps: this.#windowSteps,
     };
     const every = this.options.markerEvery;
     // `?tnShadowStats=1` is the walk's own switch: a 10 s walk is ~600 frames, and a marker every

@@ -585,6 +585,32 @@ describe("threenative.config.ts", () => {
     }
   });
 
+  it("accepts per-slot texture caps and rejects malformed maps", async () => {
+    const root = await project();
+    const maxSize = { baseColorTexture: 2048, normalTexture: 1024 };
+    await config(
+      root,
+      `export default { assets: { textures: { maxSize: ${JSON.stringify(maxSize)} }, models: { textures: { maxSize: ${JSON.stringify(maxSize)} } } } };`,
+    );
+    expect((await loadConfig(root)).assets).toMatchObject({
+      textures: { maxSize },
+      models: { textures: { maxSize } },
+    });
+    for (const value of [
+      null,
+      [],
+      { baseColorTexture: 0 },
+      { normalTexture: "1024" },
+      { mask: 1024 },
+    ]) {
+      await config(
+        root,
+        `export default { assets: { textures: { maxSize: ${JSON.stringify(value)} } } };`,
+      );
+      await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    }
+  });
+
   it("parses the models block and the none shorthand into the resolved config", async () => {
     const configured = await project();
     await config(

@@ -27,7 +27,11 @@
     "renderChain": {
       "tier": "high",
       "stages": {
-        "includes": ["ambientOcclusion", "bloom", "vignette"]
+        "includes": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
+        "order": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"]
+      },
+      "contributions": {
+        "graphOutputChanged": ["grade", "grain"]
       }
     },
     "resources": [
@@ -36,13 +40,6 @@
         "path": "odometer",
         "gte": 1,
         "changed": true
-      }
-    ],
-    "visibility": [
-      {
-        "entity": "player",
-        "minProjectedPixels": 20,
-        "allowTrivial": "The player is visible from the first tick; the state rows carry the native render proof."
       }
     ]
   }
