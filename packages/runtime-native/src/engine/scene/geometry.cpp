@@ -465,19 +465,8 @@ std::shared_ptr<BufferAttribute> BufferAttribute::clone() const {
     copy->name = name;
     copy->usage = usage;
     copy->gpuType = gpuType;
-    copy->instanced = instanced;
+    copy->perInstance = perInstance;
     return copy;
-}
-
-uint32_t InstancedBufferGeometry::drawInstances() const {
-    double held = std::numeric_limits<double>::infinity();
-    for (const auto& [name, attribute] : attributes)
-        if (attribute && attribute->instanced) held = std::min(held, double(attribute->count()));
-    const double count = std::min(instanceCount, held);
-    // ponytail: three passes an Infinity count with no instanced attribute straight to the backend;
-    // here that draws once.
-    if (!std::isfinite(count)) return 1;
-    return count <= 0 ? 0u : static_cast<uint32_t>(std::min(count, 4294967295.0));
 }
 
 namespace {
@@ -495,14 +484,16 @@ std::shared_ptr<BufferGeometry> BufferGeometry::clone() const {
 }
 
 BufferGeometry& BufferGeometry::copy(const BufferGeometry& source) {
-    index = source.index ? cloneAttribute(*source.index) : nullptr;
+    index = source.index ? source.index->clone() : nullptr;
     attributes.clear();
-    for (const auto& [name, attribute] : source.attributes) setAttribute(name, cloneAttribute(*attribute));
+    for (const auto& [name, attribute] : source.attributes) setAttribute(name, attribute->clone());
     morphPositions.clear();
     morphNormals.clear();
-    for (const auto& target : source.morphPositions) morphPositions.push_back(cloneAttribute(*target));
-    for (const auto& target : source.morphNormals) morphNormals.push_back(cloneAttribute(*target));
+    for (const auto& target : source.morphPositions) morphPositions.push_back(target->clone());
+    for (const auto& target : source.morphNormals) morphNormals.push_back(target->clone());
     morphTargetsRelative = source.morphTargetsRelative;
+    instanced = source.instanced;
+    instanceCount = source.instanceCount;
     groups = source.groups;
     boundingBox = source.boundingBox ? std::make_shared<Box3>(*source.boundingBox) : nullptr;
     boundingSphere = source.boundingSphere ? std::make_shared<Sphere>(*source.boundingSphere) : nullptr;

@@ -78,6 +78,8 @@ Value component(const BufferAttribute& attribute, uint64_t index, int c) {
     return attribute.element(index, c, at) ? Value::of(attribute.getComponent(index, c)) : Value{};
 }
 
+}  // namespace
+
 /** The caller's attribute itself (not a copy): three stores the reference it is handed. */
 std::shared_ptr<BufferAttribute> sharedAttributeArg(Store& store, const Value& arg) {
     Object* found = store.find(arg);
@@ -89,6 +91,8 @@ std::shared_ptr<BufferAttribute> sharedAttributeArg(Store& store, const Value& a
     }
     throw Unsupported{"argument is not a BufferAttribute, it is a " + found->cls};
 }
+
+namespace {
 
 BufferAttribute& attributeArg(Store& store, const Value& arg) {
     Object* found = store.find(arg);
@@ -127,7 +131,7 @@ Value attributeArray(const BufferGeometry& geometry, const char* name) {
 // ---------------------------------------------------------------- BufferAttribute
 
 void registerBufferAttribute(ClassBinding& b, const char* cls) {
-    b.ctor = [](const Args& a, Store&) {
+    b.ctor = [cls](const Args& a, Store&) {
         std::vector<double> values;
         if (!a.empty() && a.at(0).kind == Value::Kind::Numbers) values = a.at(0).numbers;
         // BufferAttribute( array, itemSize, normalized = false ); itemSize is a positive integer.
@@ -140,8 +144,9 @@ void registerBufferAttribute(ClassBinding& b, const char* cls) {
                               : array == "Uint16Array" ? Scalar::U16
                               : array == "Uint32Array" ? Scalar::U32
                                                        : Scalar::F32;
-        return std::static_pointer_cast<void>(
-            BufferAttribute::fromDoubles(scalar, values, static_cast<int>(itemSize), normalized));
+        auto attribute = BufferAttribute::fromDoubles(scalar, values, static_cast<int>(itemSize), normalized);
+        attribute->perInstance = std::string_view(cls) == "InstancedBufferAttribute";
+        return std::static_pointer_cast<void>(attribute);
     };
     b.getters["array"] = [](void* self) { return numbers(as<BufferAttribute>(self)->toNumbers()); };
     b.getters["array.length"] = [](void* self) {
@@ -847,12 +852,6 @@ void registerGeometryBindings(Registry& classes) {
     ClassBinding& instanced = classes["InstancedBufferAttribute"];
     registerBufferAttribute(instanced, "InstancedBufferAttribute");
     instanced.getters["meshPerAttribute"] = [](void*) { return Value::of(1.0); };
-    // Marks its storage as per-instance, so a geometry's draw steps it once per instance.
-    instanced.ctor = [base = instanced.ctor](const Args& a, Store& store) {
-        auto attribute = base(a, store);
-        static_cast<BufferAttribute*>(attribute.get())->instanced = true;
-        return attribute;
-    };
     // three's Float32BufferAttribute: the same attribute, but its constructor wraps whatever it is
     // given in a Float32Array, so the storage is F32 and each value rounds once to binary32.
     ClassBinding& float32 = classes["Float32BufferAttribute"];
@@ -868,20 +867,24 @@ void registerGeometryBindings(Registry& classes) {
             BufferAttribute::fromDoubles(Scalar::F32, values, static_cast<int>(itemSize), normalized));
     };
     registerBufferGeometry(classes["BufferGeometry"]);
-    // three's InstancedBufferGeometry: a BufferGeometry with instanceCount (Infinity by default).
+    // three's InstancedBufferGeometry: a BufferGeometry drawn instanceCount times, its
+    // InstancedBufferAttributes read once per instance.
     ClassBinding& instancedGeometry = classes["InstancedBufferGeometry"];
     registerBufferGeometry(instancedGeometry);
     instancedGeometry.ctor = [](const Args&, Store&) {
-        return std::static_pointer_cast<void>(std::make_shared<InstancedBufferGeometry>());
+        auto geometry = std::make_shared<BufferGeometry>();
+        geometry->type = "InstancedBufferGeometry";
+        geometry->instanced = true;
+        return std::static_pointer_cast<void>(geometry);
     };
     instancedGeometry.getters["instanceCount"] = [](void* self) {
-        return Value::of(static_cast<InstancedBufferGeometry*>(as<BufferGeometry>(self))->instanceCount);
+        return Value::of(as<BufferGeometry>(self)->instanceCount);
     };
     instancedGeometry.setters["instanceCount"] = [](void* self, const Value& v) {
         const double count = number(v);
-        if (!(count >= 0) || (std::isfinite(count) && count != std::floor(count)))
+        if (!(count >= 0) || (count != std::floor(count) && !std::isinf(count)))
             throw Unsupported{"instanceCount must be a whole number of instances or Infinity"};
-        static_cast<InstancedBufferGeometry*>(as<BufferGeometry>(self))->instanceCount = count;
+        as<BufferGeometry>(self)->instanceCount = count;
     };
     registerGeometryGenerators(classes);
     registerCatmullRomCurve3(classes["CatmullRomCurve3"]);

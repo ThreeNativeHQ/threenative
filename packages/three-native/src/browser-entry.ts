@@ -25,6 +25,7 @@ import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
 import { definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
+import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -96,7 +97,7 @@ export async function bindWebEngine(
 ): Promise<Record<string, unknown>> {
   const module = await createModule();
   const runtime = createWasmRuntime(module);
-  const { classes, wrap } = defineBrowserClasses(
+  const { classes, wrap, collect } = defineBrowserClasses(
     registry as IRegistryDump,
     runtime,
     catalogJson as unknown as ICatalog,
@@ -145,10 +146,14 @@ export async function bindWebEngine(
   });
   const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
   Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
+  // three's QuadMesh over the engine Mesh (quad-mesh.ts), shared with the V8 player.
+  bound.QuadMesh = defineQuadMesh(classes as never);
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
-  // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio.
+  // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
+  // and the wrapper safe point runs (collect: held while the engine references them).
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, () => {
+      collect();
       tsl?.sync();
       audio.updateAudio();
     });
@@ -165,10 +170,17 @@ export async function bindWebEngine(
     // The engine's TSL functions three does not export by name (ao, bloom, ...), for the shared post
     // effects (addons/post-effects-web.ts), and three's RenderPipeline over the web host.
     bound.__tnTsl = tsl.exports;
-    bound.RenderPipeline = defineRenderPipeline(runtime.tsl);
-    // three's pass() and mrt() over the engine's scene pass, as on the V8 player; RenderPipeline draws
-    // the renderer's last scene, so the pass's own scene and camera are not followed here.
-    Object.assign(bound, definePass(tsl.exports as never));
+    // three's pass() and mrt() over the engine's scene pass, as on the V8 player: RenderPipeline
+    // draws the scene and camera the pass points at.
+    const target: { scene?: unknown; camera?: unknown } = {};
+    bound.RenderPipeline = defineRenderPipeline(runtime.tsl, target);
+    Object.assign(
+      bound,
+      definePass(tsl.exports as never, (scene, camera) => {
+        target.scene = scene;
+        target.camera = camera;
+      }),
+    );
   }
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
@@ -184,18 +196,22 @@ export function withTextureSources(
   return { ...classes, ...defineTextureSources(classes, runtime), DataUtils };
 }
 
+interface IPipelineRenderer {
+  [RENDER_AGAIN]?: () => void;
+  render?(scene: unknown, camera: unknown): void;
+}
+
 /**
  * three's RenderPipeline on the Wasm engine, as on the V8 player: render() hands the output graph to
- * the web host, which draws it between the scene and the output, then draws the renderer's last
- * scene. ponytail: the scene comes from the renderer's last render() until `pass(scene, camera)` is
- * in the shared table (lane-531); then it comes from the graph.
+ * the web host, which draws it between the scene and the output, over the scene and camera the
+ * graph's `pass(scene, camera)` points at (`target`), else the renderer's last scene.
  */
-function defineRenderPipeline(tsl: ITslRuntime) {
+function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camera?: unknown }) {
   return class RenderPipeline {
     outputNode: unknown;
-    readonly renderer: { [RENDER_AGAIN]?: () => void };
+    readonly renderer: IPipelineRenderer;
 
-    constructor(renderer: { [RENDER_AGAIN]?: () => void }, outputNode?: unknown) {
+    constructor(renderer: IPipelineRenderer, outputNode?: unknown) {
       this.renderer = renderer;
       this.outputNode = outputNode;
     }
@@ -204,7 +220,9 @@ function defineRenderPipeline(tsl: ITslRuntime) {
       if (!isTslNode(this.outputNode))
         throw new TypeError("TN_WASM_POST: RenderPipeline.outputNode is not a TSL node");
       tsl.setPost(this.outputNode[TSL_NODE]);
-      this.renderer[RENDER_AGAIN]?.();
+      if (target.scene !== undefined && target.camera !== undefined && this.renderer.render)
+        this.renderer.render(target.scene, target.camera);
+      else this.renderer[RENDER_AGAIN]?.();
     }
 
     dispose(): void {

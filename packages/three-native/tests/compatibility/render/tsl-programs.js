@@ -4,14 +4,11 @@ import {
   DataTexture,
   DataUtils,
   EquirectangularReflectionMapping,
-  InstancedBufferAttribute,
-  InstancedBufferGeometry,
   LinearFilter,
   LinearMipmapLinearFilter,
   Mesh,
   MeshLambertNodeMaterial,
   NearestFilter,
-  PlaneGeometry,
   PointLight,
   RenderPipeline,
   RenderTarget,
@@ -30,6 +27,7 @@ import {
   instanceIndex,
   instancedArray,
   length,
+  linearDepth,
   max,
   metalness,
   mrt,
@@ -55,10 +53,12 @@ import {
   uint,
   uniform,
   uv,
-  varying,
   vec2,
   vec3,
   vec4,
+  viewportDepthTexture,
+  viewportLinearDepth,
+  viewportSharedTexture,
 } from "three/tsl";
 import { FluidParticles3D } from "/core/fluid-particles.js";
 /**
@@ -535,7 +535,18 @@ async function temporalFixture({ renderer, scene, camera, traaDump }, firstCutFr
   return { render: draw };
 }
 
-/** Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity. */
+/** An RGBA8 DataTexture with linear filtering, its texels from `texel(x, y)` -> [r, g, b]. */
+function dataTexture(width, height, texel) {
+  const pixels = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; ++y)
+    for (let x = 0; x < width; ++x) pixels.set([...texel(x, y), 255], (y * width + x) * 4);
+  const map = new DataTexture(pixels, width, height);
+  map.magFilter = LinearFilter;
+  map.minFilter = LinearFilter;
+  map.needsUpdate = true;
+  return map;
+}
+
 /** An 8 x 8 checker, nearest-filtered: texels 255 and 64 alternate in r, g and b. */
 function checker() {
   const pixels = new Uint8Array(8 * 8 * 4);
@@ -549,6 +560,7 @@ function checker() {
   return map;
 }
 
+/** Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity. */
 function equirectSky() {
   const width = 128;
   const height = 64;
@@ -698,20 +710,40 @@ export const programs = {
   async "screen-uv"({ target }) {
     target.colorNode = vec4(screenUV.flipX(), screenUV.x.mul(screenUV.y), 1);
   },
-  async "instanced-buffer-geometry"({ target }) {
-    const base = new PlaneGeometry(0.5, 0.5);
-    const geometry = new InstancedBufferGeometry();
-    geometry.setIndex(base.index);
-    geometry.setAttribute("position", base.getAttribute("position"));
-    geometry.setAttribute("uv", base.getAttribute("uv"));
-    const offsets = [-1, 0.5, 0, 0, 0.5, 0, 1, 0.5, 0, -1, -0.5, 0, 0, -0.5, 0, 1, -0.5, 0];
-    const tints = [1, 0.2, 0.2, 0.2, 1, 0.2, 0.2, 0.2, 1, 1, 1, 0.2, 0.2, 1, 1, 1, 1, 1];
-    geometry.setAttribute("offset", new InstancedBufferAttribute(new Float32Array(offsets), 3));
-    geometry.setAttribute("tint", new InstancedBufferAttribute(new Float32Array(tints), 3));
-    geometry.instanceCount = 5; // the sixth (white, bottom right) is not drawn
-    target.geometry = geometry;
-    target.material.positionNode = positionLocal.add(attribute("offset", "vec3"));
-    target.material.colorNode = vec4(varying(attribute("tint", "vec3")), 1);
+  /** texture(textureObject, uv) on unnamed textures, as Midway's ocean: a vertex displacement read
+   *  at level 0 and a fragment colour. */
+  async "tsl-texture-object"({ target }) {
+    const ramp = dataTexture(8, 4, (x, y) => [x * 36, y * 80, 200 - x * 20]);
+    const bumps = dataTexture(8, 8, (x, y) => [((x + y) % 4) * 80, 0, 0]);
+    target.positionNode = positionLocal.add(
+      vec3(0, 0, texture(bumps, uv()).level(float(0)).r.mul(0.4)),
+    );
+    target.colorNode = vec4(texture(ramp, uv()).rgb, 1);
+  },
+  /** WaterSurface3D's reads: the frame behind a transparent surface (viewportSharedTexture, offset)
+   *  and the depth between it and the surface (viewportLinearDepth - linearDepth()), on a water
+   *  plane over a lit floor. */
+  async "viewport-textures"({ target }) {
+    const water = target.getObjectByName("water");
+    const behind = viewportSharedTexture(screenUV.add(vec2(0.02, 0))).rgb;
+    water.material.colorNode = vec4(
+      behind
+        .mul(vec3(0.5, 0.8, 1))
+        .add(vec3(0, 0, viewportLinearDepth.sub(linearDepth()).mul(8)))
+        // A second depth read at an offset, as WaterSurface3D.thicknessAt(offset) takes one.
+        .add(vec3(linearDepth(viewportDepthTexture(screenUV.add(vec2(0.02, 0)))).mul(0.2), 0, 0)),
+      1,
+    );
+  },
+  /** Midway's particles: an InstancedBufferGeometry quad whose per-instance InstancedBufferAttributes
+   *  (aOffset, aTint) a TSL attribute() reads, placed by a material.vertexNode in clip space. */
+  async "instanced-geometry"({ target }) {
+    const quads = target.getObjectByName("quads");
+    const offset = attribute("aOffset", "vec3");
+    quads.material.vertexNode = cameraProjectionMatrix.mul(
+      cameraViewMatrix.mul(vec4(positionLocal.mul(0.4).add(offset), 1)),
+    );
+    quads.material.colorNode = vec4(attribute("aTint", "vec3"), 1);
   },
   async "storage-attribute"({ target }) {
     const base = new PlaneGeometry(0.5, 0.5);

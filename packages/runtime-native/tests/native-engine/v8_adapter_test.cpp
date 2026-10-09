@@ -802,6 +802,9 @@ void nodeMaterials() {
             source.name = 'hull';
             const target = new MeshStandardNodeMaterial();
             const targetId = target.id;
+            // three's Material.dispose(): callable on every material, and the material stays usable after it.
+            source.dispose();
+            if (source.roughness !== 0.25) return 'dispose keeps the material';
             if (target.copy(source) !== target) return 'copy chains';
             if (target.type !== 'MeshStandardNodeMaterial' || target.id !== targetId) return 'copy identity';
             if (target.color.getHex() !== 0x336699 || target.roughness !== 0.25 || target.metalness !== 0.75 ||

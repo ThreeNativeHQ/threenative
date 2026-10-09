@@ -973,7 +973,7 @@ export declare const LessStencilFunc: 513;
 export declare class Line extends Object3D {
 constructor();
 readonly morphTargetInfluences: number[] | undefined;
-readonly geometry: BufferGeometry;
+geometry: BufferGeometry;
 material: Material;
 
   updateMorphTargets(): void;
@@ -1039,6 +1039,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/LineSegments. */
@@ -1399,6 +1401,8 @@ readonly type: string;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog partial (shader-parameters): three/MeshBasicMaterialParameters. */
@@ -1439,6 +1443,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1496,6 +1502,7 @@ aoMapIntensity: number;
 emissive: Color;
 emissiveIntensity: number;
 emissiveMap: Texture | null;
+bumpMap: Texture | null;
 bumpScale: number;
 normalMap: Texture | null;
 normalMapType: NormalMapTypes;
@@ -1522,6 +1529,8 @@ readonly type: string;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog partial (shader-parameters): three/MeshStandardMaterialParameters. */
@@ -1568,13 +1577,17 @@ emissiveMap: Texture | null;
 vertexColors: boolean;
 forceSinglePass: boolean;
 vertexNode: Node | null;
+bumpScale: number;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+bumpMap: Texture | null;
 
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -2232,6 +2245,18 @@ export declare const RedIntegerFormat: 1029;
 /** Catalog partial (native-not-implemented): three/ReinhardToneMapping. */
 export declare const ReinhardToneMapping: 2;
 
+/** Catalog supported: three/webgpu/RenderTarget. */
+export declare class RenderTarget extends EventDispatcher {
+constructor();
+readonly height: number;
+readonly width: number;
+readonly texture: Texture;
+
+  dispose(): void;
+
+  setSize(width: number, height: number, depth?: number): void;
+}
+
 /** Catalog supported: three/RepeatWrapping. */
 export declare const RepeatWrapping: 1000;
 
@@ -2414,7 +2439,7 @@ export declare class Sprite extends Object3D {
 constructor();
 count: number;
 readonly morphTargetInfluences: number[];
-readonly geometry: BufferGeometry;
+geometry: BufferGeometry;
 material: SpriteMaterial;
 
   updateMorphTargets(): void;
@@ -2449,6 +2474,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2488,6 +2515,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -2570,6 +2599,8 @@ flipY: boolean;
 anisotropy: number;
 generateMipmaps: boolean;
 readonly source: Source;
+readonly format: number;
+readonly type: number;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */
@@ -3146,6 +3177,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -3181,6 +3214,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */

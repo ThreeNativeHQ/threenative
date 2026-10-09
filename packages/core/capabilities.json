@@ -7976,6 +7976,11 @@
         "source": "three"
       },
       {
+        "symbol": "RenderTarget",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
         "symbol": "RepeatWrapping",
         "kind": "constant",
         "source": "three"

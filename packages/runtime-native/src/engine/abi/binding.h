@@ -74,6 +74,18 @@ inline bool isMaterialClass(std::string_view cls) {
            cls == "MeshBasicNodeMaterial" || cls == "MeshStandardNodeMaterial";
 }
 
+/** The engine's scene-graph classes: an Object3D argument (add, a render root) may be any of them. */
+inline bool isObject3DClass(std::string_view cls) {
+    static constexpr std::string_view kClasses[] = {
+        "Object3D",   "Group",       "Mesh",          "Scene",      "Camera",       "PerspectiveCamera",
+        "OrthographicCamera", "AmbientLight", "DirectionalLight", "HemisphereLight", "InstancedMesh",
+        "PointLight", "Sprite",      "SpotLight",     "Bone",       "SkinnedMesh",  "LOD",
+        "Line",       "LineSegments"};
+    for (const std::string_view known : kClasses)
+        if (cls == known) return true;
+    return false;
+}
+
 /** The engine texture classes a texture argument (a map, a background, a TSL texture) may be. */
 inline bool isTextureClass(std::string_view cls) {
     return cls == "Texture" || cls == "DataTexture" || cls == "CanvasTexture";

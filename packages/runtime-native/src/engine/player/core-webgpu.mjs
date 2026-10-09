@@ -2,6 +2,8 @@ export * from "./core-three.mjs";
 import { BufferAttribute, unsupported } from "./core-three.mjs";
 import { syncUniforms } from "./core-tsl.mjs";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
+import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
+import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
 
 export const { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
@@ -55,6 +57,18 @@ export class WebGPURenderer {
   }
   dispose() {}
 }
+
+// three's render targets (shared with the Wasm back end): render() while a target is set draws into
+// it at the call, and readRenderTargetPixelsAsync reads it back once the GPU copy lands.
+defineRenderTargets(WebGPURenderer.prototype, () => ({
+  draw(target, root, camera) {
+    syncUniforms();
+    globalThis.tn.renderTarget(target, root, camera);
+  },
+  read: (target, x, y, width, height) => globalThis.tn.readTarget(target, x, y, width, height),
+}));
+// three's QuadMesh over the engine Mesh (shared with the Wasm back end).
+export const QuadMesh = defineQuadMesh(globalThis);
 
 // three's RenderPipeline(renderer, outputNode): the player installs the node graph as its post pass
 // (once per graph) and draws it with the renderer's settings.

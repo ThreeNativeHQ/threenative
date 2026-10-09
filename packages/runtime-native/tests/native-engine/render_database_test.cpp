@@ -6,6 +6,7 @@
 #include "check.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
+#include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/projection/plan.h"
 #include "engine/shader/package.h"
 #include "engine/shader/graph/post_effects.h"
@@ -903,6 +904,102 @@ void timeUniform() {
     CHECK(first != second);
 }
 
+// PRD-551: a game's RenderTarget. A render into it writes the linear scene colour (no tone mapping, no
+// output transform, as r185 writes a target); readRenderTarget returns a region of it; a material whose
+// map is `target.texture` samples it; and a frame that renders the target and then the scene adds no
+// setup work after warm-up.
+float halfToFloat(uint16_t h) {
+    const uint32_t sign = (h >> 15) & 1, exponent = (h >> 10) & 31, mantissa = h & 1023;
+    float value = exponent == 0 ? std::ldexp(float(mantissa), -24)
+                : exponent == 31 ? std::numeric_limits<float>::infinity()
+                                 : std::ldexp(float(mantissa | 1024), int(exponent) - 25);
+    return sign ? -value : value;
+}
+
+void renderTarget() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    // The target's scene: cleared to (0.25, 0.5, 0.75), with an unlit red square over its middle half.
+    const auto target = RenderTarget::make(32, 32, kTextureHalfFloatType);
+    Scene inner;
+    OrthographicCamera innerCamera(-1, 1, 1, -1, 0.1, 10);
+    innerCamera.position.z = 5;
+    innerCamera.updateMatrixWorld();
+    auto red = std::make_shared<Material>(MaterialType::Basic);
+    red->color.setRGB(1, 0, 0);
+    Mesh square(makePlaneGeometry(1, 1), red);
+    inner.add(square);
+    inner.updateMatrixWorld(true);
+    // The main scene: one plane filling the view, mapped with the target's texture.
+    Scene scene;
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    auto mapped = std::make_shared<Material>(MaterialType::Basic);
+    mapped->maps["map"] = target->texture;
+    Mesh plane(makePlaneGeometry(2, 2), mapped);
+    scene.add(plane);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    const auto frame = [&] {
+        const auto refused = renderToTarget(renderer, *target, inner, innerCamera, {0.25, 0.5, 0.75, 1}, false);
+        CHECK(refused.empty());
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+    };
+    frame();
+    // The target's own pixels: a corner is the clear colour, the middle is the red square.
+    std::vector<uint8_t> region;
+    bool done = false;
+    CHECK(readRenderTarget(*target, 0, 0, 32, 32, [&](GpuStatus status, std::vector<uint8_t> bytes) {
+        CHECK(status == GpuStatus::Ok);
+        region = std::move(bytes);
+        done = true;
+    }) == GpuStatus::Ok);
+    for (int i = 0; i < 5000 && !done; ++i) {
+        renderer.poll();
+        events.drain();
+        if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(region.size() == size_t{32} * 32 * 8);
+    const auto texel = [&](uint32_t x, uint32_t y, int channel) {
+        uint16_t bits = 0;
+        std::memcpy(&bits, region.data() + (size_t(y) * 32 + x) * 8 + channel * 2, 2);
+        return halfToFloat(bits);
+    };
+    if (region.size() == size_t{32} * 32 * 8) {
+        std::fprintf(stderr, "render target: corner %.3f %.3f %.3f, middle %.3f %.3f %.3f\n", texel(1, 1, 0),
+                     texel(1, 1, 1), texel(1, 1, 2), texel(16, 16, 0), texel(16, 16, 1), texel(16, 16, 2));
+        CHECK(std::abs(texel(1, 1, 0) - 0.25f) < 1e-3f && std::abs(texel(1, 1, 1) - 0.5f) < 1e-3f &&
+              std::abs(texel(1, 1, 2) - 0.75f) < 1e-3f);
+        CHECK(texel(16, 16, 0) == 1.0f && texel(16, 16, 1) == 0.0f && texel(16, 16, 2) == 0.0f);
+    }
+    // The main frame samples it: the plane's middle is red, its corner the clear colour.
+    const std::vector<uint8_t> px = read(renderer, events);
+    CHECK(px.size() == size_t{64} * 64 * 4);
+    if (px.size() == size_t{64} * 64 * 4) {
+        const auto at = [&](int x, int y, int c) { return int(px[(size_t(y) * 64 + x) * 4 + c]); };
+        std::fprintf(stderr, "sampled: corner %d %d %d, middle %d %d %d\n", at(2, 2, 0), at(2, 2, 1), at(2, 2, 2),
+                     at(32, 32, 0), at(32, 32, 1), at(32, 32, 2));
+        CHECK(std::abs(at(2, 2, 0) - 64) <= 1 && std::abs(at(2, 2, 1) - 128) <= 1 && std::abs(at(2, 2, 2) - 191) <= 1);
+        CHECK(at(32, 32, 0) == 255 && at(32, 32, 1) == 0 && at(32, 32, 2) == 0);
+    }
+    // Steady: the target and the frame that samples it add no setup work after warm-up.
+    for (int i = 0; i < 3; ++i) frame();
+    const auto compiles = renderer.pipelines().compiles(), texts = renderer.pipelines().textLookups();
+    const auto groups = bindGroupsCreated(), programs = renderer.programCount();
+    for (int i = 0; i < 30; ++i) frame();
+    std::fprintf(stderr, "render target steady over 30 frames: compiles +%llu, text keys +%llu, bind groups +%llu, programs +%zu\n",
+                 (unsigned long long)(renderer.pipelines().compiles() - compiles),
+                 (unsigned long long)(renderer.pipelines().textLookups() - texts),
+                 (unsigned long long)(bindGroupsCreated() - groups), renderer.programCount() - programs);
+    CHECK(renderer.pipelines().compiles() == compiles && renderer.pipelines().textLookups() == texts);
+    CHECK(bindGroupsCreated() == groups && renderer.programCount() == programs);
+}
+
 // A steady frame does no setup work: after warm-up, sixty more frames of a lit node-material scene with
 // shadows and the template's bloom + GTAO/denoise chain compile no pipeline, build no pipeline text
 // key, create no bind group, serialize no graph key and build no program. Each of these was a
@@ -1593,7 +1690,7 @@ void gpuTimerIsOptIn() {
 
 }  // namespace
 
-TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn})

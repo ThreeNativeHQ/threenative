@@ -7308,7 +7308,7 @@
         {
           "name": "geometry",
           "type": "BufferGeometry",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -7821,6 +7821,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -11111,6 +11124,19 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -11414,6 +11440,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -11997,8 +12036,7 @@
           "mutable": true,
           "lifetime": "reference",
           "status": {
-            "kind": "unsupported",
-            "diagnostic": "TN_NATIVE_UNSUPPORTED_UNRESOLVED_TYPE"
+            "kind": "supported"
           }
         },
         {
@@ -12007,8 +12045,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12259,6 +12296,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -12630,6 +12680,15 @@
           }
         },
         {
+          "name": "bumpScale",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "polygonOffset",
           "type": "boolean",
           "mutable": true,
@@ -12650,6 +12709,15 @@
         {
           "name": "polygonOffsetUnits",
           "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "bumpMap",
+          "type": "Texture | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -12684,6 +12752,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -17744,13 +17825,83 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_RENDERTARGET"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "EventDispatcher",
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "height",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "texture",
+          "type": "Texture",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setSize",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "width",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "height",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "depth",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "Renderer",
@@ -19017,7 +19168,7 @@
         {
           "name": "geometry",
           "type": "BufferGeometry",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -19285,6 +19436,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -19601,6 +19765,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -20004,6 +20181,24 @@
         {
           "name": "source",
           "type": "Source",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "format",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "number",
           "mutable": false,
           "lifetime": "owned",
           "status": {
@@ -25862,6 +26057,19 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -26137,6 +26345,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {

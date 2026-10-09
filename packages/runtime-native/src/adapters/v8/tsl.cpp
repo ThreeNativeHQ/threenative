@@ -410,7 +410,8 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
                              "flipX", "flipY", "flipZ", "flipW", "addAssign", "subAssign", "mulAssign",
-                             "divAssign", "dFdx", "dFdy", "sign", "cbrt", "atan", "mod", "fwidth", "transformDirection"})
+                             "divAssign", "dFdx", "dFdy", "sign", "cbrt", "atan", "mod", "fwidth", "transformDirection",
+                             "level", "lengthSq"})
         node->Set(str(isolate_, name), function(context, name, true));
     // three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, read as xyzw lanes.
     const std::function<void(const char*, const std::string&, const std::string&)> swizzles =
@@ -435,6 +436,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "mod", "fwidth", "saturation", "mat2", "hash",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
+                             "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "ao", "denoise", "smaa", "bloom", "oneMinus", "varying", "setUniform",
                              "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())

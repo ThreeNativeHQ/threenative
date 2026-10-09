@@ -471,6 +471,10 @@ uint32_t Program::textureCube(std::string_view name) {
 }
 
 uint32_t Program::textureDepth(std::string_view name, bool cube) {
+    // One depth texture is one binding however often it is read (two viewport depth reads share it).
+    const TextureKind kind = cube ? TextureKind::DepthCube : TextureKind::Depth2d;
+    for (std::size_t i = 0; i < textures_.size(); ++i)
+        if (textures_[i] == name && textureKinds_[i] == kind) return static_cast<uint32_t>(i);
     textures_.emplace_back(name);
     textureKinds_.push_back(cube ? TextureKind::DepthCube : TextureKind::Depth2d);
     return static_cast<uint32_t>(textures_.size() - 1);
@@ -530,11 +534,14 @@ ExprId Program::textureSize(uint32_t texture, ExprId level, Where where) {
 
 ExprId Program::textureLoad(uint32_t texture, ExprId coordinate, ExprId level, Where where) {
     if (coordinate == kInvalid || level == kInvalid) return kInvalid;
-    if (texture >= textures_.size() || textureKinds_[texture] != TextureKind::Float2d)
-        return fail("textureLoad", "requires a 2D float texture", where);
+    // A 2D float texture loads a vec4; a 2D depth texture (texture_depth_2d) loads its f32 depth.
+    if (texture >= textures_.size() ||
+        (textureKinds_[texture] != TextureKind::Float2d && textureKinds_[texture] != TextureKind::Depth2d))
+        return fail("textureLoad", "requires a 2D float or depth texture", where);
     if (exprs_[coordinate].type != Type::vec(2, Type::Scalar::I32) || exprs_[level].type != Type::i32())
         return fail("textureLoad", "coordinates must be ivec2 and mip i32", where);
-    return pure(Expr{Op::TextureLoad, Type::vec(4), {coordinate, level}, 2, texture});
+    const Type loaded = textureKinds_[texture] == TextureKind::Depth2d ? Type::f32() : Type::vec(4);
+    return pure(Expr{Op::TextureLoad, loaded, {coordinate, level}, 2, texture});
 }
 
 void Program::breakLoop(Where where) {
@@ -739,6 +746,10 @@ std::vector<std::pair<std::string, Type>> Program::varyings() const {
     std::vector<std::pair<std::string, Type>> result;
     for (const auto& e : exprs_) if (e.op == Op::Varying) result.emplace_back(names_[e.immediate], e.type);
     return result;
+}
+
+bool Program::hasOutput(std::string_view name) const {
+    return std::any_of(outputs_.begin(), outputs_.end(), [&](const OutputSlot& o) { return names_[o.name] == name; });
 }
 
 void Program::linkVaryings(const Program& fragment) {

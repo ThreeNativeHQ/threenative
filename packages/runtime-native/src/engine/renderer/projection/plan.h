@@ -102,7 +102,10 @@ inline double batchFlags(const Mesh& m) {
 inline bool sameUniforms(const Material& a, const Material& b) {
     const auto eq = [](const Color& x, const Color& y) { return (x.r == y.r) & (x.g == y.g) & (x.b == y.b); };
     return a.type == b.type && a.transparent == b.transparent &&
-           a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.side == b.side && a.visible == b.visible &&
+           a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.forceSinglePass == b.forceSinglePass &&
+           a.polygonOffset == b.polygonOffset && a.polygonOffsetFactor == b.polygonOffsetFactor &&
+           a.polygonOffsetUnits == b.polygonOffsetUnits &&
+           a.side == b.side && a.visible == b.visible &&
            a.toneMapped == b.toneMapped && a.fog == b.fog &&
            ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & eq(a.emissive, b.emissive) &
             (a.emissiveIntensity == b.emissiveIntensity) & (a.roughness == b.roughness) &
@@ -113,7 +116,7 @@ inline bool sameUniforms(const Material& a, const Material& b) {
             (a.sheen == b.sheen) & (a.transmission == b.transmission) &
             (a.iridescence == b.iridescence) & (a.anisotropy == b.anisotropy) & (a.dispersion == b.dispersion) &
             (a.envMapIntensity == b.envMapIntensity) & (a.normalScale.x == b.normalScale.x) &
-            (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity)) &&
+            (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity) & (a.bumpScale == b.bumpScale)) &&
            a.positionNode == b.positionNode && a.nodes == b.nodes &&
            a.vertexColors == b.vertexColors && a.flatShading == b.flatShading &&
            a.maps == b.maps;
@@ -129,6 +132,10 @@ inline std::size_t uniformHash(const Material& m) {
                      m.alphaTest,
                      double(m.depthTest),
                      double(m.depthWrite),
+                     double(m.forceSinglePass),
+                     double(m.polygonOffset),
+                     m.polygonOffsetFactor,
+                     m.polygonOffsetUnits,
                      double(m.side),
                      double(m.visible),
                      double(m.toneMapped),
@@ -162,7 +169,8 @@ inline std::size_t uniformHash(const Material& m) {
                      double(m.flatShading),
                      m.normalScale.x,
                      m.normalScale.y,
-                     m.aoMapIntensity}) {
+                     m.aoMapIntensity,
+                     m.bumpScale}) {
         const auto bits = std::bit_cast<uint64_t>(v == 0 ? 0.0 : v); // +0 and -0 compare equal
         mix(bits ^ (bits >> 32));                                    // both halves matter on wasm32
     }

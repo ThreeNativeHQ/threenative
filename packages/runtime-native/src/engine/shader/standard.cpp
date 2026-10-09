@@ -505,6 +505,34 @@ static ExprId pbrTexel(Program& f, const VertexVariant& variant, PbrMap map) {
     return f.sample(f.texture2d(name), f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy"));
 }
 
+// MaterialNode.NORMAL with a bumpMap and no normalMap: three's BumpMapNode (Mikkelsen's surface
+// gradient), its height the map's red channel times bumpScale, sampled at the uv and at the uv
+// stepped by its screen derivatives (dHdxy_fwd), then perturbNormalArb around the material normal.
+static ExprId bumpedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
+    const ExprId eye = f.varying("positionView", Type::vec(3));
+    if (variant.tinted()) f.varying("instanceColor", tintType(variant));
+    const ExprId uv = f.varying("uv", Type::vec(2));
+    const ExprId transform = f.uniform(std::string(kPbrMapNames[kBumpMap]) + "UvTransform", Type::mat(3, 3));
+    const uint32_t map = f.texture2d(kPbrMapNames[kBumpMap]);
+    const auto height = [&](ExprId coordinate) {
+        const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {coordinate, f.constant(1.0f)})), "xy");
+        return f.swizzle(f.sample(map, at), "x");
+    };
+    const ExprId scale = f.uniform("bumpScale", Type::f32());
+    const ExprId Hll = height(uv);
+    const ExprId dHdx = f.mul(f.sub(height(f.add(uv, f.call("dFdx", {uv}))), Hll), scale);
+    const ExprId dHdy = f.mul(f.sub(height(f.add(uv, f.call("dFdy", {uv}))), Hll), scale);
+    const ExprId vSigmaX = f.call("normalize", {f.call("dFdx", {eye})});
+    const ExprId vSigmaY = f.call("normalize", {f.call("dFdy", {eye})});
+    const ExprId R1 = f.call("cross", {vSigmaY, surfaceNormal});
+    const ExprId R2 = f.call("cross", {surfaceNormal, vSigmaX});
+    const ExprId faceDirection = f.select(f.builtin("frontFacing"), f.constant(1.0f), f.constant(-1.0f));
+    const ExprId fDet = f.mul(f.call("dot", {vSigmaX, R1}), faceDirection);
+    const ExprId vGrad = f.mul(f.call("sign", {fDet}), f.add(f.mul(dHdx, R1), f.mul(dHdy, R2)));
+    // Held in a variable: its derivatives must run in uniform control flow, as perturbedNormal's do.
+    return f.load(f.var(Type::vec(3), f.call("normalize", {f.sub(f.mul(f.call("abs", {fDet}), surfaceNormal), vGrad)})));
+}
+
 // MaterialNode.CLEARCOAT_NORMAL with a clearcoatNormalMap: normalMap(clearcoatNormalMap,
 // clearcoatNormalScale), a tangent-space map whose frame surrounds the material's own normal (three's
 // normalView outside the NORMAL sub-build). Without the map the clearcoat normal is that normal.
@@ -601,7 +629,7 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     };
     for (const auto& node : variant.nodes.graphs()) collect(node);
     for (const auto& [name, type] : out.fragment.varyings()) {
-        if (name == "normalView" || name == "positionView" ||
+        if (name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
             (name == "instanceColor" && variant.tinted()) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
@@ -610,6 +638,10 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
         } else if (name == "positionWorld")
             value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position), "xyz");
         else if (name == "positionLocal") value = v.swizzle(local.position, "xyz");
+        // positionView for a program that does not light (linearDepth() of the fragment): view * model * position.
+        else if (name == "positionView")
+            value = v.swizzle(v.mul(v.uniform("viewMatrix", Type::mat(4, 4)),
+                                    v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position)), "xyz");
         else if (name == "positionGeometry") value = v.attribute("position", type);
         else value = v.attribute(name, type);
         v.output(name, value);
@@ -870,6 +902,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
     const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
     if (variant.normalMap && !variant.nodes.normalNode) n = perturbedNormal(f, variant, normalViewFaced);
+    else if (variant.reads(kBumpMap) && !variant.nodes.normalNode) n = bumpedNormal(f, variant, normalViewFaced);
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix), in the fragment:
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),

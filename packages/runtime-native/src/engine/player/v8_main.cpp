@@ -22,6 +22,8 @@
 // `tn.input.isDown(key)` is true while `key` is held; `key` is a DOM key ("w", "ArrowLeft", ...),
 // the names the endpoint's injected input carries.
 #include <libplatform/libplatform.h>
+#include "engine/abi/binding.h"
+#include "engine/renderer/render_target_pass.h"
 
 #include <algorithm>
 #include <chrono>
@@ -165,6 +167,10 @@ class V8Game {
     }
   private:
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void readTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
+    /** The engine object a JS wrapper stands for, when it is one of `cls` (or any Object3D for "Object3D"). */
+    tn::binding::Object* engineObject(v8::Local<v8::Value> value, std::string_view cls);
     static void decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info);
 };
 
@@ -391,6 +397,76 @@ void V8Game::decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info) {
 #endif
 }
 
+tn::binding::Object* V8Game::engineObject(v8::Local<v8::Value> value, std::string_view cls) {
+    tn_handle_t handle{};
+    if (!adapter_->unwrap(value, handle)) return nullptr;
+    auto* object = tn::abi::objectOf(handle);
+    if (object == nullptr) return nullptr;
+    const bool matches = cls == "Object3D" ? tn::binding::isObject3DClass(object->cls)
+                         : cls == "Camera" ? object->cls == "PerspectiveCamera" || object->cls == "OrthographicCamera"
+                                           : object->cls == cls;
+    return matches ? object : nullptr;
+}
+
+// `tn.renderTarget(target, root, camera)`: three's render() while a render target is set (PRD-551),
+// drawn at the call (the next statement may sample the target), into the target's own renderer.
+void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    const auto refuse = [&](const std::string& reason) {
+        isolate->ThrowException(v8::Exception::Error(v8str(isolate, reason)));
+    };
+    if (game.renderer_ == nullptr) return refuse("TN_NATIVE_RENDER_TARGET: the player has no renderer before its first frame");
+    auto* target = info.Length() == 3 ? game.engineObject(info[0], "RenderTarget") : nullptr;
+    auto* root = info.Length() == 3 ? game.engineObject(info[1], "Object3D") : nullptr;
+    auto* camera = info.Length() == 3 ? game.engineObject(info[2], "Camera") : nullptr;
+    if (target == nullptr || root == nullptr || camera == nullptr)
+        return refuse("TN_NATIVE_RENDER_TARGET: expected a RenderTarget, an Object3D and a camera");
+    // three's WebGPURenderer clears to its clear colour, black and opaque by default.
+    const auto refused = renderToTarget(*game.renderer_, *static_cast<RenderTarget*>(target->ptr.get()),
+                                        *static_cast<Object3D*>(root->ptr.get()), *static_cast<Camera*>(camera->ptr.get()),
+                                        {0, 0, 0, 1}, game.shadowMap_);
+    if (!refused.empty()) refuse(refused.front());
+}
+
+// `tn.readTarget(target, x, y, width, height)`: a Promise of the region's RGBA16Float rows (top row
+// first) as a Uint8Array, resolved from the player's poll once the GPU copy lands.
+void V8Game::readTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
+    info.GetReturnValue().Set(resolver->GetPromise());
+    const auto reject = [&](const std::string& reason) {
+        resolver->Reject(ctx, v8::Exception::Error(v8str(isolate, reason))).Check();
+    };
+    auto* target = info.Length() == 5 ? game.engineObject(info[0], "RenderTarget") : nullptr;
+    if (target == nullptr) return reject("TN_NATIVE_READ_TARGET: expected a RenderTarget and a region");
+    uint32_t region[4];
+    for (int i = 0; i < 4; ++i) {
+        const double value = info[i + 1]->IsNumber() ? info[i + 1].As<v8::Number>()->Value() : -1;
+        if (!(value >= 0) || value > 16384) return reject("TN_NATIVE_READ_TARGET: the region must be whole pixels");
+        region[i] = static_cast<uint32_t>(value);
+    }
+    auto pending = std::make_shared<v8::Global<v8::Promise::Resolver>>(isolate, resolver);
+    const GpuStatus started = readRenderTarget(*static_cast<RenderTarget*>(target->ptr.get()), region[0], region[1],
+        region[2], region[3], [&game, pending](GpuStatus status, std::vector<uint8_t> bytes) {
+            v8::HandleScope scope(game.isolate_);
+            auto context = game.js_.Get(game.isolate_);
+            v8::Context::Scope contextScope(context);
+            auto settle = pending->Get(game.isolate_);
+            if (status != GpuStatus::Ok) {
+                settle->Reject(context, v8::Exception::Error(v8str(game.isolate_, "TN_NATIVE_READ_TARGET: the read failed"))).Check();
+                return;
+            }
+            auto buffer = v8::ArrayBuffer::New(game.isolate_, bytes.size());
+            std::memcpy(buffer->Data(), bytes.data(), bytes.size());
+            settle->Resolve(context, v8::Uint8Array::New(buffer, 0, bytes.size())).Check();
+        });
+    if (started == GpuStatus::InvalidHandle) reject("TN_NATIVE_READ_TARGET: the target never rendered");
+    else if (started != GpuStatus::Ok) reject("TN_NATIVE_READ_TARGET: region outside the target");
+}
+
 void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     try {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
@@ -531,6 +607,8 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "decodeImage"), v8::Function::New(ctx, &decodeImage, self).ToLocalChecked()).Check();
 #endif
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "renderTarget"), v8::Function::New(ctx, &renderTarget, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderInfo"), v8::Function::New(ctx, &renderInfo, self).ToLocalChecked()).Check();

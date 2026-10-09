@@ -808,6 +808,10 @@ void registerMesh(ClassBinding& b) {
     b.members["geometry"] = [](void* self, const Args&, Store& store) -> Value {
         return store.share("BufferGeometry", as<Mesh>(self)->geometry);
     };
+    // three's Mesh.geometry is a plain property: a game swaps it (Midway's LOD and merged hulls).
+    b.setters["geometry"] = [](void* self, const Value& value, Store& store) {
+        as<Mesh>(self)->geometry = geometryArg(store, value);
+    };
     // morphTargetInfluences: a plain array three sizes from the geometry's morph targets.
     b.methods["updateMorphTargets"] = [](void* self, const Args&, Store&) {
         as<Mesh>(self)->updateMorphTargets();
@@ -1335,20 +1339,16 @@ void registerInstancedMesh(ClassBinding& b) {
         const auto& colors = as<InstancedMesh>(self)->instanceColor;
         return colors ? store.share("InstancedBufferAttribute", colors) : Value{};
     };
-    // three's games assign `mesh.instanceColor = new InstancedBufferAttribute(colors, 3)` directly.
+    // three's instanceColor is a plain property: a game assigns its own InstancedBufferAttribute
+    // (three components per instance), or null to drop the colours.
     b.setters["instanceColor"] = [](void* self, const Value& v, Store& store) {
-        InstancedMesh& mesh = *as<InstancedMesh>(self);
-        if (v.kind == Value::Kind::Null) {
+        auto& mesh = *as<InstancedMesh>(self);
+        if (v.kind == Value::Kind::Undefined || v.kind == Value::Kind::Null) {
             mesh.instanceColor = nullptr;
             return;
         }
-        Object* found = store.find(v);
-        if (!found || found->cls != "InstancedBufferAttribute")
-            throw Unsupported{"instanceColor must be an InstancedBufferAttribute or null"};
-        auto colors = std::static_pointer_cast<BufferAttribute>(found->ptr);
-        if (colors->itemSize != 3 || colors->store->scalar() != Scalar::F32 ||
-            colors->count() < mesh.instanceMatrix->count())
-            throw Unsupported{"instanceColor needs 3 floats (a Float32Array) per instance"};
+        std::shared_ptr<BufferAttribute> colors = sharedAttributeArg(store, v);
+        if (colors->itemSize != 3) throw Unsupported{"instanceColor needs 3 components per instance"};
         mesh.instanceColor = std::move(colors);
     };
     const auto index = [](const Value& v, const InstancedMesh& mesh) {
@@ -1386,18 +1386,10 @@ void registerInstancedMesh(ClassBinding& b) {
  * valid child of a Group, so the argument is matched against the classes the scene graph owns.
  */
 Object3D& objectArg(Store& store, const Value& arg) {
-    static const char* const kClasses[] = {"Object3D",        "Group",           "Mesh",
-                                           "Scene",           "Camera",          "PerspectiveCamera",
-                                           "OrthographicCamera", "AmbientLight", "DirectionalLight",
-                                           "HemisphereLight", "InstancedMesh",      "PointLight",
-                                           "Sprite", "SpotLight",       "Bone",               "SkinnedMesh", "LOD",
-                                           "Line", "LineSegments"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
-    for (const char* cls : kClasses) {
-        if (found->cls == cls) return *static_cast<Object3D*>(found->ptr.get());
-    }
-    throw Unsupported{"argument is not an Object3D, it is a " + found->cls};
+    if (!isObject3DClass(found->cls)) throw Unsupported{"argument is not an Object3D, it is a " + found->cls};
+    return *static_cast<Object3D*>(found->ptr.get());
 }
 
 void registerObject3DBindings(ClassBinding& b) {

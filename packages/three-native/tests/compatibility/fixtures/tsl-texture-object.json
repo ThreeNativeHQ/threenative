@@ -1,6 +1,6 @@
 {
-  "name": "instanced-buffer-geometry",
-  "adaptedFrom": "original — an InstancedBufferGeometry (three r185) drawn instanceCount = 5 times from six per-instance InstancedBufferAttributes, read by TSL attribute(): positionLocal + attribute('offset') places each quad and varying(attribute('tint')) colours it, as Midway's whitewater and rain read theirs",
+  "name": "tsl-texture-object",
+  "adaptedFrom": "original — TSL texture(textureObject, uv) on unnamed DataTextures, the way Midway's ocean and ripples read theirs: a positionNode displacing a tilted plane by texture(bumps, uv()).level(0).r and a colorNode of texture(ramp, uv()).rgb",
   "tolerance": {
     "abs": 0
   },
@@ -41,7 +41,7 @@
       "op": "new",
       "id": "geometry",
       "class": "PlaneGeometry",
-      "args": [3, 2, 1, 1]
+      "args": [3, 2, 32, 16]
     },
     {
       "op": "new",
@@ -50,22 +50,9 @@
       "args": []
     },
     {
-      "op": "set",
+      "op": "tsl",
       "id": "material",
-      "path": "color.r",
-      "value": 0.3
-    },
-    {
-      "op": "set",
-      "id": "material",
-      "path": "color.g",
-      "value": 0.6
-    },
-    {
-      "op": "set",
-      "id": "material",
-      "path": "color.b",
-      "value": 0.9
+      "program": "tsl-texture-object"
     },
     {
       "op": "new",
@@ -81,9 +68,10 @@
       ]
     },
     {
-      "op": "tsl",
+      "op": "set",
       "id": "mesh",
-      "program": "instanced-buffer-geometry"
+      "path": "rotation.x",
+      "value": -0.9
     },
     {
       "op": "call",

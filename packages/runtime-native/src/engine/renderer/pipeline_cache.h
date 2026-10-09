@@ -18,18 +18,20 @@ struct PipelineTarget {
     WGPUCullMode cull = WGPUCullMode_Back;
     uint8_t blend = 0;       // 0 none, else three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false
     bool depthWrite = true;  // material.depthWrite
-    int32_t depthBias = 0;
-    float depthBiasSlopeScale = 0;
     WGPUPipelineLayout layout = nullptr;  // explicit layout (dynamic-offset uniforms); null: auto
     // `skinIndex` as the geometry stores it: three's Uint8/16/32 attribute read as vec4<u32>.
     WGPUVertexFormat skinIndex = WGPUVertexFormat_Uint16x4;
     WGPUFrontFace frontFace = WGPUFrontFace_CCW;
     WGPUCompareFunction depthCompare = WGPUCompareFunction_LessEqual;
+    // material.polygonOffset: WebGPUPipelineUtils' depthBias (polygonOffsetUnits) and
+    // depthBiasSlopeScale (polygonOffsetFactor); zero without it.
+    int32_t depthBias = 0;
+    float depthBiasSlopeScale = 0;
+    // Bit i: vertex attribute i (in the stage's attribute order) steps per instance
+    // (an InstancedBufferAttribute), beside instanceMatrix* and instanceColor.
+    uint64_t instanceStepMask = 0;
     WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
     WGPUIndexFormat stripIndexFormat = WGPUIndexFormat_Undefined;  // an indexed line strip's index format
-    // The vertex stage's attributes stepped per instance, by attribute index: a geometry's
-    // InstancedBufferAttributes (instanceMatrix columns and instanceColor step by name).
-    uint32_t instanceSteps = 0;
 };
 
 /**

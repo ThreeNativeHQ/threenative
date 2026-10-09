@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -95,6 +96,12 @@ public:
     // bits), 16 for FloatType. Empty until a loader or DataTexture fills it.
     std::vector<uint8_t> data;
     uint32_t width = 0, height = 0;
+    /**
+     * The render target this texture is the colour of (three's `renderTarget.texture`,
+     * scene/render_target.h): the renderer samples that target's last render instead of uploading
+     * `data`. Type-erased, so this layer does not depend on the target.
+     */
+    std::weak_ptr<void> renderTarget;
 
     /** three.js `texture.needsUpdate`: a GPU record rebuilds when its counter moves. */
     void needsUpdate() { ++version_; }
@@ -106,6 +113,8 @@ public:
     [[nodiscard]] uint32_t bytesPerTexel() const { return isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
     [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && !data.empty(); }
+    /** A material can sample it: an uploaded image, or a render target's last render. */
+    [[nodiscard]] bool sampleable() const { return hasImage() || !renderTarget.expired(); }
 
 private:
     uint32_t version_ = 0;

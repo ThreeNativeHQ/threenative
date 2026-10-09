@@ -50,9 +50,9 @@ public:
     double alphaTest = 0;
     bool depthTest = true;
     bool depthWrite = true;
+    /** three's polygonOffset, polygonOffsetFactor and polygonOffsetUnits: a depth bias. */
     bool polygonOffset = false;
-    double polygonOffsetFactor = 0;
-    double polygonOffsetUnits = 0;
+    double polygonOffsetFactor = 0, polygonOffsetUnits = 0;
     Side side = Side::Front;
     Blending blending = Blending::Normal;
     bool visible = true;
@@ -80,6 +80,7 @@ public:
     bool flatShading = false;
     Vector2 normalScale{1, 1};
     double aoMapIntensity = 1;
+    double bumpScale = 1;  // Standard, Physical (Lambert and Phong declare it too; their programs do not read it yet)
     // Texture slots by three's property name (`map`, `normalMap`, ...); empty slots are absent.
     std::map<std::string, std::shared_ptr<const Texture>> maps;
 

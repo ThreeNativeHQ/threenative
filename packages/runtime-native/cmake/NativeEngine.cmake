@@ -168,14 +168,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "standard_materials_fixtures:alpha-test,lit-render*,materials-*"
                 "render_alpha:alpha-*" "render_lights:lights-*" "render_shadows:shadows-*"
                 "render_vsm:vsm-*"
-                "render_polygon_offset:polygon-offset"
                 "traa_history:traa-history" "history_cut:history-cut"
                 "render_particles:particles-sprite,fluid-particles"
                 "render_skinned:skinned-*" "render_morph:morph-*" "render_gltf:gltf-model-*"
                 "render_post_addons:tsl-post-ao,tsl-post-ao-raw,tsl-post-bloom,tsl-post-smaa,tsl-post-template-high,tsl-post-live-parameters,tsl-post-uniform-write"
                 "render_data_textures:textures-data-*" "render_lines:lines-*" "render_materialx:materialx-*"
                 "render_pmrem:pmrem-*" "render_screen_uv:screen-uv" "render_texture_object:texture-object"
-                "render_instanced_buffer_geometry:instanced-buffer-geometry"
+                "render_tsl_texture:tsl-texture-object" "render_viewport:viewport-textures" "render_instanced_geometry:tsl-instanced-geometry"
                 "render_storage_attribute:storage-attribute"
                 "render_reflector:reflector-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
@@ -228,6 +227,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_shader_invalid=shader_invalid
         native_engine_renderer_time_uniform=time_uniform
         native_engine_renderer_steady_state=steady_state
+        native_engine_render_target=render_target
         native_engine_renderer_updates=updates
         native_engine_renderer_multi_camera_layers=multi_camera_layers
         native_engine_renderer_callback=render_callback

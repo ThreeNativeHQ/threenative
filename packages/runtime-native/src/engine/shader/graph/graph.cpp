@@ -232,6 +232,17 @@ ExprId Lowerer::emit(Node node) {
             return program_.div(program_.swizzle(program_.builtin("position"), "xy"),
                                 program_.uniform("screenSize", Type::vec(2)));
         }
+        case Kind::ViewportDepth: {
+            // The texel under uv * screenSize of the depth copy the renderer takes before this draw.
+            const ExprId at = expression(d.args[0]);
+            if (at == kInvalid) return kInvalid;
+            const ExprId size = program_.uniform("screenSize", Type::vec(2));
+            const ExprId texel = program_.call("min", {program_.call("floor", {program_.mul(at, size)}),
+                                                       program_.sub(size, program_.constant(1.0f))});
+            return program_.textureLoad(program_.textureDepth("viewportDepth"),
+                                        program_.construct(Type::vec(2, Type::Scalar::I32), {texel}),
+                                        program_.constant(int32_t(0)));
+        }
         case Kind::Pmrem: {
             // PMREMNode.setup: a render-target PMREM flips y, then materialEnvRotation turns it.
             const ExprId direction = expression(d.args[0]), level = expression(d.args[1]);
@@ -249,6 +260,12 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Texture: {
             const ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
+            // TextureNode.level(n): an explicit mip, which a vertex stage needs.
+            if (d.args.size() == 2) {
+                const ExprId level = expression(d.args[1]);
+                if (level == kInvalid) return kInvalid;
+                return program_.sampleLevel(program_.texture2d(d.name), coordinate, level);
+            }
             return program_.sample(program_.expr(coordinate).type == Type::vec(3)
                                        ? program_.texture3d(d.name) : program_.texture2d(d.name), coordinate);
         }
@@ -491,6 +508,11 @@ Node builtin(std::string_view name) {
 Node positionLocal() { return makeNode(Kind::PositionLocal, Type::vec(3)); }
 Node uv() { return attribute("uv", Type::vec(2)); }
 Node screenUV() { return makeNode(Kind::ScreenUv, Type::vec(2)); }
+Node viewportDepth(Node uv) {
+    auto data = makeNode(Kind::ViewportDepth, Type::f32());
+    data->args = {std::move(uv)};
+    return data;
+}
 Node instanceIndex() { return builtin("instanceIndex"); }
 
 Node vec2(std::initializer_list<Node> parts) { return makeJoin(2, parts); }

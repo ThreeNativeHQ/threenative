@@ -54,11 +54,10 @@ public:
     bool normalized = false;
     uint32_t usage = 35044;  // StaticDrawUsage
     uint32_t gpuType = 1015;  // FloatType
-    /** InstancedBufferAttribute: one element per instance (meshPerAttribute 1), a vertex buffer
-     *  stepped per instance; a plain attribute steps per vertex. */
-    bool instanced = false;
     std::string name;
     uint64_t id = 0;
+    /** three's InstancedBufferAttribute: read once per instance (meshPerAttribute 1), not per vertex. */
+    bool perInstance = false;
 
     [[nodiscard]] uint64_t count() const { return store->count() / static_cast<uint64_t>(itemSize); }
     [[nodiscard]] uint32_t version() const { return store->version(); }
@@ -132,6 +131,10 @@ public:
     std::vector<std::shared_ptr<BufferAttribute>> morphPositions;
     std::vector<std::shared_ptr<BufferAttribute>> morphNormals;
     bool morphTargetsRelative = false;
+    /** three's InstancedBufferGeometry: drawn instanceCount times (Infinity: as many as its
+     *  per-instance attributes hold). */
+    bool instanced = false;
+    double instanceCount = std::numeric_limits<double>::infinity();
     std::vector<GeometryGroup> groups;
     DrawRange drawRange;
     std::shared_ptr<Box3> boundingBox;
@@ -187,20 +190,6 @@ public:
 
 private:
     uint64_t revision_ = 0;
-};
-
-/**
- * three's InstancedBufferGeometry: a BufferGeometry drawn `instanceCount` times, its
- * InstancedBufferAttributes read once per instance. Infinity (three's default) draws as many
- * instances as its instanced attributes hold (instanceCount()).
- */
-class InstancedBufferGeometry : public BufferGeometry {
-public:
-    InstancedBufferGeometry() { type = "InstancedBufferGeometry"; }
-    double instanceCount = std::numeric_limits<double>::infinity();
-    /** The instances a draw issues: instanceCount, clamped to the instances every instanced attribute
-     *  holds (WebGPU refuses a draw that reads past a vertex buffer); 0 draws nothing. */
-    [[nodiscard]] uint32_t drawInstances() const;
 };
 
 }  // namespace tn::engine

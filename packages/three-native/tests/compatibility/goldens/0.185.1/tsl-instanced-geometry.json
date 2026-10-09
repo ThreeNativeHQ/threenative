@@ -1,7 +1,7 @@
 {
-  "name": "instanced-buffer-geometry",
+  "name": "tsl-instanced-geometry",
   "threeVersion": "0.185.1",
-  "adaptedFrom": "original — an InstancedBufferGeometry (three r185) drawn instanceCount = 5 times from six per-instance InstancedBufferAttributes, read by TSL attribute(): positionLocal + attribute('offset') places each quad and varying(attribute('tint')) colours it, as Midway's whitewater and rain read theirs",
+  "adaptedFrom": "original — Midway's particle batches: an InstancedBufferGeometry quad (index and position cloned from a PlaneGeometry) with per-instance InstancedBufferAttributes aOffset and aTint, instanceCount 3 of 4, read by TSL attribute() in a material.vertexNode (clip space) and colorNode",
   "blocked": null,
   "observations": [
     {
@@ -16,13 +16,13 @@
       "index": 1,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:0a6122e50d0b0ed1dad375a51b60285d3c4302fc2325735c9b89b8e854f57999",
-      "decimal": "0a6122e50d0b0ed1dad375a51b60285d3c4302fc2325735c9b89b8e854f57999"
+      "value": "s:4e4f3c3ed4588d178ef7925ec300b39cc56a680eab69f259832268c6fc046028",
+      "decimal": "4e4f3c3ed4588d178ef7925ec300b39cc56a680eab69f259832268c6fc046028"
     }
   ],
   "render": {
-    "png": "instanced-buffer-geometry.png",
-    "pngSha256": "0a6122e50d0b0ed1dad375a51b60285d3c4302fc2325735c9b89b8e854f57999",
+    "png": "tsl-instanced-geometry.png",
+    "pngSha256": "4e4f3c3ed4588d178ef7925ec300b39cc56a680eab69f259832268c6fc046028",
     "width": 320,
     "height": 240,
     "adapter": {
