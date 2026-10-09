@@ -27,7 +27,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <thread>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -172,6 +171,9 @@ class V8Game {
     bool observe(const std::string& method, const json::Value* argument, json::Value& result, std::string& error);
     json::Value resource(const std::string& id, uint64_t tick) const;
 
+    /** Binds the scene and camera the game last published (`tn.scene`/`tn.camera`): 1 bound, 0 not
+     *  published yet (an async boot still loading), -1 a startup error or a value of the wrong kind. */
+    int view(std::string& error);
     Object3D* scene() const { return scene_; }
     Camera* camera() const { return camera_; }
     bool shadowMapEnabled() const { return shadowMap_; }
@@ -626,41 +628,42 @@ bool V8Game::start(const std::string& path, std::string& error) {
     if (!tn->Get(ctx, v8str(isolate_, "__update")).ToLocal(&update) || !update->IsFunction())
         return error = "the game bundle registered no tn.onUpdate(fn)", false;
     update_.Reset(isolate_, update.As<v8::Function>());
-    // An async boot (audio decodes, timers) publishes its scene ticks later. As a browser's event
-    // loop turns while a page loads, fixed ticks run in real time until the scene arrives or fails.
-    const auto published = [&] {
-        v8::Local<v8::Value> value;
-        return tn->Get(ctx, v8str(isolate_, "scene")).ToLocal(&value) && !value->IsNullOrUndefined();
-    };
-    constexpr int kBootTicks = 120 * 60;
-    for (int i = 0; i < kBootTicks && !published(); ++i) {
-        std::this_thread::sleep_for(std::chrono::microseconds(16667));
-        tick(1.0 / 60.0);
-        isolate_->PerformMicrotaskCheckpoint();
-        if (failed()) return false;
-    }
-    const auto binding = [&](const char* field, tn::binding::Object*& out) {
-        v8::Local<v8::Value> value;
-        tn_handle_t handle{};
-        if (!tn->Get(ctx, v8str(isolate_, field)).ToLocal(&value) || !adapter_->unwrap(value, handle))
-            return false;
-        out = tn::abi::objectOf(handle);
-        return out != nullptr;
-    };
-    tn::binding::Object* scene = nullptr;
-    tn::binding::Object* camera = nullptr;
-    if (!binding("scene", scene) || scene->cls != "Scene")
-        return error = "tn.scene is not a Scene", false;
-    if (!binding("camera", camera) || (camera->cls != "PerspectiveCamera" && camera->cls != "OrthographicCamera"))
-        return error = "tn.camera is not a camera", false;
+    return view(error) >= 0;
+}
 
+int V8Game::view(std::string& error) {
+    v8::Isolate::Scope isolateScope(isolate_);
+    v8::HandleScope scope(isolate_);
+    v8::Local<v8::Context> ctx = js_.Get(isolate_);
+    v8::Context::Scope contextScope(ctx);
+    v8::Local<v8::Value> tnValue, startupError, sceneValue, cameraValue;
+    if (!ctx->Global()->Get(ctx, v8str(isolate_, "tn")).ToLocal(&tnValue) || !tnValue->IsObject())
+        return error = "the game bundle left no `tn` host object", -1;
+    v8::Local<v8::Object> tn = tnValue.As<v8::Object>();
+    // An async boot that fails after start() returned reports through the same field.
+    if (tn->Get(ctx, v8str(isolate_, "__startupError")).ToLocal(&startupError) && !startupError->IsUndefined()) {
+        v8::String::Utf8Value message(isolate_, startupError);
+        return error = std::string("core startup failed: ") + (*message ? *message : "?"), -1;
+    }
+    if (!tn->Get(ctx, v8str(isolate_, "scene")).ToLocal(&sceneValue) ||
+        !tn->Get(ctx, v8str(isolate_, "camera")).ToLocal(&cameraValue))
+        return error = "tn.scene or tn.camera could not be read", -1;
+    if (sceneValue->IsNullOrUndefined() || cameraValue->IsNullOrUndefined())
+        return 0;
+    tn_handle_t handle{};
+    tn::binding::Object* scene = adapter_->unwrap(sceneValue, handle) ? tn::abi::objectOf(handle) : nullptr;
+    if (scene == nullptr || scene->cls != "Scene")
+        return error = "tn.scene is not a Scene", -1;
+    tn::binding::Object* camera = adapter_->unwrap(cameraValue, handle) ? tn::abi::objectOf(handle) : nullptr;
+    if (camera == nullptr || (camera->cls != "PerspectiveCamera" && camera->cls != "OrthographicCamera"))
+        return error = "tn.camera is not a camera", -1;
     sceneHold_ = scene->ptr;
     cameraHold_ = camera->ptr;
     scene_ = static_cast<Scene*>(scene->ptr.get());
     camera_ = camera->cls == "PerspectiveCamera"
                   ? static_cast<Camera*>(static_cast<PerspectiveCamera*>(camera->ptr.get()))
                   : static_cast<Camera*>(static_cast<OrthographicCamera*>(camera->ptr.get()));
-    return true;
+    return 1;
 }
 
 V8Game::~V8Game() {
@@ -777,6 +780,9 @@ std::vector<std::pair<std::string, std::string>> adapterIdentity() {
 }
 
 int main(int argc, char** argv) {
+    // The game's log is a stream tools read live; a pipe would otherwise hold it until exit, and a
+    // killed player would lose it.
+    std::setvbuf(stdout, nullptr, _IOLBF, 0);
     std::string gamePath;
     std::string checkRequest;
     bool checkGame = false;
@@ -809,6 +815,25 @@ int main(int argc, char** argv) {
     // Boot the real bundle and validate its native handles without opening a GPU/window.
     // This establishes startup only; a desktop playtest still proves the journey and rendering.
     if (checkGame) {
+        // An async boot (audio decodes, timers) publishes its scene ticks later. A check has no frame
+        // loop, so it turns fixed ticks in real time itself, for at most two minutes.
+        // ponytail: spins between ticks; the engine thread never sleeps (native_engine_no_blocking_waits).
+        const auto begin = std::chrono::steady_clock::now();
+        int bound = game.scene() != nullptr ? 1 : 0;
+        for (uint64_t ticks = 0; bound == 0; bound = game.view(error)) {
+            const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+            if (elapsed > 120) {
+                error = "the game published no scene within 120 s";
+                bound = -1;
+                break;
+            }
+            if (elapsed * 60 >= double(ticks + 1)) {
+                game.tick(1.0 / 60.0);
+                ++ticks;
+            }
+        }
+        if (bound < 0)
+            return std::fprintf(stderr, "TN_PLAYER_V8_GAME: %s\n", error.c_str()), 1;
         if (!checkRequest.empty()) {
             inspect::Host host;
             host.scene = game.scene(); host.gameRuntime = "v8";
@@ -842,5 +867,10 @@ int main(int argc, char** argv) {
     configured.resource = [&game](const std::string& id, uint64_t tick) { return game.resource(id, tick); };
     configured.afterRender = [&game] { game.safePoint(); };
     configured.attach = [&game](inspect::Endpoint& endpoint) { game.attach(endpoint); };
+    configured.view = [&game](Object3D*& scene, Camera*& camera, std::string& error) {
+        const int bound = game.view(error);
+        if (bound > 0) { scene = game.scene(); camera = game.camera(); }
+        return bound;
+    };
     return player::run(configured);
 }

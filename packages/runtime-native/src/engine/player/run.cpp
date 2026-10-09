@@ -10,6 +10,7 @@
 #include <android/log.h>
 #endif
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -159,7 +160,7 @@ bool pumpEvents(Window& window) {
 }  // namespace
 
 int run(const Game& game) {
-    if (game.scene == nullptr || game.camera == nullptr) {
+    if (!game.view && (game.scene == nullptr || game.camera == nullptr)) {
         std::printf("TN_PLAYER_NO_SCENE: %s carries no scene or camera.\n", game.name.c_str());
         return 1;
     }
@@ -264,6 +265,16 @@ int run(const Game& game) {
     inspect::Endpoint endpoint(host);
     if (game.attach)
         game.attach(endpoint);
+    Object3D* scene = game.scene;
+    Camera* camera = game.camera;
+    const auto refreshView = [&] {
+        if (!game.view) return true;
+        std::string error;
+        if (game.view(scene, camera, error) < 0)
+            return std::printf("TN_PLAYER_VIEW: %s\n", error.c_str()), false;
+        endpoint.setScene(scene);
+        return true;
+    };
 
     player::Mailbox mailbox(player::Mailbox::rootFromEnvironment());
     const bool runner = mailbox.announceReady();
@@ -272,6 +283,7 @@ int run(const Game& game) {
                 game.name.c_str(), game.gameRuntime.c_str(), renderer.width(), renderer.height(),
                 runner ? "on" : "off");
 
+    const auto freeRunStart = std::chrono::steady_clock::now();
     RenderDatabase database;
     database.shadowMapEnabled = game.shadowMapEnabled;
     bool readbackInFlight = false;
@@ -285,8 +297,14 @@ int run(const Game& game) {
             presenter->resize(window.width, window.height);
             renderer.setSize(presenter->width(), presenter->height());
         }
+        // Nothing is drawn until the game publishes its view, as a page's canvas stays blank while it loads.
+        if (scene == nullptr || camera == nullptr) {
+            renderer.poll();
+            events.drain();
+            return;
+        }
         if (game.beforeRender) game.beforeRender(renderer, database);
-        database.render(renderer, *game.scene, *game.camera, {0.05, 0.06, 0.09, 1});
+        database.render(renderer, *scene, *camera, {0.05, 0.06, 0.09, 1});
         for (const std::string& diagnostic : database.diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
         if (presenter) {
@@ -349,6 +367,15 @@ int run(const Game& game) {
 #endif
         // An advance may render several streaming frames; each tick gets its own admission cap.
         mailbox.poll(endpoint);
+        // Without a runner nothing drives host.step, and the game would re-render one frozen tick:
+        // the clock follows real time instead, as the web loop follows requestAnimationFrame.
+        if (!runner) {
+            nowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - freeRunStart).count();
+            for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps)
+                game.update(kTickStep);
+        }
+        if (!refreshView())
+            return 1;
         renderFrame();
     }
 #if defined(__APPLE__)
