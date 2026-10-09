@@ -1536,7 +1536,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             std::string signature = std::to_string(item.positions->version());
             if (item.instanceMatrices) signature += ":instances:" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
             if (item.nodes.positionNode) {
-                signature += shader::graph::key(item.nodes.positionNode);
+                signature += "#" + std::to_string(shader::graph::keyId(item.nodes.positionNode));
                 for (const auto& [name, values] : shader::graph::uniforms(item.nodes.positionNode)) {
                     signature += name;
                     signature.append(reinterpret_cast<const char*>(values.data()), values.size() * sizeof(float));

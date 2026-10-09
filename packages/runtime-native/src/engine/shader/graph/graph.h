@@ -55,6 +55,17 @@ struct NodeData {
     std::vector<Node> otherwise;
     double scale = 1;
     uint32_t width = 0, height = 0; // RTT: zero means drawing-buffer size
+    /**
+     * What the renderer asks of a graph every draw, worked out once: its interned structural key and
+     * its uniform nodes. A copied node (then edited) starts with none, so it never reads its source's.
+     */
+    struct Memo {
+        mutable uint64_t keyId = 0;
+        mutable std::shared_ptr<const std::vector<std::shared_ptr<const NodeData>>> uniforms;
+        Memo() = default;
+        Memo(const Memo&) {}
+        Memo& operator=(const Memo&) { return *this; }
+    } memo;
 };
 
 Node float_(double value);
@@ -196,6 +207,8 @@ ExprId lower(const Graph& graph, Program& program,
              const std::unordered_map<std::string, ExprId>& inputs = {});
 /** Canonical DAG serialization, independent of addresses; includes sharing and every operation. */
 std::string key(const Graph& graph);
+/** key(graph) interned: equal structures answer the same id, computed once per node (0 for null). */
+uint64_t keyId(const Graph& graph);
 /** Named uniform data reachable from the graph. Conflicting values fail rather than pick one. */
 std::map<std::string, std::vector<float>> uniforms(const Graph& graph);
 /** The graph's authored uniform nodes (each with a value), so a pass reads `uniform.value` every frame. */

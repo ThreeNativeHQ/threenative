@@ -657,32 +657,51 @@ std::string key(const Graph& graph) {
     return out;
 }
 
+uint64_t keyId(const Graph& graph) {
+    if (!graph) return 0;
+    if (graph->memo.keyId == 0) {
+        // ponytail: one process-wide table, never pruned; it holds one entry per distinct structure.
+        static std::unordered_map<std::string, uint64_t> interned;
+        graph->memo.keyId = interned.emplace(key(graph), interned.size() + 1).first->second;
+    }
+    return graph->memo.keyId;
+}
+
+namespace {
+/** Every uniform node reachable from the graph, in first-visit order, found once per node. */
+const std::vector<Node>& uniformList(const Graph& graph) {
+    if (!graph->memo.uniforms) {
+        auto list = std::make_shared<std::vector<Node>>();
+        std::unordered_set<const NodeData*> seen;
+        const std::function<void(Node)> visit = [&](Node n) {
+            if (!n || !seen.insert(n.get()).second) return;
+            if (n->kind == Kind::Uniform) list->push_back(n);
+            for (const auto* children : {&n->args, &n->body, &n->otherwise})
+                for (const auto& child : *children) visit(child);
+        };
+        visit(graph);
+        graph->memo.uniforms = std::move(list);
+    }
+    return *graph->memo.uniforms;
+}
+}  // namespace
+
 std::vector<Node> uniformNodes(const Graph& graph) {
     std::vector<Node> result;
-    std::unordered_set<const NodeData*> seen;
-    const std::function<void(Node)> visit = [&](Node n) {
-        if (!n || !seen.insert(n.get()).second) return;
-        if (n->kind == Kind::Uniform && !n->values.empty()) result.push_back(n);
-        for (const auto* list : {&n->args, &n->body, &n->otherwise})
-            for (const auto& child : *list) visit(child);
-    };
-    visit(graph);
+    if (!graph) return result;
+    for (const Node& n : uniformList(graph))
+        if (!n->values.empty()) result.push_back(n);
     return result;
 }
 
 std::map<std::string, std::vector<float>> uniforms(const Graph& graph) {
     std::map<std::string, std::vector<float>> result;
-    std::unordered_set<const NodeData*> seen;
-    const std::function<void(Node)> visit = [&](Node n) {
-        if (!n || !seen.insert(n.get()).second) return;
-        if (n->kind == Kind::Uniform && !n->values.empty()) {
-            const auto [it, fresh] = result.emplace(n->name, n->values);
-            if (!fresh && it->second != n->values) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + n->name);
-        }
-        for (const auto* list : {&n->args, &n->body, &n->otherwise})
-            for (const auto& child : *list) visit(child);
-    };
-    visit(graph);
+    if (!graph) return result;
+    for (const Node& n : uniformList(graph)) {
+        if (n->values.empty()) continue;
+        const auto [it, fresh] = result.emplace(n->name, n->values);
+        if (!fresh && it->second != n->values) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + n->name);
+    }
     return result;
 }
 
