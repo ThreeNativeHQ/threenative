@@ -3,7 +3,9 @@
  * it was made from: a number is replaced by `.value = x`; a three Color or VectorN stays the same
  * object, so `origin.value.set(x, z)` edits it in place, as Midway's ocean does. `sync()` pushes the
  * edited objects' lanes before a frame draws; a number goes through at once. Either way the engine
- * updates its uniform data and keeps the program.
+ * updates its uniform data and keeps the program. `onRenderUpdate(callback)` runs the callback in
+ * `sync()`, which each renderer calls once per render, and a value it returns becomes `.value`, as
+ * three's UniformNode.onUpdate does.
  */
 
 interface IUniformState {
@@ -34,6 +36,10 @@ export function liveUniforms<TNode extends object>(
 ): { uniform: (value: unknown) => TNode; sync(): void } {
   const states = new WeakMap<object, IUniformState>();
   const objects = new Set<WeakRef<TNode>>();
+  const updates = new Map<
+    WeakRef<TNode>,
+    (this: TNode, frame: undefined, node: TNode) => unknown
+  >();
   return {
     uniform(value) {
       const node = uniform(value);
@@ -50,10 +56,28 @@ export function liveUniforms<TNode extends object>(
           setValues(node, uniformLanes(state.value));
         },
       });
+      // ponytail: every registered uniform updates on every render, used or not, and the callback
+      // gets no NodeFrame; three runs only the uniforms a drawn material reads, with its frame.
+      Object.defineProperty(node, "onRenderUpdate", {
+        configurable: true,
+        value(callback: (this: TNode, frame: undefined, node: TNode) => unknown) {
+          updates.set(new WeakRef(node), callback);
+          return node;
+        },
+      });
       if (typeof value === "object" && value !== null) objects.add(new WeakRef(node));
       return node;
     },
     sync() {
+      for (const [ref, callback] of updates) {
+        const node = ref.deref();
+        if (node === undefined) {
+          updates.delete(ref);
+          continue;
+        }
+        const next = callback.call(node, undefined, node);
+        if (next !== undefined) (node as { value: unknown }).value = next;
+      }
       for (const ref of objects) {
         const node = ref.deref();
         if (node === undefined) {

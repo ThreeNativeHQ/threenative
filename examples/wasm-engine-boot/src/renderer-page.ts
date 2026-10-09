@@ -28,6 +28,8 @@ const probe = {
   error: "",
   /** The engine's refusal of a tone mapping it does not implement (three's CustomToneMapping, 5). */
   refusal: "",
+  /** Runs of the tint uniform's onRenderUpdate: once per render, as Midway's ripple texture sync. */
+  renderUpdates: 0,
   ticks: 0,
 };
 const started = performance.now();
@@ -87,6 +89,9 @@ try {
   box.position.x = -1;
   // A TSL graph through the engine's shared name table: Midway's first TSL call is `uniform(0)`.
   const tint = uniform(0.5);
+  (tint as unknown as { onRenderUpdate(callback: () => void): void }).onRenderUpdate(() => {
+    probe.renderUpdates += 1;
+  });
   const tinted = new MeshBasicNodeMaterial();
   tinted.colorNode = vec4(tint.mul(0.2), tint, tint.mul(1.6), 1);
   const tile = new Mesh(new BoxGeometry(1, 1, 1), tinted);
