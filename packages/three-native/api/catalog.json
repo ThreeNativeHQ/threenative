@@ -29,7 +29,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "100"
@@ -40,7 +42,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2"
@@ -51,7 +55,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2501"
@@ -82,7 +88,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1021"
@@ -93,7 +101,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "519"
@@ -104,7 +114,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1"
@@ -115,7 +127,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "519"
@@ -539,7 +553,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"attached\""
@@ -550,7 +566,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -569,7 +587,10 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["members-not-catalogued", "media-sources-unbound"]
+        "gaps": [
+          "members-not-catalogued",
+          "media-sources-unbound"
+        ]
       },
       "extends": "Object3D",
       "constructor": [
@@ -588,7 +609,10 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["members-not-catalogued", "media-sources-unbound"]
+        "gaps": [
+          "members-not-catalogued",
+          "media-sources-unbound"
+        ]
       },
       "extends": "Object3D",
       "constructor": [],
@@ -611,7 +635,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "{ type: string; }"
     },
@@ -621,7 +647,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "3200"
@@ -632,7 +660,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "0"
@@ -675,7 +705,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -714,7 +746,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -781,7 +815,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -846,7 +882,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -1009,7 +1047,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -1312,7 +1352,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -1723,7 +1765,9 @@
           "default": "true",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -1733,7 +1777,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ],
@@ -1756,7 +1802,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -1825,8 +1873,7 @@
             }
           ],
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -1846,7 +1893,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -1895,7 +1944,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -1996,7 +2047,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -2351,7 +2404,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ]
@@ -2382,7 +2437,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -2432,7 +2489,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -2454,7 +2513,9 @@
           "default": "{}",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -2505,7 +2566,9 @@
           "default": "{ start: 0, count: Infinity }",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -2516,7 +2579,9 @@
           "default": "{}",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -2527,7 +2592,9 @@
           "default": "true",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -2804,7 +2871,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -2939,7 +3008,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -2972,7 +3043,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -3012,7 +3085,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -3098,7 +3173,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -3135,7 +3212,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1010"
@@ -3496,7 +3575,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "3"
@@ -3519,7 +3600,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1001"
@@ -3547,7 +3630,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -3976,7 +4061,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -4366,7 +4453,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["color-space-strings"]
+        "gaps": [
+          "color-space-strings"
+        ]
       },
       "type": "Color | string | number"
     },
@@ -4418,7 +4507,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -4636,7 +4727,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "213"
@@ -4647,7 +4740,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "211"
@@ -4671,7 +4766,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -4690,7 +4787,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "301"
@@ -4701,7 +4800,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "302"
@@ -4735,7 +4836,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "306"
@@ -4773,7 +4876,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1"
@@ -4784,7 +4889,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2"
@@ -4795,7 +4902,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "3"
@@ -4806,7 +4915,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "0"
@@ -4817,7 +4928,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "5"
@@ -4828,7 +4941,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "5"
@@ -4851,7 +4966,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "extends": null,
       "constructor": [
@@ -5032,7 +5149,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "7283"
@@ -5043,7 +5162,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "34056"
@@ -5054,7 +5175,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1026"
@@ -5065,7 +5188,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -5135,7 +5260,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1027"
@@ -5178,7 +5305,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"detached\""
@@ -5261,7 +5390,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "206"
@@ -5272,7 +5403,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "208"
@@ -5283,7 +5416,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35050"
@@ -5304,7 +5439,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35049"
@@ -5328,7 +5465,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "514"
@@ -5339,7 +5478,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "4"
@@ -5350,7 +5491,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "514"
@@ -5361,7 +5504,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "303"
@@ -5372,7 +5517,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "304"
@@ -5451,7 +5598,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ],
@@ -5707,7 +5856,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "\"XYZ\" | \"YXZ\" | \"ZXY\" | \"ZYX\" | \"YZX\" | \"XZY\""
     },
@@ -5717,7 +5868,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "[ x: number, y: number, z: number, order?: EulerOrder ]"
     },
@@ -5727,7 +5880,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "{ type: string; target: unknown; }"
     },
@@ -5737,7 +5892,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "extends": null,
       "constructor": [],
@@ -5833,7 +5990,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "(event: unknown & Event) => void"
     },
@@ -5883,7 +6042,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1015"
@@ -5934,7 +6095,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -5944,7 +6107,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -5987,7 +6152,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -6034,7 +6201,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -6044,7 +6213,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -6078,7 +6249,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -6288,7 +6461,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"100\""
@@ -6299,7 +6474,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"300 es\""
@@ -6342,7 +6519,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "516"
@@ -6353,7 +6532,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "6"
@@ -6364,7 +6545,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "518"
@@ -6375,7 +6558,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "5"
@@ -6386,7 +6571,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "518"
@@ -6397,7 +6584,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "516"
@@ -6433,7 +6622,9 @@
           "default": "true",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ],
@@ -6445,7 +6636,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "{ h: number; s: number; l: number; }"
     },
@@ -6455,7 +6648,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1016"
@@ -6532,7 +6727,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "7682"
@@ -6543,7 +6740,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "34055"
@@ -6726,7 +6925,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1013"
@@ -6750,7 +6951,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2303"
@@ -6761,7 +6964,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2300"
@@ -6772,7 +6977,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2301"
@@ -6783,7 +6990,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2302"
@@ -6898,7 +7107,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "5386"
@@ -6909,7 +7120,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "7680"
@@ -7227,7 +7440,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "513"
@@ -7238,7 +7453,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2"
@@ -7249,7 +7466,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "515"
@@ -7260,7 +7479,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "3"
@@ -7271,7 +7492,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "515"
@@ -7282,7 +7505,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "513"
@@ -7306,7 +7531,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "extends": null,
       "constructor": [
@@ -7595,7 +7822,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1006"
@@ -7606,7 +7835,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1008"
@@ -7617,7 +7848,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1007"
@@ -7628,7 +7861,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1008"
@@ -7639,7 +7874,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1007"
@@ -7660,7 +7897,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1"
@@ -7671,7 +7910,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"linear\""
@@ -7725,7 +7966,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -7767,7 +8010,10 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["renderer-private-hooks", "json-serialization"]
+        "gaps": [
+          "renderer-private-hooks",
+          "json-serialization"
+        ]
       },
       "extends": "EventDispatcher",
       "constructor": [],
@@ -8266,7 +8512,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "6"
@@ -8277,7 +8525,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["shader-parameters"]
+        "gaps": [
+          "shader-parameters"
+        ]
       },
       "type": "{  }"
     },
@@ -8412,7 +8662,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -8721,7 +8973,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -9009,7 +9263,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "[ n11: number, n12: number, n13: number, n21: number, n22: number, n23: number, n31: number, n32: number, n33: number ]"
     },
@@ -9993,7 +10249,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "[ n11: number, n12: number, n13: number, n14: number, n21: number, n22: number, n23: number, n24: number, n31: number, n32: number, n33: number, n34: number, n41: number, n42: number, n43: number, n44: number ]"
     },
@@ -10003,7 +10261,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "104"
@@ -10037,7 +10297,9 @@
           "default": "true",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10088,7 +10350,9 @@
           "default": "undefined, _but rebuilt by .updateMorphTargets()._",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10098,7 +10362,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ],
@@ -10185,7 +10451,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10222,7 +10490,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10250,7 +10520,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10270,7 +10542,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10280,7 +10554,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10300,7 +10576,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10310,7 +10588,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10320,7 +10600,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10330,7 +10612,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10340,7 +10624,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10368,7 +10654,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10378,7 +10666,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10388,7 +10678,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10398,7 +10690,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10408,7 +10702,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10418,7 +10714,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10428,7 +10726,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10438,7 +10738,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10448,7 +10750,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10458,7 +10762,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10468,7 +10774,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10478,7 +10786,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10488,7 +10798,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10498,7 +10810,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10508,7 +10822,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10518,7 +10834,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10528,7 +10846,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10538,7 +10858,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10548,7 +10870,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10558,7 +10882,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10568,7 +10894,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10578,7 +10906,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10606,7 +10936,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10644,7 +10976,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10664,7 +10998,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10704,7 +11040,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10714,7 +11052,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10724,7 +11064,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10734,7 +11076,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10744,7 +11088,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10754,7 +11100,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10764,7 +11112,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10774,7 +11124,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10832,7 +11184,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -10856,7 +11210,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["shader-parameters"]
+        "gaps": [
+          "shader-parameters"
+        ]
       },
       "type": "{  }"
     },
@@ -11134,7 +11490,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11171,7 +11529,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11199,7 +11559,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11219,7 +11581,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11229,7 +11593,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11249,7 +11615,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11259,7 +11627,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11269,7 +11639,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11279,7 +11651,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11289,7 +11663,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11317,7 +11693,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11327,7 +11705,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11337,7 +11717,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11347,7 +11729,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11357,7 +11741,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11367,7 +11753,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11377,7 +11765,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11387,7 +11777,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11397,7 +11789,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11407,7 +11801,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11417,7 +11813,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11427,7 +11825,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11437,7 +11837,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11447,7 +11849,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11457,7 +11861,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11467,7 +11873,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11477,7 +11885,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11487,7 +11897,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11497,7 +11909,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11507,7 +11921,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11517,7 +11933,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11527,7 +11945,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11555,7 +11975,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11611,7 +12033,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11676,7 +12100,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11695,7 +12121,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11724,7 +12152,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11734,7 +12164,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11781,7 +12213,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11800,7 +12234,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11810,7 +12246,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11820,7 +12258,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11830,7 +12270,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11840,7 +12282,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11898,7 +12342,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -11922,7 +12368,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["shader-parameters"]
+        "gaps": [
+          "shader-parameters"
+        ]
       },
       "type": "{  }"
     },
@@ -12274,7 +12722,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "103"
@@ -12285,7 +12735,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -12336,7 +12788,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1002"
@@ -12347,7 +12801,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1"
@@ -12358,7 +12814,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "4"
@@ -12369,7 +12827,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "0"
@@ -12380,7 +12840,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1003"
@@ -12391,7 +12853,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1005"
@@ -12402,7 +12866,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1004"
@@ -12413,7 +12879,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1005"
@@ -12424,7 +12892,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1004"
@@ -12445,7 +12915,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "512"
@@ -12456,7 +12928,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "0"
@@ -12467,7 +12941,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "512"
@@ -12498,7 +12974,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"\""
@@ -12509,7 +12987,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "0"
@@ -12520,7 +13000,10 @@
       "source": "three/webgpu",
       "status": {
         "kind": "partial",
-        "gaps": ["graph-authoring-only", "constructor-not-bound"]
+        "gaps": [
+          "graph-authoring-only",
+          "constructor-not-bound"
+        ]
       },
       "extends": null,
       "constructor": [],
@@ -12559,7 +13042,9 @@
       "source": "three/webgpu",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-bound"]
+        "gaps": [
+          "native-not-bound"
+        ]
       },
       "extends": null,
       "constructor": [],
@@ -12585,7 +13070,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2500"
@@ -12606,7 +13093,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"ga\""
@@ -12617,7 +13106,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -12659,7 +13150,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"rg\""
@@ -12670,7 +13163,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "517"
@@ -12681,7 +13176,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "7"
@@ -12692,7 +13189,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "517"
@@ -12778,7 +13277,9 @@
           "default": "true",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -12897,7 +13398,9 @@
           "default": "new Matrix4()",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -12908,7 +13411,9 @@
           "default": "new Matrix3()",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -13040,7 +13545,9 @@
           "default": "undefined",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -13051,7 +13558,9 @@
           "default": "undefined",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -13061,7 +13570,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -13071,7 +13582,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -13081,7 +13594,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -13811,7 +14326,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -13841,7 +14358,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -13963,7 +14482,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -13984,7 +14505,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -14005,7 +14528,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -14106,7 +14631,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -14141,7 +14668,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1"
@@ -14165,7 +14694,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "201"
@@ -14176,7 +14707,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "214"
@@ -14187,7 +14720,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "212"
@@ -14198,7 +14733,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "207"
@@ -14209,7 +14746,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "209"
@@ -14220,7 +14759,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "205"
@@ -14231,7 +14772,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "203"
@@ -15266,7 +15809,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ],
@@ -15393,7 +15938,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -15530,7 +16077,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -15550,7 +16099,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -15689,7 +16240,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ]
@@ -15837,7 +16390,10 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["members-not-catalogued", "media-sources-unbound"]
+        "gaps": [
+          "members-not-catalogued",
+          "media-sources-unbound"
+        ]
       },
       "extends": "Audio",
       "constructor": [
@@ -15950,7 +16506,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ],
@@ -16514,7 +17072,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -16602,7 +17162,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "{ x: number; y: number; z: number; w: number; }"
     },
@@ -16612,7 +17174,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "[ x: number, y: number, z: number, w: number ]"
     },
@@ -16622,7 +17186,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37488"
@@ -16633,7 +17199,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "36285"
@@ -16644,7 +17212,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "36283"
@@ -16666,7 +17236,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37490"
@@ -16677,7 +17249,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "{ r: number; g: number; b: number; }"
     },
@@ -16687,7 +17261,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "3201"
@@ -16698,7 +17274,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1023"
@@ -16709,7 +17287,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1033"
@@ -16720,7 +17300,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37819"
@@ -16731,7 +17313,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37816"
@@ -16742,7 +17326,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37817"
@@ -16753,7 +17339,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37818"
@@ -16764,7 +17352,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37820"
@@ -16775,7 +17365,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37821"
@@ -16786,7 +17378,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37808"
@@ -16797,7 +17391,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37809"
@@ -16808,7 +17404,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37810"
@@ -16819,7 +17417,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37811"
@@ -16830,7 +17430,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37812"
@@ -16841,7 +17443,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37813"
@@ -16852,7 +17456,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37814"
@@ -16863,7 +17469,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37815"
@@ -16874,7 +17482,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "36492"
@@ -16885,7 +17495,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37496"
@@ -16896,7 +17508,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35843"
@@ -16907,7 +17521,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35842"
@@ -16918,7 +17534,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "33777"
@@ -16929,7 +17547,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "33778"
@@ -16940,7 +17560,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "33779"
@@ -16951,7 +17573,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "3202"
@@ -16962,7 +17586,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1022"
@@ -16973,7 +17599,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1032"
@@ -16984,7 +17612,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "36494"
@@ -16995,7 +17625,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "36495"
@@ -17006,7 +17638,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "36196"
@@ -17017,7 +17651,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37492"
@@ -17028,7 +17664,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35841"
@@ -17039,7 +17677,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35840"
@@ -17050,7 +17690,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "33776"
@@ -17061,7 +17703,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "3203"
@@ -17072,7 +17716,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1030"
@@ -17083,7 +17729,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1031"
@@ -17280,7 +17928,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1028"
@@ -17291,7 +17941,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1029"
@@ -17302,7 +17954,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2"
@@ -17365,7 +18019,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1000"
@@ -17376,7 +18032,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "7681"
@@ -17387,7 +18045,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "102"
@@ -17422,7 +18082,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37489"
@@ -17433,7 +18095,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "36286"
@@ -17444,7 +18108,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "36284"
@@ -17455,7 +18121,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "37491"
@@ -17466,7 +18134,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"srgb\""
@@ -17477,7 +18147,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "string",
       "value": "\"srgb\""
@@ -17499,7 +18171,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -17699,7 +18373,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1011"
@@ -17710,7 +18386,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -17935,7 +18613,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -18017,7 +18697,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -18309,7 +18991,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -18422,7 +19106,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "extends": null,
       "constructor": [
@@ -19061,7 +19747,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "204"
@@ -19072,7 +19760,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "210"
@@ -19083,7 +19773,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "202"
@@ -19094,7 +19786,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35046"
@@ -19115,7 +19809,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35045"
@@ -19126,7 +19822,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -19169,7 +19867,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -19225,7 +19925,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35042"
@@ -19236,7 +19938,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35040"
@@ -19247,7 +19951,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35041"
@@ -19271,7 +19977,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "101"
@@ -19282,7 +19990,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "3"
@@ -19293,7 +20003,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "0"
@@ -19671,7 +20383,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "extends": null,
       "constructor": [
@@ -20098,7 +20812,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2"
@@ -20109,7 +20825,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1"
@@ -20120,7 +20838,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "0"
@@ -20166,7 +20886,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array"
     },
@@ -20176,7 +20898,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "300"
@@ -20200,7 +20924,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1009"
@@ -20211,7 +20937,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35899"
@@ -20222,7 +20950,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1020"
@@ -20233,7 +20963,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "35902"
@@ -20244,7 +20976,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1014"
@@ -20255,7 +20989,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1017"
@@ -20266,7 +21002,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1018"
@@ -20277,7 +21015,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "1012"
@@ -20288,7 +21028,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -20335,7 +21077,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "3"
@@ -20404,7 +21148,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ],
@@ -21349,7 +22095,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -21374,7 +22122,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "{ x: number; y: number; }"
     },
@@ -21438,7 +22188,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ],
@@ -22558,7 +23310,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -22607,7 +23361,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -22895,7 +23651,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -22909,7 +23667,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -22934,7 +23694,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "{ x: number; y: number; z: number; }"
     },
@@ -22944,7 +23706,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "[ number, number, number ]"
     },
@@ -23040,7 +23804,9 @@
           "lifetime": "owned",
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         }
       ],
@@ -23975,7 +24741,9 @@
           ],
           "status": {
             "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "gaps": [
+              "native-not-bound"
+            ]
           }
         },
         {
@@ -24024,7 +24792,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "{ x: number; y: number; z: number; w: number; }"
     },
@@ -24034,7 +24804,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "[ number, number, number, number ]"
     },
@@ -24107,7 +24879,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2000"
@@ -24118,7 +24892,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2001"
@@ -24142,7 +24918,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2402"
@@ -24153,7 +24931,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "values": [
         {
@@ -24176,7 +24956,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2400"
@@ -24187,7 +24969,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "200"
@@ -24198,7 +24982,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "2401"
@@ -24209,7 +24995,9 @@
       "source": "three",
       "status": {
         "kind": "partial",
-        "gaps": ["native-not-implemented"]
+        "gaps": [
+          "native-not-implemented"
+        ]
       },
       "type": "number",
       "value": "0"
