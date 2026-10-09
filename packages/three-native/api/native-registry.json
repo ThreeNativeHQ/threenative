@@ -3,6 +3,8 @@
     "AmbientLight": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -40,6 +42,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "color.b",
         "color.g",
@@ -82,6 +85,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "color",
         "color.b",
@@ -242,6 +246,8 @@
     "BatchedMesh": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "addGeometry",
@@ -290,6 +296,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "id",
@@ -397,6 +404,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -527,6 +535,8 @@
     "Bone": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -564,6 +574,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "id",
@@ -602,6 +613,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -897,6 +909,8 @@
     "Camera": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -934,6 +948,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "id",
@@ -975,6 +990,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -1555,6 +1571,8 @@
     "DirectionalLight": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -1592,6 +1610,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "color.b",
         "color.g",
@@ -1649,6 +1668,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "color",
         "color.b",
@@ -2035,6 +2055,8 @@
     "Group": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -2072,6 +2094,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "id",
@@ -2110,6 +2133,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -2170,6 +2194,8 @@
     "HemisphereLight": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -2207,6 +2233,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "color.b",
         "color.g",
@@ -2252,6 +2279,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "color",
         "color.b",
@@ -2522,6 +2550,8 @@
     "InstancedMesh": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -2566,6 +2596,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "count",
         "frustumCulled",
@@ -2670,6 +2701,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "boundingBox",
         "castShadow",
         "count",
@@ -2804,6 +2836,8 @@
     "LOD": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "addLevel",
@@ -2846,6 +2880,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "autoUpdate",
         "castShadow",
         "frustumCulled",
@@ -2885,6 +2920,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "autoUpdate",
         "castShadow",
         "frustumCulled",
@@ -3041,6 +3077,8 @@
     "Line": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -3079,6 +3117,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "id",
@@ -3182,6 +3221,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -3366,6 +3406,8 @@
     "LineSegments": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -3404,6 +3446,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "id",
@@ -3507,6 +3550,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -3731,6 +3775,8 @@
     "Mesh": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -3770,6 +3816,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "id",
@@ -3873,6 +3920,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -4622,6 +4670,8 @@
     "Object3D": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -4659,6 +4709,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "id",
@@ -4697,6 +4748,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -4831,6 +4883,8 @@
     "OrthographicCamera": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -4871,6 +4925,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "bottom",
         "castShadow",
         "far",
@@ -4919,6 +4974,7 @@
         "zoom"
       ],
       "setters": [
+        "__alwaysRender",
         "bottom",
         "castShadow",
         "far",
@@ -5017,6 +5073,8 @@
     "PerspectiveCamera": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -5063,6 +5121,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "aspect",
         "castShadow",
         "far",
@@ -5112,6 +5171,7 @@
         "zoom"
       ],
       "setters": [
+        "__alwaysRender",
         "aspect",
         "castShadow",
         "far",
@@ -5288,6 +5348,8 @@
     "PointLight": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -5325,6 +5387,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "color.b",
         "color.g",
@@ -5380,6 +5443,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "color",
         "color.b",
@@ -5733,6 +5797,8 @@
     "Scene": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -5770,6 +5836,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "backgroundBlurriness",
         "backgroundIntensity",
         "backgroundRotation.x",
@@ -5817,6 +5884,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "background",
         "backgroundBlurriness",
         "backgroundIntensity",
@@ -6015,6 +6083,8 @@
     "SkinnedMesh": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -6057,6 +6127,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "bindMatrix.elements",
         "bindMatrixInverse.elements",
         "bindMode",
@@ -6163,6 +6234,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "bindMode",
         "boundingBox",
         "castShadow",
@@ -6413,6 +6485,8 @@
     "SpotLight": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -6450,6 +6524,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "angle",
         "castShadow",
         "color.b",
@@ -6507,6 +6582,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "angle",
         "castShadow",
         "color",
@@ -6604,6 +6680,8 @@
     "Sprite": {
       "constructor": true,
       "methods": [
+        "__cullProjected",
+        "__restoreCull",
         "__walk",
         "add",
         "applyMatrix4",
@@ -6642,6 +6720,7 @@
         "worldToLocal"
       ],
       "getters": [
+        "__alwaysRender",
         "castShadow",
         "center.x",
         "center.y",
@@ -6748,6 +6827,7 @@
         "visible"
       ],
       "setters": [
+        "__alwaysRender",
         "castShadow",
         "center.x",
         "center.y",

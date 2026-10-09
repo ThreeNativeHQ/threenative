@@ -1,6 +1,6 @@
 import { type Camera, Frustum, Matrix4, type Object3D, Vector3 } from "three";
 
-import { isRenderable } from "./projection-plan.js";
+import { isRenderable } from "./renderable.js";
 
 /**
  * Do not submit what the render camera cannot resolve.
@@ -130,6 +130,35 @@ export interface IRenderCameraCullReport {
  */
 export function alwaysRender(object: Object3D, enabled = true): void {
   object.userData[ALWAYS_RENDER_KEY] = enabled;
+  // The native engine runs this cull itself and cannot read userData: it reads its own marker.
+  if (ENGINE_MARKER in object)
+    (object as unknown as Record<string, boolean>)[ENGINE_MARKER] = enabled;
+}
+
+/** The native engine's alwaysRender marker, mirrored by {@link alwaysRender}. */
+const ENGINE_MARKER = "__alwaysRender";
+
+/**
+ * A scene root the native engine walks itself (scene/projected_cull.h): the same rule in one call
+ * instead of a walk that reads every object's bounds, matrices and flags across the boundary.
+ */
+interface IEngineCullRoot {
+  __cullProjected(
+    camera: Camera,
+    cameraResolved: boolean,
+    scale: number,
+    minimumPixels: number,
+    enabled: boolean,
+  ): readonly number[];
+  __restoreCull(): void;
+}
+
+function engineCullRoot(root: unknown): IEngineCullRoot | undefined {
+  const candidate = root as Partial<IEngineCullRoot> | null;
+  return typeof candidate?.__cullProjected === "function" &&
+    typeof candidate.__restoreCull === "function"
+    ? (candidate as IEngineCullRoot)
+    : undefined;
 }
 
 /**
@@ -165,6 +194,8 @@ export class RenderCameraCull {
   #exemptWithoutBounds = 0;
   #exemptDynamicBounds = 0;
   #exemptFrustumCulled = 0;
+  /** The engine root the last apply() culled through, restored by restore(). */
+  #engineRoot: IEngineCullRoot | undefined;
 
   constructor(options: IRenderCameraCullOptions = {}) {
     const requested = options.minimumPixels ?? DEFAULT_MINIMUM_PROJECTED_PIXELS;
@@ -247,11 +278,35 @@ export class RenderCameraCull {
       this.#projectionScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       this.#frustum.setFromProjectionMatrix(this.#projectionScreen);
     }
+    const engine = engineCullRoot(root);
+    if (engine !== undefined) {
+      const counts = engine.__cullProjected(
+        camera,
+        this.#cameraResolved,
+        this.#scale,
+        this.#minimumPixels,
+        this.#enabled,
+      );
+      [
+        this.#considered,
+        this.#culled,
+        this.#exemptCameraAttached,
+        this.#exemptMarked,
+        this.#exemptShadowCasters,
+        this.#exemptWithoutBounds,
+        this.#exemptDynamicBounds,
+        this.#exemptFrustumCulled,
+      ] = counts as [number, number, number, number, number, number, number, number];
+      this.#engineRoot = engine;
+      return;
+    }
     root.traverseVisible(this.#visitor);
   }
 
   /** Undoes every hide this gate made, leaving the authored scene as the game left it. */
   restore(): void {
+    this.#engineRoot?.__restoreCull();
+    this.#engineRoot = undefined;
     for (let index = 0; index < this.#hiddenCount; index += 1) {
       (this.#hidden[index] as Object3D).visible = true;
     }

@@ -22,6 +22,7 @@ import {
 } from "../src/browser-backend.js";
 import { bindWebEngine } from "../src/browser-entry.js";
 import { type ITslRuntime, type TslArgValue, defineTsl } from "../src/browser-tsl.js";
+import { defineTypeFlags } from "../src/object-surface.js";
 import { defineReflector } from "../src/reflector.js";
 import type { ConstClasses } from "../src/tsl-uniforms.js";
 
@@ -1274,5 +1275,96 @@ if (runtime.tsl !== undefined) {
       "screenUV is built once, and flipX takes it as its receiver",
     );
   }
+}
+// PRD-553: core's projected-size cull through the engine (Object3D.__cullProjected) makes the
+// decisions core's JS walk makes over the same scene in the pinned three: the same report and the
+// same hidden set, over every exemption (camera-attached, alwaysRender, frustumCulled = false, an
+// off-screen shadow caster, no usable bounds, a buffer rewritten every frame) and culled far objects.
+{
+  // Bundled here: this package maps `three` to its generated types, and the cull needs core's three.
+  const fromNative = createRequire(
+    path.join(import.meta.dirname, "../../runtime-native/package.json"),
+  );
+  const esbuild = (await import(pathToFileURL(fromNative.resolve("esbuild")).href)) as {
+    build(options: object): Promise<{ outputFiles: { text: string }[] }>;
+  };
+  const cullModule = await esbuild.build({
+    entryPoints: [path.join(import.meta.dirname, "../../core/src/render-camera-cull.ts")],
+    absWorkingDir: path.join(import.meta.dirname, "../../core"),
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "node",
+  });
+  const { RenderCameraCull, alwaysRender } = (await import(
+    `data:text/javascript;base64,${Buffer.from(cullModule.outputFiles[0]?.text ?? "").toString("base64")}`
+  )) as typeof import("../../core/src/render-camera-cull.js");
+  // three's type flags (isMesh, isPerspectiveCamera), which the browser entry installs.
+  defineTypeFlags(engine.classes as never);
+  // biome-ignore lint/suspicious/noExplicitAny: the parity scene drives three and the engine through one shape
+  type Loose = any;
+  const K = engine.classes as unknown as Record<string, new (...args: unknown[]) => Loose>;
+  const T = (await import(
+    pathToFileURL(fromNative.resolve("three/webgpu")).href
+  )) as unknown as typeof K;
+  const build = (K: typeof T) => {
+    const scene = new K.Scene();
+    const camera = new K.PerspectiveCamera(50, 1, 0.1, 1000);
+    scene.add(camera);
+    const mesh = (x: number, z: number, size = 1) => {
+      const m = new K.Mesh(new K.BoxGeometry(size, size, size), new K.MeshBasicMaterial());
+      m.position.set(x, 0, z);
+      scene.add(m);
+      return m;
+    };
+    const near = mesh(0, -5);
+    const far = mesh(0.2, -900, 0.01);
+    const marked = mesh(0.4, -900, 0.01);
+    alwaysRender(marked as never);
+    const optedOut = mesh(0.6, -900, 0.01);
+    optedOut.frustumCulled = false;
+    const caster = mesh(0, 50, 0.01);
+    caster.castShadow = true;
+    const attached = new K.Mesh(new K.BoxGeometry(0.001, 0.001, 0.001), new K.MeshBasicMaterial());
+    attached.position.set(0, 0, -900);
+    camera.add(attached);
+    const point = new K.BufferGeometry();
+    point.setAttribute("position", new K.Float32BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0, 0], 3));
+    const flat = new K.Mesh(point, new K.MeshBasicMaterial());
+    flat.position.set(0, 0, -900);
+    scene.add(flat);
+    const churn = mesh(0.8, -900, 0.01);
+    scene.updateMatrixWorld(true);
+    return { scene, camera, near, far, marked, optedOut, caster, attached, flat, churn };
+  };
+  const run = (viaEngine: boolean) => {
+    const world = build(viaEngine ? K : T);
+    const cull = new RenderCameraCull();
+    const root = world.scene;
+    const reports: unknown[] = [];
+    const hidden: string[][] = [];
+    for (let frame = 0; frame < 3; frame += 1) {
+      world.churn.geometry.getAttribute("position").needsUpdate = true;
+      cull.apply(root as never, world.camera as never, 720);
+      reports.push(cull.report);
+      hidden.push(
+        Object.entries(world)
+          .filter(([, object]) => object.visible === false)
+          .map(([name]) => name),
+      );
+      cull.restore();
+    }
+    const restored = Object.values(world).every((object) => object.visible !== false);
+    return { reports, hidden, restored };
+  };
+  const js = run(false);
+  const native = run(true);
+  check(
+    // churn is culled until its buffer counts as rewritten every frame (the third consult).
+    JSON.stringify(js) === JSON.stringify(native) &&
+      js.restored &&
+      JSON.stringify(js.hidden) === JSON.stringify([["far", "churn"], ["far", "churn"], ["far"]]),
+    `the engine's projected-size cull decides as core's JS cull does: ${JSON.stringify({ js, native })}`,
+  );
 }
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

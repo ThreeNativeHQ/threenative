@@ -12,6 +12,7 @@
 // fire _onChangeCallback, so the quaternion follows; a JS `mesh.rotation.x = v` reaches the same
 // notify through the Euler member's own setters.
 
+#include "engine/scene/projected_cull.h"
 #include "engine/abi/bindings.h"
 #include "engine/abi/pooled_shared.h"
 #include "engine/animation/mixer.h"
@@ -142,6 +143,17 @@ Value foundObject(Store& store, Object3D* found) {
     return store.share(std::string(found->type()), std::static_pointer_cast<void>(shared));
 }
 
+// The projected-size cull's state for a root, kept while the root lives (a freed root's slot is
+// dropped the next time any root asks).
+ProjectedCull& projectedCullOf(Object3D& root) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, ProjectedCull>> culls;
+    for (auto it = culls.begin(); it != culls.end();)
+        it = it->second.first.expired() ? culls.erase(it) : std::next(it);
+    auto& entry = culls[&root];
+    if (entry.first.expired()) entry = {root.weak_from_this(), ProjectedCull{}};
+    return entry.second;
+}
+
 void registerObject3D(ClassBinding& b) {
     b.members["parent"] = [](void* self, const Args&, Store& store) {
         return foundObject(store, as<Object3D>(self)->parent);
@@ -168,6 +180,27 @@ void registerObject3D(ClassBinding& b) {
         for (Object3D* object : objects) walked.push_back(foundObject(store, object));
         return Value::array(std::move(walked));
     };
+    // Engine-internal: core's projected-size cull in one call (scene/projected_cull.h), its state kept
+    // per root. `__cullProjected(camera, cameraResolved, scale, minimumPixels, enabled)` hides this
+    // frame's sub-threshold objects and returns core's counters in report order; `__restoreCull()`
+    // shows them again. `__alwaysRender` mirrors core's alwaysRender() marker.
+    b.methods["__cullProjected"] = [](void* self, const Args& a, Store& store) {
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (camera == nullptr) throw Unsupported{"__cullProjected needs a camera"};
+        const ProjectedCull::Report r = projectedCullOf(*as<Object3D>(self))
+            .apply(*as<Object3D>(self), *camera, flag(a.at(1)), number(a.at(2)), number(a.at(3)), flag(a.at(4)));
+        Args counts;
+        for (const uint32_t count : {r.considered, r.culled, r.cameraAttached, r.marked, r.shadowCasters, r.withoutBounds,
+                                     r.dynamicBounds, r.frustumCulled})
+            counts.push_back(Value::of(double(count)));
+        return Value::array(std::move(counts));
+    };
+    b.methods["__restoreCull"] = [](void* self, const Args&, Store&) {
+        projectedCullOf(*as<Object3D>(self)).restore();
+        return Value{};
+    };
+    b.getters["__alwaysRender"] = [](void* self) { return Value::of(as<Object3D>(self)->alwaysRender); };
+    b.setters["__alwaysRender"] = [](void* self, const Value& v) { as<Object3D>(self)->alwaysRender = flag(v); };
     b.callbacks["onBeforeRender"] = [](void* self, RenderCallback callback) {
         as<Object3D>(self)->onBeforeRender = std::move(callback);
     };

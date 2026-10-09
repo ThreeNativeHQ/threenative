@@ -291,6 +291,8 @@ public:
     bool matrixWorldAutoUpdate = true;
     bool matrixWorldNeedsUpdate = false;
     bool frustumCulled = true;
+    /** core's alwaysRender() marker, mirrored for the engine's projected-size cull (projected_cull.h). */
+    bool alwaysRender = false;
 
     /** The renderer's inputs. Each setter bumps `revision()`; a direct field write cannot. */
     [[nodiscard]] bool visible() const { return visible_; }
