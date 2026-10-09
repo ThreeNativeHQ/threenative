@@ -132,6 +132,11 @@ async function withServer(
   ]);
   for (const name of ["three.webgpu.js", "three.core.js", "three.tsl.js"])
     served.set(`/build/${name}`, ["text/javascript", readFileSync(path.join(build, name), "utf8")]);
+  // The pinned three's SkeletonUtils addon, which imports "three" through the page's import map.
+  served.set("/addons/SkeletonUtils.js", [
+    "text/javascript",
+    readFileSync(path.join(build, "../examples/jsm/utils/SkeletonUtils.js"), "utf8"),
+  ]);
   for (const name of ["particles", "fluid-particles", "gpu-readback"]) {
     const source = transformSync(
       readFileSync(path.join(REPO_ROOT, "packages/core/src", `${name}.ts`), "utf8"),

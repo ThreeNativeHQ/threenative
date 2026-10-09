@@ -63,6 +63,7 @@ import {
   viewportLinearDepth,
   viewportSharedTexture,
 } from "three/tsl";
+import { clone as cloneSkinned } from "/addons/SkeletonUtils.js";
 import { FluidParticles3D } from "/core/fluid-particles.js";
 /**
  * The TSL programs a render fixture's `tsl` op applies, authored in upstream TSL. Each has a C++
@@ -767,6 +768,14 @@ export const programs = {
    *  and the depth between it and the surface (viewportLinearDepth - linearDepth()), on a water
    *  plane over a lit floor. */
   /** The depth reads r185 gives a water surface: the scene depth behind it, its own, and the camera range. */
+  /** SkeletonUtils.clone on a SkinnedMesh: the copy's own bones bend its skin, the original keeps its pose. */
+  async "skinned-clone"({ target }) {
+    const copy = cloneSkinned(target.getObjectByName("skin"));
+    copy.position.x = 1.2;
+    copy.skeleton.bones[2].rotation.z = 0.5;
+    copy.skeleton.bones[3].rotation.z = 0.5;
+    target.add(copy);
+  },
   async "tsl-viewport-linear-depth"({ target }) {
     const water = target.getObjectByName("water");
     water.material.colorNode = vec4(

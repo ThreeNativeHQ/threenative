@@ -17,6 +17,7 @@
 #include "engine/world/particles/gpu_particles.h"
 #include "engine/world/fluids/fluid_particles.h"
 #include "engine/scene/nodes.h"
+#include "engine/animation/skinning/skeleton.h"
 
 #include <functional>
 #include <cstdlib>
@@ -379,6 +380,26 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         quads->material->nodes.vertexNode = g::mul(tsl("cameraProjectionMatrix", {}), g::mul(view, g::vec4({local, g::float_(1)})));
         quads->material->nodes.colorNode = g::vec4({tint, g::float_(1)});
         quads->material->needsUpdate();
+        return "";
+    }
+    if (program == "skinned-clone") {
+        // SkeletonUtils.clone, as the binding calls it: the copy's own bones bend its skin.
+        if (object.cls != "Scene") return "TN_FIXTURE_SKINNED_CLONE: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        const engine::Object3D* skin = scene.getObjectByName("skin");
+        if (!skin) return "TN_FIXTURE_SKINNED_CLONE: skin";
+        std::string error;
+        const auto copy = engine::cloneSkeleton(*skin, error);
+        auto* skinned = dynamic_cast<engine::SkinnedMesh*>(copy.get());
+        if (!skinned || !skinned->skeleton) return "TN_FIXTURE_SKINNED_CLONE: " + error;
+        skinned->position.x = 1.2;
+        for (const std::size_t i : {2u, 3u}) {
+            engine::Bone* bone = skinned->skeleton->bone(i);
+            if (!bone) return "TN_FIXTURE_SKINNED_CLONE: bone";
+            bone->rotation.z = 0.5;
+        }
+        scene.add(*copy);
+        resources.push_back(copy);
         return "";
     }
     if (program == "tsl-viewport-linear-depth") {
