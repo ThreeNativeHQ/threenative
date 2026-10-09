@@ -69,8 +69,8 @@ simulation LOD, and any engine-owned fog or atmosphere default.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: agent]: with `ring: 2` and `terrain.streamRadius: 3`, residency reports 25 resident cells and 49 resident tiles, and the ring-derived terrain radius fails this — proof: `pnpm --filter @threenative/core test world-cells-view-distance` — Evidence: pending.
-- [ ] AC-2 [local; actor: agent]: no tile outside `terrain.colliderRadius` has a collider, a collider is disposed when its tile leaves the radius while the tile keeps drawing, and a red control at radius 0 shows the pre-change behaviour — proof: `pnpm --filter @threenative/core test world-tiles` — Evidence: pending.
+- [x] AC-1 [local; actor: agent]: with `ring: 2` and `terrain.streamRadius: 3`, residency reports 25 resident cells and 49 resident tiles, and the ring-derived terrain radius fails this — proof: `pnpm exec vitest run packages/core/__tests__/world-cells-view-distance.spec.ts` — Evidence: 2026-10-08, 3/3 pass. Red first: `stats().residentTiles` was `undefined` (3 failed); the new `residentTiles` / `residentColliders` stats fields turned it green. The control (no `streamRadius`) reports 25 tiles, not 49.
+- [x] AC-2 [local; actor: agent]: no tile outside `terrain.colliderRadius` has a collider, a collider is disposed when its tile leaves the radius while the tile keeps drawing, and a control with no `colliderRadius` shows the pre-change behaviour (every resident tile collides) — proof: `pnpm exec vitest run packages/core/__tests__/world-terrain-tiles.spec.ts` — Evidence: 2026-10-08, 50/50 pass; tile `0:0` stays resident after its body is disposed, and the control reports 49 bodies for 49 tiles. The collider lifetime itself shipped in `4f9638c2e`, so this is a guard, not a red-green.
 - [ ] AC-3 [local; actor: agent]: the documented recipe cannot drift: the guide's numbers are asserted against the code's own clamps (fog far < prop ring corner ≤ terrain corner, collider radius ≤ ring, LOD distances increasing) — proof: `pnpm --filter @threenative/core test world-streaming-recipe` and `pnpm check:docs` — Evidence: pending.
 - [ ] AC-4 [local; actor: agent]: a capture at the prop ring edge under the recipe's fog shows no visible geometry boundary; the capture paths and the review are recorded — proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/world-flythrough.playtest.json --url … --browser-recipe webgpu` — Evidence: pending.
 - [ ] AC-5 [local; actor: agent]: the `world-flythrough` scenario run with the recipe's numbers keeps its residency assertions, reports 0 failed loads, and asserts colliders exist only inside the radius — proof: the playtest run above — Evidence: pending.
@@ -87,15 +87,15 @@ simulation LOD, and any engine-owned fog or atmosphere default.
 
 #### Phase 1: Radius and collider lifetime
 
-**Status:** READY — NOT STARTED; the prerequisite options it was waiting on shipped in `4f9638c2e` (PR #358).
-**Files:** `packages/core/src/world-cells.ts` (forward `streamRadius` / `colliderRadius`, derive the tile budget from the terrain radius), `packages/core/src/world-tiles.ts` (collider lifetime as the player moves), `packages/core/__tests__/world-cells-view-distance.spec.ts`.
+**Status:** DONE — the radii and the collider lifetime shipped in `4f9638c2e` (PR #358); this phase adds the two stats fields that report them, and the tests.
+**Files:** `packages/core/src/world-cells.ts` (`stats().residentTiles` and `stats().residentColliders`; the forwarding and the tile budget already shipped), `packages/core/src/world-tiles.ts` (collider lifetime as the player moves), `packages/core/__tests__/world-cells-view-distance.spec.ts`.
 **Implementation:** the terrain budget follows the terrain radius rather than the ring; a tile outside the collider radius draws with an `EmptyCollider`, and a collider whose tile leaves the radius is disposed on that step.
-**Verification:** `pnpm --filter @threenative/core test world-cells-view-distance world-tiles` — AC-1, AC-2; the existing world and world-tiles suites stay green.
-- [ ] terrain radius independent of the ring, red against the ring-derived value. proof: `pnpm --filter @threenative/core test world-cells-view-distance`
-- [ ] collider created and disposed by radius, not by residency. proof: `pnpm --filter @threenative/core test world-tiles`
-- [ ] existing residency, cancellation and budget suites unchanged. proof: `pnpm --filter @threenative/core test world`
+**Verification:** `pnpm exec vitest run packages/core/__tests__/world-cells-view-distance.spec.ts packages/core/__tests__/world-terrain-tiles.spec.ts` — AC-1, AC-2; the existing world suites stay green. (`pnpm --filter @threenative/core test` runs `publint`, not vitest.)
+- [x] terrain radius independent of the ring, red against the ring-derived value. proof: `pnpm exec vitest run packages/core/__tests__/world-cells-view-distance.spec.ts` — 3/3 pass; red before the stats fields (3 failed, `undefined`).
+- [x] collider created and disposed by radius, not by residency. proof: `pnpm exec vitest run packages/core/__tests__/world-terrain-tiles.spec.ts` — 50/50 pass.
+- [x] existing residency, cancellation and budget suites unchanged. proof: `pnpm exec vitest run packages/core/__tests__/world packages/core/__tests__/matrix-world.spec.ts` — 34 files, 451 passed, 2 skipped.
 
-**Checkpoint:** pending
+**Checkpoint:** 2026-10-08 — Phase 1 done. Both fixtures hold 4x4 cells, so the 25-cell count is proven on a synthetic 8x8 grid of 32 m cells over the same heightmap.
 
 #### Phase 2: The recipe and the fog guidance
 

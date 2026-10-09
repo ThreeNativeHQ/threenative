@@ -858,9 +858,29 @@ describe("TerrainTiles", () => {
     expect(disposed).toContain("0:0");
     expect(created).toContain("3:0");
     expect(created).toContain("4:0");
+    // The tile that lost its body still draws: physics left it, residency did not.
+    expect(tiles.residentKeys).toContain("0:0");
+    expect(tiles.residentTileCount).toBe(49);
 
     tiles.dispose();
     expect(disposed).toContain("4:0");
+  });
+
+  it("control: with no `colliderRadius`, every resident tile collides", () => {
+    // The pre-PRD-461 behaviour, kept as the default: physics follows the render radius.
+    const tiles = new TerrainTiles({
+      createCollider: () => ({ dispose: () => undefined }),
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 49,
+      sampleHeight,
+      streamRadius: 3,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+    tiles.follow({ x: 0, z: 0 });
+    expect(tiles.residentColliderKeys).toHaveLength(49);
+    tiles.dispose();
   });
 
   it("leaves settled mixed-LOD seams alone instead of rewriting them every frame", () => {
