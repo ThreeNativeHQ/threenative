@@ -24,6 +24,7 @@ import {
 } from "three";
 import {
   Fn,
+  If,
   cameraFar,
   cameraNear,
   float,
@@ -163,7 +164,15 @@ try {
   textured.positionNode = positionLocal.add(
     vec3(0, texture(grid, positionLocal.xz.add(0.5)).level(float(0)).r.mul(0.2), 0),
   );
-  textured.colorNode = vec4(texture(grid, uv()).rgb, 1);
+  // A texture sampled inside an If, as WaterSurface3D's refraction is: legal in three's shaders,
+  // which turn the derivative-uniformity check off. The branch never runs, so the colour is unchanged.
+  textured.colorNode = Fn(() => {
+    const colour = texture(grid, uv()).rgb.toVar();
+    If(uv().x.greaterThan(2), () => {
+      colour.assign(texture(grid, uv().mul(2)).rgb);
+    });
+    return vec4(colour, 1);
+  })();
   const slab = new Mesh(new BoxGeometry(0.8, 0.3, 0.8, 4, 1, 4), textured);
   slab.position.set(-1.2, -0.9, 0.4);
   // WaterSurface3D's reads on the Wasm engine: a transparent pane over the ball shows the frame
