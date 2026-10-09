@@ -140,6 +140,52 @@ const world = await WorldCells.load({
 });
 ```
 
+### A view-distance recipe, and fog that hides the stream edge
+
+Fog is a look, so the engine ships no fog and no view-distance constant. The recipe below is
+arithmetic over the cell size `c`, for terrain tiles of the default size (`tileSize` = `c`). Change
+`c` and every number follows. `pnpm exec vitest run packages/core/__tests__/world-streaming-recipe.spec.ts`
+reads the right-hand column of this table and fails when the ordering below breaks.
+
+| Setting | For cell size `c` | At `c` = 128 m (a 2 km map, 256 cells) |
+| --- | --- | --- |
+| `ring` | 2 | 2 |
+| `terrain.streamRadius` | `ring + 1` | 3 |
+| `terrain.colliderRadius` | 1 | 1 |
+| `terrain.lodDistances` | `2c, 4c` (the defaults) | 256, 512 |
+| fog `near` | `c` | 128 |
+| fog `far` | `ring · c` | 256 |
+| `budgets.residentCells` | `(2 · ring + 1)²` | 25 |
+
+The numbers come from where each edge can be, measured from the follow point:
+
+- **New props appear at `ring · c`.** A cell loads when the follow point crosses into the cell next
+  to it, so the near side of a newly loaded cell can be only `ring` cells away: 256 m, not the 452 m
+  corner of the resident square. Fog `far` must be at most `ring · c`, so a cell is fully fogged
+  when it arrives. A `far` set against the corner leaves the side of the ring in plain view.
+- **The ground ends at `streamRadius · c`.** That must be more than fog `far`, so the terrain edge
+  is always behind the fog: 384 m against 256 m. The props' edge is then the only edge.
+- **Bodies reach `colliderRadius · c`.** That is at most `ring`, because physics never needs ground
+  the props have not reached. 128 m is far above any fall in one frame; a fast vehicle may want 2.
+- **A terrain LOD switch is at least fog `near`**, so a switch pops inside the haze. The
+  distances must increase, which `TerrainTiles` checks itself.
+- **`budgets.residentCells` is at least `(2 · ring + 1)²`**, the wanted square. Cells kept by the
+  `ring + 1` hysteresis yield to wanted cells when the budget is full.
+
+Set the fog in the game's own render source, and give the background the fog colour so a fogged
+edge matches the sky:
+
+```ts
+import { Color, Fog } from "three";
+
+const cellSize = 128;
+const ring = 2;
+ctx.scene.background = new Color(0x9fb4c8);
+ctx.scene.fog = new Fog(0x9fb4c8, cellSize, ring * cellSize);
+```
+
+`stats().residentTiles` and `stats().residentColliders` report the two terrain radii at runtime.
+
 `WorldCells` implements the framework's compute-driven contract with `processCadence: "render"`, so
 registering it with `ctx.add(world)` is enough: the loop calls `update(renderer)` once per rendered
 frame. Prop `maxDistance` batches are refiltered only after the follow point has moved an eighth of
@@ -182,6 +228,8 @@ Read back what is happening with `stats()`:
 | Field | Meaning |
 | --- | --- |
 | `residentCells` / `residentKeys` | Cells resident right now. |
+| `residentTiles` | Terrain tiles drawn, out to `terrain.streamRadius`. |
+| `residentColliders` | Tiles holding a `createCollider` body, inside `terrain.colliderRadius`; 0 with no factory. |
 | `instances` | Placement instances the resident cells hold, before the `maxDistance` filter. |
 | `loadsInFlight` | Asset and chunk loads that have not settled. |
 | `evictions` | Cells released so far. |

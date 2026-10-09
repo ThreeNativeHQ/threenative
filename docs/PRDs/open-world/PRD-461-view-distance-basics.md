@@ -71,7 +71,7 @@ simulation LOD, and any engine-owned fog or atmosphere default.
 
 - [x] AC-1 [local; actor: agent]: with `ring: 2` and `terrain.streamRadius: 3`, residency reports 25 resident cells and 49 resident tiles, and the ring-derived terrain radius fails this — proof: `pnpm exec vitest run packages/core/__tests__/world-cells-view-distance.spec.ts` — Evidence: 2026-10-08, 3/3 pass. Red first: `stats().residentTiles` was `undefined` (3 failed); the new `residentTiles` / `residentColliders` stats fields turned it green. The control (no `streamRadius`) reports 25 tiles, not 49.
 - [x] AC-2 [local; actor: agent]: no tile outside `terrain.colliderRadius` has a collider, a collider is disposed when its tile leaves the radius while the tile keeps drawing, and a control with no `colliderRadius` shows the pre-change behaviour (every resident tile collides) — proof: `pnpm exec vitest run packages/core/__tests__/world-terrain-tiles.spec.ts` — Evidence: 2026-10-08, 50/50 pass; tile `0:0` stays resident after its body is disposed, and the control reports 49 bodies for 49 tiles. The collider lifetime itself shipped in `4f9638c2e`, so this is a guard, not a red-green.
-- [ ] AC-3 [local; actor: agent]: the documented recipe cannot drift: the guide's numbers are asserted against the code's own clamps (fog far < prop ring corner ≤ terrain corner, collider radius ≤ ring, LOD distances increasing) — proof: `pnpm --filter @threenative/core test world-streaming-recipe` and `pnpm check:docs` — Evidence: pending.
+- [x] AC-3 [local; actor: agent]: the documented recipe cannot drift: the guide's numbers are asserted against the code's own clamps (fog far ≤ the nearest new-prop edge `ring · c` < terrain edge, collider radius ≤ ring, LOD distances increasing and in the haze) — proof: `pnpm exec vitest run packages/core/__tests__/world-streaming-recipe.spec.ts` and `pnpm check:docs` — Evidence: 2026-10-08, 5/5 pass, including three controls that throw: fog far 420 m, collider radius 3, decreasing LOD distances (the last through `TerrainTiles`' own check). `pnpm check:docs`: 2910 links, exit 0. The ordering changed from this PRD's draft: see the Phase 2 checkpoint.
 - [ ] AC-4 [local; actor: agent]: a capture at the prop ring edge under the recipe's fog shows no visible geometry boundary; the capture paths and the review are recorded — proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/world-flythrough.playtest.json --url … --browser-recipe webgpu` — Evidence: pending.
 - [ ] AC-5 [local; actor: agent]: the `world-flythrough` scenario run with the recipe's numbers keeps its residency assertions, reports 0 failed loads, and asserts colliders exist only inside the radius — proof: the playtest run above — Evidence: pending.
 
@@ -102,12 +102,12 @@ simulation LOD, and any engine-owned fog or atmosphere default.
 **Status:** NOT STARTED
 **Files:** `docs/guides/world-streaming.md` (the recipe table and its arithmetic), `examples/abyss-framework/src/render/` (the fog the example proves against), `packages/core/__tests__/world-streaming-recipe.spec.ts`.
 **Implementation:** the recipe as arithmetic over `cellSize`, so another map size follows by changing one number; the consistency test reads the documented values and asserts the ordering and the code's clamps.
-**Verification:** `pnpm --filter @threenative/core test world-streaming-recipe` + `pnpm check:docs` — AC-3, AC-4.
-- [ ] recipe documented as arithmetic over cell size, with the ordering constraints spelled out. proof: `pnpm check:docs`
-- [ ] consistency test fails when the documented numbers break the ordering. proof: `pnpm --filter @threenative/core test world-streaming-recipe`
+**Verification:** `pnpm exec vitest run packages/core/__tests__/world-streaming-recipe.spec.ts` + `pnpm check:docs` — AC-3, AC-4.
+- [x] recipe documented as arithmetic over cell size, with the ordering constraints spelled out. proof: `pnpm check:docs` — exit 0; `docs/guides/world-streaming.md` "A view-distance recipe, and fog that hides the stream edge".
+- [x] consistency test fails when the documented numbers break the ordering. proof: `pnpm exec vitest run packages/core/__tests__/world-streaming-recipe.spec.ts` — 5/5 pass; the test reads the guide's table and its three controls throw.
 - [ ] example render source carries the fog and the capture is reviewed. proof: `pnpm --filter abyss-framework build`
 
-**Checkpoint:** pending
+**Checkpoint:** 2026-10-08 — recipe and test landed. **Correction:** this PRD's draft set fog far 420 m against the prop ring's 452 m corner. A cell loads when the follow point crosses a cell boundary, so a new cell's near side can be `ring · c` = 256 m away, and 420 m left the ring's sides in view. The recipe is now fog `near` = `c` (128 m), `far` = `ring · c` (256 m); the terrain edge `streamRadius · c` = 384 m stays behind it.
 
 #### Phase 3: The measured gate
 
