@@ -67,6 +67,8 @@ struct DrawItem {
     Matrix envRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     /** A node graph's pmremTexture source: prefiltered as an environment is, sampled as "pmrem". */
     const Texture* pmremMap = nullptr;
+    /** A node graph's texture(object) samples, by binding name (`t_<name>`); null when it has none. */
+    const std::vector<std::pair<std::string, const Texture*>>* nodeTextures = nullptr;
     Matrix pmremRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};  // three's materialEnvRotation
     /** A node graph's reflector (an engine::Reflector) and the view of its mirrored pass, sampled as "reflector". */
     const void* reflector = nullptr;
@@ -371,7 +373,8 @@ private:
                             WGPUTextureView normalView = nullptr, WGPUSampler normalSampler = nullptr,
                             const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps = nullptr,
                             WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
-                            WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr);
+                            WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr,
+                            const std::vector<std::pair<std::string, const MaterialTexture*>>* nodeTextures = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         Handle gpu;

@@ -139,6 +139,16 @@ cloneCopy.setX(0, 9);
 check(cloneSource.getX(0) === 1, "attribute clone owns its array");
 const plane = new THREE.PlaneGeometry(1, 1);
 check(plane.index.clone().count === 6 && plane.attributes.position.clone().count === 4, "index and position clone");
+// Midway's cloneModel: gltf.scene.clone(true) shares geometry and material; clone(false) is shallow.
+const world = new THREE.Scene(), part = new THREE.Object3D();
+part.position.set(1, 2, 3);
+part.add(new THREE.Mesh(plane, painted));
+world.add(part);
+const twinWorld = world.clone(true);
+check(twinWorld instanceof THREE.Scene && twinWorld !== world && twinWorld.children.length === 1 &&
+  twinWorld.children[0] !== part && twinWorld.children[0].position.y === 2 &&
+  twinWorld.children[0].children[0].geometry === plane && twinWorld.children[0].children[0].material === painted, "Object3D clone");
+check(part.clone(false).children.length === 0 && part.clone().children.length === 1, "clone recursion");
 twin.roughness = 0.95;
 check(painted.roughness !== 0.95, "a clone is independent");
 const sprite = new THREE.SpriteMaterial({ transparent: false });
@@ -254,7 +264,8 @@ check(summed && typeof summed.addAssign === "function" && typeof summed.cbrt ===
 // Every swizzle three answers, as Midway's ocean reads positionWorld.xz.
 const lanes = vec3(1, 2, 3);
 check(lanes.xz && lanes.zxy && lanes.st && lanes.bgr && lanes.xxxx && lanes.xyzwx === undefined, "swizzles");
-basic.alphaTestNode = summed;
+basic.alphaTestNode = summed.clamp();
+basic.alphaTestNode = clamp(summed, 0.1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))
   check(THREE[name] === expected, name + " differs from pinned Three.js");
 // three's audio classes are engine objects over the player's WebAudio, and the native tick pushes

@@ -2,6 +2,7 @@
 // Tsl::call unchanged: each case builds the graph node the upstream TSL call means.
 #include "engine/abi/tsl_call.h"
 #include "engine/renderer/reflector.h"
+#include "engine/scene/texture.h"
 
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/graph/post_effects.h"
@@ -270,6 +271,18 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     if (name == "texture") {
         arity(2);
+        // An engine Texture with texels samples itself, under a binding named by its cache identity.
+        // ponytail: an imageless one (a target the renderer fills) keeps naming a map, as before; a
+        // texture whose texels arrive after the graph is built is not followed.
+        if (args[0].kind == TslArg::Kind::Object) {
+            if (args[0].cls.find("Texture") == std::string::npos || !args[0].object)
+                throw std::runtime_error("texture needs an engine Texture");
+            const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
+            if (source->hasImage())
+                return g::objectTexture(args[0].object, "nodeMap" + std::to_string(source->ident.value()), arg(1));
+            if (source->name.empty()) throw std::runtime_error("texture needs a name");
+            return g::texture(source->name, arg(1));
+        }
         if (args[0].kind != TslArg::Kind::Named)
             throw std::runtime_error("expected a texture with a name");
         if (args[0].text.empty())
@@ -407,6 +420,12 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (method && (name == "mix" || name == "smoothstep")) {
         arity(2);
         return name == "mix" ? g::mix(arg(0), arg(1), lhs()) : g::smoothstep(arg(0), arg(1), lhs());
+    }
+    // r185's clamp(value, low = 0, high = 1) (MathNode.js): the bounds are optional.
+    if (name == "clamp" && args.size() < (method ? 2u : 3u)) {
+        const size_t first = method ? 0 : 1;
+        if (!method && args.empty()) throw std::runtime_error("expected a value to clamp");
+        return g::clamp(lhs(), args.size() > first ? arg(first) : g::float_(0), g::float_(1));
     }
 #define TERNARY(symbol)                                                                                                \
     if (name == #symbol) {                                                                                             \

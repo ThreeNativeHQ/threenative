@@ -217,9 +217,14 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
 
 // A program that samples a material `map` or an environment cannot have one shared fragment group:
 // each draw's group binds its own texture and sampler. Its group[1] is left null and built per draw.
+// A texture(object) node's binding: filled per draw from the graph's own texture, never a fallback.
+bool objectTextureBinding(const std::string& name) {
+    return name.rfind("t_nodeMap", 0) == 0 || name.rfind("smp_nodeMap", 0) == 0;
+}
+
 bool perDrawFragment(const shader::StageModule& stage) {
     for (const shader::Binding& binding : stage.bindings)
-        if (binding.name == "t_map" || binding.name == "t_env") return true;
+        if (binding.name == "t_map" || binding.name == "t_env" || objectTextureBinding(binding.name)) return true;
     return false;
 }
 
@@ -679,12 +684,20 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                                   WGPUTextureView normalView, WGPUSampler normalSampler,
                                   const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps,
                                   WGPUTextureView pmremView, WGPUSampler pmremSampler,
-                                  WGPUTextureView reflectorView, WGPUSampler reflectorSampler) {
+                                  WGPUTextureView reflectorView, WGPUSampler reflectorSampler,
+                                  const std::vector<std::pair<std::string, const MaterialTexture*>>* nodeTextures) {
     // A PbrMap's texture or sampler, by its `t_<name>` / `smp_<name>` binding; null for any other.
     const auto pbr = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
         if (!pbrMaps) return nullptr;
         for (int k = 0; k < shader::kPbrMapCount; ++k)
             if (name == (sampler ? "smp_" : "t_") + std::string(shader::kPbrMapNames[k])) return (*pbrMaps)[k];
+        return nullptr;
+    };
+    // A texture(object) node's texture or sampler, by its `t_<name>` / `smp_<name>` binding.
+    const auto node = [&](const std::string& binding, bool sampler) -> const MaterialTexture* {
+        if (!nodeTextures) return nullptr;
+        for (const auto& [name, texture] : *nodeTextures)
+            if (binding == (sampler ? "smp_" : "t_") + name) return texture;
         return nullptr;
     };
     std::vector<WGPUBindGroupEntry> entries;
@@ -715,6 +728,13 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             if (b.kind == shader::BindingKind::Texture)
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;
+        } else if (objectTextureBinding(b.name)) {
+            const MaterialTexture* texture = node(b.name, b.kind == shader::BindingKind::Sampler);
+            if (!texture)
+                throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name +
+                                         " (a texture(object) sample outside the fragment stage, or without its texture)");
+            if (b.kind == shader::BindingKind::Texture) e.textureView = texture->view;
+            else e.sampler = texture->sampler;
         } else if (b.kind == shader::BindingKind::Texture) {
             const auto postView = postEffects_ ? postEffects_->view(b.name.substr(2)) : nullptr;
             const MaterialTexture* pbrTexture = pbr(b.name, false);
@@ -1939,7 +1959,10 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     for (Planned& p : plan) {
         const bool readsPbr = std::any_of(p.item->pbrMaps.begin(), p.item->pbrMaps.end(), [](const Texture* t) { return t; });
         if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
-            !p.item->reflectorView) continue;
+            !p.item->reflectorView && !p.item->nodeTextures) continue;
+        std::vector<std::pair<std::string, const MaterialTexture*>> nodeTextures;
+        if (p.item->nodeTextures)
+            for (const auto& [name, texture] : *p.item->nodeTextures) nodeTextures.emplace_back(name, materialTexture(*texture));
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
         std::array<const MaterialTexture*, shader::kPbrMapCount> pbrTextures{};
         for (int k = 0; k < shader::kPbrMapCount; ++k)
@@ -1962,6 +1985,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         for (const MaterialTexture* texture : pbrTextures)
             pbrKey += "|" + std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->view : nullptr)) + "," +
                       std::to_string(reinterpret_cast<uintptr_t>(texture ? texture->sampler : nullptr));
+        for (const auto& [name, texture] : nodeTextures)
+            pbrKey += "|" + name + "=" + std::to_string(reinterpret_cast<uintptr_t>(texture->view)) + "," +
+                      std::to_string(reinterpret_cast<uintptr_t>(texture->sampler));
         const auto found = mapGroups_.find(key + pbrKey);
         p.mapGroup = found != mapGroups_.end()
                          ? found->second
@@ -1969,7 +1995,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                                              lutView_, lutSampler_, mapView, mapSampler, envView, envSampler,
                                                          normal ? normal->view : nullptr, normal ? normal->sampler : nullptr, &pbrTextures,
                                                          pmrem ? pmrem->view : nullptr, pmrem ? pmrem->sampler : nullptr,
-                                                         p.item->reflectorView, p.item->reflectorSampler))
+                                                         p.item->reflectorView, p.item->reflectorSampler, &nodeTextures))
                                .first->second;
     }
 

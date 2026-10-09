@@ -95,6 +95,11 @@ Node select(Node condition, Node whenTrue, Node whenFalse);
 Node swizzle(Node value, std::string_view lanes);
 Node texture(std::string_view map, Node uvs);
 /**
+ * TSL's `texture(object, uv)` over an engine Texture the material does not own as a map: sampled
+ * under `name`, the binding the renderer fills from `texture` per draw (RenderDatabase::graphSources).
+ */
+Node objectTexture(std::shared_ptr<const void> texture, std::string name, Node uvs);
+/**
  * TSL's `pmremTexture(texture, direction, level)`: the texture's PMREM (prefiltered radiance, cubeUV
  * layout) sampled along `direction` at roughness `level`. `texture` is the engine Texture the
  * renderer prefilters; the program samples it as "pmrem".
