@@ -169,6 +169,9 @@ export class WorldProbe extends Scene<WorldState> {
             admissionBacklog: stats.admission.backlog,
             admissionDeferred: stats.admission.deferred,
             admissionSpentMs: stats.admission.spentMs,
+            // PRD-494: the main pass's draw record, so a native run can assert the default reached it.
+            bundleChildren: stats.bundle.children,
+            bundleOn: stats.bundle.on,
             gpuSceneOn: stats.gpuScene.on,
             gpuSceneReason: stats.gpuScene.reason,
             gpuSceneDispatches: stats.gpuScene.dispatches,

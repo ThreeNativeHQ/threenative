@@ -205,7 +205,7 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 - [ ] **A3 · PRD-478 Phase 1: measure the shadow-window work that #390 already merged.** After: A1 and A2. ⏱🌍👁🙋
   - The owner side-by-sides the camp and highway aerials against `?refShadow=1`. The first candidate failed exactly that review.
   - Status 2026-10-03: draft PR #423; two bias fixes landed (hold during load; drawable level), start-pose defect persists (GPU-scene path + bias ≥2 renders coarse levels invisibly); counters: `byMove` repeatable at labelled ticks. Owner side-by-side vs `?refShadow=1` still owed (🙋).
-- [ ] **A4 · [PRD-494](PRD-494-the-main-pass-fits-the-draw-budget.md): the main pass fits the draw budget.** After: A3. ⏱🌍👁
+- [ ] **A4 · [PRD-494](../done/PRD-494-the-main-pass-fits-the-draw-budget.md): the main pass fits the draw budget.** After: A3. ⏱🌍👁
   - The largest cost. Attribute the ~323 draws by source, then take the largest source off three's per-draw path, `bundles` or a merged path.
   - Status 2026-10-03: draft PR #424 (prd:50%); main draws 323 → 36, `draw` span −5.0 ms (3 interleaved pairs), bundles on by default, blind gate 0 LOSS; AC-1 open only for the loading window.
 - [ ] **A5 · PRD-478 Phase 2: shadow levels draw GPU-scene keys.** After: A4. ⏱🌍👁

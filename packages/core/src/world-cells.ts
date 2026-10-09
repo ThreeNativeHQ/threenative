@@ -753,7 +753,7 @@ export interface IWorldCellsStats {
   };
   /**
    * What the main pass's draw bundles are doing: `children` is how many objects are recorded — every
-   * GPU-dressed main mesh under the one `BundleGroup`, plus every chunk of every resident cell under
+   * recorded main mesh under one of the main record's shards, plus every chunk of every resident cell under
    * that cell's own group — and `records` is how many times those groups have been re-recorded since
    * the world loaded.
    *
@@ -1044,7 +1044,7 @@ class SharedBatch {
    */
   gpuPlaced = 0;
   /**
-   * Whether this batch's mesh is parented under the world's one `BundleGroup`. Set by
+   * Whether this batch's mesh is parented under one of the world's main record shards. Set by
    * `WorldCells#bundleIn` and cleared by `#bundleOut`.
    *
    * It is a field rather than `mesh.parent` because a bundled mesh's `visible` is never written
@@ -2962,6 +2962,26 @@ function mergedBytes(merged: readonly Mesh[], kept: ReadonlySet<Mesh>): number {
 }
 
 /**
+ * How many groups the main record is split into. A record walks every draw in its group, so a mint
+ * on a streaming walk costs the draws of every shard it touches: Machinefall's ~200 recorded main
+ * draws re-recorded as one group put ~290 traversed draws in a frame. Eight shards still read 145,
+ * because one asset mints several keys (levels, parts) at once and they land in two or three shards;
+ * thirty-two keep a frame that touches several to a few dozen draws. A replay is one
+ * `executeBundles` per group, so a shard costs far less than the draws it stops re-walking.
+ */
+const MAIN_BUNDLE_SHARDS = 32;
+
+/** The shard a key lands in, from its name (FNV-1a), so a key keeps its group for its whole life. */
+function mainShard(key: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < key.length; index += 1) {
+    hash ^= key.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0) % MAIN_BUNDLE_SHARDS;
+}
+
+/**
  * The value `NodeUpdateType.RENDER` has, read as text so this file needs no import for it: a node
  * whose `updateBefore` runs on every render is a node whose work happens inside the draw that
  * recorded it, which is the whole test.
@@ -4018,15 +4038,26 @@ export class WorldCells extends Group implements IComputeDriven {
   /** Resident placements per canonical asset, which is the capacity a key of that asset needs. */
   readonly #gpuResident = new Map<string, number>();
   /**
-   * The one `BundleGroup` every GPU-dressed main batch mesh is parented under, and the number of
-   * times it has been re-recorded. Minted by the first dress that bundles, so a world that never
-   * dresses a mesh has no group to pay for.
+   * The `BundleGroup`s every recorded main batch mesh is parented under, one per shard of
+   * {@link MAIN_BUNDLE_SHARDS}, and the number of times one has been re-recorded. A shard is minted by
+   * the first mesh that lands in it, so a world that never dresses a mesh has no group to pay for.
    *
    * A re-record is a structural change and nothing else: see `IWorldCellsStats.bundle` and
-   * {@link #bumpBundle}. Streaming, culling and LOD are GPU-side answers and never move it.
+   * {@link #bumpBundle}. Streaming, culling and LOD are GPU-side answers and never move it. A record
+   * walks every draw its group holds, so a mint pays for its own shard and not the whole main pass.
    */
-  #bundle: BundleGroup | undefined;
+  readonly #bundles = new Map<number, BundleGroup>();
   #bundleRecords = 0;
+  /**
+   * Shards re-recorded while a compile was in flight, so they are re-recorded again once it settles.
+   * Three encodes a draw only when its pipeline is ready, so a record cut during a `compileAsync`
+   * silently leaves a not-yet-ready draw out, and the replay never re-checks it. Bumped from
+   * {@link #bumpBundle} while {@link #compileBusy}, flushed at the top of the update that sees the
+   * compile settle.
+   */
+  #compileSeen = 0;
+  #compileBusy = false;
+  readonly #recordedWhileBusy = new Set<BundleGroup>();
   /**
    * One `BundleGroup` per resident cell that has chunks attached, keyed by cell key, each with the
    * main-cull cluster whose answer decides whether it is in the frame. Minted by the first chunk a
@@ -4384,6 +4415,18 @@ export class WorldCells extends Group implements IComputeDriven {
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#renderer = renderer;
     if (camera !== undefined) this.#camera = camera;
+    // A bundle recorded while a compile was in flight left out every draw whose pipeline was not
+    // ready, and the replay never re-checks; re-record those shards now that it has settled. Set
+    // `#compileBusy` first, so this flush's own bumps are not added back to the set.
+    const compiles = renderer?.compileCount ?? 0;
+    const busy = renderer?.compiling === true || compiles !== this.#compileSeen;
+    this.#compileSeen = compiles;
+    this.#compileBusy = busy;
+    if (!busy && this.#recordedWhileBusy.size > 0) {
+      const recorded = [...this.#recordedWhileBusy];
+      this.#recordedWhileBusy.clear();
+      for (const group of recorded) if (group.parent !== null) this.#bumpBundle(group);
+    }
     // The adaptive LOD bias, before the dispatch below reads the gates it scales.
     this.#adaptLodBias(renderer);
     // The first frame that hands over a renderer is the only one that can answer whether this
@@ -5194,7 +5237,7 @@ export class WorldCells extends Group implements IComputeDriven {
     return {
       admission: { ...this.#admission },
       bundle: {
-        children: (this.#bundle?.children.length ?? 0) + this.#chunkBundleChildren,
+        children: this.#mainBundleChildren() + this.#chunkBundleChildren,
         on: this.#bundlesWanted && (this.#gpuScene.on || this.#chunkBundleChildren > 0),
         reason: this.#bundleReason,
         records: this.#bundleRecords,
@@ -5268,6 +5311,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#proxyMaterials.clear();
     this.#renderer = undefined;
     this.#camera = undefined;
+    this.#recordedWhileBusy.clear();
     // After every asset's release above, so no record is still held by a surface; disposes the cached
     // atlases and aborts any bake still in flight.
     this.#drainImpostors();
@@ -6548,8 +6592,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (this.#bundlesWanted === false) return;
     shared.bundlable = bundleSafe(shared.mesh);
     if (shared.bundlable === false) return;
-    this.#bundle ??= this.#newBundle();
-    const group = this.#bundle as BundleGroup;
+    const group = this.#shardOf(shared);
     if (shared.mesh.parent !== group) group.add(shared.mesh);
     shared.bundled = true;
     shared.bundledCount = shared.mesh.count;
@@ -6576,15 +6619,17 @@ export class WorldCells extends Group implements IComputeDriven {
     shared.mesh.userData.tnBundled = false;
     // Back on the per-object path, so the mesh's own whole-mesh test is its gate again.
     shared.mesh.frustumCulled = true;
-    if (shared.mesh.parent === this.#bundle) (this.#bundle as BundleGroup).remove(shared.mesh);
-    if (this.#bundle !== undefined) this.#bumpBundle();
+    const group = this.#bundles.get(mainShard(shared.mesh.name));
+    if (group === undefined) return;
+    if (shared.mesh.parent === group) group.remove(shared.mesh);
+    this.#bumpBundle(group);
   }
 
   /** One re-record, counted: `BundleGroup.needsUpdate` is a version bump, and nothing else. */
-  #bumpBundle(group: BundleGroup | undefined = this.#bundle): void {
-    if (group === undefined) return;
+  #bumpBundle(group: BundleGroup): void {
     this.#bundleRecords += 1;
     group.needsUpdate = true;
+    if (this.#compileBusy) this.#recordedWhileBusy.add(group);
   }
 
   /**
@@ -6615,11 +6660,11 @@ export class WorldCells extends Group implements IComputeDriven {
     // without moving its length, so the epoch answer and the count are both read here.
     if (outcome === "settled" && shared.mesh.count === shared.bundledCount) return;
     shared.bundledCount = shared.mesh.count;
-    this.#bumpBundle();
+    this.#bumpBundle(this.#shardOf(shared));
   }
 
   /**
-   * Where a dressed main batch's mesh belongs: the one bundle group, or the world itself when there is
+   * Where a dressed main batch's mesh belongs: its key's main record shard, or the world itself when there is
    * none — a world with bundles off, a draw no record can replay, and the very first dress of a batch
    * the mint has not attached yet.
    *
@@ -6628,7 +6673,7 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #bundleHome(shared: SharedBatch): Object3D | null {
     if (this.#bundlesWanted === false || shared.bundlable === false) return this;
-    return this.#bundle ?? null;
+    return this.#bundles.get(mainShard(shared.mesh.name)) ?? null;
   }
 
   /**
@@ -6715,12 +6760,24 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#bumpBundle(entry.group);
   }
 
-  /** The one group, as a child of the world so it is projected with everything else. */
-  #newBundle(): BundleGroup {
-    const group = new BundleGroup();
-    group.name = "world-main-bundles";
-    this.add(group);
+  /** The main-record shard a batch's key lands in, minted as a child of the world on first use. */
+  #shardOf(shared: SharedBatch): BundleGroup {
+    const shard = mainShard(shared.mesh.name);
+    let group = this.#bundles.get(shard);
+    if (group === undefined) {
+      group = new BundleGroup();
+      group.name = "world-main-bundles";
+      this.add(group);
+      this.#bundles.set(shard, group);
+    }
     return group;
+  }
+
+  /** The recorded main batches, over every shard. */
+  #mainBundleChildren(): number {
+    let children = 0;
+    for (const group of this.#bundles.values()) children += group.children.length;
+    return children;
   }
 
   /**
@@ -6732,14 +6789,14 @@ export class WorldCells extends Group implements IComputeDriven {
     // A grow replaces the mesh object, so the marker `#bundleIn` set has to follow the batch's own
     // flag onto it. See `bundled`.
     shared.mesh.userData.tnBundled = shared.bundled;
-    if (shared.bundled === true) (this.#bundle as BundleGroup).add(shared.mesh);
+    if (shared.bundled === true) this.#shardOf(shared).add(shared.mesh);
     else this.add(shared.mesh);
     // A record holds the object it was cut from, so a mesh that arrived by a rebind or a grow is not
     // the one the last record named: one re-record, and the record counts this mesh from here.
     if (shared.bundled === true) {
       shared.mesh.frustumCulled = false;
       shared.bundledCount = shared.mesh.count;
-      this.#bumpBundle();
+      this.#bumpBundle(this.#shardOf(shared));
     }
   }
 
@@ -6880,7 +6937,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // is one of the three, which is why this is the only place a re-record happens — the fast path
     // above is every other frame of the walk.
     this.#bundleIn(shared);
-    this.#bumpBundle();
+    if (shared.bundled === true) this.#bumpBundle(this.#shardOf(shared));
     // The shadow twin of this key, minted and dressed on the same pass that named the main one: a
     // level that draws keys finds its mesh in the same frame the main pass found its buffer, and a
     // regrown twin is re-dressed here rather than left on the buffer the dispatch replaced.
