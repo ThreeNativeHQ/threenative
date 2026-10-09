@@ -21,6 +21,8 @@ import {
 import {
   Fn,
   attribute,
+  cameraFar,
+  cameraNear,
   cameraProjectionMatrix,
   cameraViewMatrix,
   convertToTexture,
@@ -764,6 +766,16 @@ export const programs = {
   /** WaterSurface3D's reads: the frame behind a transparent surface (viewportSharedTexture, offset)
    *  and the depth between it and the surface (viewportLinearDepth - linearDepth()), on a water
    *  plane over a lit floor. */
+  /** The depth reads r185 gives a water surface: the scene depth behind it, its own, and the camera range. */
+  async "tsl-viewport-linear-depth"({ target }) {
+    const water = target.getObjectByName("water");
+    water.material.colorNode = vec4(
+      viewportLinearDepth.mul(4),
+      linearDepth().mul(4),
+      cameraNear.mul(5).add(cameraFar.mul(0.005)),
+      1,
+    );
+  },
   async "viewport-textures"({ target }) {
     const water = target.getObjectByName("water");
     const behind = viewportSharedTexture(screenUV.add(vec2(0.02, 0))).rgb;

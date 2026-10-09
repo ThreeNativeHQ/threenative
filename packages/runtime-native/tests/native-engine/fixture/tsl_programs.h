@@ -381,6 +381,26 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         quads->material->needsUpdate();
         return "";
     }
+    if (program == "tsl-viewport-linear-depth") {
+        if (object.cls != "Scene") return "TN_FIXTURE_VIEWPORT_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto* water = dynamic_cast<engine::Mesh*>(scene.getObjectByName("water"));
+        if (!water || !water->material) return "TN_FIXTURE_VIEWPORT_INVALID: water/material";
+        namespace g = engine::shader::graph;
+        uint64_t serial = 0;
+        g::Node viewport, nearPlane, farPlane;
+        for (auto& [label, node] : abi::tslConstants()) {
+            if (label == "viewportLinearDepth") viewport = node;
+            if (label == "cameraNear") nearPlane = node;
+            if (label == "cameraFar") farPlane = node;
+        }
+        if (!viewport || !nearPlane || !farPlane) return "TN_FIXTURE_VIEWPORT_INVALID: depth constants";
+        const auto own = abi::tslCall("linearDepth", nullptr, {}, serial);
+        water->material->nodes.colorNode = g::vec4({g::mul(viewport, g::float_(4)), g::mul(own, g::float_(4)),
+            g::add(g::mul(nearPlane, g::float_(5)), g::mul(farPlane, g::float_(0.005f))), g::float_(1)});
+        water->material->needsUpdate();
+        return "";
+    }
     if (program == "viewport-textures") {
         if (object.cls != "Scene") return "TN_FIXTURE_VIEWPORT_INVALID: requires scene";
         auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
