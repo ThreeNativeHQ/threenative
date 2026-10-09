@@ -128,6 +128,7 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "toneMapped", &Material::toneMapped);
     materialBool(b, "fog", &Material::fog);
     materialBool(b, "vertexColors", &Material::vertexColors);
+    materialBool(b, "forceSinglePass", &Material::forceSinglePass);
     materialNumber(b, "opacity", &Material::opacity);
     materialNumber(b, "alphaTest", &Material::alphaTest);
     b.getters["side"] = [](void* self) { return Value::of(double(as<Material>(self)->side)); };

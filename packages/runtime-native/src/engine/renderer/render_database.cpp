@@ -379,6 +379,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.kind = kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
     d.transparent = material->transparent;
+    d.forceSinglePass = material->forceSinglePass;
     d.depthWrite = material->depthWrite;
     d.materialKey = material;
     d.positionNode = material->positionNode;
@@ -394,6 +395,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     r.draw->params = paramsOf(*r.material);
     d.material = &r.draw->params;
     d.transparent = r.material->transparent;
+    d.forceSinglePass = r.material->forceSinglePass;
     d.depthWrite = r.material->depthWrite;
     d.side = static_cast<uint8_t>(r.material->side);
     d.blending = static_cast<uint8_t>(r.material->blending);
@@ -1079,11 +1081,12 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     }
     // three's Renderer.renderObject: a transparent DoubleSide material (forceSinglePass false) draws
     // twice, its BackSide pass and then its FrontSide pass, so the far half composites under the near.
-    if (std::any_of(items.begin(), items.end(), [](const DrawItem& d) { return d.transparent && d.side == 2; })) {
+    const auto twoPass = [](const DrawItem& d) { return d.transparent && d.side == 2 && !d.forceSinglePass; };
+    if (std::any_of(items.begin(), items.end(), twoPass)) {
         std::vector<DrawItem> passes;
         passes.reserve(items.size() + 8);
         for (DrawItem& item : items) {
-            if (item.transparent && item.side == 2) {
+            if (twoPass(item)) {
                 DrawItem& back = passes.emplace_back(item);
                 back.side = 1;
                 back.key ^= kBackSidePassKey;  // its own GPU record beside the front pass's

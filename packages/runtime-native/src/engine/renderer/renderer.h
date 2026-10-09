@@ -83,6 +83,7 @@ struct DrawItem {
     uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
     int renderOrder = 0;       // Object3D.renderOrder
     bool transparent = false;  // material.transparent: drawn after opaques, back to front, blended
+    bool forceSinglePass = false;  // material.forceSinglePass: a transparent DoubleSide draws once
     bool depthWrite = true;    // material.depthWrite
     // SkinnedMesh: the skin attributes, the skeleton's palette this frame and the bind matrices.
     BufferStore* skinIndices = nullptr; // u8, u16 or u32 ×4

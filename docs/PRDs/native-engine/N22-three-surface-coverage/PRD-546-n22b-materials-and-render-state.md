@@ -45,7 +45,8 @@ real, the catalog marks it `supported` through `sync-native-status`.
   Moved from PRD-540 phase 3 (2026-10-08).
 - [ ] `polygonOffset`, `polygonOffsetFactor` and `polygonOffsetUnits` set the pipeline depth bias. Users: shooter, Midway (model damage, rear station), Bayview. Extends PRD-514. proof: fixture `materials-polygon-offset` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_standard_materials_fixtures`
   In progress on lane-midway-native (2026-10-08).
-- [ ] `forceSinglePass` draws a transparent `DoubleSide` material in one pass, as r185 does; without it the two-pass draw of 510d3fbe5 applies. Users: Midway (ocean, Devastator, imported aircraft). Extends PRD-514. proof: fixture `materials-force-single-pass` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_standard_materials_fixtures`
+- [x] `forceSinglePass` draws a transparent `DoubleSide` material in one pass, as r185 does; without it the two-pass draw of 510d3fbe5 applies. Users: Midway (ocean, Devastator, imported aircraft). Extends PRD-514. proof: fixture `materials-force-single-pass` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_standard_materials_fixtures`
+  Done 2026-10-08: fixture `materials-force-single-pass` (two transparent DoubleSide torus knots, one with forceSinglePass) passes in `native_engine_standard_materials_fixtures` (red: BLOCKED "forceSinglePass is not settable"; control drawing it in two passes anyway: 3.05% pixels mismatched); the DoubleSide fixtures still pass.
 
 #### Phase 2: Textures and texture constants
 **Status:** NOT STARTED

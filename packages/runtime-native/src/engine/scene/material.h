@@ -45,6 +45,7 @@ public:
     double rotation = 0;
     bool sizeAttenuation = true;
     bool transparent = false;
+    bool forceSinglePass = false;  // three's: a transparent DoubleSide material draws in one pass
     double opacity = 1;
     double alphaTest = 0;
     bool depthTest = true;
