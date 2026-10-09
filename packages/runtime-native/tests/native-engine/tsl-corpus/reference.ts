@@ -66,6 +66,7 @@ import {
   storage,
   tangentLocal,
   texture,
+  transformNormalToView,
   uint,
   uniform,
   uv,
@@ -389,6 +390,7 @@ export const CORPUS: [string, string, unknown][] = [
   ["normal-world-geometry", "color", vec4(normalWorldGeometry, 1)],
   ["get-view-position", "color", vec4(getViewPosition(uv(), u, cameraProjectionMatrix), 1)],
   ["set-group", "color", vec4(uniform(0.25).setName("grouped").setGroup(frameGroup), 0, 0, 1)],
+  ["transform-normal-to-view", "color", vec4(transformNormalToView(tint), 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

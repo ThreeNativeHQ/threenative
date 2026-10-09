@@ -114,6 +114,13 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (!receiver->node || receiver->node->kind != g::Kind::Uniform) throw std::runtime_error("setGroup requires a uniform");
         return receiver->node;
     }
+    // r185's transformNormalToView(normal) outside a material's normal setup:
+    // transformNormalByViewMatrix(modelNormalMatrix * normal, cameraViewMatrix).
+    if (!method && name == "transformNormalToView") {
+        arity(1);
+        const auto transformed = g::mul(g::uniform("modelNormalMatrix", Type::mat(3, 3)), arg(0));
+        return g::normalize(g::swizzle(g::mul(g::uniform("viewMatrix", Type::mat(4, 4)), g::vec4({transformed, g::float_(0)})), "xyz"));
+    }
     // r185's getViewPosition(screenPosition, depth, projectionMatrixInverse), WebGPU's branch:
     // vec4(vec3(vec2(uv.x, uv.y.oneMinus()).mul(2).sub(1), depth), 1), then view.xyz / view.w.
     if (!method && name == "getViewPosition") {

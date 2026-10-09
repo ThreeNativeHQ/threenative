@@ -176,7 +176,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "render_pmrem:pmrem-*" "render_screen_uv:screen-uv" "render_texture_object:texture-object"
                 "render_tsl_texture:tsl-texture-object" "render_viewport:viewport-textures,tsl-viewport-*" "render_instanced_geometry:tsl-instanced-geometry"
                 "render_storage_attribute:storage-attribute" "render_batched:batched-mesh"
-                "render_reflector:reflector-*" "render_tsl_stage:tsl-stage-*,tsl-normal-world-*,tsl-view-geometry-*")
+                "render_reflector:reflector-*" "render_tsl_stage:tsl-stage-*,tsl-normal-world-*,tsl-view-geometry-*,tsl-transform-normal-*")
             string(REPLACE ":" ";" render_pair "${render_case}")
             list(GET render_pair 0 render_name)
             list(GET render_pair 1 render_glob)

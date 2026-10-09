@@ -54,6 +54,7 @@ const {
   texture,
   time: frameTime,
   uint,
+  transformNormalToView,
   uniform,
   uv,
   varying,
@@ -121,6 +122,7 @@ const CORPUS = [
   ["normal-world-geometry", "color", vec4(normalWorldGeometry, 1)],
   ["get-view-position", "color", vec4(getViewPosition(uv(), u, cameraProjectionMatrix), 1)],
   ["set-group", "color", vec4(uniform(0.25).setName("grouped").setGroup(frameGroup), 0, 0, 1)],
+  ["transform-normal-to-view", "color", vec4(transformNormalToView(tint), 1)],
 ];
 
 const positions = instancedArray(16, "vec4").setName("positions");

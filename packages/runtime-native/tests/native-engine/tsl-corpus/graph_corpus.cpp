@@ -184,6 +184,10 @@ int main() {
     });
     shaderGraph("set-group", "color",
           [] { return vec4({uniform("grouped", Type::f32()), float_(0), float_(0), float_(1)}); });
+    shaderGraph("transform-normal-to-view", "color", [] {
+        const Node transformed = mul(uniform("modelNormalMatrix", Type::mat(3, 3)), tint());
+        return vec4({normalize(swizzle(mul(uniform("viewMatrix", Type::mat(4, 4)), vec4({transformed, float_(0)})), "xyz")), float_(1)});
+    });
 
     compute("fn-if-store", [](Block& b, Storage positions) {
         const Var acc = b.var(float_(0));

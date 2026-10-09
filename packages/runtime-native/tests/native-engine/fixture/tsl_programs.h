@@ -360,6 +360,23 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         for (auto* m : {front, back, tilted, mapped}) m->needsUpdate();
         return "";
     }
+    if (program == "tsl-transform-normal-to-view") {
+        // r185's transformNormalToView(normalGeometry) through the shared TSL table.
+        if (object.cls != "Scene") return "TN_FIXTURE_NORMAL_TO_VIEW_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        namespace g = engine::shader::graph;
+        uint64_t serial = 0;
+        const auto normal = abi::tslCall("normalGeometry", nullptr, {}, serial);
+        const auto toView = abi::tslCall("transformNormalToView", nullptr, {abi::TslArg::of(normal)}, serial);
+        const auto shade = g::vec4({g::add(g::mul(toView, g::float_(0.5)), g::float_(0.5)), g::float_(1)});
+        for (const char* name : {"box", "stretched"}) {
+            auto* mesh = dynamic_cast<engine::Mesh*>(scene.getObjectByName(name));
+            if (!mesh || !mesh->material) return "TN_FIXTURE_NORMAL_TO_VIEW_INVALID: meshes";
+            mesh->material->nodes.colorNode = shade;
+            mesh->material->needsUpdate();
+        }
+        return "";
+    }
     if (program == "tsl-view-geometry-varyings") {
         // r185's positionViewDirection, normalWorldGeometry and depth fragment varyings, through the shared TSL table.
         if (object.cls != "Scene") return "TN_FIXTURE_VARYINGS_INVALID: requires scene";

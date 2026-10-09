@@ -46,6 +46,7 @@ import {
   mrt,
   mx_noise_float,
   mx_worley_noise_vec2,
+  normalGeometry,
   normalView,
   normalViewGeometry,
   normalWorld,
@@ -66,6 +67,7 @@ import {
   storage,
   texture,
   texture3D,
+  transformNormalToView,
   uint,
   uniform,
   uv,
@@ -781,6 +783,12 @@ export const programs = {
     mapped.normalMap = dataTexture(4, 4, () => [200, 128, 230]);
     mapped.emissiveNode = geometryShade;
     target.getObjectByName("depth").material.colorNode = vec4(vec3(depth.oneMinus().mul(25)), 1);
+  },
+  /** transformNormalToView: modelNormalMatrix then the view matrix, on a rotated and a stretched box. */
+  async "tsl-transform-normal-to-view"({ target }) {
+    const shade = vec4(transformNormalToView(normalGeometry).mul(0.5).add(0.5), 1);
+    for (const name of ["box", "stretched"])
+      target.getObjectByName(name).material.colorNode = shade;
   },
   async "tsl-stage-vertex-texture-level"({ target }) {
     const ramp = dataTexture(8, 4, (x, y) => [x * 36, y * 80, 200 - x * 20]);

@@ -144,7 +144,8 @@ constexpr const char* kSlotNames[] = {
     "bumpMapUvTransform", "specularColorMapUvTransform",
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
-    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar"};
+    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
+    "modelNormalMatrix"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -1916,7 +1917,11 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         put(frameUniforms_, f, fs[kViewMatrix], view);  // normalWorld is derived in the fragment, as three does
         // TSL's camera accessors, read by node graphs in either stage.
         const std::array<double, 3> cameraPosition{camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]};
+        // three's modelNormalMatrix (transformNormalToView), only for a program that reads it.
+        const bool modelNormal = vs[kModelNormalMatrix] || fs[kModelNormalMatrix];
+        const std::array<double, 9> modelNormalMatrix = modelNormal ? normalMatrix(item.matrixWorld) : std::array<double, 9>{};
         for (const auto [base, slots] : {std::pair{v, vs}, std::pair{f, fs}}) {
+            if (modelNormal) put(frameUniforms_, base, slots[kModelNormalMatrix], modelNormalMatrix);
             put(frameUniforms_, base, slots[kCameraPosition], cameraPosition);
             put(frameUniforms_, base, slots[kCameraProjectionMatrix], camera.projectionMatrix);
             put(frameUniforms_, base, slots[kCameraWorldMatrix], camera.matrixWorld);
