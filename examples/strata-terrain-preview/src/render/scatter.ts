@@ -162,23 +162,48 @@ export function scatterProps(
   const random = createRandom(SCATTER.seed);
   const half = data.size / 2;
   const inside = (x: number, z: number) => Math.abs(x) < half - 3 && Math.abs(z) < half - 3;
+  // River segments bucketed on a coarse grid by their reach, so a candidate tests only the segments
+  // that could be within reach of it. Testing every segment for every candidate cost 3.4 s of the
+  // tundra switch's synchronous `enter`; the answers are the same.
+  const RIVER_CELL = 32;
+  const riverCells = new Map<
+    string,
+    { a: readonly number[]; b: readonly number[]; reach: number }[]
+  >();
+  if (tundra)
+    for (const river of data.rivers ?? [])
+      river.points.forEach((b, index) => {
+        const a = river.points[index - 1];
+        if (!a) return;
+        const reach = river.width * 2.5;
+        const fromX = Math.floor((Math.min(a[0] ?? 0, b[0] ?? 0) - reach) / RIVER_CELL);
+        const toX = Math.floor((Math.max(a[0] ?? 0, b[0] ?? 0) + reach) / RIVER_CELL);
+        const fromZ = Math.floor((Math.min(a[2] ?? 0, b[2] ?? 0) - reach) / RIVER_CELL);
+        const toZ = Math.floor((Math.max(a[2] ?? 0, b[2] ?? 0) + reach) / RIVER_CELL);
+        for (let cx = fromX; cx <= toX; cx++)
+          for (let cz = fromZ; cz <= toZ; cz++) {
+            const key = `${cx}:${cz}`;
+            const list = riverCells.get(key) ?? [];
+            list.push({ a, b, reach });
+            riverCells.set(key, list);
+          }
+      });
+  const nearRiver = (x: number, z: number): boolean =>
+    (riverCells.get(`${Math.floor(x / RIVER_CELL)}:${Math.floor(z / RIVER_CELL)}`) ?? []).some(
+      ({ a, b, reach }) => {
+        const dx = (b[0] ?? 0) - (a[0] ?? 0);
+        const dz = (b[2] ?? 0) - (a[2] ?? 0);
+        const t = clamp01(
+          ((x - (a[0] ?? 0)) * dx + (z - (a[2] ?? 0)) * dz) / (dx * dx + dz * dz || 1),
+        );
+        const distance = Math.hypot(x - (a[0] ?? 0) - t * dx, z - (a[2] ?? 0) - t * dz);
+        const level = (a[1] ?? 0) + t * ((b[1] ?? 0) - (a[1] ?? 0));
+        return distance < reach && clampedHeight(data, x, z) < level + 0.35;
+      },
+    );
   const wet = (x: number, z: number) =>
     (data.waterLevel !== null && clampedHeight(data, x, z) < data.waterLevel + 0.35) ||
-    (tundra &&
-      (data.rivers ?? []).some((river) =>
-        river.points.some((b, index) => {
-          const a = river.points[index - 1];
-          if (!a) return false;
-          const dx = (b[0] ?? 0) - (a[0] ?? 0);
-          const dz = (b[2] ?? 0) - (a[2] ?? 0);
-          const t = clamp01(
-            ((x - (a[0] ?? 0)) * dx + (z - (a[2] ?? 0)) * dz) / (dx * dx + dz * dz || 1),
-          );
-          const distance = Math.hypot(x - (a[0] ?? 0) - t * dx, z - (a[2] ?? 0) - t * dz);
-          const level = (a[1] ?? 0) + t * ((b[1] ?? 0) - (a[1] ?? 0));
-          return distance < river.width * 2.5 && clampedHeight(data, x, z) < level + 0.35;
-        }),
-      )) ||
+    (tundra && nearRiver(x, z)) ||
     (data.lakes ?? []).some(
       (lake) =>
         Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0)) < lake.radius &&
