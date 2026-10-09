@@ -1389,7 +1389,7 @@ if (runtime.tsl !== undefined) {
   defineTypeFlags(engine.classes as never);
   // biome-ignore lint/suspicious/noExplicitAny: the parity scene drives three and the engine through one shape
   type Loose = any;
-  const K = engine.classes as unknown as Record<string, new (...args: unknown[]) => Loose>;
+  const K = engine.classes as unknown as Record<string, Loose>;
   const T = (await import(
     pathToFileURL(fromNative.resolve("three/webgpu")).href
   )) as unknown as typeof K;

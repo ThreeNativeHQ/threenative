@@ -327,7 +327,7 @@ try {
   stripMaterial.vertexNode = cameraProjectionMatrix.mul(
     cameraViewMatrix.mul(vec4(positionLocal.add(attribute("aOffset", "vec3")), 1)),
   );
-  stripMaterial.colorNode = vec4(attribute("aTint", "vec3"), 1);
+  stripMaterial.colorNode = vec4(attribute<"vec3">("aTint", "vec3"), 1);
   const stripScene = new Scene();
   stripScene.add(new Mesh(strip, stripMaterial));
   probe.instancedStrip = await drawStrip(stripScene);
