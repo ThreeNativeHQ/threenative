@@ -1304,8 +1304,13 @@ Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVari
     source.vertex.setInvariantPosition(vv.invariantPosition);
     shader::StageModule vertex = shader::buildStage(source.vertex, 0);
     shader::StageModule fragment = shader::buildStage(source.fragment, 1);
-    if (!vertex.wgsl.ok() || !fragment.wgsl.ok())
-        throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + key);
+    if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
+        // The builder's own reasons first: a program key alone names no failing node.
+        std::string reasons;
+        for (const auto* errors : {&vertex.wgsl.errors, &fragment.wgsl.errors})
+            for (const std::string& error : *errors) reasons += (reasons.empty() ? "" : "; ") + error;
+        throw std::runtime_error("TN_NATIVE_SHADER_INVALID: " + reasons + " (material program " + key + ")");
+    }
     return add(key, std::move(vertex), std::move(fragment));
 }
 
