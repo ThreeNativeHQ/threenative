@@ -224,7 +224,9 @@ export function addForestWater(
     const surface = new WaterSurface3D({
       level: lake.level,
       maxThickness: 4,
-      reflection: { resolutionScale: 0.5, layers: 1 << SKY_REFLECTION_LAYER },
+      // The mirror holds only the sky, which barely changes: redrawing it every fourth frame keeps the
+      // water's look and takes the second world draw off most frames (the lake's cost in the ground view).
+      reflection: { resolutionScale: 0.5, layers: 1 << SKY_REFLECTION_LAYER, refreshInterval: 4 },
     });
     surfaces.push(surface);
     meshes.push(
