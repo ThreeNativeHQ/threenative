@@ -438,6 +438,13 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
 }
 
 double tslEffectParameter(const g::Node& node, const std::string& name, const double* value) {
+    if (const g::Node uniform = g::bloomParameter(node, name)) {
+        if (value) {
+            if (!std::isfinite(*value)) throw std::runtime_error("expected a finite number");
+            g::setUniformValues(uniform, {static_cast<float>(*value)});
+        }
+        return uniform->values.at(0);
+    }
     if (!node || node->kind != g::Kind::PostEffect || !node->post) throw std::runtime_error("not a live post effect");
     auto& effect = const_cast<g::PostEffect&>(*node->post);  // ponytail: live effects are built mutable
     if (name == "resolutionScale") {

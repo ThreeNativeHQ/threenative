@@ -25,6 +25,8 @@ struct PostPass {
     // Shader binding name -> render graph resource name. All inputs require a producer.
     std::map<std::string, std::string> reads;
     std::map<std::string, std::vector<float>> uniforms;
+    /** The graph's uniform nodes, read each frame over `uniforms`: three's `uniform.value = x` after install. */
+    std::vector<Node> live;
     std::vector<PostImage> images;
     float resolutionScale = 1;
     uint32_t width = 0, height = 0; // RTT fixed dimensions; zero uses viewport
@@ -49,6 +51,9 @@ std::shared_ptr<PostEffect> gtaoEffect(Node depth, Node normal);
 std::shared_ptr<PostEffect> denoiseEffect(Node input, Node depth, Node normal, uint32_t seed);
 /** SMAANode(input) with three's embedded area and search tables. */
 std::shared_ptr<PostEffect> smaaEffect(Node input);
+/** A `bloom()` node's uniform for BloomNode's `strength`, `radius`, `threshold` or `smoothWidth`; null
+ *  when the node is no bloom or the name is no such uniform. */
+Node bloomParameter(const Node& bloomNode, std::string_view name);
 /** The node a live effect is used as: its output texture, a vec4 as three's effect nodes sample. */
 Node effectNode(const std::shared_ptr<PostEffect>& effect);
 /** three's luminosity high pass, five separable mip blurs and composite (BloomNode r185), as render textures. */

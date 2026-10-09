@@ -122,7 +122,29 @@ async function postAddons(program, renderer, scene, camera) {
     return filtered.div(float(1).sub(peak(filtered)).max(1e-4));
   };
   let node;
-  if (program === "post-ao") node = occlusion(colour);
+  // Written after the first frame, as a game's settings menu or a per-frame driver writes them; the
+  // captured second frame must show the new values.
+  let afterFirstFrame;
+  if (program === "post-live-parameters") {
+    const contact = ao(depth, normal, camera);
+    contact.radius.value = 0.35;
+    const glow = bloom(colour, 0.7, 0.5, 0.2);
+    node = colour.mul(contact.getTextureNode().r).add(glow);
+    afterFirstFrame = () => {
+      contact.resolutionScale = 0.5;
+      glow.strength.value = 0.3;
+      glow.radius.value = 0.9;
+      glow.threshold.value = 0.8;
+    };
+  } else if (program === "post-uniform-write") {
+    const gain = uniform(0.25);
+    const lift = uniform(0.4);
+    node = convertToTexture(colour.mul(lift)).mul(gain);
+    afterFirstFrame = () => {
+      gain.value = 1;
+      lift.value = 1.5;
+    };
+  } else if (program === "post-ao") node = occlusion(colour);
   else if (program === "post-ao-raw") {
     const contact = ao(depth, normal, camera);
     contact.radius.value = 0.35;
@@ -143,6 +165,11 @@ async function postAddons(program, renderer, scene, camera) {
   }
   const pipeline = new RenderPipeline(renderer);
   pipeline.outputNode = node;
+  if (afterFirstFrame) {
+    pipeline.render();
+    await renderer.backend.device.queue.onSubmittedWorkDone();
+    afterFirstFrame();
+  }
   return { render: () => pipeline.render() };
 }
 
@@ -717,6 +744,12 @@ export const programs = {
   },
   async "post-template-high"({ renderer, scene, camera }) {
     return postAddons("post-template-high", renderer, scene, camera);
+  },
+  async "post-live-parameters"({ renderer, scene, camera }) {
+    return postAddons("post-live-parameters", renderer, scene, camera);
+  },
+  async "post-uniform-write"({ renderer, scene, camera }) {
+    return postAddons("post-uniform-write", renderer, scene, camera);
   },
 
   async "post-chromatic"({ renderer, scene, camera }) {

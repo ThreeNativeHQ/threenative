@@ -2,6 +2,7 @@
 #include "render_texture_pass.h"
 #include "engine/shader/output.h"
 #include "engine/shader/tsl/tsl.h"
+#include <cctype>
 #include <cmath>
 #include <unordered_set>
 #include <stdexcept>
@@ -485,6 +486,7 @@ std::vector<PostPass> postPasses(Node root) {
                 if (binding.kind == BindingKind::Texture)
                     material.reads[binding.name.substr(2)] = binding.name.substr(2);
             material.uniforms = uniforms(effect.inputs[0]);
+            material.live = uniformNodes(effect.inputs[0]);
             material.package.variants.push_back({0, {buildStage(programs.vertex), std::move(fragment)}});
             passes.push_back(std::move(material));
             passes.push_back(rawPass(effect, edges, kSmaaEdges, {{"input", input}}));
@@ -752,7 +754,21 @@ Node bloom(Node input, double strength, double radius, double threshold) {
         sum = add(sum, mul(mul(mips[i], mix(factor, sub(float_(1.2), factor), radiusU)),
                            vec4({vec3({float_(1)}), float_(1)})));
     }
-    return renderTexture(mul(sum, strengthU), resolutionScale);
+    // Named after the bloom, so bloomParameter finds its strength, radius, threshold and smoothWidth.
+    auto output = std::make_shared<NodeData>(*renderTexture(mul(sum, strengthU), resolutionScale));
+    output->name = "native_bloom_" + id;
+    return output;
+}
+
+Node bloomParameter(const Node& bloomNode, std::string_view name) {
+    constexpr std::string_view prefix = "native_bloom_";
+    if (!bloomNode || bloomNode->kind != Kind::RenderTexture || !bloomNode->name.starts_with(prefix)) return {};
+    if (name != "strength" && name != "radius" && name != "threshold" && name != "smoothWidth") return {};
+    const std::string uniformName = "bloom" + std::string(1, char(std::toupper(name.front()))) +
+                                    std::string(name.substr(1)) + bloomNode->name.substr(prefix.size());
+    for (const Node& node : uniformNodes(bloomNode))
+        if (node->name == uniformName) return node;
+    return {};
 }
 
 } // namespace tn::engine::shader::graph

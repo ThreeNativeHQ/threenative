@@ -7581,6 +7581,11 @@
         "source": "three"
       },
       {
+        "symbol": "CapsuleGeometry",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "CatmullRomCurve3",
         "kind": "class",
         "source": "three"
@@ -7622,6 +7627,11 @@
       },
       {
         "symbol": "DirectionalLightShadow",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "DodecahedronGeometry",
         "kind": "class",
         "source": "three"
       },
@@ -7697,6 +7707,11 @@
       },
       {
         "symbol": "HemisphereLight",
+        "kind": "class",
+        "source": "three/webgpu"
+      },
+      {
+        "symbol": "IcosahedronGeometry",
         "kind": "class",
         "source": "three/webgpu"
       },
@@ -7852,6 +7867,11 @@
       },
       {
         "symbol": "Object3D",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "OctahedronGeometry",
         "kind": "class",
         "source": "three"
       },
@@ -8024,6 +8044,11 @@
         "symbol": "TorusGeometry",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "TorusKnotGeometry",
+        "kind": "class",
+        "source": "three"
       },
       {
         "symbol": "TubeGeometry",

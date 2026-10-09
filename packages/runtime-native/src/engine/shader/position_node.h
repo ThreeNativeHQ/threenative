@@ -56,6 +56,8 @@ struct PostNode {
     std::function<uint32_t(Program& fragment, uint32_t sceneTexture, uint32_t screenUv)> build;
     std::vector<graph::PostPass> passes;
     std::map<std::string, std::vector<float>> uniforms;
+    /** The graph's uniform nodes, read each frame over `uniforms` (three's `uniform.value = x`). */
+    std::vector<graph::Node> live;
 };
 
 }  // namespace tn::engine::shader

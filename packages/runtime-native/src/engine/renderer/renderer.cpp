@@ -2257,6 +2257,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
+    if (postEffects_ && postEffects_->syncScales()) releaseOutputGroup();
     if (postEffects_) postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_);
     outputPass(encoder, timed, presentTarget, presentFormat);
     if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 6, gpu_.buffer(timestampResolve_), 0);
@@ -2288,6 +2289,8 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureVie
     WGPURenderPipeline pipeline = pipelines_.get(outputVertex_, &outputFragment_, outputTarget);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
+    if (post_)
+        for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
     for (const auto& field : outputFragment_.uniforms) {
         const auto value = postUniforms_.find(field.name);
         if (value == postUniforms_.end()) continue;

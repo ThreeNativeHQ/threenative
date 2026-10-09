@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace tn::fixture {
@@ -220,7 +221,9 @@ inline void postChromatic(engine::Renderer& renderer) {
  * the minimal template's high-tier chain, stage for stage: exposure, GTAO with its denoise, bloom,
  * vignette, then SMAA under the reversible Karis squeeze.
  */
-inline std::string postAddons(const std::string& program, engine::Renderer& renderer) {
+inline std::string postAddons(const std::string& program, engine::Renderer& renderer,
+                              const std::function<std::string(uint32_t, uint32_t)>& renderAt, uint32_t width,
+                              uint32_t height) {
     namespace g = engine::shader::graph;
     const auto colour = g::texture("scene", g::uv()), depth = g::texture("depth", g::uv()),
                normal = g::texture("normal", g::uv());
@@ -252,6 +255,41 @@ inline std::string postAddons(const std::string& program, engine::Renderer& rend
         root = g::mul(colour, g::swizzle(g::effectNode(contact), "x"));
     }
     else if (program == "post-bloom") root = g::add(colour, g::bloom(colour, 0.7, 0.5, 0.2));
+    else if (program == "post-live-parameters" || program == "post-uniform-write") {
+        // Written after the first frame through the calls both language back ends make
+        // (`ao.resolutionScale = s`, `bloomNode.strength.value = v`, `uniform.value = v`).
+        std::function<void()> afterFirstFrame;
+        if (program == "post-live-parameters") {
+            auto effect = g::gtaoEffect(depth, normal);
+            effect->parameters["radius"] = {0.35f};
+            const auto contact = g::effectNode(effect);
+            const auto glow = g::bloom(colour, 0.7, 0.5, 0.2);
+            root = g::add(g::mul(colour, g::swizzle(contact, "x")), glow);
+            afterFirstFrame = [contact, glow] {
+                for (const auto& [node, name, value] : {std::tuple{contact, "resolutionScale", 0.5},
+                                                        {glow, "strength", 0.3}, {glow, "radius", 0.9},
+                                                        {glow, "threshold", 0.8}})
+                    abi::tslEffectParameter(node, name, &value);
+            };
+        } else {
+            const auto gain = g::uniform("fixtureGain", engine::shader::Type::f32(), {0.25f});
+            const auto lift = g::uniform("fixtureLift", engine::shader::Type::f32(), {0.4f});
+            root = g::mul(rtt(g::mul(colour, lift)), gain);
+            afterFirstFrame = [gain, lift] {
+                const double one = 1, more = 1.5;
+                abi::tslSetUniform(gain, &one, 1);
+                abi::tslSetUniform(lift, &more, 1);
+            };
+        }
+        renderer.setPostGraph(root);
+        try {
+            if (const auto failed = renderAt(width, height); !failed.empty()) return failed;
+            afterFirstFrame();
+        } catch (const std::exception& error) {
+            return error.what();
+        }
+        return "";
+    }
     else if (program == "post-smaa") root = antialias(colour);
     else if (program == "post-template-high") {
         auto input = occlusion(g::mul(colour, g::float_(0.62)));
@@ -370,8 +408,9 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         }
         return "";
     }
-    if (program == "post-ao" || program == "post-ao-raw" || program == "post-bloom" || program == "post-smaa" || program == "post-template-high")
-        return tsl_detail::postAddons(program, renderer);
+    if (program == "post-ao" || program == "post-ao-raw" || program == "post-bloom" || program == "post-smaa" ||
+        program == "post-template-high" || program == "post-live-parameters" || program == "post-uniform-write")
+        return tsl_detail::postAddons(program, renderer, renderAt, renderer.width(), renderer.height());
     if (program == "post-chromatic") {
         tsl_detail::postChromatic(renderer);
         return "";
