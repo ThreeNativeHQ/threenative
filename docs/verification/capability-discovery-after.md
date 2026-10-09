@@ -27,8 +27,11 @@ claude --print --no-session-persistence --strict-mcp-config --mcp-config .mcp.js
 The new full transcripts are committed here:
 
 - [repair 4 run 1](capability-discovery-after-repair-4-valid-run-1.jsonl)
-- [repair 4 run 2](capability-discovery-after-repair-4-valid-run-2.jsonl)
+- [repair 4 run 2](capability-discovery-after-repair-4-valid-run-2.jsonl.gz)
 - [repair 4 run 3](capability-discovery-after-repair-4-valid-run-3.jsonl)
+
+Run 2 is stored gzip-compressed; the bytes are unchanged. Restore it with
+`gzip -dc capability-discovery-after-repair-4-valid-run-2.jsonl.gz > capability-discovery-after-repair-4-valid-run-2.jsonl`.
 
 The first `engine_search_capabilities` call preceded the first `Edit` or `Write` in every
 transcript: run 1, lines 37 and 157; run 2, lines 26 and 142; run 3, lines 27 and 128. All three

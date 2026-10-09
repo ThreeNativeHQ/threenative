@@ -1,7 +1,7 @@
 # PRD-384 — Adaptive resolution must distinguish host delay from GPU cost
 
 **Status:** PARTIAL
-**Priority:** P1 — Declared required by P1 PRD-455's temporal reconstruction; one open box, native controller execution for the landed scaler.
+**Priority:** P1 — Declared required by P1 PRD-539's temporal reconstruction (successor of PRD-455); one open box, native controller execution for the landed scaler.
 **Complexity:** 5 (MEDIUM); risk override: none
 **Owner:** Codex
 **Depends on:** PRD-228; Midway's installed PRD-382 engine branch

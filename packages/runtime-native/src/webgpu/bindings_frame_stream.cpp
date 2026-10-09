@@ -73,7 +73,7 @@ constexpr uint32_t kFramePlanHeaderBytes = 24;
 constexpr uint32_t kFramePlanModeCapture = 1;
 constexpr uint32_t kFramePlanModePatch = 2;
 
-const char* const kFrameOpNames[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy", "resolveQuerySet"};
+const char* const kFrameOpNames[] = {"", "writeBuffer", "createCommandEncoder", "beginRenderPass", "render.setPipeline", "render.setBindGroup", "render.setVertexBuffer", "render.setIndexBuffer", "render.draw", "render.drawIndexed", "render.drawIndirect", "render.drawIndexedIndirect", "render.setViewport", "render.setScissorRect", "render.setBlendConstant", "render.setStencilReference", "render.executeBundles", "render.end", "beginComputePass", "compute.setPipeline", "compute.setBindGroup", "compute.dispatchWorkgroups", "compute.end", "copyBufferToBuffer", "copyBufferToTexture", "copyTextureToBuffer", "copyTextureToTexture", "clearBuffer", "finish", "submit", "writeTexture", "copyExternalImageToTexture", "buffer.destroy", "texture.destroy", "resolveQuerySet", "compute.dispatchWorkgroupsIndirect"};
 constexpr size_t kFrameOpCount = std::size(kFrameOpNames);
 
 // Walks a captured record stream and writes its record boundaries into the caller's index. The
@@ -1010,6 +1010,19 @@ static bool replayFrameRecords(BindingsState* state, const uint8_t* data, size_t
                 }
                 wgpuCommandEncoderResolveQuerySet(e, q, first, count, dst,
                                                   static_cast<uint64_t>(offset));
+                break;
+            }
+            case 35: {
+                auto p = computePass(r.u32());
+                if (!r.ok)
+                    break;
+                auto b = buffer(r.u32());
+                if (!r.ok)
+                    break;
+                const uint64_t off = static_cast<uint64_t>(r.f64());
+                if (!r.ok)
+                    break;
+                wgpuComputePassEncoderDispatchWorkgroupsIndirect(p, b, off);
                 break;
             }
             default:

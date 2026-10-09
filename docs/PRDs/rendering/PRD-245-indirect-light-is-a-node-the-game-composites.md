@@ -13,6 +13,7 @@ executed. Depends on
 [PRD-242](../done/PRD-242-gpu-simulation-has-one-lifetime.md) for lifetime and
 [PRD-244](../done/PRD-244-the-scenes-bvh-reaches-the-gpu.md) for the traceable scene.**
 
+**Priority:** P2 — Its own status says nothing below has been executed: the surfel GI node, the TSL depth/normal/albedo nodes and the colour-bleed A/B capture are open.
 Source of the borrowed architecture: [`jure/webgiya`](https://github.com/jure/webgiya), MIT, cloned
 at depth 1 on 2026-08-28 and read (7 509 lines across `src/`). **Nothing is copied.**
 

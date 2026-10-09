@@ -172,30 +172,32 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
+// Recomputed in the isolated PR398 lane for linear coverage blending and coherent input moments;
+// actual no-install generation changes only starter. All thirteen generator hashes were measured.
+// Recomputed for the additional matched-surface depth guard; all other twelve stay unchanged.
+// Recomputed for bounded integer depth donors; actual no-install generation changes only starter.
+// Recomputed after existing temporal declarations moved; all thirteen trees measured, only starter moves.
 // Re-measured on current develop plus TS7: restoring only each compiler manifest and
 // rain's shader API import recovers all 13 develop fingerprints.
 // PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // PR388 re-measured on top of develop: only package.json patch declarations and the copied
-  // Vite/Tailwind patch bytes differ. Base: PR440 merged with develop 45565868:
-  // TS7/API6 compiler pins plus shared render graph and actual-render-camera light layers.
-  // Recomputed on the runbook merge with origin/develop (a683fcff3): both lanes changed template
-  // source, so neither side's values apply. These are the merged tree's createProject measurement.
-  "action-rpg": "237206ea11d4756e153bc4eafeaba74f91068ae65773b602b8e9b92ecefdcea9",
-  minimal: "e147e3aa9d5d8960b32c8a2e822124578b3fcd923334c726642b35bc0afb3b2b",
-  platformer: "c4d7eb7d2d26be0b4e4336c602cab32c18719a1929c040a5d9389d5426265b1b",
-  puzzle: "4c9e0611e5325e665fd67109f85e0261074f669202d586edb6873e2373e2f975",
-  racing: "a35f6dc8faeb71e6d6ded0d061f0f140f71f9670ca570bf4d4dc3a584a7f9826",
-  rain: "0c4f1e5380c0dbc3e4dc7c01cfa9a5eb7c1bb2084b1912d0e9c8c2ad45dff54e",
-  rts: "aff4a13e4efd7a213b146310c7e90f1fb96b5bcb7e0453337278b17c7913d2c4",
-  runner: "ecc05987b670152af7b1f3e59bd31a88701c03091c9d3afae5c0ee31bbb8852e",
-  sailing: "db85bfd54546d5bdbede5dabaefc4fda376590e20cb83aaa979508079cf4a5ee",
-  shooter: "5f7326c2e94ac9b3c791a7a392534527a6a16979bb45ba04179b7582ecaf11bf",
-  snow: "bdd0fb84aeba266b7b9f28fafad4fdd8665b9960e4d1b043a2f8c0fc34328d19",
-  starter: "6ff8c85dfd95538306e50d7d3226f3373abc51769bf92eef2d39d99838042614",
-  "tower-defense": "f92b9ad5e0e55fd2bf19d654b166683f1b9d83ec90296c9ecd8740d057858070",
+  // Recomputed on the PRD-478 merge into PR 473 (develop f7dd08621 + the runbook branch): the
+  // merged Three patch changes every kit; starter also carries the merged render source.
+  "action-rpg": "6290ebada667c653ad0dd4183c1360c57cdb100e97e63b74da6bc8f1aabb9905",
+  minimal: "033f1c132812284d256eec7eeb32d31368af172c050aef5ce3cbcec697a7c592",
+  platformer: "7eb5b9e461fbfd8775afefde8ee5cdc9fe424d86b8e2ed23e0f309cc45597fbb",
+  puzzle: "5aaa232645204a4e3db1b51afcb3827e7817bf23f27e493ce77a501d72fe5d4e",
+  racing: "9024d19aa167f196c359d6aa4d1b1982dbc7597f03db0be312ad2f81a6cc2afe",
+  rain: "993b07771f4d89939c654c85fac94a5be57df6ce79e3050d85759960c0a0f3ef",
+  rts: "32917ec8d47eae294ddcb57111ccbf01e935610de6748cb32577bcee17980a82",
+  runner: "110a6143136e63d4aafa64963c044f07f226ea4efbdbd656d97d66f53b0ca017",
+  sailing: "e0488d7edfa402a1917ddf6601290cba5d6d8714357f7e7c84b3e88226954173",
+  shooter: "5e47ad5c3220b9d0c4490ed3c430df9c4881509b7231d550197e6f007532cc53",
+  snow: "a4c6d586a7bdcd9bc762cd3da0a9c6cfd59bfe18ae7d5063c82a6a96f5a8de02",
+  starter: "0de01670d419d82da65df78232b5854c90ba1732d798f89ca3a4d8e50317c0fd",
+  "tower-defense": "79183bdd8c3d0f5e20ff05944fc8ba64dd0bc2b81be6816971dcb189d327d0eb",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -295,6 +297,17 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
+  "src/render/temporalAA.ts",
+  "src/render/temporalAAInput.ts",
+  "src/render/temporalAAResolve.ts",
+  "src/render/temporalCurrentArea.ts",
+  "src/render/temporalCurrentFootprint.ts",
+  "src/render/temporalCurrentFootprintMath.ts",
+  "src/render/temporalCurrentProducer.ts",
+  "src/render/temporalCurrentReplay.ts",
+  "src/render/temporalCurrentSelection.ts",
+  "src/render/temporalCurrentVisibility.ts",
+  "src/render/temporalResolve.ts",
   "src/render/exposure.ts",
   "src/render/autoExposure.ts",
   "src/render/volumetricFog.ts",

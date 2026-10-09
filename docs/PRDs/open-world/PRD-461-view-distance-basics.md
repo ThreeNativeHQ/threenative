@@ -1,9 +1,13 @@
 # PRD-461 — View distance basics: terrain radius, near-only colliders, and fog that hides the stream edge
 
-**Status:** NOT STARTED
-**Complexity:** 1 (LOW); risk override: none. Three implementation files (`core` twice, the example's render source), and the rest is a recipe, guidance and its proof. It cannot start before the in-flight change below.
+**Status:** READY — NOT STARTED, and the blocker is gone. `terrain.streamRadius` and
+`terrain.colliderRadius` shipped in `4f9638c2e` (PR #358, 2026-09-27, "world streaming — scatter LOD,
+streaming perf, PRDs 453–457"); `world-cells.ts:337` and `:3919` read them today. The remaining
+prerequisite items below (multi-primitive scatter assets, transparent scatter as cutout) are not named
+in this PRD's own acceptance criteria, so they no longer gate it.
+**Complexity:** 1 (LOW); risk override: none. Three implementation files (`core` twice, the example's render source), and the rest is a recipe, guidance and its proof.
 **Owner:** unassigned (drafted by Claude, 2026-09-26)
-**Depends on:** the in-flight scatter/terrain change, which is **prerequisite, not this PRD's scope**: `terrain.streamRadius` and `terrain.colliderRadius` options, multi-primitive scatter assets, and transparent scatter drawn as cutout. PRD-459 and PRD-460 are independent of it and neither waits for it.
+**Depends on:** was blocked on the scatter/terrain change — `terrain.streamRadius` and `terrain.colliderRadius` options, multi-primitive scatter assets, and transparent scatter drawn as cutout. The two options **landed** in `4f9638c2e` (PR #358); PRD-459 and PRD-460 are independent of the whole change.
 
 **Priority:** P1 — Ready and unticked: terrain radius is still the prop ring, every resident tile still gets a collider, and nothing hides the stream edge.
 ## Context
@@ -28,8 +32,8 @@ Machinefall's 2 km map streams 25 cells of 128 m at ring 2 — a 640 m resident 
 A default recipe for a 2 km map, enforced where it can be measured, with the rest documented.
 
 1. **Terrain radius and collider radius become the game's own numbers** — prerequisite options
-   forwarded through `IWorldCellsTerrainOptions`, which today carries only tile size, resolution,
-   LOD factors, LOD distances and skirt depth (`packages/core/src/world-cells.ts:47`).
+   forwarded through `IWorldCellsTerrainOptions`. **These shipped in `4f9638c2e` (PR #358)**; the
+   remaining work is the tile budget below following the terrain radius rather than the ring.
 2. **Colliders live near the player, not near the render radius.** A tile outside `colliderRadius`
    draws but has no collider, and a collider whose tile leaves the radius as the player moves is
    disposed then, not when the tile is evicted. That is the behaviour this PRD owns; the option
@@ -83,7 +87,7 @@ simulation LOD, and any engine-owned fog or atmosphere default.
 
 #### Phase 1: Radius and collider lifetime
 
-**Status:** NOT STARTED (waiting on the prerequisite options)
+**Status:** READY — NOT STARTED; the prerequisite options it was waiting on shipped in `4f9638c2e` (PR #358).
 **Files:** `packages/core/src/world-cells.ts` (forward `streamRadius` / `colliderRadius`, derive the tile budget from the terrain radius), `packages/core/src/world-tiles.ts` (collider lifetime as the player moves), `packages/core/__tests__/world-cells-view-distance.spec.ts`.
 **Implementation:** the terrain budget follows the terrain radius rather than the ring; a tile outside the collider radius draws with an `EmptyCollider`, and a collider whose tile leaves the radius is disposed on that step.
 **Verification:** `pnpm --filter @threenative/core test world-cells-view-distance world-tiles` — AC-1, AC-2; the existing world and world-tiles suites stay green.

@@ -17,8 +17,10 @@ import {
 import { instance, pass, skinning } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { VelocityNode, WGSLNodeBuilder } from "three/webgpu";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import * as projectionPlan from "../src/projection-plan.js";
+import { readBatchedMeshPreviousMatrices } from "../src/render/batched-velocity.js";
 import { type IRenderChainRenderer, RenderChain } from "../src/render/chain.js";
 import {
   VelocityTracker,
@@ -133,7 +135,9 @@ function buildVelocityUpdateNodes(object: Object3D, node: Node): IInspectableVel
 }
 
 function runObjectUpdate(builder: IInspectableVelocityBuilder, object: Object3D): void {
-  const event = [...builder.nodes].find(isObjectEvent);
+  const event =
+    [...builder.nodes].find((node) => Reflect.get(node, "eventType") === "beforeObject") ??
+    [...builder.nodes].find(isObjectEvent);
   if (event === undefined) throw new Error("velocity fixture did not build an object update");
   event.update({ frameId: 1, object });
 }
@@ -318,6 +322,144 @@ describe("velocity provisioning on the shipped path", () => {
     tracker.clear();
   });
 
+  it("commits authored sub-draw history when projection is disabled", () => {
+    const { batch, movingBatchInstanceId, scene } = velocitySceneFixture();
+    const scan = vi.spyOn(projectionPlan, "scanProjection");
+    const projection = new SceneRenderProjection(scene, {
+      projection: false,
+      velocity: true,
+      onReport: () => undefined,
+    });
+    try {
+      projection.reconcile();
+      expect(projection.root).toBe(scene);
+      expect(projection.report).toMatchObject({ reasonCode: "disabled", batches: 0 });
+      const first = batchMatrixData(batch, "_matricesTexture").slice();
+      expect(batchMatrixData(batch, "_previousMatricesTexture")).toEqual(first);
+      expect(batchMatrixData(batch, "_previousMatricesTexture")).not.toBe(
+        batchMatrixData(batch, "_matricesTexture"),
+      );
+      projection.commit();
+
+      batch.setMatrixAt(movingBatchInstanceId, new Matrix4().makeTranslation(6.05, 0, 0));
+      projection.reconcile();
+      expect(batchMatrixData(batch, "_previousMatricesTexture")).toEqual(first);
+      expect(batchMatrixData(batch, "_matricesTexture")).not.toEqual(first);
+      const moved = batchMatrixData(batch, "_matricesTexture").slice();
+      projection.commit();
+      // Committing cannot rewrite the history the just-rendered frame consumed.
+      expect(batchMatrixData(batch, "_previousMatricesTexture")).toEqual(first);
+      projection.reconcile();
+      expect(batchMatrixData(batch, "_previousMatricesTexture")).toEqual(moved);
+      expect(scan).not.toHaveBeenCalled();
+    } finally {
+      projection.dispose();
+      scan.mockRestore();
+    }
+  });
+
+  it("resets opted-out history when temporal rendering is toggled and releases owned textures", () => {
+    const { batch, movingBatchInstanceId, scene } = velocitySceneFixture();
+    batch.userData.useVelocity = false;
+    let velocity = false;
+    const projection = new SceneRenderProjection(scene, {
+      projection: false,
+      velocity: () => velocity,
+      onReport: () => undefined,
+    });
+    projection.reconcile();
+    projection.commit();
+    expect(readBatchedMeshPreviousMatrices(batch)).toBeUndefined();
+    velocity = true;
+    projection.reconcile();
+    projection.commit();
+    const firstTexture = readBatchedMeshPreviousMatrices(batch);
+    expect(firstTexture).toBeDefined();
+    let disposals = 0;
+    firstTexture?.addEventListener("dispose", () => {
+      disposals += 1;
+    });
+    expect(batch.userData.useVelocity).toBe(true);
+
+    velocity = false;
+    projection.reconcile();
+    projection.commit();
+    expect(disposals).toBe(1);
+    expect(readBatchedMeshPreviousMatrices(batch)).toBeUndefined();
+    expect(readVelocityPreviousMatrices(batch)).toBeUndefined();
+    expect(readVelocityPreviousWorldMatrix(batch)).toBeUndefined();
+    expect(batch.userData.useVelocity).toBe(false);
+
+    batch.setMatrixAt(movingBatchInstanceId, new Matrix4().makeTranslation(8, 0, 0));
+    velocity = true;
+    projection.reconcile();
+    expect(batchMatrixData(batch, "_previousMatricesTexture")).toEqual(
+      batchMatrixData(batch, "_matricesTexture"),
+    );
+    const secondTexture = readBatchedMeshPreviousMatrices(batch);
+    expect(secondTexture).not.toBe(firstTexture);
+    secondTexture?.addEventListener("dispose", () => {
+      disposals += 1;
+    });
+    projection.dispose();
+    projection.dispose();
+    expect(disposals).toBe(2);
+    expect(readBatchedMeshPreviousMatrices(batch)).toBeUndefined();
+    expect(batch.userData.useVelocity).toBe(false);
+  });
+
+  it("releases authored batch history when an opted-out scene removes the batch", () => {
+    const { batch, scene } = velocitySceneFixture();
+    const projection = new SceneRenderProjection(scene, {
+      projection: false,
+      velocity: true,
+      onReport: () => undefined,
+    });
+    projection.reconcile();
+    const texture = readBatchedMeshPreviousMatrices(batch);
+    expect(texture).toBeDefined();
+    let disposals = 0;
+    texture?.addEventListener("dispose", () => {
+      disposals += 1;
+    });
+    scene.remove(batch);
+    projection.reconcile();
+    projection.commit();
+    expect(disposals).toBe(1);
+    expect(readBatchedMeshPreviousMatrices(batch)).toBeUndefined();
+    expect(readVelocityPreviousMatrices(batch)).toBeUndefined();
+    expect(batch.userData).not.toHaveProperty("useVelocity");
+    projection.dispose();
+    expect(disposals).toBe(1);
+  });
+
+  it("does no history traversal with projection and temporal rendering disabled", () => {
+    const { batch, scene } = velocitySceneFixture();
+    const walk = vi.spyOn(scene, "traverse");
+    const matrices = vi.spyOn(scene, "updateMatrixWorld");
+    const projection = new SceneRenderProjection(scene, {
+      projection: false,
+      velocity: false,
+      onReport: () => undefined,
+    });
+    // The one-time disabled report counts renderables; steady frames do no history work.
+    projection.reconcile();
+    walk.mockClear();
+    matrices.mockClear();
+    for (let frame = 0; frame < 3; frame += 1) {
+      projection.reconcile();
+      projection.commit();
+    }
+    expect(walk).not.toHaveBeenCalled();
+    expect(matrices).not.toHaveBeenCalled();
+    expect(readBatchedMeshPreviousMatrices(batch)).toBeUndefined();
+    expect(readVelocityPreviousMatrices(batch)).toBeUndefined();
+    expect(batch.userData).not.toHaveProperty("useVelocity");
+    projection.dispose();
+    walk.mockRestore();
+    matrices.mockRestore();
+  });
+
   it("freezes rigid and bone history at the scheduled frame boundary", () => {
     const scene = new Scene();
     const rigid = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
@@ -466,7 +608,7 @@ describe("velocity provisioning on the shipped path", () => {
     expect(textureNames(missingProviderPass)).not.toContain("velocity");
   });
 
-  it("renders non-zero MRT footprints for moved rigid, skinned, instanced, and batched objects", () => {
+  it.each([true, false])("renders non-zero MRT footprints with projection %s", (enabled) => {
     const fixture = velocitySceneFixture();
     const renderer = new SoftwareVelocityRenderer(fixture.scenePass, 200, 100);
     let receivedVelocityNode: Node | undefined;
@@ -486,9 +628,13 @@ describe("velocity provisioning on the shipped path", () => {
       report: () => undefined,
     });
 
-    const tracker = new VelocityTracker();
-    tracker.update(fixture.scene);
-    tracker.commit(fixture.scene);
+    const projection = new SceneRenderProjection(fixture.scene, {
+      projection: enabled,
+      velocity: true,
+      onReport: () => undefined,
+    });
+    projection.reconcile();
+    projection.commit();
 
     fixture.rigid.position.x += 0.75;
     const rootBone = fixture.character.skeleton.bones[0];
@@ -500,7 +646,7 @@ describe("velocity provisioning on the shipped path", () => {
       new Matrix4().makeTranslation(6.05, 0, 0),
     );
     fixture.scene.updateMatrixWorld(true);
-    tracker.update(fixture.scene);
+    projection.reconcile();
 
     renderer.setShaderState(
       prepareVelocityShaderState(fixture.camera, {
@@ -508,7 +654,7 @@ describe("velocity provisioning on the shipped path", () => {
       }),
     );
     const rendered = renderer.render(fixture.camera);
-    tracker.commit(fixture.scene);
+    projection.commit();
 
     expect(chain.applied.velocity).toMatchObject({ provisioned: true, source: "mrt" });
     expect(fixture.scenePass.getMRT()?.has("velocity")).toBe(true);
@@ -525,6 +671,7 @@ describe("velocity provisioning on the shipped path", () => {
     expect(rendered.footprints.get("instanced-static")?.movingPixels).toBe(0);
     expect(rendered.footprints.get("batched-moving")?.movingPixels).toBeGreaterThan(0);
     expect(rendered.footprints.get("batched-static")?.movingPixels).toBe(0);
+    projection.dispose();
   });
 
   it("feeds the scheduled snapshots into Three's instance and skinning update hooks", () => {

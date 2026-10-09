@@ -191,6 +191,22 @@ Read back what is happening with `stats()`:
 
 Call `dispose()` to release every cell, batch, chunk model and the terrain.
 
+### Virtualized geometry, and what is not culled yet
+
+Clustered geometry ships: `ClusteredMesh` (a `Mesh` that culls and LOD-selects clusters on the GPU
+and draws them through an indirect record) and `ClusteredBatch` are exported from `@threenative/core`,
+and a `WorldCells` package gets the same treatment through `gpuScene`, which is **on by default**
+wherever the backend can run it. Nothing here needs to be enabled to get it, and a backend without
+compute or `drawIndexedIndirect` falls back to the CPU path and says so in `stats().gpuScene`.
+
+What does not ship is occlusion culling. Nothing in `packages/core/src` reads a previous frame's
+depth to skip geometry — no depth pyramid, no HZB — so a cell behind a hill is submitted and culled
+by frustum only. It was declined twice on measured headroom and is now a single go/no-go:
+
+[PRD-489](../PRDs/open-world/PRD-489-gpu-scene-occlusion-culling.md) — occlusion culling re-tested
+on the GPU scene. Read it before assuming a cell is free to stream wide; the answer today is that it
+is not.
+
 ## 4. Prove it
 
 The in-repo fixture

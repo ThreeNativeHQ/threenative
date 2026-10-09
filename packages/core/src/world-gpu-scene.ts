@@ -404,7 +404,7 @@ function drawableLevel(slot: Pick<IAssetSlot, "levels">, level: number): number 
  * The level a shadow map draws a placement at, or -1 when no level of its asset casts. A placement
  * whose main level casts nothing casts with the coarsest level at or below it that does: past
  * `castLevels` a tree keeps its shadow, drawn in the last shape that has a twin, rather than
- * leaving a hole in the map (PRD-539). The level is then floored at the map's base and clamped to
+ * leaving a hole in the map (PRD-541). The level is then floored at the map's base and clamped to
  * the last level that casts, so a coarse map draws the coarsest shape that has a twin. `base` past
  * the chain is clamped by the chain length first.
  */

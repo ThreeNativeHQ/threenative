@@ -48,6 +48,8 @@ Created 2026-10-03, after #390 merged.
 
 Last measured 2026-10-03 against `origin/develop` `4d5e07c98`: nvidia/turing, 1280×720, DPR 1, MSAA 4×, 3 runs, noisy host (CI load).
 
+Session log of the 2026-10-03 run: PRs #420–#425 and #396; see each row's Status line.
+
 | | Walking p50 | Walking p95 | Standing p95 | Gap at p95 |
 | --- | --- | --- | --- | --- |
 | CPU render | 6.9 ms | **21.2 ms** | 4.5 ms | **12.9 ms** |
@@ -202,8 +204,10 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
   - **Done 2026-10-05:** both Phase 1 boxes ticked in this PR. On Machinefall with 2 + 2 runs and 3 blind critics each: develop vs develop **passes** (exit 0); develop vs impostors-default-on **reds** (exit 1, distant crowns missing in every impostor run). The gate change in this PR scores a candidate event only when it is in every candidate run and in no reference run.
 - [ ] **A3 · PRD-478 Phase 1: measure the shadow-window work that #390 already merged.** After: A1 and A2. ⏱🌍👁🙋
   - The owner side-by-sides the camp and highway aerials against `?refShadow=1`. The first candidate failed exactly that review.
+  - Status 2026-10-03: draft PR #423; two bias fixes landed (hold during load; drawable level), start-pose defect persists (GPU-scene path + bias ≥2 renders coarse levels invisibly); counters: `byMove` repeatable at labelled ticks. Owner side-by-side vs `?refShadow=1` still owed (🙋).
 - [ ] **A4 · [PRD-494](PRD-494-the-main-pass-fits-the-draw-budget.md): the main pass fits the draw budget.** After: A3. ⏱🌍👁
   - The largest cost. Attribute the ~323 draws by source, then take the largest source off three's per-draw path, `bundles` or a merged path.
+  - Status 2026-10-03: draft PR #424 (prd:50%); main draws 323 → 36, `draw` span −5.0 ms (3 interleaved pairs), bundles on by default, blind gate 0 LOSS; AC-1 open only for the loading window.
 - [ ] **A5 · PRD-478 Phase 2: shadow levels draw GPU-scene keys.** After: A4. ⏱🌍👁
 - [x] **A6 · PRD-478 Phase 3: terrain merges and seams run in a worker.** After: A5. ⏱🌍👁
   - **Done 2026-10-05:** both Phase 3 boxes are ticked. The worker path's main-thread `terrainBlock` and `terrainSeam` spans read 0 ms at p50 and ≤ 0.7 ms at p95 over 2 Machinefall walks; worker vs inline bytes are identical by spec. The workerless inline path hashes identically on web and on the native desktop host (`world-terrain-inline-hash`).
@@ -220,7 +224,7 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
     is no walk to compare. Nothing ticked, nothing to capture, and that arm must not merge; the row
     needs one instrumented run to separate the gate's node builds from its own per-update shadow
     invalidation before this mechanism is retried. Details in "Where we stand".
-- [ ] **A8 · [PRD-455](../rendering/PRD-455-temporal-reconstruction-from-dynamic-resolution.md): temporal reconstruction closes the GPU gap.** After: A7. ⏱🌍👁
+- [ ] **A8 · [PRD-539](../rendering/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md): temporal reconstruction closes the GPU gap (successor of PRD-455).** After: A7. ⏱🌍👁
 - [ ] **A9 · PRD-478 acceptance.** After: A8. ⏱🌍👁
   - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋, and PRD-478 is in `done/`.
 - [ ] **A10 · PRD-477 Phases 2–3 and AC-1: budgets and switches become engine decisions.** After: A9. ⏱🌍👁
@@ -261,14 +265,14 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
 
 ## Housekeeping (any session; docs-only, commit straight to `develop` per AGENTS.md)
 
-- [ ] Three PRDs share the number 339: AAA-visuals auto exposure, performance loading screen, critical compile walk. Renumber two of them and fix their links.
-- [ ] Fix status drift:
-  - critical [PRD-386](../performance/critical/PRD-386-gpu-driven-rendering-compute-culling-and-indirect-draws.md) and [PRD-390](../performance/critical/PRD-390-do-not-submit-what-the-render-camera-cannot-resolve.md) say NOT STARTED, but their mechanisms shipped in PRD-473 and #263;
-  - PRD-269 has landed (`3630847a`);
-  - [PRD-461](PRD-461-view-distance-basics.md)'s `terrain.streamRadius` blocker has landed.
-- [ ] Remove the stale duplicates `meta-human/PRD-465` and the batch copy of `PRD-VQ-11`.
-- [ ] Update `00-REPO-GROUNDING.md` (virtual shadow maps ship) and WORLD-STREAMING.md (virtualized geometry ships; occlusion is now PRD-489's call).
-- [ ] Refresh rows G04, G05, G11, G15 and G16 in `docs/unreal-engine/ThreeNative_Unreal_Visual_Gap_Tracker.xlsx`.
+- [x] Three PRDs share the number 339: AAA-visuals auto exposure, performance loading screen, critical compile walk. Renumber two of them and fix their links. **Result 2026-10-03:** auto exposure keeps 339 (PR #397); the other two are now 540 (compile walk; first 495, renumbered 2026-10-08 because #439 took 495) and 496 (loading screen). proof: `git mv` + `rg --no-ignore 'PRD-339'` returns only auto-exposure mentions.
+- [x] Fix status drift:
+  - critical [PRD-386](../performance/critical/PRD-386-gpu-driven-rendering-compute-culling-and-indirect-draws.md) and [PRD-390](../performance/critical/PRD-390-do-not-submit-what-the-render-camera-cannot-resolve.md) say NOT STARTED, but their mechanisms shipped in PRD-473 and #263; **Result 2026-10-03:** both now read PARTIAL and cite `8c182343f` (#263) and `a602467db` (#375, PRD-473 Phase 1). proof: `git show --stat 8c182343f a602467db`.
+  - PRD-269 has landed (`3630847a`); **Result 2026-10-03:** PROPOSED → PARTIAL, cited to `3630847a`. Kept out of `done/` — criterion 3's playtest does not exist. proof: `git show --stat 3630847a`.
+  - [PRD-461](PRD-461-view-distance-basics.md)'s `terrain.streamRadius` blocker has landed. **Result 2026-10-03:** NOT STARTED → READY, citing `4f9638c2e` (#358). proof: `git log -S streamRadius -- packages/core/src`.
+- [x] Remove the stale duplicates `meta-human/PRD-465` and the batch copy of `PRD-VQ-11`. **Result 2026-10-03:** both deleted; each was a strict prefix of its `done/` copy (465: 12 stale-only lines, all pre-execution status and unticked boxes; VQ-11: 14, all the same). No link pointed at either stale path. proof: `diff` against `docs/PRDs/done/`.
+- [x] Update `00-REPO-GROUNDING.md` (virtual shadow maps ship) and WORLD-STREAMING.md (virtualized geometry ships; occlusion is now PRD-489's call). **Result 2026-10-03:** `VirtualShadowNode`/`readVirtualShadowMarker` ship from `@threenative/core` since `161d11222` (PR #46) — all three F14 rows corrected from "Nothing / greenfield" to Shipped with the page path (PRD-457) as the remaining work. The guide gained one section naming `ClusteredMesh`/`ClusteredBatch`, `gpuScene` on by default, and PRD-489 as the occlusion go/no-go. proof: `rg 'VirtualShadowNode' packages/core/src/index.ts`.
+- [x] Refresh rows G04, G05, G11, G15 and G16 in `docs/unreal-engine/ThreeNative_Unreal_Visual_Gap_Tracker.xlsx`. **Result 2026-10-03:** all five read Partial with current state, next action and date: G04 → PR #397 in review, G05 → PRD-341 done + world gate pending A2, G11 → VQ-07 on PR #399, G15/G16 → PRD-386/390 PARTIAL. Edited in the sheet XML (34 cells), so formatting and formulas are untouched. proof: an openpyxl cell diff shows only those 34 cells changed.
 
 ## Not on this runbook, by decision
 

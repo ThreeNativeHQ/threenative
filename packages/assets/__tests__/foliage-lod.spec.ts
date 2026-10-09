@@ -248,7 +248,7 @@ describe("foliage cutout conversion and LOD (PRD-458 AC-4)", () => {
         // The crown: no occupied cell of LOD0's stratification grid is emptied at any level, which
         // is the property that separates a grid from a random or index-order sample. And the kept
         // cards are scaled up about their centroids, so the level covers LOD0's card area rather
-        // than the keep ratio of it, which read as bare trunks on Machinefall (PRD-539).
+        // than the keep ratio of it, which read as bare trunks on Machinefall (PRD-541).
         expect(card.cellCoverage).toBeGreaterThanOrEqual(0.7);
         expect(card.areaCoverage).toBeGreaterThanOrEqual(0.95);
       }

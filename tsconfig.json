@@ -21,5 +21,11 @@
     "vitest.config.ts",
     "playwright.config.ts"
   ],
-  "exclude": ["node_modules", "**/dist/**", "packages/runtime-native/scripts/**"]
+  "exclude": [
+    "node_modules",
+    "**/dist/**",
+    "packages/runtime-native/scripts/**",
+    "scripts/performance-regression/labs",
+    "examples/avbd-rigging"
+  ]
 }

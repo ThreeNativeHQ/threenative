@@ -20,6 +20,7 @@ import {
 } from "./adaptiveQuality.js";
 import { type IGradeTable, gradeStages } from "./grade.js";
 import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
+import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
 import type { FogMedium } from "./volumetricFog.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
@@ -71,6 +72,9 @@ export function setupPost(
   let disposeGraph: (() => void) | undefined;
   let medium: FogMedium | undefined;
   let table: IGradeTable | undefined;
+  // The opt-in `traa` stage publishes its provider here once the chain has built it, so `debug()`
+  // reports the live reconstruction state and a scene can reset history on a teleport.
+  let temporal: TemporalAAProvider | undefined;
   let observation: Record<string, unknown> = {
     tier: policy.tier,
     source: policy.pinned ? "pinned" : "auto",
@@ -85,9 +89,17 @@ export function setupPost(
     const world = new WorldEnvironment({
       ...settings,
       // Two stages this game owns, not the chain's: `grade.ts` builds them, `WorldEnvironment`
-      // orders and reports them, and `quality.ts` decides whether each tier runs them.
+      // orders and reports them, and `quality.ts` decides whether each tier runs them. The opt-in
+      // `traa` stage is offered beside them and runs only when a tier names it.
       authoredStageNames: ["grade", "grain"],
-      authoredStages: () => gradeStages(gradePreset(policy.tier), table),
+      authoredStages: (stage) => [
+        ...gradeStages(gradePreset(policy.tier), table),
+        ...temporalAAStages(stage, {
+          onProvider: (provider) => {
+            temporal = provider;
+          },
+        }),
+      ],
     });
     const applied = world.apply(renderer, scene, camera, {
       godraysLight: environment.godraysLight,
@@ -130,7 +142,7 @@ export function setupPost(
     get tier(): QualityTier {
       return policy.tier;
     },
-    debug: () => observation,
+    debug: () => (temporal ? { ...observation, temporal: temporal.report() } : { ...observation }),
     observe(window: IQualityWindow): void {
       if (disposed) return;
       const decision = policy.observe(window);
@@ -154,6 +166,7 @@ export function setupPost(
       // so it is released here and not by a stage that would take it with the first replacement.
       table?.texture.dispose();
       table = undefined;
+      temporal = undefined;
       if (active === controller) active = undefined;
     },
   };

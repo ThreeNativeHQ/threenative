@@ -25,7 +25,7 @@
  * **Scaled, so the crown stays covered.** Each kept card is scaled about its centroid by
  * `sqrt(lod0Area / keptArea)`, so the survivors cover the area the dropped cards did. Un-scaled, a
  * level's card area falls to the keep ratio, and on Machinefall the mid-distance pines read as bare
- * trunks (PRD-539). `TN_discrete_lod` stays index-only: a level's scaled cards are *copies* appended
+ * trunks (PRD-541). `TN_discrete_lod` stays index-only: a level's scaled cards are *copies* appended
  * to the primitive's own vertex arrays (see {@link ICardCopies}), and the level's indices point at
  * them. LOD0's indices never reference a copy, so a stock loader draws LOD0 unchanged, and both
  * runtime readers already build a level by copying the base attributes and swapping the index buffer.

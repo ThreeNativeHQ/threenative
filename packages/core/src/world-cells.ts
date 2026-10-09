@@ -404,7 +404,7 @@ export interface IWorldCellsLoadOptions {
    * the scene's shadow map. Their `castLevels` finest distance levels (default 1: the near shape)
    * each cast their own shape; a placement drawn at a coarser level of a chain casts with the
    * coarsest of those, so it keeps its shadow without a caster mesh per level — every level casting
-   * its own minted ~3x the casters and the churn showed as garbage collection on a walk (PRD-539).
+   * its own minted ~3x the casters and the churn showed as garbage collection on a walk (PRD-541).
    * Authored `lods` past `castLevels` cast nothing. `receive` lets scatter and terrain receive
    * shadows.
    */
@@ -6187,7 +6187,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * The level a cell batch casts with: its own when that level casts, otherwise the coarsest
    * casting level, when that level holds the same parts — a chain's derived levels do, authored
    * `lods` need not — so a tree past `castLevels` keeps its shadow in the last shape that has a
-   * caster rather than leaving a hole in the map (PRD-539). `undefined`: it casts nothing.
+   * caster rather than leaving a hole in the map (PRD-541). `undefined`: it casts nothing.
    */
   #castLevelOf(entry: ICellBatch): number | undefined {
     if (this.#casts(entry.level)) return entry.level;

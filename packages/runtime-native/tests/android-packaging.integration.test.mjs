@@ -1678,3 +1678,61 @@ test('the packager aligns the finished APK to 16 KB before censusing it, and fai
     /zipalign exited with code 1/u,
   );
 });
+
+// A fresh machine has no ~/.android/debug.keystore: AGP 8 does not always leave one where the
+// re-sign step looks. The default debug key is created on demand, exactly as AGP would; a keystore
+// the consumer named is never invented.
+test('the packager creates the missing default debug keystore before re-signing, and never an explicit one', async () => {
+  const root = makeTempDirSync('threenative-android-keystore-');
+  roots.push(root);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  const runtime = createFakeAndroidRuntime();
+  const apkPath = join(runtime, 'android/app/build/outputs/apk/debug/app-debug.apk');
+  const build = {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    spawnSync: () => {
+      mkdirSync(dirname(apkPath), { recursive: true });
+      writeArchive(apkPath, compliantEntries());
+      return { status: 0, stdout: '' };
+    },
+  };
+  const calls = [];
+  const spawnAlign = (command, args) => {
+    calls.push({ args, command });
+    if (String(command).endsWith('zipalign')) writeArchive(String(args[args.length - 1]), compliantEntries());
+    if (String(command).endsWith('keytool')) writeFileSync(String(args[args.indexOf('-keystore') + 1]), 'key');
+    return { status: 0, stdout: '' };
+  };
+  const home = join(root, 'home');
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    await packageAndroid(bundle, apkPath, undefined, undefined, undefined, {
+      ...build,
+      align: { spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
+      artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    });
+  } finally {
+    process.env.HOME = previousHome;
+  }
+  const keystore = join(home, '.android', 'debug.keystore');
+  const keytool = calls.find(({ command }) => String(command).endsWith('keytool'));
+  assert.ok(keytool, 'keytool was not run for the missing default debug keystore');
+  assert.equal(keytool.args[keytool.args.indexOf('-keystore') + 1], keystore);
+  assert.equal(keytool.args[keytool.args.indexOf('-alias') + 1], 'androiddebugkey');
+  assert.ok(existsSync(keystore));
+  const signer = calls.find(({ command }) => String(command).endsWith('apksigner'));
+  assert.equal(signer.args[signer.args.indexOf('--ks') + 1], keystore);
+
+  await assert.rejects(
+    packageAndroid(bundle, join(root, 'named.apk'), undefined, undefined, undefined, {
+      ...build,
+      align: { keystore: join(root, 'absent.jks'), spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
+      artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    }),
+    /no keystore at .*absent\.jks/u,
+  );
+});

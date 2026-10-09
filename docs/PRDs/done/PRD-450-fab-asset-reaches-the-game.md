@@ -130,7 +130,7 @@ places, and the FabCLI session the 2026-09-24 run lacked was available for the A
 - [x] Bus-address fallback plus `FABCLI_KEYSTORE_UNREACHABLE`; red first with a stripped env (AC-1). — 2026-09-25, A/ `9ff6940`: stripping only `DBUS_SESSION_BUS_ADDRESS` did not reproduce (libdbus reads `XDG_RUNTIME_DIR`); stripping both reproduced the session's exact "X11 autolaunch" `FABCLI_UNAUTHENTICATED` on 0.9.3. The fallback therefore also derives `/run/user/<uid>/bus`. Red specs seen first; `unreal-import` + `fab-import` 111/111.
 
 #### Phase 3: An Unreal pack lands in the game at a known size
-**Status:** DONE — code landed in A/ (jonit-dev/threenative-asset-mcp#12, merged `b4a9ad0`) and published as `0.9.4` (`aa5296b`); the engine pins it in all three places
+**Status:** DONE — code landed in A/ (ThreeNativeHQ/threenative-asset-mcp#12, merged `b4a9ad0`) and published as `0.9.4` (`aa5296b`); the engine pins it in all three places
 **Files:** `A/src/unreal/importer.ts`, `A/src/fab/api-download.ts` (size field),
 `A/src/fab/client.ts` (drop `formats`), tool descriptions in `A/src/tools/*.ts`, a sandbox playtest.
 - [x] Pre-flight sizes only the requested packages; red first from a fixture where the whole tree exceeds free space and one package fits. — A/ `2ca39f5`: red first (the whole-tree fixture imported instead of refusing, because the injected free space was ignored). Live on this machine the volume has 477 GB free, so the live call cannot show the old refusal; the spec carries it.

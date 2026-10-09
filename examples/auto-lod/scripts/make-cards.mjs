@@ -1,6 +1,6 @@
 // Builds the example's card crown: 1,200 alpha-tested quads (2,400 triangles) scattered through a
 // sphere, written as a dependency-free GLB. The cook gives it a `cards` chain whose levels draw
-// scaled copies of the kept cards appended after LOD0's vertices (PRD-539), which is the shape the
+// scaled copies of the kept cards appended after LOD0's vertices (PRD-541), which is the shape the
 // desktop scenarios prove the native host draws.
 import { writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

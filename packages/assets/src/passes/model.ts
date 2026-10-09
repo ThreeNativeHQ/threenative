@@ -496,7 +496,7 @@ const IDENTITY_MATRIX = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 /**
  * The vertices a primitive draws: all of them when it has no index buffer, otherwise the distinct
  * ones its indices name. A card LOD chain appends scaled copies of its cards that only the levels'
- * indices reach (PRD-539); LOD0 never draws them, so they are not drift.
+ * indices reach (PRD-541); LOD0 never draws them, so they are not drift.
  */
 function drawnVertices(primitive: GltfPrimitive, count: number): Uint32Array {
   const indices = primitive.getIndices()?.getArray();

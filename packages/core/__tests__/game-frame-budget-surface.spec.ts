@@ -3,6 +3,10 @@ import { FRAME_BUDGET_MARKER } from "../src/frame-budget.js";
 import { defineGame } from "../src/game.js";
 import { type ICtx, Scene } from "../src/scene.js";
 
+class EmptySceneForReporting extends Scene {
+  static override readonly initialState = {};
+}
+
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
   Object.defineProperties(canvas, {
@@ -20,6 +24,86 @@ function testCanvas(): HTMLCanvasElement {
  * only place this can be wired — and it must be wired whether the scale was pinned or chosen.
  */
 describe("the frame budget names the surface the game's own loop drew", () => {
+  it.each([true, false])(
+    "routes window telemetry to the configured sink (custom: %s)",
+    async (custom) => {
+      const canvas = testCanvas();
+      let frame: ((time: number) => void) | undefined;
+      const lines: string[] = [];
+      let windows = 0;
+      const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const game = defineGame({
+        frameBudget: {
+          reportEvery: 1,
+          ...(custom ? { report: (line: string) => lines.push(line) } : {}),
+          onWindow: () => {
+            windows += 1;
+          },
+        },
+        renderer: {
+          canvas,
+          preferWebGPU: false,
+          webgl2Factory: () => ({
+            domElement: canvas,
+            render: () => undefined,
+            setSize: () => undefined,
+          }),
+        },
+        scenes: { test: EmptySceneForReporting },
+        start: "test",
+      });
+      const requestFrame = globalThis.requestAnimationFrame;
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: (callback: (time: number) => void) => {
+          frame = callback;
+          return 1;
+        },
+      });
+      try {
+        await game.start();
+        info.mockClear();
+        warn.mockClear();
+        log.mockClear();
+        if (!frame) throw new Error("Game did not start its loop");
+        frame(16.7); // Establish the one-time projection verdict before the measurement windows.
+        windows = 0;
+        lines.length = 0;
+        info.mockClear();
+        warn.mockClear();
+        log.mockClear();
+        for (let index = 2; index <= 5; index += 1) frame(index * 16.7);
+        expect(windows).toBe(4);
+        const projection = (line: unknown) =>
+          typeof line === "string" && line.startsWith("TN_PROJECTION:");
+        if (custom) {
+          expect(lines.filter(projection)).toHaveLength(4);
+          expect(info).not.toHaveBeenCalled();
+          expect(warn).not.toHaveBeenCalled();
+          expect(log).not.toHaveBeenCalled();
+        } else {
+          expect(info.mock.calls.filter(([line]) => projection(line))).toHaveLength(4);
+          expect(
+            log.mock.calls.filter(
+              ([line]) => typeof line === "string" && line.startsWith(`${FRAME_BUDGET_MARKER}:`),
+            ),
+          ).toHaveLength(4);
+        }
+      } finally {
+        game.stop();
+        info.mockRestore();
+        warn.mockRestore();
+        log.mockRestore();
+        Object.defineProperty(globalThis, "requestAnimationFrame", {
+          configurable: true,
+          value: requestFrame,
+        });
+      }
+    },
+  );
+
   it("carries the applied scale and drawing buffer into every reported window", async () => {
     const canvas = testCanvas();
     let frame: ((time: number) => void) | undefined;

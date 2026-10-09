@@ -816,7 +816,7 @@ describe("WorldCells shadow casters over a chain", () => {
 
     // The main pass splits the 85 placements across the chain's three levels; `castLevels` is 1, so
     // only level 0 has casters. Every placement still casts, through level 0's: a tree past its
-    // first switch keeps its shadow instead of leaving a hole in the map (PRD-539).
+    // first switch keeps its shadow instead of leaving a hole in the map (PRD-541).
     const drawn = [0, 1, 2].reduce(
       (sum, level) => sum + liveCount(levelMesh(world, "pine", level) as InstancedMesh),
       0,

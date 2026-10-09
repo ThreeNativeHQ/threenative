@@ -413,7 +413,7 @@ export interface IFrameBudgetOptions {
   readonly hitchMs?: number;
   /** Ring capacity per series. Default 1024. */
   readonly capacity?: number;
-  /** Where marker lines go. Default `console.log`. */
+  /** Where marker lines go. Default `console.log`. In defineGame, also receives all window telemetry; without a custom sink its existing info/warn severities remain. */
   readonly report?: (line: string) => void;
   /** Wall clock for hitch markers. Default `Date.now`. */
   readonly wallClock?: () => number;

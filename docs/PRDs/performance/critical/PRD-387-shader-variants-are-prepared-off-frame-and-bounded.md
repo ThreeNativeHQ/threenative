@@ -109,7 +109,7 @@ exists to stop that answer.
 | Depends on | Why | Blocking? |
 | --- | --- | --- |
 | **PRD-386** | The GPU-driven cut multiplies the number of material/pass variants. Preparing them off-frame is the prerequisite for 386, so **PRD-387 precedes 386**. | Yes |
-| PRD-339 (native compile walk) | Its main-thread compile work and native `createRenderPipelineAsync` finding share the "compile off the loop" theme; do not duplicate its mechanism. | Record |
+| PRD-540 (native compile walk) | Its main-thread compile work and native `createRenderPipelineAsync` finding share the "compile off the loop" theme; do not duplicate its mechanism. | Record |
 
 ## 5. Execution phases
 

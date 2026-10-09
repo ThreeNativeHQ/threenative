@@ -3,7 +3,7 @@
 
 # Capability reference
 
-Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:rain`, `template:starter`, and `three`,
+Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/procedural-animals`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:rain`, `template:starter`, and `three`,
 generated from the doc tags the engine itself compiles, so this page cannot disagree with
 the code. Look here before writing a replacement; ask `engine_search_capabilities` when an
 MCP server is available.
@@ -1287,8 +1287,8 @@ if (renderListValidationRequested()) console.log(formatValidationReport(report))
 export class FrameBudget { … }
 ```
 
-- **Use when:** show an on-screen frame time meter with p50, p95 and p99 percentiles · find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay · tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp · split a frame's draw calls and triangles per render pass (main, shadow, reflection) · tell a shadow or reflection pass's cost from the main colour pass
-- **Constraints:** on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement · per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main · GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero
+- **Use when:** show an on-screen frame time meter with p50, p95 and p99 percentiles · find out why a game runs slowly on a phone · attribute a frame to present wait, simulation, three.js render, or overlay · tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp · split a frame's draw calls and triangles per render pass (main, shadow, reflection) · tell a shadow or reflection pass's cost from the main colour pass · retain every asynchronous GPU render frame for a complete paired benchmark
+- **Constraints:** on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement · per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main · GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero · `ctx.renderer.observeGpuFrames({ maxFrames, maxQueries })` is opt-in, bounded and fail-closed; `take()` delivers immutable complete render-query groups once, while `status()` reports pending/undrained/queued membership and losses · observation preserves ordinary sampling; a complete benchmark explicitly requests `renderer.gpuTimestampFrameInterval: 1` and joins Three query IDs to actual world renders, including separate overlay IDs · `stop()` fences allocated frames and drains existing resolver work; `dispose()` invalidates late completions, and a failed observation must be disposed before replacement
 
 ```ts
 defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
@@ -5064,6 +5064,122 @@ export class ThreePlaytestPhysicsRecorder { … }
 
 ```ts
 const physics = new ThreePlaytestPhysicsRecorder(worldPhysics);
+```
+
+## `@threenative/procedural-animals`
+
+### `createAnimalActor`
+
+`function` — Own one actor's pose/lifetime, accepting the completed physics state as its only root writer.
+
+```ts
+export function createAnimalActor(bake: IAnimalBake, options: IAnimalActorOptions) { … }
+```
+
+- **Use when:** follow a baked animal from accepted fixed-step Rapier state
+- **Constraints:** identity parent required; material and motion are editable game source; no move/Mixer/composer writer exists
+- **Requires:** npm i @threenative/procedural-animals
+
+```ts
+const wolf = createAnimalActor(bake, { motion, material, ground });
+```
+
+### `createAnimalGeometry`
+
+`function` — Validates all bytes before constructing geometry with the bake's skin and rig attributes.
+
+```ts
+export function createAnimalGeometry(buffer: ArrayBuffer): { … }
+```
+
+- **Use when:** construct a Three.js geometry from a validated procedural wolf bake
+- **Constraints:** this creates bind geometry only; game-owned DQS material and animated bounds remain required
+- **Requires:** npm i @threenative/procedural-animals
+
+```ts
+const { bake, geometry } = createAnimalGeometry(bytes);
+```
+
+### `loadAnimalBake`
+
+`function` — Resolves and loads a prebuilt wolf through the game's ordinary asset resolver.
+
+```ts
+export async function loadAnimalBake( assets: IAnimalAssetResolver, logicalPath: string, options: { … }
+```
+
+- **Use when:** load a cooked animal from ctx.assets without runtime generation
+- **Constraints:** a corrupt served bake rejects rather than falling back to a different file
+- **Requires:** npm i @threenative/procedural-animals
+
+```ts
+const bake = await loadAnimalBake(ctx.assets, "wolf.animal");
+```
+
+### `parseAnimalBake`
+
+`function` — Validates a pinned wolf PANM bake before constructing any renderer resource.
+
+```ts
+export function parseAnimalBake(buffer: ArrayBuffer): IAnimalBake { … }
+```
+
+- **Use when:** validate a baked procedural animal before allocating geometry
+- **Constraints:** unknown revisions, malformed sections, indices and skin weights throw by name
+- **Requires:** npm i @threenative/procedural-animals
+
+```ts
+const bake = parseAnimalBake(bytes);
+```
+
+## `@threenative/procedural-animals/build`
+
+### `animalBakePass`
+
+`function` — Validate staged PANM sources inside the existing asset compiler; it owns the hashed manifest.
+
+```ts
+export function animalBakePass() { … }
+```
+
+- **Use when:** cook staged animal bakes through the ordinary asset pipeline
+- **Constraints:** only .animal inputs are interpreted; corruption fails the cook, without regeneration
+- **Requires:** npm i @threenative/procedural-animals
+
+```ts
+await compileAssets({ passes: [animalBakePass()] });
+```
+
+### `bakeWolf`
+
+`function` — Bake the pinned wolf on the build machine, never on the portable runtime path.
+
+```ts
+export async function bakeWolf(options: IWolfBakeOptions): Promise<ArrayBuffer> { … }
+```
+
+- **Use when:** bake high and crowd wolf geometry before the ordinary asset cook
+- **Constraints:** exact pinned Node runtime, donor revision, options and generated bytes are validated; no worker is created
+- **Requires:** npm i @threenative/procedural-animals
+
+```ts
+const bytes = await bakeWolf({ seed: 7, tier: "crowd" });
+```
+
+### `bakeWolfToFile`
+
+`function` — Stage a validated source bake with a same-directory atomic rename, then use compileAssets.
+
+```ts
+export async function bakeWolfToFile( options: IWolfBakeOptions, destination: string, ): Promise<string> { … }
+```
+
+- **Use when:** publish a generated wolf without replacing the last valid bake on interruption
+- **Constraints:** validation and generation complete before the destination is touched; temporary files are removed on failure
+- **Requires:** npm i @threenative/procedural-animals
+
+```ts
+await bakeWolfToFile({ seed: 7, tier: "crowd" }, "assets/wolf-crowd.animal");
 ```
 
 ## `@threenative/raw-unreal`

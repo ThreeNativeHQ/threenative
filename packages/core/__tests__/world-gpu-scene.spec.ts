@@ -4580,7 +4580,7 @@ describe("a shadow level's own selection", () => {
     expect([...(byKey.get(1) ?? [])]).toEqual([1]);
     // `castLevels: 1`: only the finest level has a twin, as on Machinefall. A placement the main
     // pass draws at a level that casts nothing casts with the coarsest shape that does, so its
-    // shadow stays inside the map — never a write into a region no mesh draws (PRD-539).
+    // shadow stays inside the map — never a write into a region no mesh draws (PRD-541).
     const uncast: IKernelInput = {
       ...input,
       regions: input.regions.map((region, index) =>

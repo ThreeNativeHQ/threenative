@@ -784,6 +784,12 @@ js::JSValueHandle handleGpuDeviceCreateBindGroupLayout(BindingsState* state, Bin
                                         // Default to uniform for unknown types
                                         layoutEntry.buffer.type = WGPUBufferBindingType_Uniform;
                                     }
+                                    // Dropping these makes every setBindGroup that passes dynamic offsets invalid.
+                                    auto dynamicProp = state->engine->getProperty(buffer, "hasDynamicOffset");
+                                    layoutEntry.buffer.hasDynamicOffset = !state->engine->isUndefined(dynamicProp) && state->engine->toBoolean(dynamicProp);
+                                    auto minSizeProp = state->engine->getProperty(buffer, "minBindingSize");
+                                    if (!state->engine->isUndefined(minSizeProp))
+                                        layoutEntry.buffer.minBindingSize = (uint64_t)state->engine->toNumber(minSizeProp);
                                 }
                                 // Check for sampler binding
                                 auto sampler = state->engine->getProperty(entry, "sampler");

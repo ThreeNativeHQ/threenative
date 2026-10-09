@@ -25,7 +25,7 @@ export class Lod extends Scene {
 
   #loaded = false;
   readonly #meshes: Mesh[] = [];
-  /** The card crown: its levels draw scaled copies appended after LOD0's vertices (PRD-539). */
+  /** The card crown: its levels draw scaled copies appended after LOD0's vertices (PRD-541). */
   readonly #cards: Mesh[] = [];
 
   override async load(ctx: ICtx): Promise<void> {

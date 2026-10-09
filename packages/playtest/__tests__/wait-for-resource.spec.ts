@@ -84,6 +84,135 @@ test("an observation landing exactly on the budget still passes", async () => {
   expect(result).toEqual(snapshot(true));
 });
 
+test("minimal polls gate a single full witness returned with its observations intact", async () => {
+  const time = clock();
+  let polls = 0;
+  let witnesses = 0;
+  const result = await waitForResource({
+    id: "state",
+    now: time.now,
+    path: "networkConnected",
+    predicate: { equals: true },
+    poll: async () => {
+      polls += 1;
+      time.advance(16);
+      return snapshot(polls >= 3);
+    },
+    sample: async () => {
+      witnesses += 1;
+      time.advance(1);
+      return {
+        clock: { now: 0 },
+        entities: [{ id: "player", transform: { position: [1, 0, 0] } }],
+        geometry: { measurements: [] },
+        resources: { state: { networkConnected: true } },
+      } as unknown as IPlaytestObservationSnapshot;
+    },
+    sleep: async () => undefined,
+    timeoutMs: 100,
+  });
+
+  expect(polls).toBe(3);
+  expect(witnesses).toBe(1);
+  expect(result.entities).toEqual([{ id: "player", transform: { position: [1, 0, 0] } }]);
+  expect(result.geometry).toEqual({ measurements: [] });
+  expect(result.resources?.state).toEqual({ networkConnected: true });
+});
+
+test("a full witness arriving after the budget fails instead of blessing a passing poll", async () => {
+  const time = clock();
+  await expect(
+    waitForResource({
+      id: "state",
+      now: time.now,
+      path: "networkConnected",
+      predicate: { equals: true },
+      poll: async () => {
+        time.advance(16);
+        return snapshot(true);
+      },
+      sample: async () => {
+        time.advance(100);
+        return snapshot(true);
+      },
+      sleep: async () => undefined,
+      timeoutMs: 32,
+    }),
+  ).rejects.toThrow(/timed out/iu);
+});
+
+test("a full witness that no longer passes resumes minimal polls", async () => {
+  const time = clock();
+  let polls = 0;
+  let witnesses = 0;
+  const result = await waitForResource({
+    id: "state",
+    now: time.now,
+    path: "networkConnected",
+    predicate: { equals: true },
+    poll: async () => {
+      polls += 1;
+      time.advance(5);
+      return snapshot(true);
+    },
+    sample: async () => {
+      witnesses += 1;
+      time.advance(5);
+      return snapshot(witnesses >= 2);
+    },
+    sleep: async () => undefined,
+    timeoutMs: 100,
+  });
+
+  expect(polls).toBe(2);
+  expect(witnesses).toBe(2);
+  expect(result).toEqual(snapshot(true));
+});
+
+test("a full witness that disappears on the deadline fails", async () => {
+  const time = clock();
+  await expect(
+    waitForResource({
+      id: "state",
+      now: time.now,
+      path: "networkConnected",
+      predicate: { equals: true },
+      poll: async () => {
+        time.advance(16);
+        return snapshot(true);
+      },
+      sample: async () => {
+        time.advance(16);
+        return snapshot(false);
+      },
+      sleep: async () => undefined,
+      timeoutMs: 32,
+    }),
+  ).rejects.toThrow(/timed out/iu);
+});
+
+test("a full witness missing the waited resource fails closed", async () => {
+  const time = clock();
+  await expect(
+    waitForResource({
+      id: "state",
+      now: time.now,
+      path: "networkConnected",
+      predicate: { equals: true },
+      poll: async () => {
+        time.advance(5);
+        return snapshot(true);
+      },
+      sample: async () => ({
+        clock: { now: 0 },
+        resources: {},
+      }) as unknown as IPlaytestObservationSnapshot,
+      sleep: async () => undefined,
+      timeoutMs: 100,
+    }),
+  ).rejects.toThrow(/did not report 'state'/u);
+});
+
 test("a resource that only becomes true after its timeout is a timeout, not a pass", async () => {
   // The wait returned as soon as the predicate held, before comparing elapsed time to the
   // budget, so an observation that arrived late still passed. A scenario asking for a

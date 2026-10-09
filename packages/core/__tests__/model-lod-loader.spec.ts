@@ -47,7 +47,7 @@ function cookedGlb(options: { copies?: boolean } = {}): Buffer {
   const baseIndices = new Uint32Array(gridIndices(LOD0_TRIANGLES));
   let levelIndices = new Uint32Array(gridIndices(COARSE_TRIANGLES));
   if (options.copies === true) {
-    // The card cook's shape (PRD-539): the level draws copies of its vertices, scaled and appended
+    // The card cook's shape (PRD-541): the level draws copies of its vertices, scaled and appended
     // after LOD0's, which LOD0's own indices never reach.
     const source = [...new Set(levelIndices)];
     const grown = new Float32Array((lod0Vertices + source.length) * 3);

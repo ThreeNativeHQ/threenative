@@ -104,6 +104,9 @@ const high: IWorldEnvironmentOptions = {
   gtaoEnabled: true,
   gtaoRadius: 0.35,
   renderChainTier: "high",
+  // Temporal AA is opt-in and no shipped tier names it: add `authoredStageNames: ["traa"]` here to
+  // reconstruct at the display raster, and read `setupPost(...).debug().temporal` for the reset and
+  // raster state it reports. Its rejection fraction, ghosting and frame-time cost are unqualified.
 };
 
 /**
