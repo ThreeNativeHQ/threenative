@@ -1,6 +1,6 @@
 # PRD-536 — Tests close the fail-open and regression holes
 
-**Status:** PROPOSED, filed 2026-10-07 against `d447ba99b`
+**Status:** DONE 2026-10-08, filed 2026-10-07 against `d447ba99b`
 
 **Priority:** P1 — Proposed; phase 1 closes playtest loader and evaluator paths that pass a scenario on missing or vacuous evidence.
 **Complexity:** 3 (10+ files) + 2 (multi-package) = **5 → MEDIUM mode**
@@ -30,7 +30,7 @@ the same commit fixes the source (red → green), because a test that pins fail-
 
 ### Out of scope (owned elsewhere or not worth a test)
 
-- [PRD-326](./PRD-326-high-churn-paths-fail-before-regressions-ship.md) owns `cli.ts:main(argv)` batch exit
+- [PRD-326](../tech-debt-code-quality/PRD-326-high-churn-paths-fail-before-regressions-ship.md) owns `cli.ts:main(argv)` batch exit
   aggregation, the delayed `runtime.startup` runner trace, and the windowed `bindings.cpp`/`context.cpp` paths.
   This PRD does not duplicate them.
 - Not worth a test: string markers and `*_FLAG` constants, `react-glyphs.ts` tables, `ocean/fft.ts` (40+ tests),
@@ -105,7 +105,8 @@ missing test.
   Result: CI run 37737555769 on `7c93d0178`: `test-unit` 4/4, `test-playtest`, `test-browser`, `golden-path`, `budgets`, `lint`, `typecheck` and `ci-required` all passed.
 - [x] 3.2 C3, JS pins: the five runner and UI fix commits (`4f7afff45`, `61123eb92`, `4ee9dd578`, `9a490f1dd`, `9e34ce33a`) are pinned. Each new test turned red when its fix hunk was reverted and green when it was re-applied. proof: `pnpm exec vitest run packages/playtest/__tests__ packages/ui/__tests__`
   Result: CI run 37737555769 on `7c93d0178`: `test-unit` 4/4, `test-playtest`, `test-browser`, `golden-path`, `budgets`, `lint`, `typecheck` and `ci-required` all passed.
-- [ ] 3.3 C3, native pins: `runtime.cpp:dispatchResizeEvent` must not reconfigure the surface (`9d97912d6`), and conformance `52-skinned-mesh-animation` desktop gate with the handle count back to baseline. Open: it needs a new native contract target and the native build lane (see Decisions). proof: the runtime-native contract lane + `pnpm parity`
+- [x] 3.3 C3, native pins: `runtime.cpp:dispatchResizeEvent` must not reconfigure the surface (`9d97912d6`). Conformance `52-skinned-mesh-animation` is dropped (see Decisions). proof: `pnpm --filter @threenative/runtime-native exec vitest run --config vitest.config.ts tests/resize-event-no-reconfigure.test.mjs`
+  Result: 2/2 passed. With the removed `resizeSurface` call put back into `dispatchResizeEvent`, "dispatchResizeEvent never reconfigures the surface" failed; with the file restored, both passed.
 
 ## 4. Scout notes
 
@@ -115,7 +116,7 @@ send a fresh read-only scout to that file before you write the test. Do not gues
 ## Acceptance criteria
 
 - [x] Every row A1–C3 has a test that fails on its bug shape, or has a line under `## Decisions` that names why it was dropped. proof: this PRD
-  Result: the two C3 native rows carry a `## Decisions` line; every other row has a test.
+  Result: conformance row 52 carries a `## Decisions` line; every other row, `dispatchResizeEvent` included, has a test.
 - [x] The full board passes with the stricter loader. proof: `pnpm typecheck && pnpm lint && pnpm test` + `pnpm test:templates`
   Result: CI run 37737555769 passed `ci-required`, which covers `typecheck`, `lint`, `test-unit`, `test-playtest` and `golden-path`. A local `pnpm test:templates` under desktop load failed six templates on `maxFrameMsP95`, and CI `golden-path` (starter, platformer) passed.
 
@@ -128,7 +129,7 @@ send a fresh read-only scout to that file before you write the test. Do not gues
 - **A7, dropped claims.** `check-flight-cost.ts` already exits 2 on every malformed argument tried, and `generate-assertion-validators.ts` already throws on an unmapped type and fails `--check` on stale output. Neither got a test. The native floors ratchet to measured − 5 points (`NATIVE_COVERAGE_FLOOR_MARGIN`).
 - **B3, residual ceiling.** `decompressBody` caps output at the declared size. A streaming inflate would remove the up-front reservation. `raw-unreal` `decompressBulkData` also allocates the declared `totalRaw`; this row does not name it.
 - **C2.** Every item is a pin. No source bug was found.
-- **C3, native items dropped.** The `runtime.cpp:dispatchResizeEvent` contract test needs a new native contract target and the native build lane. Conformance row `52-skinned-mesh-animation` has `desktopGate: false`, and no commit restores its handle-count baseline. Both move to the native lane; this PR does not claim them.
+- **C3, native pins.** `dispatchResizeEvent` gets a source pin in the default gate (`tests/resize-event-no-reconfigure.test.mjs`), the same shape as `lifecycle-pause.test.mjs`. It needs no native build. A frame-boundary reconfigure, when it lands, owns its own executable contract test. Conformance row `52-skinned-mesh-animation` is dropped: it has `desktopGate: false`, and no commit and no document records a handle-count baseline or a fix that restores one. With no landed fix, there is nothing to pin. Restoring the desktop gate is native work, not a test.
 
 ## Blocked on
 
