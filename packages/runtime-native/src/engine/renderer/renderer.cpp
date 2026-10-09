@@ -1709,7 +1709,10 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
         const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
         PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, blend,
-                              item.depthWrite};
+                              item.depthWrite,
+                              // three's material.polygonOffset (WebGPUPipelineUtils): units bias, factor slope.
+                              item.polygonOffset ? static_cast<int32_t>(item.polygonOffsetUnits) : 0,
+                              item.polygonOffset ? static_cast<float>(item.polygonOffsetFactor) : 0.0f};
         target.layout = program.pipelineLayout;
         if (item.background) target.depthCompare = WGPUCompareFunction_Always;
         target.frontFace = item.frontFace();

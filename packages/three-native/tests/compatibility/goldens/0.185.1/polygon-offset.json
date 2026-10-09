@@ -1,0 +1,27 @@
+{
+  "name": "polygon-offset",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — material.polygonOffset as three r185's WebGPUPipelineUtils maps it (depthBias = polygonOffsetUnits, depthBiasSlopeScale = polygonOffsetFactor): a green plane with a negative offset drawn before a coplanar red one wins the depth test that the red plane wins without it. The red plane is DoubleSide so the two materials never share one render pipeline (three's pipeline cache key omits polygonOffset)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:66b7078608dfa458b82086bc8f66a2537dec120738a2ce9768d183c1d4c71956",
+      "decimal": "66b7078608dfa458b82086bc8f66a2537dec120738a2ce9768d183c1d4c71956"
+    }
+  ],
+  "render": {
+    "png": "polygon-offset.png",
+    "pngSha256": "66b7078608dfa458b82086bc8f66a2537dec120738a2ce9768d183c1d4c71956",
+    "width": 256,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

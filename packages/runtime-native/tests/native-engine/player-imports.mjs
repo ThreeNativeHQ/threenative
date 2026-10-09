@@ -26,7 +26,7 @@ const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
-  "ExtrudeGeometry", "SpriteMaterial", ...constants];
+  "ExtrudeGeometry", "SpriteMaterial", "InstancedMesh", "InstancedBufferAttribute", ...constants];
 const panel = (T) => {
   const shape = new T.Shape();
   shape.moveTo(-0.3, -0.2); shape.lineTo(0.25, -0.2); shape.quadraticCurveTo(0.3, -0.2, 0.3, -0.15);
@@ -149,6 +149,13 @@ check(twinWorld instanceof THREE.Scene && twinWorld !== world && twinWorld.child
   twinWorld.children[0] !== part && twinWorld.children[0].position.y === 2 &&
   twinWorld.children[0].children[0].geometry === plane && twinWorld.children[0].children[0].material === painted, "Object3D clone");
 check(part.clone(false).children.length === 0 && part.clone().children.length === 1, "clone recursion");
+// Midway's tracers assign instanceColor directly, as three allows.
+const tracers = new THREE.InstancedMesh(plane, painted, 4);
+const tint = new THREE.InstancedBufferAttribute(new Float32Array(12), 3);
+tracers.instanceColor = tint;
+check(tracers.instanceColor === tint, "instanceColor assignment");
+tracers.instanceColor = null;
+check(tracers.instanceColor === null || tracers.instanceColor === undefined, "instanceColor cleared");
 twin.roughness = 0.95;
 check(painted.roughness !== 0.95, "a clone is independent");
 const sprite = new THREE.SpriteMaterial({ transparent: false });

@@ -1227,6 +1227,22 @@ void registerInstancedMesh(ClassBinding& b) {
         const auto& colors = as<InstancedMesh>(self)->instanceColor;
         return colors ? store.share("InstancedBufferAttribute", colors) : Value{};
     };
+    // three's games assign `mesh.instanceColor = new InstancedBufferAttribute(colors, 3)` directly.
+    b.setters["instanceColor"] = [](void* self, const Value& v, Store& store) {
+        InstancedMesh& mesh = *as<InstancedMesh>(self);
+        if (v.kind == Value::Kind::Null) {
+            mesh.instanceColor = nullptr;
+            return;
+        }
+        Object* found = store.find(v);
+        if (!found || found->cls != "InstancedBufferAttribute")
+            throw Unsupported{"instanceColor must be an InstancedBufferAttribute or null"};
+        auto colors = std::static_pointer_cast<BufferAttribute>(found->ptr);
+        if (colors->itemSize != 3 || colors->store->scalar() != Scalar::F32 ||
+            colors->count() < mesh.instanceMatrix->count())
+            throw Unsupported{"instanceColor needs 3 floats (a Float32Array) per instance"};
+        mesh.instanceColor = std::move(colors);
+    };
     const auto index = [](const Value& v, const InstancedMesh& mesh) {
         const double i = number(v);
         if (!(i >= 0 && i < double(mesh.instanceMatrix->count())) || i != std::floor(i))

@@ -368,6 +368,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.renderOrder = mesh.renderOrder();
     d.transparent = material->transparent;
     d.depthWrite = material->depthWrite;
+    d.polygonOffset = material->polygonOffset;
+    d.polygonOffsetFactor = material->polygonOffsetFactor;
+    d.polygonOffsetUnits = material->polygonOffsetUnits;
     d.materialKey = material;
     d.positionNode = material->positionNode;
     d.nodes = material->nodes;
@@ -383,6 +386,9 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.material = &r.draw->params;
     d.transparent = r.material->transparent;
     d.depthWrite = r.material->depthWrite;
+    d.polygonOffset = r.material->polygonOffset;
+    d.polygonOffsetFactor = r.material->polygonOffsetFactor;
+    d.polygonOffsetUnits = r.material->polygonOffsetUnits;
     d.side = static_cast<uint8_t>(r.material->side);
     d.blending = static_cast<uint8_t>(r.material->blending);
     d.positionNode = r.material->positionNode;

@@ -48,6 +48,9 @@ public:
     double alphaTest = 0;
     bool depthTest = true;
     bool depthWrite = true;
+    bool polygonOffset = false;
+    double polygonOffsetFactor = 0;
+    double polygonOffsetUnits = 0;
     Side side = Side::Front;
     Blending blending = Blending::Normal;
     bool visible = true;

@@ -124,6 +124,9 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "transparent", &Material::transparent);
     materialBool(b, "depthTest", &Material::depthTest);
     materialBool(b, "depthWrite", &Material::depthWrite);
+    materialBool(b, "polygonOffset", &Material::polygonOffset);
+    materialNumber(b, "polygonOffsetFactor", &Material::polygonOffsetFactor);
+    materialNumber(b, "polygonOffsetUnits", &Material::polygonOffsetUnits);
     materialBool(b, "visible", &Material::visible);
     materialBool(b, "toneMapped", &Material::toneMapped);
     materialBool(b, "fog", &Material::fog);

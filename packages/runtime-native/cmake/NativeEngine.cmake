@@ -168,6 +168,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                 "standard_materials_fixtures:alpha-test,lit-render*,materials-*"
                 "render_alpha:alpha-*" "render_lights:lights-*" "render_shadows:shadows-*"
                 "render_vsm:vsm-*"
+                "render_polygon_offset:polygon-offset"
                 "traa_history:traa-history" "history_cut:history-cut"
                 "render_particles:particles-sprite,fluid-particles"
                 "render_skinned:skinned-*" "render_morph:morph-*" "render_gltf:gltf-model-*"

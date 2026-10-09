@@ -79,6 +79,9 @@ struct DrawItem {
     int renderOrder = 0;       // Object3D.renderOrder
     bool transparent = false;  // material.transparent: drawn after opaques, back to front, blended
     bool depthWrite = true;    // material.depthWrite
+    bool polygonOffset = false;       // material.polygonOffset: the pipeline's depth bias
+    double polygonOffsetFactor = 0;   // depthBiasSlopeScale
+    double polygonOffsetUnits = 0;    // depthBias
     // SkinnedMesh: the skin attributes, the skeleton's palette this frame and the bind matrices.
     BufferStore* skinIndices = nullptr; // u8, u16 or u32 ×4
     BufferStore* skinWeights = nullptr; // f32 ×4
