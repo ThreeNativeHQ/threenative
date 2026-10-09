@@ -46,6 +46,7 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/inspect/endpoint.h"
 #include "engine/player/run.h"
+#include "mystral/platform/ui_overlay.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/material.h"
@@ -91,6 +92,23 @@ void isDownCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     v8::String::Utf8Value key(info.GetIsolate(), info[0]);
     const std::string name = *key ? *key : "";
     info.GetReturnValue().Set(held->count(name) != 0);
+}
+
+// Core's ui-bridge on native (PRD-554), as the legacy host installs it (runtime.cpp setupUiBridge):
+// `__tnUiPost(frame)` sends a frame to the page, `__tnUiOverlayAttached()` says whether one listens.
+void uiPostCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    if (info.Length() < 1) return info.GetReturnValue().Set(false);
+    v8::String::Utf8Value frame(info.GetIsolate(), info[0]);
+    info.GetReturnValue().Set(mystral::platform::postUiMessage(*frame ? *frame : ""));
+}
+
+void uiAttachedCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    info.GetReturnValue().Set(mystral::platform::uiOverlayAttached());
+}
+
+// The UI composite's cost for the frame budget's `ui` phase; 0 until the player composites (PRD-554 phase 2).
+void uiCompositeMsCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    info.GetReturnValue().Set(0.0);
 }
 
 void logCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -170,6 +188,9 @@ class V8Game {
         triangles_ = renderer.lastFrame().triangles;
         frameClockMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStartedAt_).count();
     }
+    /** The page's queued frames, on the thread that owns JavaScript (legacy runtime.cpp drainUiMessages):
+     *  hit regions stay with the host, everything else goes to core's `__tnUiGameReceive`. */
+    void uiFrame();
     /** A frame with nothing to draw yet: the game's frame callbacks still run (run.h frameWithoutView). */
     void frameWithoutView() { presentFrame(); }
     void beforeRender(Renderer& renderer, RenderDatabase& database) {
@@ -620,6 +641,10 @@ bool V8Game::start(const std::string& path, std::string& error) {
     ctx->Global()
         ->Set(ctx, v8str(isolate_, "__tnIsDown"), v8::Function::New(ctx, &isDownCallback, held).ToLocalChecked())
         .Check();
+    for (const auto& [name, callback] : {std::pair{"__tnUiPost", &uiPostCallback},
+                                         std::pair{"__tnUiOverlayAttached", &uiAttachedCallback},
+                                         std::pair{"__tnUiCompositeMs", &uiCompositeMsCallback}})
+        ctx->Global()->Set(ctx, v8str(isolate_, name), v8::Function::New(ctx, callback).ToLocalChecked()).Check();
 
     std::ifstream file(path);
     if (!file)
@@ -803,6 +828,31 @@ void V8Game::presentFrame() {
     }
 }
 
+void V8Game::uiFrame() {
+    mystral::platform::pumpUiOverlay();
+    v8::Isolate::Scope isolateScope(isolate_);
+    v8::HandleScope scope(isolate_);
+    v8::Local<v8::Context> ctx = js_.Get(isolate_);
+    v8::Context::Scope contextScope(ctx);
+    std::string frame;
+    while (mystral::platform::takeUiMessage(frame)) {
+        if (mystral::platform::applyUiHitRegionsFrame(frame)) continue;
+        v8::Local<v8::Value> receive;
+        if (!ctx->Global()->Get(ctx, v8str(isolate_, "__tnUiGameReceive")).ToLocal(&receive) || !receive->IsFunction()) {
+            // Not connected yet: dropping is right and must be visible, or an intent looks like a dead button.
+            std::printf("TN_UI_BRIDGE:{\"dropped\":\"no __tnUiGameReceive\"}\n");
+            continue;
+        }
+        v8::TryCatch tryCatch(isolate_);
+        v8::Local<v8::Value> argument = v8str(isolate_, frame);
+        v8::Local<v8::Value> ignored;
+        if (!receive.As<v8::Function>()->Call(ctx, ctx->Global(), 1, &argument).ToLocal(&ignored)) {
+            v8::String::Utf8Value message(isolate_, tryCatch.Exception());
+            std::printf("[Playtest] TN_UI_RECEIVE_FAILED: %s\n", *message ? *message : "the receiver threw");
+        }
+    }
+}
+
 void V8Game::safePoint() {
     v8::Isolate::Scope isolateScope(isolate_);
     v8::HandleScope scope(isolate_);
@@ -952,6 +1002,18 @@ int main(int argc, char** argv) {
     configured.clear = [&game] { return game.clearColor(); };
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
+    // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
+    // the executable for the legacy host); TN_UI_RENDERER=native-css picks the CSS backend.
+    {
+        const std::filesystem::path ui = std::filesystem::path(gamePath).parent_path() / "ui";
+        std::error_code missing;
+        if (std::filesystem::is_regular_file(ui / "index.html", missing)) {
+            configured.uiRoot = ui.string();
+            const char* renderer = std::getenv("TN_UI_RENDERER");
+            configured.cssUi = renderer != nullptr && std::string(renderer) == "native-css";
+            configured.uiFrame = [&game] { game.uiFrame(); };
+        }
+    }
     configured.observe = [&game](const std::string& method, const json::Value* argument,
                                  json::Value& result, std::string& error) {
         return game.observe(method, argument, result, error);

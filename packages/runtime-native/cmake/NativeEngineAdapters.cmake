@@ -55,6 +55,24 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
     #     --executable <build>/tn-native-engine-player-v8 --host-arg <game>.js
     add_executable(tn-native-engine-player-v8 EXCLUDE_FROM_ALL src/engine/player/v8_main.cpp)
     target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_adapter_v8 tn_engine_player tn_engine_assets)
+    # PRD-554: a game's UI (src/ui/) on the player, through the legacy host's own overlay seam (one
+    # source, linked by both): the web view (TN_ENABLE_UI_OVERLAY) or the CSS backend (TN_ENABLE_CSS_UI).
+    target_sources(tn-native-engine-player-v8 PRIVATE src/platform/ui_overlay.cpp)
+    target_compile_definitions(tn-native-engine-player-v8 PRIVATE
+        TN_ENABLE_UI_OVERLAY=$<BOOL:${TN_ENABLE_UI_OVERLAY}> TN_ENABLE_CSS_UI=$<BOOL:${TN_ENABLE_CSS_UI}>)
+    if(TN_ENABLE_UI_OVERLAY)
+        target_link_libraries(tn-native-engine-player-v8 PRIVATE threenative-ui-overlay)
+        if(UNIX AND NOT APPLE AND NOT ANDROID)
+            find_package(PkgConfig REQUIRED)
+            if(NOT TARGET PkgConfig::TN_WEBKITGTK)
+                pkg_check_modules(TN_WEBKITGTK REQUIRED IMPORTED_TARGET webkit2gtk-4.1)
+            endif()
+            target_link_libraries(tn-native-engine-player-v8 PRIVATE PkgConfig::TN_WEBKITGTK)
+        endif()
+    endif()
+    if(TN_ENABLE_CSS_UI)
+        target_link_libraries(tn-native-engine-player-v8 PRIVATE threenative-css-ui)
+    endif()
     if(TARGET tn_engine_gltf)
         target_link_libraries(tn-native-engine-player-v8 PRIVATE tn_engine_gltf)
         target_compile_definitions(tn-native-engine-player-v8 PRIVATE TN_PLAYER_NATIVE_GLTF=1)
@@ -203,6 +221,14 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-async-bridge.mjs
                 $<TARGET_FILE:tn-native-engine-player-v8>)
         set_tests_properties(native_engine_player_async_bridge PROPERTIES LABELS "native-engine")
+        # PRD-554: a UI page's intent reaches the game through the overlay (offscreen WebKitGTK: a display).
+        if(TN_ENABLE_UI_OVERLAY AND UNIX AND NOT APPLE AND NOT ANDROID)
+            add_test(NAME native_engine_player_ui_bridge
+                COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/xvfb.sh ${TN_NODE_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-ui-bridge.mjs
+                    $<TARGET_FILE:tn-native-engine-player-v8>)
+            set_tests_properties(native_engine_player_ui_bridge PROPERTIES LABELS "native-engine")
+        endif()
         # PRD-551: QuadMesh into RenderTargets and readRenderTargetPixelsAsync on the real player (headless GPU).
         add_test(NAME native_engine_player_render_target
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-render-target.mjs

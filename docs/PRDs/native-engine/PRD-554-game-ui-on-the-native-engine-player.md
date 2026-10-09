@@ -1,6 +1,6 @@
 # PRD-554 — A game's UI runs on the native-engine player
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P1 — Midway's `launch` journey cannot start a flight on the V8 player: its briefing's "take deck" button lives in its React UI, which the native-engine player never shows, so every UI-driven journey of a game with `src/ui/` fails there
 **Complexity:** 7 (HIGH) — the legacy host's UI overlay, state bridge, compositing and input routing, moved into the engine player's loop and renderer
 **Owner:** João
@@ -40,10 +40,10 @@ nothing new.
 ## Execution Phases
 
 #### Phase 1: State and intents cross the bridge
-**Status:** NOT STARTED
+**Status:** DONE
 
-- [ ] The V8 player installs `__tnUiPost`, `__tnUiOverlayAttached` and `__tnUiCompositeMs`, attaches the overlay for a bundle with a UI entry, and delivers the page's `tn:intent` messages to `__tnUiGameReceive` at the top of a frame. proof: a player ctest whose UI page posts an intent the game reads, red before
-- [ ] Game state reaches the page: core's `publishUiState` posts `tn:state` frames the page receives. proof: the same ctest reads a state value back through the page
+- [x] The V8 player installs `__tnUiPost`, `__tnUiOverlayAttached` and `__tnUiCompositeMs`, attaches the overlay for a bundle with a UI entry, and delivers the page's `tn:intent` messages to `__tnUiGameReceive` at the top of a frame. proof: a player ctest whose UI page posts an intent the game reads, red before — 2026-10-09: `native_engine_player_ui_bridge` (offscreen WebKitGTK under Xvfb) was red ("no intent reached the game (timeout)"), green after. The player compiles the legacy host's own `ui_overlay.cpp`, which now takes its window through `setUiOverlayWindow` and its keyboard reset through a hook instead of the legacy window module; the hit-region parser moved into it, so both hosts apply `tn:hit-regions` with one function. The UI root is `ui/` beside the game bundle; `TN_UI_RENDERER=native-css` selects the CSS backend.
+- [x] Game state reaches the page: core's `publishUiState` posts `tn:state` frames the page receives. proof: the same ctest reads a state value back through the page — 2026-10-09: the game posts `tn:state` with `score: 7` through `__tnUiPost` each frame, the page's `__tnUiReceive` reads it and echoes it in an intent, and the game receives `"score":7`; green.
 
 #### Phase 2: The page is drawn into the frame
 **Status:** NOT STARTED

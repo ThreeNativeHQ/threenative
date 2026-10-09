@@ -22,6 +22,7 @@
 #include "engine/renderer/presentation.h"
 #include "engine/renderer/render_database.h"
 #include "engine/world/loop/fixed_step.h"
+#include "mystral/platform/ui_overlay.h"
 #include "mystral/webgpu/context.h"
 #include "mystral/webgpu/presentation.h"
 
@@ -169,6 +170,18 @@ int run(const Game& game) {
     startupStage("sdl-window-begin");
     const bool windowed = openWindow(window);
     startupStage(windowed ? "sdl-window-ready" : "sdl-window-failed");
+    if (!game.uiRoot.empty()) {
+        // The same overlay the legacy host attaches, over this window; a game that asked for a UI
+        // and cannot show it stops by name rather than playing behind an empty rectangle.
+        mystral::platform::setUiOverlayWindow(windowed ? window.handle : nullptr);
+        const bool attached = game.cssUi ? mystral::platform::attachDesktopCssUi(game.uiRoot)
+                                         : mystral::platform::attachDesktopUiOverlay(game.uiRoot);
+        if (!attached) {
+            std::printf("TN_UI_LOAD_FAILED: the %s UI in %s could not attach\n", game.cssUi ? "native-css" : "web",
+                        game.uiRoot.c_str());
+            return 1;
+        }
+    }
     std::unique_ptr<mystral::webgpu::Context> context;
     std::unique_ptr<Presenter> presenter;
     auto candidate = std::make_unique<mystral::webgpu::Context>();
@@ -368,6 +381,7 @@ int run(const Game& game) {
             window.resumeSurface = false;
         }
 #endif
+        if (game.uiFrame) game.uiFrame();
         // An advance may render several streaming frames; each tick gets its own admission cap.
         mailbox.poll(endpoint);
         // Without a runner nothing drives host.step, and the game would re-render one frozen tick:
@@ -390,6 +404,10 @@ int run(const Game& game) {
     presenter.reset();
     context->releaseSurface();
 #endif
+    if (!game.uiRoot.empty()) {
+        mystral::platform::detachDesktopUiOverlay();
+        mystral::platform::setUiOverlayWindow(nullptr);
+    }
     if (window.handle)
         SDL_DestroyWindow(window.handle);
     SDL_QuitSubSystem(SDL_INIT_VIDEO);

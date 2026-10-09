@@ -2732,49 +2732,7 @@ private:
      * platform. Fail closed: a malformed publication leaves the previous rectangles in place and
      * every later click is decided against rectangles that no longer exist, so it is named.
      */
-    bool applyUiHitRegions(const std::string& frame) {
-        if (frame.find("\"tn:hit-regions\"") == std::string::npos) return false;
-        // The registry emits each rectangle as x, y, width, height and nothing else lives in this
-        // frame, so reading the four keys in order is the whole parse. Named keys rather than
-        // "every number after a colon": a payload that grows a field would otherwise silently
-        // shift every rectangle by one.
-        static constexpr const char* kKeys[] = {"\"x\":", "\"y\":", "\"width\":", "\"height\":"};
-        std::vector<float> regions;
-        size_t cursor = 0;
-        while (true) {
-            float rectangle[4];
-            size_t next = cursor;
-            bool complete = true;
-            for (size_t index = 0; index < 4; ++index) {
-                const size_t found = frame.find(kKeys[index], next);
-                if (found == std::string::npos) {
-                    complete = false;
-                    break;
-                }
-                const size_t value = found + std::strlen(kKeys[index]);
-                char* end = nullptr;
-                rectangle[index] = std::strtof(frame.c_str() + value, &end);
-                if (end == frame.c_str() + value) {
-                    complete = false;
-                    break;
-                }
-                next = static_cast<size_t>(end - frame.c_str());
-            }
-            if (!complete) break;
-            regions.insert(regions.end(), std::begin(rectangle), std::end(rectangle));
-            cursor = next;
-        }
-        platform::setUiHitRegions(regions);
-        // The rectangles themselves, not just the count: a hit that lands in the wrong place is a
-        // layout or coordinate question, and only the published rectangles can answer it.
-        std::cout << "TN_UI_HIT_REGIONS:{\"count\":" << regions.size() / 4 << ",\"regions\":[";
-        for (size_t index = 0; index < regions.size(); ++index) {
-            if (index > 0) std::cout << ",";
-            std::cout << regions[index];
-        }
-        std::cout << "]}" << std::endl;
-        return true;
-    }
+    bool applyUiHitRegions(const std::string& frame) { return platform::applyUiHitRegionsFrame(frame); }
 
     void drainUiMessages() {
         if (!jsEngine_) return;

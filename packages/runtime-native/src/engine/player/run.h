@@ -45,6 +45,12 @@ struct Game {
      *  requestAnimationFrame fires while nothing is drawn yet (a loader that adds in slices per frame,
      *  core's describe() waiting for the scene the game enters). */
     std::function<void()> frameWithoutView;
+    /** PRD-554: the built UI (`index.html` and its bundle) shown over the frame through the legacy
+     *  host's overlay seam, web view or CSS backend; empty for a game with no UI. */
+    std::string uiRoot;
+    bool cssUi = false;
+    /** At the top of each loop pass: the frames the page queued go to the game's end of the bridge. */
+    std::function<void()> uiFrame;
     /** Releases game-owned GPU resources before the loop destroys its renderer. */
     std::function<void()> shutdown;
     /** One fixed tick; `dt` is the step in seconds. The loop calls it once per `advance` tick. */
