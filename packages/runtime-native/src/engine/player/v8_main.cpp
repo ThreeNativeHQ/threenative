@@ -707,7 +707,10 @@ void V8Game::tick(double dt) {
     v8::Local<v8::Value> argument = v8::Number::New(isolate_, dt);
     v8::Local<v8::Value> ignored;
     if (!update_.Get(isolate_)->Call(ctx, ctx->Global(), 1, &argument).ToLocal(&ignored)) {
-        v8::String::Utf8Value message(isolate_, tryCatch.Exception());
+        // The stack (message first) names the game call that threw, not only what it threw.
+        v8::Local<v8::Value> stack;
+        const bool traced = tryCatch.StackTrace(ctx).ToLocal(&stack) && stack->IsString();
+        v8::String::Utf8Value message(isolate_, traced ? stack : tryCatch.Exception());
         std::printf("[Playtest] TN_V8_UPDATE_FAILED: %s\n", *message ? *message : "the update threw");
     }
 }

@@ -191,6 +191,38 @@ public:
         if (!object || !acceptsClass(object->cls, cls)) throw Unsupported{std::string("argument is not a ") + cls};
         return *static_cast<T*>(object->ptr.get());
     }
+
+    /**
+     * A read-only argument (`v.copy(source)`, `v.add(other)`): an engine `cls`, or, for a vector, any
+     * plain object with its fields, as three's methods read `source.x`, `source.y`... A missing field
+     * reads NaN: three stores the `undefined` and its arithmetic then reads NaN. A plain object is
+     * read into `scratch`.
+     * Never for an output argument (`getWorldPosition(target)`), which three writes into.
+     */
+    template <typename T>
+    const T& in(const Value& arg, const char* cls, T& scratch) {
+        constexpr bool vector = std::is_same_v<T, engine::Vector2> || std::is_same_v<T, engine::Vector3> ||
+                                std::is_same_v<T, engine::Vector4>;
+        if constexpr (vector) {
+            if (arg.kind == Value::Kind::Record) {
+                const auto field = [&](const char* name) {
+                    for (const auto& [key, value] : arg.fields) {
+                        if (key != name) continue;
+                        if (value.kind != Value::Kind::Number)
+                            throw Unsupported{std::string("argument is not a ") + cls + ": " + name + " is not a number"};
+                        return value.number;
+                    }
+                    return std::numeric_limits<double>::quiet_NaN();
+                };
+                scratch.x = field("x");
+                scratch.y = field("y");
+                if constexpr (!std::is_same_v<T, engine::Vector2>) scratch.z = field("z");
+                if constexpr (std::is_same_v<T, engine::Vector4>) scratch.w = field("w");
+                return scratch;
+            }
+        }
+        return ref<T>(arg, cls);
+    }
 };
 
 /**

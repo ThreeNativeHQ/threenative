@@ -459,7 +459,19 @@ void catalogCoverage() {
         CHECK(tn_type_id(name.c_str()) == 0);
         CHECK(!global->HasOwnProperty(ctx, key(name)).FromMaybe(true));
     }
-    CHECK(installed.size() + numbers.size() + strings.size() + recordTypes.size() + enums.size() ==
+    // Every constant of the engine's table is installed with its value; the spot values above are
+    // in it. The catalog publishes exactly the table's constants (sync-native-status).
+    std::set<std::string> tableConstants;
+    for (const auto& constant : tn::engine::kThreeConstants) {
+        v8::Local<v8::Value> value;
+        CHECK(global->Get(ctx, key(constant.name)).ToLocal(&value));
+        if (constant.text) CHECK(value->IsString() && text(value) == constant.text);
+        else CHECK(value->IsNumber() && value.As<v8::Number>()->Value() == constant.number);
+        tableConstants.insert(constant.name);
+    }
+    for (const auto& [name, want] : numbers) CHECK(tableConstants.count(name) == 1);
+    for (const auto& [name, want] : strings) CHECK(tableConstants.count(name) == 1);
+    CHECK(installed.size() + tableConstants.size() + recordTypes.size() + enums.size() ==
           tn_engine_version().capability_count);
 
     // Every class's prototype exposes exactly its registry members: methods, top-level getters and
