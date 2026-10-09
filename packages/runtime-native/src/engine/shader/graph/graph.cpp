@@ -264,7 +264,9 @@ ExprId Lowerer::emit(Node node) {
             if (d.args.size() == 2) {
                 const ExprId level = expression(d.args[1]);
                 if (level == kInvalid) return kInvalid;
-                return program_.sampleLevel(program_.texture2d(d.name), coordinate, level);
+                return program_.sampleLevel(program_.expr(coordinate).type == Type::vec(3)
+                                                ? program_.texture3d(d.name) : program_.texture2d(d.name),
+                                            coordinate, level);
             }
             return program_.sample(program_.expr(coordinate).type == Type::vec(3)
                                        ? program_.texture3d(d.name) : program_.texture2d(d.name), coordinate);

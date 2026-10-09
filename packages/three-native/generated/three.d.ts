@@ -613,6 +613,12 @@ y: number;
   setFromCartesianCoords(x: number, y: number, z: number): this;
 }
 
+/** Catalog supported: three/Data3DTexture. */
+export declare class Data3DTexture extends Texture {
+constructor();
+wrapR: Wrapping;
+}
+
 /** Catalog supported: three/DataTexture. */
 export declare class DataTexture extends Texture {
 constructor();
@@ -2599,8 +2605,8 @@ flipY: boolean;
 anisotropy: number;
 generateMipmaps: boolean;
 readonly source: Source;
-readonly format: number;
-readonly type: number;
+format: number;
+type: number;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */

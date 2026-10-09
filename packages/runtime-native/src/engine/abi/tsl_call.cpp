@@ -295,6 +295,24 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             throw std::runtime_error("texture needs a name");
         return g::texture(args[0].text, arg(1));
     }
+    // r185's texture3D(value, uvw, level) (accessors/Texture3DNode.js): a Data3DTexture sampled at a vec3,
+    // vec3(0.5) by default; `level` is an explicit mip.
+    if (name == "texture3D") {
+        if (args.empty() || args.size() > 3) throw std::runtime_error("texture3D takes 1 to 3 arguments");
+        if (args[0].kind != TslArg::Kind::Object || !args[0].object || args[0].cls != "Data3DTexture")
+            throw std::runtime_error("texture3D needs an engine Data3DTexture");
+        const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
+        if (!source->sampleable()) throw std::runtime_error("texture3D needs a Data3DTexture with texels");
+        const auto half = [] { return g::float_(0.5); };
+        auto node = g::objectTexture(args[0].object, "nodeMap" + std::to_string(source->ident.value()),
+                                     args.size() > 1 ? arg(1) : g::vec3({half(), half(), half()}));
+        if (args.size() == 3) {
+            auto level = std::make_shared<g::NodeData>(*node);
+            level->args.push_back(arg(2));
+            return level;
+        }
+        return node;
+    }
     if (name == "uv") {
         arity(0);
         return g::uv();

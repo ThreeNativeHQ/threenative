@@ -7621,6 +7621,11 @@
         "source": "three/webgpu"
       },
       {
+        "symbol": "Data3DTexture",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "DataTexture",
         "kind": "class",
         "source": "three"

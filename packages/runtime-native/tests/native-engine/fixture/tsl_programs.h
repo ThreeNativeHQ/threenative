@@ -531,6 +531,29 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         material->nodes.positionNode = g::add(g::positionLocal(),
             g::vec3({g::float_(0), g::float_(0), g::mul(g::swizzle(level, "x"), g::float_(0.4))}));
         material->nodes.colorNode = g::vec4({g::swizzle(sample(ramp), "xyz"), g::float_(1)});
+    } else if (program == "texture-data-3d") {
+        // texture3D(volume, uvw) and texture3D(volume).sample(q) through the shared TSL table, as the
+        // rain template's clouds sample their noise volume; q runs past 1 along W, which repeats.
+        uint64_t serial = 0;
+        auto volume = std::make_shared<engine::DataTexture>();
+        volume->volume = true;
+        volume->width = volume->height = volume->depth = 4;
+        volume->data.resize(4 * 4 * 4 * 4);
+        for (uint32_t z = 0; z < 4; ++z) for (uint32_t y = 0; y < 4; ++y) for (uint32_t x = 0; x < 4; ++x) {
+            const auto at = ((z * 4 + y) * 4 + x) * 4;
+            volume->data[at] = uint8_t(x * 80); volume->data[at + 1] = uint8_t(y * 80);
+            volume->data[at + 2] = uint8_t(z * 80); volume->data[at + 3] = 255;
+        }
+        volume->magFilter = volume->minFilter = static_cast<uint16_t>(engine::TextureFilter::Linear);
+        volume->wrapR = static_cast<uint16_t>(engine::TextureWrap::Repeat);
+        volume->needsUpdate();
+        const auto object = abi::TslArg::objectOf("Data3DTexture", volume);
+        const auto u = g::swizzle(g::uv(), "x"), v = g::swizzle(g::uv(), "y");
+        const auto slice = abi::tslCall("texture3D", nullptr, {object, abi::TslArg::of(g::vec3({u, v, g::float_(0.25)}))}, serial);
+        const abi::TslArg drifting = abi::TslArg::of(abi::tslCall("texture3D", nullptr, {object}, serial));
+        const auto q = g::vec3({v, u, g::add(g::mul(u, g::float_(2)), g::float_(0.6))});
+        const auto drift = abi::tslCall("sample", &drifting, {abi::TslArg::of(q)}, serial);
+        material->nodes.colorNode = g::vec4({g::swizzle(slice, "x"), g::swizzle(slice, "y"), g::swizzle(drift, "z"), g::float_(1)});
     } else if (program == "texture-object") {
         // texture(object, uv) through the shared TSL table, as V8 and Wasm pass an engine Texture.
         uint64_t serial = 0;

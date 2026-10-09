@@ -79,6 +79,7 @@ public:
     uint16_t mapping = 300;  // UVMapping; equirectangular reflection is 303
     uint16_t wrapS = static_cast<uint16_t>(TextureWrap::ClampToEdge);
     uint16_t wrapT = static_cast<uint16_t>(TextureWrap::ClampToEdge);
+    uint16_t wrapR = static_cast<uint16_t>(TextureWrap::ClampToEdge);  // Data3DTexture's W axis
     uint16_t magFilter = static_cast<uint16_t>(TextureFilter::Linear);
     uint16_t minFilter = static_cast<uint16_t>(TextureFilter::LinearMipmapLinear);
     uint16_t format = kTextureRGBAFormat;
@@ -96,6 +97,8 @@ public:
     // bits), 16 for FloatType. Empty until a loader or DataTexture fills it.
     std::vector<uint8_t> data;
     uint32_t width = 0, height = 0;
+    uint32_t depth = 1;   // slices of a Data3DTexture, stored one after another
+    bool volume = false;  // three's isData3DTexture: uploaded and sampled as a 3D texture, at any depth
     /**
      * The render target this texture is the colour of (three's `renderTarget.texture`,
      * scene/render_target.h): the renderer samples that target's last render instead of uploading
@@ -112,7 +115,7 @@ public:
     /** Bytes per RGBA texel as stored in `data` and uploaded: RGBA8, RGBA16Float or RGBA32Float. */
     [[nodiscard]] uint32_t bytesPerTexel() const { return isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
-    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && !data.empty(); }
+    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && !data.empty(); }
     /** A material can sample it: an uploaded image, or a render target's last render. */
     [[nodiscard]] bool sampleable() const { return hasImage() || !renderTarget.expired(); }
 

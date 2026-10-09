@@ -1,6 +1,7 @@
 import {
   BackSide,
   BoxGeometry,
+  Data3DTexture,
   DataTexture,
   DataUtils,
   EquirectangularReflectionMapping,
@@ -12,6 +13,7 @@ import {
   PointLight,
   RenderPipeline,
   RenderTarget,
+  RepeatWrapping,
   SRGBColorSpace,
   Scene,
   Vector3,
@@ -48,6 +50,7 @@ import {
   sin,
   smoothstep,
   texture,
+  texture3D,
   uint,
   uniform,
   uv,
@@ -545,6 +548,23 @@ function dataTexture(width, height, texel) {
   return map;
 }
 
+/**
+ * A 4 x 4 x 4 RGBA8 Data3DTexture, linear, repeating along W as the rain template's noise volume does:
+ * texel (x, y, z) is (80x, 80y, 80z).
+ */
+function volumeTexture() {
+  const pixels = new Uint8Array(4 * 4 * 4 * 4);
+  for (let z = 0; z < 4; ++z)
+    for (let y = 0; y < 4; ++y)
+      for (let x = 0; x < 4; ++x)
+        pixels.set([x * 80, y * 80, z * 80, 255], ((z * 4 + y) * 4 + x) * 4);
+  const volume = new Data3DTexture(pixels, 4, 4, 4);
+  volume.magFilter = volume.minFilter = LinearFilter;
+  volume.wrapR = RepeatWrapping;
+  volume.needsUpdate = true;
+  return volume;
+}
+
 /** An 8 x 8 checker, nearest-filtered: texels 255 and 64 alternate in r, g and b. */
 function checker() {
   const pixels = new Uint8Array(8 * 8 * 4);
@@ -742,6 +762,13 @@ export const programs = {
       cameraViewMatrix.mul(vec4(positionLocal.mul(0.4).add(offset), 1)),
     );
     quads.material.colorNode = vec4(attribute("aTint", "vec3"), 1);
+  },
+  /** texture3D(volume, uvw) and texture3D(volume).sample(q), as the rain template's clouds read their noise. */
+  async "texture-data-3d"({ target }) {
+    const volume = volumeTexture();
+    const slice = texture3D(volume, vec3(uv().x, uv().y, 0.25));
+    const drift = texture3D(volume).sample(vec3(uv().y, uv().x, uv().x.mul(2).add(0.6)));
+    target.colorNode = vec4(slice.r, slice.g, drift.b, 1);
   },
   async "texture-object"({ target }) {
     const bands = equirectSky();

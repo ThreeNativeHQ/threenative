@@ -4988,12 +4988,21 @@
       "kind": "class",
       "source": "three",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_DATA3DTEXTURE"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "Texture",
       "constructor": [],
-      "fields": [],
+      "fields": [
+        {
+          "name": "wrapR",
+          "type": "Wrapping",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
       "methods": []
     },
     {
@@ -20190,7 +20199,7 @@
         {
           "name": "format",
           "type": "number",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -20199,7 +20208,7 @@
         {
           "name": "type",
           "type": "number",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"

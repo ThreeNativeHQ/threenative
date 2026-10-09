@@ -118,9 +118,9 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     const bool texture = index == 0 && name == "texture";
     const bool textureLoad = index == 0 && name == "textureLoad";
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
-    // pmremTexture prefilters the texture object itself, not a map the material names; reflector
-    // takes its target and virtual camera.
-    if ((index == 0 && name == "pmremTexture") || (index < 2 && name == "reflector")) {
+    // pmremTexture prefilters the texture object itself and texture3D samples it, not a map the material
+    // names; reflector takes its target and virtual camera.
+    if ((index == 0 && (name == "pmremTexture" || name == "texture3D")) || (index < 2 && name == "reflector")) {
         tn_handle_t handle{};
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object == nullptr) throw std::runtime_error(name + " needs an engine object as argument " + std::to_string(index));
@@ -403,7 +403,8 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "ao", "denoise", "smaa", "bloom", "oneMinus", "varying", "setUniform",
-                             "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection"})
+                             "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
+                             "texture3D"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())

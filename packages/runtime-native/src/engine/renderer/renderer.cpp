@@ -769,6 +769,12 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const bool depthCopy = b.name.find("Depth") != std::string::npos;
             if (b.kind == shader::BindingKind::Texture) e.textureView = depthCopy ? viewportDepthView_ : viewportColorView_;
             else e.sampler = depthCopy ? compareSampler_ : outputSampler_;
+        } else if (graphTextureBinding(b.kind == shader::BindingKind::Sampler ? "t_" + b.name.substr(4) : b.name)) {
+            // A graph's own texture (texture(object), texture3D), checked before the 3D probe atlases.
+            const MaterialTexture* texture = graph(b.name, b.kind == shader::BindingKind::Sampler);
+            if (!texture) throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name + " has no texture this draw");
+            if (b.kind == shader::BindingKind::Texture) e.textureView = texture->view;
+            else e.sampler = texture->sampler;
         } else if (b.volume) {
             const auto& atlas = probeTextures_.at(b.name.substr(b.kind == shader::BindingKind::Texture ? 2 : 4));
             if (b.kind == shader::BindingKind::Texture) e.textureView = atlas.view;
@@ -782,11 +788,6 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             if (b.kind == shader::BindingKind::Texture)
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;
-        } else if (graphTextureBinding(b.kind == shader::BindingKind::Sampler ? "t_" + b.name.substr(4) : b.name)) {
-            const MaterialTexture* texture = graph(b.name, b.kind == shader::BindingKind::Sampler);
-            if (!texture) throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name + " has no texture this draw");
-            if (b.kind == shader::BindingKind::Texture) e.textureView = texture->view;
-            else e.sampler = texture->sampler;
         } else if (b.kind == shader::BindingKind::Texture) {
             const auto postView = postEffects_ ? postEffects_->view(b.name.substr(2)) : nullptr;
             const MaterialTexture* pbrTexture = pbr(b.name, false);
@@ -837,7 +838,35 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
                                     : texture.isHalfFloat() ? WGPUTextureFormat_RGBA16Float
                                     : texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb
                                                        : WGPUTextureFormat_RGBA8Unorm;
-    if (texture.hasImage()) {
+    if (texture.hasImage() && texture.volume) {
+        // A Data3DTexture: one 3D texture of `depth` slices, one level (ponytail: a volume's
+        // generateMipmaps is ignored; no corpus game turns it on).
+        if (texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a Data3DTexture");
+        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.depth * texture.bytesPerTexel();
+        if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA volume byte count");
+        WGPUTextureDescriptor desc = {};
+        desc.dimension = WGPUTextureDimension_3D;
+        desc.size = {texture.width, texture.height, texture.depth};
+        desc.format = format;
+        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+        desc.mipLevelCount = 1;
+        desc.sampleCount = 1;
+        record.mipped = wgpuDeviceCreateTexture(device_, &desc);
+        WGPUImageCopyTexture_Compat destination = {};
+        destination.texture = record.mipped;
+        destination.aspect = WGPUTextureAspect_All;
+        WGPUTextureDataLayout_Compat layout = {};
+        layout.bytesPerRow = texture.width * texture.bytesPerTexel();
+        layout.rowsPerImage = texture.height;
+        const WGPUExtent3D extent = {texture.width, texture.height, texture.depth};
+        wgpuQueueWriteTexture(queue_, &destination, texture.data.data(), texture.data.size(), &layout, &extent);
+        WGPUTextureViewDescriptor view = {};
+        view.dimension = WGPUTextureViewDimension_3D;
+        view.mipLevelCount = 1;
+        view.arrayLayerCount = 1;
+        view.format = format;
+        record.view = wgpuTextureCreateView(record.mipped, &view);
+    } else if (texture.hasImage()) {
         // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
         const bool mipmaps = texture.generateMipmaps && texture.bytesPerTexel() == 4;
         uint32_t levels = 1;
@@ -896,7 +925,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     WGPUSamplerDescriptor sampler = {};
     sampler.addressModeU = addressMode(texture.wrapS);
     sampler.addressModeV = addressMode(texture.wrapT);
-    sampler.addressModeW = WGPUAddressMode_ClampToEdge;
+    sampler.addressModeW = addressMode(texture.wrapR);
     sampler.magFilter = filterMode(texture.magFilter);
     sampler.minFilter = filterMode(texture.minFilter);
     // NearestMipmapLinear and LinearMipmapLinear blend between two levels, the other filters take one.

@@ -44,6 +44,7 @@ const FUNCTIONS = [
   "attribute",
   "uv",
   "texture",
+  "texture3D",
   "add",
   "sub",
   "mul",
@@ -204,11 +205,14 @@ export function isTslNode(value: unknown): value is ITslNode {
 }
 
 /**
- * Arguments that cross as the engine object itself: pmremTexture prefilters its texture (not a map
- * the material names), and reflector takes its target and virtual camera.
+ * Arguments that cross as the engine object itself: pmremTexture prefilters its texture and texture3D
+ * samples it (not a map the material names), and reflector takes its target and virtual camera.
  */
 function takesEngineObject(name: string, index: number): boolean {
-  return (index === 0 && name === "pmremTexture") || (index < 2 && name === "reflector");
+  return (
+    (index === 0 && (name === "pmremTexture" || name === "texture3D")) ||
+    (index < 2 && name === "reflector")
+  );
 }
 
 /**

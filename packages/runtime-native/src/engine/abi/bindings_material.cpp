@@ -480,10 +480,17 @@ void registerTextureFields(ClassBinding& b) {
     };
     b.getters["flipY"] = [](void* self) { return Value::of(as<Texture>(self)->flipY); };
     b.setters["flipY"] = [](void* self, const Value& v) { as<Texture>(self)->flipY = flag(v); as<Texture>(self)->needsUpdate(); };
-    // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat), read
-    // only: they are fixed by the constructor or the render target that owns the texture.
+    // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat): fixed
+    // by the constructor or the render target that owns the texture. Writing the value a texture already
+    // has is accepted (the rain template restates them); another value is refused by name.
     b.getters["type"] = [](void* self) { return Value::of(double(as<Texture>(self)->type)); };
+    b.setters["type"] = [](void* self, const Value& v) {
+        if (number(v) != as<Texture>(self)->type) throw Unsupported{"texture.type is fixed by the texture's data"};
+    };
     b.getters["format"] = [](void* self) { return Value::of(double(as<Texture>(self)->format)); };
+    b.setters["format"] = [](void* self, const Value& v) {
+        if (number(v) != as<Texture>(self)->format) throw Unsupported{"texture.format is fixed by the texture's data"};
+    };
     textureNumber<Texture>(b, "mapping", &Texture::mapping);
     textureNumber<Texture>(b, "wrapS", &Texture::wrapS);
     textureNumber<Texture>(b, "wrapT", &Texture::wrapT);
@@ -660,6 +667,35 @@ void registerTextureBindings(Registry& classes) {
             if (a[i].kind == Value::Kind::Number) *optional[i - 3] = static_cast<uint16_t>(a[i].number);
         texture->needsUpdate();  // three's CanvasTexture sets needsUpdate in its constructor
         return std::static_pointer_cast<void>(texture);
+    };
+    // three's Data3DTexture(data, width, height, depth): RGBA texels, `depth` slices of width * height,
+    // with DataTexture's defaults (nearest filters, no flip, no mipmaps) and its own wrapR.
+    ClassBinding& volume = classes["Data3DTexture"];
+    registerTextureClass(volume, true);
+    volume.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+        auto texture = std::make_shared<DataTexture>();
+        texture->volume = true;
+        if (a.empty() || a[0].kind != Value::Kind::Numbers) return std::static_pointer_cast<void>(texture);
+        const auto size = [&](std::size_t i) { return a.size() > i ? static_cast<uint32_t>(number(a[i])) : 1u; };
+        const uint32_t width = size(1), height = size(2), depth = size(3);
+        if (width == 0 || height == 0 || depth == 0 || a[0].numbers.size() != std::size_t(width) * height * depth * 4)
+            throw Unsupported{"Data3DTexture data must be width * height * depth * 4 RGBA values"};
+        if (a[0].text == "Uint16Array") throw Unsupported{"Data3DTexture data must be bytes or floats"};
+        const uint16_t type = a[0].text == "Float32Array" ? kTextureFloatType : kTextureUnsignedByteType;
+        texture->setImage(a[0].numbers, a[0].text, width, height, kTextureRGBAFormat, type);
+        texture->depth = depth;
+        return std::static_pointer_cast<void>(texture);
+    };
+    textureNumber<Texture>(volume, "wrapR", &Texture::wrapR);
+    // three's `texture.image.data = array` for a volume: width * height * depth texels.
+    volume.setters["image.data"] = [](void* self, const Value& v) {
+        auto* texture = as<DataTexture>(self);
+        const std::size_t texels = std::size_t(texture->width) * texture->height * texture->depth;
+        if (v.kind != Value::Kind::Numbers || texels == 0 || v.numbers.size() != texels * 4)
+            throw Unsupported{"image.data must be a typed array of width * height * depth * 4 values"};
+        const uint32_t depth = texture->depth;
+        texture->setImage(v.numbers, v.text, texture->width, texture->height, texture->format, texture->type, false);
+        texture->depth = depth;
     };
 }
 
