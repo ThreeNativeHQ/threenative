@@ -2,16 +2,48 @@
   "schemaVersion": 1,
   "name": "wasm-engine-game",
   "target": "web",
-  "viewport": { "width": 640, "height": 360 },
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
   "warmupFrames": 10,
-  "artifacts": { "screenshots": true },
-  "steps": [{ "kind": "wait", "label": "running", "waitTicks": 30 }],
+  "artifacts": {
+    "screenshots": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "running",
+      "waitTicks": 30
+    }
+  ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
-    "resources": [{ "id": "state", "path": "frames", "changed": true }],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "frames",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "engineCalls",
+        "lte": 37,
+        "allowTrivial": "PRD-553: a drawn frame of this core game makes at most 37 engine calls (2026-10-09); with core's projected-size cull walking the scene in JS instead of one engine call it makes 62."
+      }
+    ],
     "visual": [
       {
-        "region": { "x": 120, "y": 80, "width": 400, "height": 200, "minNonblankPixelRatio": 0.2 }
+        "region": {
+          "x": 120,
+          "y": 80,
+          "width": 400,
+          "height": 200,
+          "minNonblankPixelRatio": 0.2
+        }
       }
     ]
   }

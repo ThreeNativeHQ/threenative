@@ -27,10 +27,10 @@ is hardened with a counter (engine calls per frame), never a timing gate.
 ## Execution Phases
 
 #### Phase 1: The projected-size cull runs in the engine
-**Status:** IN PROGRESS
+**Status:** DONE
 
 - [x] The engine's projected-size cull makes the decisions core's JS cull makes, object for object, including its exemptions and bound staleness. proof: a native test comparing both on the same scenes, `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_projected_cull` — 2026-10-09: proved on the real Wasm module instead of a C++-only test, because the oracle is core's TypeScript: `native_engine_wasm_browser_backend` runs core's own `RenderCameraCull` over the same scene in the pinned three (JS walk) and in the engine (`Object3D.__cullProjected`), three frames: the same report and the same hidden set, over camera-attached, alwaysRender, frustumCulled = false, an off-screen shadow caster, no usable bounds, a buffer rewritten every frame, and culled far objects, pass. The JS walk over engine objects never tracked a rewritten buffer (the wrapper has no `geometry.attributes.position.version`); the engine path does, as core's rule over three does.
-- [ ] Core uses it when the root offers it, and the Wasm `minimal` page drops its per-frame engine calls. proof: `pnpm profile:wasm-page --calls` engine calls per frame, and a counter assertion on the wasm-engine-boot renderer page
+- [x] Core uses it when the root offers it, and the Wasm `minimal` page drops its per-frame engine calls. proof: `pnpm profile:wasm-page --calls` engine calls per frame, and a counter assertion on the wasm-engine-boot renderer page — 2026-10-09: `pnpm profile:wasm-page --calls` on the `minimal` template: 365 -> 124 engine calls per frame, page JS 34.7% -> 24.5% of CPU (frame p50 unchanged at 1.40 ms: the native frame now waits on GPU and present). Gate: `pnpm --filter wasm-engine-boot playtest:game` bounds a steady drawn frame of the core game page at 37 engine calls, exit 0; with core's JS walk instead of the engine's cull it makes 62 and fails.
 
 #### Phase 2: The template is multiple times faster than three.js
 **Status:** NOT STARTED

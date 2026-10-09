@@ -1,5 +1,8 @@
 import game from "./game.js";
 
+// PRD-553: three-native's call census, so the scenario can bound the engine calls a frame makes.
+Object.assign(globalThis, { __tnCallCounts: new Map<string, number>() });
+
 // Reachable from a debugging probe; the scenarios read the playtest bridge instead.
 Object.assign(globalThis, { __wasmEngineBootGame: game });
 

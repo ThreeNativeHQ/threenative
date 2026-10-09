@@ -13,12 +13,27 @@ import config from "../threenative.config.js";
 
 export interface IBootState extends Record<string, unknown> {
   frames: number;
+  /**
+   * PRD-553: JS-to-engine calls of a steady drawn frame (three-native's opt-in census, main.ts): the
+   * fewest over the last 10 frames, since a frame the playtest runner observes also counts its reads.
+   */
+  engineCalls: number;
+}
+
+/** The census total so far, or 0 when the census is off. */
+function engineCallTotal(): number {
+  const counts = (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts;
+  let total = 0;
+  for (const count of counts?.values() ?? []) total += count;
+  return total;
 }
 
 /** One lit box and nothing else: no TSL, no post, no physics (PRD-540 phase 2). */
 class Boot extends Scene<IBootState> {
-  static override readonly initialState: IBootState = { frames: 0 };
+  static override readonly initialState: IBootState = { frames: 0, engineCalls: 0 };
   #box: Mesh | undefined;
+  #calls = 0;
+  #recent: number[] = [];
 
   override enter(ctx: ICtx<IBootState>): SceneFrame<IBootState> {
     const camera = ctx.camera as PerspectiveCamera;
@@ -38,9 +53,17 @@ class Boot extends Scene<IBootState> {
     ball.position.set(1.6, 0, 0);
     this.#box.position.set(-0.8, 0, 0);
     ctx.scene.add(this.#box, ball, sun, new AmbientLight(0xffffff, 0.4));
+    // Once per drawn frame: everything since the last draw (the updates, the cull, the render).
+    ctx.beforeRender(() => {
+      const total = engineCallTotal();
+      this.#recent = [...this.#recent.slice(-9), total - this.#calls];
+      this.#calls = total;
+      const engineCalls = Math.min(...this.#recent);
+      ctx.state.set((state) => ({ ...state, engineCalls }));
+    });
     return (frameCtx, dt) => {
       if (this.#box !== undefined) this.#box.rotation.y += dt;
-      frameCtx.state.set((state) => ({ frames: state.frames + 1 }));
+      frameCtx.state.set((state) => ({ ...state, frames: state.frames + 1 }));
     };
   }
 }
