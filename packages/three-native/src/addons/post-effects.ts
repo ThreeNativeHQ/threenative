@@ -74,6 +74,11 @@ export function definePostEffects(tsl: IEffectTsl) {
       ]),
     smaa: (node: unknown): IEffectNode => tsl.smaa(node),
     bloom: (node: unknown, strength?: number, radius?: number, threshold?: number): IEffectNode =>
-      tsl.bloom(node, strength, radius, threshold),
+      uniforms(tsl.bloom(node, strength, radius, threshold), [
+        "strength",
+        "radius",
+        "threshold",
+        "smoothWidth",
+      ]),
   };
 }

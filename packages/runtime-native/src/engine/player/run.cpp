@@ -307,6 +307,8 @@ int run(const Game& game) {
         database.render(renderer, *scene, *camera, {0.05, 0.06, 0.09, 1});
         for (const std::string& diagnostic : database.diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
+        for (const std::string& diagnostic : renderer.diagnostics())
+            std::printf("[Playtest] %s\n", diagnostic.c_str());
         if (presenter) {
             Presenter::Frame target;
             if (firstFrame) startupStage("first-acquire-begin");

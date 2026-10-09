@@ -29,6 +29,7 @@ interface IRegistryClass {
 
 interface IRegistryDump {
   readonly classes: Record<string, IRegistryClass>;
+  readonly constants?: readonly string[];
 }
 
 /** Top-level getters and member objects are catalog members; a dotted path is a protocol path. */
@@ -102,6 +103,14 @@ describe("the catalog and the binding registry", () => {
     }
     const names = [...table.matchAll(/TN_CATALOG_TYPE\("([^"]+)"/gu)].map((match) => match[1]);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("the supported constants are the registry's constants", () => {
+    const constants = loadCatalog(REPO).entries.filter((entry) => entry.kind === "constant");
+    const supported = constants
+      .filter((entry) => entry.status.kind === "supported")
+      .map((entry) => entry.name);
+    expect(sorted(supported)).toEqual(sorted(dump.constants ?? []));
   });
 
   it("publishes DirectionalLight.target as assignable", () => {

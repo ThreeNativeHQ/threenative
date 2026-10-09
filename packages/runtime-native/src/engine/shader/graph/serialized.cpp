@@ -241,7 +241,7 @@ private:
 PostNode serializedPost(Node root) {
     return {key(root), [root](Program& p, uint32_t, ExprId coordinate) {
         tsl::Build scope(p); return lower(root, p, {{"uv", coordinate}});
-    }, postPasses(root), uniforms(root)};
+    }, postPasses(root), uniforms(root), uniformNodes(root)};
 }
 
 Graph importSerialized(std::string_view source, std::vector<std::string>& errors) {

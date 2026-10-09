@@ -8,6 +8,7 @@
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
@@ -204,7 +205,8 @@ void chainFour(ClassBinding& b, const char* name, M method) {
 template <typename T, typename U, typename M>
 void chainRef(ClassBinding& b, const char* name, const char* cls, M method) {
     b.methods[name] = [cls, method](void* self, const Args& a, Store& d) {
-        (as<T>(self)->*method)(d.ref<U>(a.at(0), cls));
+        U scratch;
+        (as<T>(self)->*method)(d.in<U>(a.at(0), cls, scratch));
         return chain();
     };
 }
@@ -212,7 +214,8 @@ void chainRef(ClassBinding& b, const char* name, const char* cls, M method) {
 template <typename T, typename U, typename M>
 void chainRefOne(ClassBinding& b, const char* name, const char* cls, M method) {
     b.methods[name] = [cls, method](void* self, const Args& a, Store& d) {
-        (as<T>(self)->*method)(d.ref<U>(a.at(0), cls), number(a.at(1)));
+        U scratch;
+        (as<T>(self)->*method)(d.in<U>(a.at(0), cls, scratch), number(a.at(1)));
         return chain();
     };
 }
@@ -221,7 +224,8 @@ void chainRefOne(ClassBinding& b, const char* name, const char* cls, M method) {
 template <typename T, typename U, typename M>
 void chainRef2One(ClassBinding& b, const char* name, const char* cls, M method) {
     b.methods[name] = [cls, method](void* self, const Args& a, Store& d) {
-        (as<T>(self)->*method)(d.ref<U>(a.at(0), cls), d.ref<U>(a.at(1), cls), number(a.at(2)));
+        U first, second;
+        (as<T>(self)->*method)(d.in<U>(a.at(0), cls, first), d.in<U>(a.at(1), cls, second), number(a.at(2)));
         return chain();
     };
 }
@@ -229,7 +233,8 @@ void chainRef2One(ClassBinding& b, const char* name, const char* cls, M method) 
 template <typename T, typename U, typename M>
 void chainRef2(ClassBinding& b, const char* name, const char* cls, M method) {
     b.methods[name] = [cls, method](void* self, const Args& a, Store& d) {
-        (as<T>(self)->*method)(d.ref<U>(a.at(0), cls), d.ref<U>(a.at(1), cls));
+        U first, second;
+        (as<T>(self)->*method)(d.in<U>(a.at(0), cls, first), d.in<U>(a.at(1), cls, second));
         return chain();
     };
 }
@@ -336,7 +341,8 @@ void registerVector2(ClassBinding& b) {
     readScalar<Vector2>(b, "angle", &Vector2::angle);
     auto read2 = [&b](const char* name, double (Vector2::*Method)(const Vector2&) const) {
         b.methods[name] = [Method](void* self, const Args& a, Store& d) {
-            return Value::of((as<Vector2>(self)->*Method)(d.ref<Vector2>(a.at(0), "Vector2")));
+            Vector2 scratch;
+            return Value::of((as<Vector2>(self)->*Method)(d.in<Vector2>(a.at(0), "Vector2", scratch)));
         };
     };
     read2("dot", &Vector2::dot);
@@ -443,7 +449,8 @@ void registerVector3(ClassBinding& b) {
     readScalar<Vector3>(b, "manhattanLength", &Vector3::manhattanLength);
     auto read3 = [&b](const char* name, double (Vector3::*Method)(const Vector3&) const) {
         b.methods[name] = [Method](void* self, const Args& a, Store& d) {
-            return Value::of((as<Vector3>(self)->*Method)(d.ref<Vector3>(a.at(0), "Vector3")));
+            Vector3 scratch;
+            return Value::of((as<Vector3>(self)->*Method)(d.in<Vector3>(a.at(0), "Vector3", scratch)));
         };
     };
     read3("dot", &Vector3::dot);
@@ -452,7 +459,8 @@ void registerVector3(ClassBinding& b) {
     read3("distanceToSquared", &Vector3::distanceToSquared);
     read3("manhattanDistanceTo", &Vector3::manhattanDistanceTo);
     b.methods["equals"] = [](void* self, const Args& a, Store& d) {
-        return Value::of(as<Vector3>(self)->equals(d.ref<Vector3>(a.at(0), "Vector3")));
+        Vector3 scratch;
+        return Value::of(as<Vector3>(self)->equals(d.in<Vector3>(a.at(0), "Vector3", scratch)));
     };
 }
 
@@ -508,6 +516,14 @@ void registerVector4(ClassBinding& b) {
     b.methods["copy"] = [](void* self, const Args& a, Store& d) {
         Vector4& v = *as<Vector4>(self);
         const Value& source = a.at(0);
+        if (source.kind == Value::Kind::Record) {
+            Vector4 scratch;
+            const Vector4& s = d.in<Vector4>(source, "Vector4", scratch);
+            const bool hasW = std::any_of(source.fields.begin(), source.fields.end(),
+                                          [](const auto& field) { return field.first == "w"; });
+            v.set(s.x, s.y, s.z, hasW ? s.w : 1);
+            return chain();
+        }
         try {
             v.copy(d.ref<Vector4>(source, "Vector4"));
         } catch (const Unsupported&) {

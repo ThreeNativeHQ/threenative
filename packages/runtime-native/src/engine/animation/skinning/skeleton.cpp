@@ -155,6 +155,11 @@ std::shared_ptr<Object3D> cloneObject(const Object3D& source, bool recursive, st
                 auto next = std::make_shared<Mesh>(mesh.geometry, mesh.material);
                 next->morphTargetInfluences = mesh.morphTargetInfluences;
                 to = std::move(next);
+            } else if (kind == "Line" || kind == "LineSegments") {
+                // three's Line.copy: the same geometry and material.
+                const auto& line = static_cast<const Line&>(from);
+                if (kind == "Line") to = std::make_shared<Line>(line.geometry, line.material);
+                else to = std::make_shared<LineSegments>(line.geometry, line.material);
             } else if (kind == "SkinnedMesh") {
                 // three's SkinnedMesh.copy: bindMode, both bind matrices and the same skeleton.
                 const auto& mesh = static_cast<const SkinnedMesh&>(from);

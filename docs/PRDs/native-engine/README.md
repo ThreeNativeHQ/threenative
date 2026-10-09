@@ -8,6 +8,89 @@
 
 All new package names, configuration fields, ABI names, status markers, and work-package identifiers below are proposals. They do not describe existing commands or published packages.
 
+## Start here
+
+**Owner goal (2026-10-08):** any three.js game runs on Wasm (web), native V8 and Perry with no
+faults, and runs fast.
+
+### How to start
+
+Execute [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md),
+phase 1, box 1: reproduce Midway's "argument is not a Vector3" error in a native test, then fix it
+in the shared engine. Then take the next open box in the table below. Skip a box that a live lane
+claims (its PRD line says "in progress on lane-…") until that lane merges. Every fix goes once into
+the shared C++ engine (`packages/runtime-native/src/engine`), so V8 and Wasm both get it. Run
+`pnpm prd:progress <prd file>` before you start and after each phase, and tick a box only with its
+proof green.
+
+### Remaining PRDs, in execution order
+
+Labels come from `pnpm prd:progress <file>` (2026-10-08). "Next box" is the first open box in the
+file.
+
+| # | PRD | Status | Label | Depends on | Next box |
+| --- | --- | --- | --- | --- | --- |
+| 1 | [PRD-545 — Corpus gaps in math, the object model and geometry (N22a)](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | IN PROGRESS | `prd:0%` | PRD-501, PRD-508 (done) | Midway's update loop reports no "argument is not a Vector3" error |
+| 2 | [PRD-546 — Corpus gaps in materials, textures and render state (N22b)](N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | IN PROGRESS | `prd:0%` | PRD-545; PRD-509, PRD-514 (done) | `Material.prototype.onBeforeCompile` and `customProgramCacheKey` read as r185's defaults |
+| 3 | [PRD-547 — Corpus gaps in TSL and shader nodes (N22c)](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | NOT STARTED | `prd:0%` | PRD-546; PRD-510 to PRD-512 (done) | The TSL names that corpus games import and the shared table lacks |
+| 4 | [PRD-548 — Corpus gaps in renderer passes, loaders, animation and addons (N22d)](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) | NOT STARTED | `prd:0%` | PRD-547; PRD-515, PRD-518, PRD-523 to PRD-526 (done) | Post-node parameters set after the first render take effect |
+| 5 | [PRD-540 — Web games boot on the Wasm engine](PRD-540-web-games-boot-on-the-wasm-engine.md) | IN PROGRESS | `prd:25%` | PRD-532 (done), PRD-531 | A `@threenative/core` game without TSL boots through `createRenderer` under `engine: "native"` |
+| 6 | [PRD-531 — V8 game runtime adapter (N18)](PRD-531-n18-v8-game-runtime-adapter.md) | IN PROGRESS | `prd:75%` | PRD-500, N04, PRD-508, PRD-514 (done) | The minimal template, unchanged, runs its journey on the native engine on desktop |
+| 7 | [PRD-533 — Platform qualification, performance and default promotion (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md) | PARTIAL | `prd:50%` | PRD-534, PRD-540, PRD-531, N22 | New projects scaffold with the native engine profile and can select legacy |
+| 8 | [PRD-519 — Native batching, visibility, LOD and GPU scene (N12)](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | IN PROGRESS | `prd:75%` | PRD-514 (done), N11 (done), PRD-534 | The batching CPU stage of the heterogeneous fixture costs less than legacy projection on desktop |
+| 9 | [PRD-534 — The native engine earns the port (CP1)](PRD-534-cp1-the-native-engine-earns-the-port.md) | IN PROGRESS | `prd:50%` | PRD-498, PRD-508, PRD-514 (done), PRD-531 | Pixel 8 result for all three arms (owner's device) |
+| 10 | [PRD-499 — The host links and runs without a JS engine (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md) | IN PROGRESS | `prd:75%` | PRD-497 (done) | CI's `test-native` job runs the gate-E driver, the inspector and the sanitizer tests (PR run) |
+| 11 | [PRD-530 — Strict native-TypeScript game packaging (N17)](PRD-530-n17-strict-native-typescript-game-packaging.md) | IN PROGRESS | `prd:50%` | N05 (done), PRD-499, PRD-533 | The representative game's strict Linux artifact passes JS-free inspection |
+| 12 | [PRD-535 — The JS engine is deleted (N21)](PRD-535-n21-the-js-engine-is-deleted.md) | PROPOSED | `prd:0%` | PRD-533 plus one release, PRD-532 (done) | The `legacy` engine profile no longer resolves |
+
+The N22 folder index ([README](N22-three-surface-coverage/README.md)) holds the layer map of all
+495 catalog entries, the ranked gaps, the backlog and the per-game scorecard.
+
+### Why this order
+
+```mermaid
+flowchart LR
+  subgraph Engine["Shared C++ engine (N22, lower layers first)"]
+    A["PRD-545<br/>math, object model, geometry"] --> B["PRD-546<br/>materials, render state"] --> C["PRD-547<br/>TSL, shader nodes"] --> D["PRD-548<br/>renderer, loaders, animation, addons"]
+  end
+  subgraph Backends["Language back ends"]
+    W["PRD-540<br/>Wasm"]
+    V["PRD-531<br/>V8"]
+  end
+  D --> W & V
+  W & V --> P["PRD-533<br/>journeys, visuals, perf gates, promotion"]
+  P --> X["PRD-535<br/>legacy deleted"]
+  P -. later .-> T["PRD-530<br/>Perry gate T"]
+  Q["PRD-519, PRD-534, PRD-499<br/>perf, device and CI boxes"] --> P
+```
+
+1. **Dependency layers first.** A game journey fails at the lowest missing layer, so the engine
+   gaps go from math up to addons (PRD-545 to PRD-548). Each fix lands once in the shared engine
+   and serves both back ends.
+2. **Corpus impact inside a layer.** Each N22 PRD orders its boxes by the number of corpus games
+   (13 templates, Midway, Bayview) that reach the gap; a box that stops boot wins a tie.
+3. **Back ends next.** PRD-540 and PRD-531 turn the engine coverage into green journeys on Wasm
+   and V8. Their back-end boxes can run beside N22 when their inputs are ready.
+4. **Performance gates and promotion last.** PRD-533 judges every template on the Wasm engine
+   against its visual baseline and the §15.4 gates. PRD-519 and PRD-534 feed it measurements;
+   PRD-499 needs only a PR CI run. PRD-530 (gate T) and PRD-535 come after promotion.
+
+### Owner decisions still parked
+
+| Decision | Holder |
+| --- | --- |
+| The native `native_engine_update_scaling` 18× gate (P42): keep it as a known machine-dependent red, restate the limit against the cache-resident cost, or fund a hot-state redesign of Mesh, Material and Record. The gate stays unchanged until the owner chooses. | [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md), native scaling gate analysis (2026-10-08) |
+| Filing the five Perry property-pattern cliff reproducers upstream (`tools/native-typescript/repros/`) | [PRD-530](PRD-530-n17-strict-native-typescript-game-packaging.md) `## Blocked on` |
+| Scrubbing the `.cxx` build output from git history | no PRD holds it yet |
+| The CP1 verdict run on the owner's Pixel 8 | [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md), phase 2 |
+| Promotion: native becomes the default engine profile, and the web default moves to Wasm | [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md), phase 3 |
+| Moving `MeshBVH` (`ScenePicker` behind `ctx.raycast`) behind a feature, a charter decision | [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md), minimal-template design notes |
+| Accepting the catalog owner link (layer, subsystem and owner PRD per entry, with a fail-closed check) | [N22 README](N22-three-surface-coverage/README.md#proposed-decision-owner-to-accept) |
+
+PRD-536 (tests close the fail-open and regression holes) is not a native-engine PRD and is not on
+this branch, so it is not in the table. The done native-engine PRDs are the rows marked `done` in
+the progress table below.
+
 ## PRD index
 
 **Batch status: IN PROGRESS — 208/238 phase boxes (87%) as of 2026-10-06, on `feat/native-engine` (PR #438).** This file is the batch index and the source proposal; the PRDs below carry the boxes. Work packages too large for one PRD (at most 3 phases, about 8 boxes) are a folder with its own `README.md` and child PRDs. The batch moves to `done/` whole only when every PRD in it is finished.
@@ -57,7 +140,11 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) | Platform qualification, performance and default promotion (N20) | 2/9 | in progress |
 | [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 2/5 | in progress |
 | [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
-| [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md) | Web games boot on the Wasm engine (N20 support) | 4/8 | in progress |
+| [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md) | Web games boot on the Wasm engine (N20 support) | 4/10 | in progress |
+| [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | Corpus gaps in math, the object model and geometry (N22a) | 0/6 | in progress |
+| [PRD-546](N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | Corpus gaps in materials, textures and render state (N22b) | 0/8 | in progress |
+| [PRD-547](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | Corpus gaps in TSL and shader nodes (N22c) | 0/8 | not started |
+| [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) | Corpus gaps in renderer passes, loaders, animation and addons (N22d) | 0/9 | not started |
 
 **CP1 (PRD-534), historical functional reading (2026-10-05), not the verdict:** `pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous` at 4,096 cubes (Xvfb and headless Dawn) measured hot path p50 10.26 ms for current ThreeNative, 23.60 ms through V8 and 13.28 ms from C++. That prototype preceded N12 native batching. The physical-desktop and Pixel 8 verdict runs remain open; these early timings do not describe the current engine.
 
@@ -74,6 +161,8 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 5. **Accepted agent calls:** the game API stays vanilla Three.js, measured from what templates import; `ctx.renderer.raw` survives as the compatible renderer; one binding catalog serves several VMs; bulk paths only where CP1 shows crossing cost; legacy is deleted one release after promotion.
 
 ### Execution order
+
+The wave plan of 4 October 2026, kept as history. The current order is [Start here](#start-here).
 
 | Wave | Start when | PRDs (parallel within a wave) |
 | --- | --- | --- |
@@ -130,8 +219,13 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | N17 | [PRD-530 — Strict native-TypeScript game packaging](PRD-530-n17-strict-native-typescript-game-packaging.md) (later milestone, gate T) | N05, N20 |
 | N18 | [PRD-531 — V8 game runtime adapter](PRD-531-n18-v8-game-runtime-adapter.md) | N03, N04, N06; phase 3 also N09 |
 | N19 | [PRD-532 — WebAssembly native-core browser port](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) (mandatory) | N03, N07–N09, N18 |
-| N20 | [PRD-533 — Platform qualification, performance and default promotion](PRD-533-n20-platform-qualification-performance-default-promotion.md) | CP1, N00–N16, N18, N19 |
+| N20 | [PRD-533 — Platform qualification, performance and default promotion](PRD-533-n20-platform-qualification-performance-default-promotion.md) | CP1, N00–N16, N18, N19, N22 |
 | N21 | [PRD-535 — The JS engine is deleted](PRD-535-n21-the-js-engine-is-deleted.md) | N20 + one release, N19 |
+| N22 | [three.js surface coverage, ranked by real-game use](N22-three-surface-coverage/README.md) (N20 support) | N18, N19 |
+| N22a | ↳ [PRD-545 — Corpus gaps in math, the object model and geometry](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | N04, N06 |
+| N22b | ↳ [PRD-546 — Corpus gaps in materials, textures and render state](N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | N22a, N07, N09 |
+| N22c | ↳ [PRD-547 — Corpus gaps in TSL and shader nodes](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | N22b, N08 |
+| N22d | ↳ [PRD-548 — Corpus gaps in renderer passes, loaders, animation and addons](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) | N22c, N10, N11, N14 |
 
 ```mermaid
 flowchart LR
@@ -149,7 +243,8 @@ flowchart LR
   N11 --> N12 --> N13
   N12 --> N14
   N07 & N08 & N09 & N18 --> N19
-  N13 & N14 & N15 & N16 & N19 --> N20 --> N21
+  N18 & N19 --> N22
+  N13 & N14 & N15 & N16 & N19 & N22 --> N20 --> N21
   N05 & N20 -. later .-> N17
 ```
 

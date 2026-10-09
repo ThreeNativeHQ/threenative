@@ -25,6 +25,8 @@ struct PipelineTarget {
     WGPUVertexFormat skinIndex = WGPUVertexFormat_Uint16x4;
     WGPUFrontFace frontFace = WGPUFrontFace_CCW;
     WGPUCompareFunction depthCompare = WGPUCompareFunction_LessEqual;
+    WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
+    WGPUIndexFormat stripIndexFormat = WGPUIndexFormat_Undefined;  // an indexed line strip's index format
 };
 
 /**

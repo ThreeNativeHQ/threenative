@@ -45,7 +45,8 @@ BufferGeometry& geometryArg(Store& store, const Value& arg) {
     static const char* const kClasses[] = {
         "BufferGeometry", "PlaneGeometry",  "BoxGeometry",   "SphereGeometry", "CylinderGeometry",
         "ConeGeometry",   "CircleGeometry", "TorusGeometry", "RingGeometry", "RoundedBoxGeometry", "LatheGeometry",
-        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry"};
+        "TubeGeometry", "ShapeGeometry", "ExtrudeGeometry", "IcosahedronGeometry", "CapsuleGeometry",
+        "DodecahedronGeometry", "OctahedronGeometry", "TorusKnotGeometry"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not a BufferGeometry"};
     for (const char* cls : kClasses) {
@@ -540,10 +541,27 @@ void registerGeometryGenerators(Registry& classes) {
         return makeCircleGeometry(optional(a, 0, 1), optional(a, 1, 32), optional(a, 2, 0),
                                   optional(a, 3, 6.283185307179586));
     });
+    registerGenerator(classes, "IcosahedronGeometry", [](const Args& a) {
+        return makeIcosahedronGeometry(optional(a, 0, 1), optional(a, 1, 0));
+    });
+    registerGenerator(classes, "CapsuleGeometry", [](const Args& a) {
+        return makeCapsuleGeometry(optional(a, 0, 1), optional(a, 1, 1), optional(a, 2, 4),
+                                   optional(a, 3, 8), optional(a, 4, 1));
+    });
+    registerGenerator(classes, "DodecahedronGeometry", [](const Args& a) {
+        return makeDodecahedronGeometry(optional(a, 0, 1), optional(a, 1, 0));
+    });
+    registerGenerator(classes, "OctahedronGeometry", [](const Args& a) {
+        return makeOctahedronGeometry(optional(a, 0, 1), optional(a, 1, 0));
+    });
     registerGenerator(classes, "TorusGeometry", [](const Args& a) {
         return makeTorusGeometry(optional(a, 0, 1), optional(a, 1, 0.4), optional(a, 2, 12),
                                  optional(a, 3, 48), optional(a, 4, 6.283185307179586),
                                  optional(a, 5, 0), optional(a, 6, 6.283185307179586));
+    });
+    registerGenerator(classes, "TorusKnotGeometry", [](const Args& a) {
+        return makeTorusKnotGeometry(optional(a, 0, 1), optional(a, 1, 0.4), optional(a, 2, 64),
+                                     optional(a, 3, 8), optional(a, 4, 2), optional(a, 5, 3));
     });
     registerGenerator(classes, "RingGeometry", [](const Args& a) {
         return makeRingGeometry(optional(a, 0, 0.5), optional(a, 1, 1), optional(a, 2, 32),

@@ -19,6 +19,7 @@ std::shared_ptr<Material> Material::clone() const {
 
 std::string_view Material::typeName() const {
     if (spriteMaterial) return nodeMaterial ? "SpriteNodeMaterial" : "SpriteMaterial";
+    if (lineMaterial) return "LineBasicMaterial";
     if (nodeMaterial) return type == MaterialType::Basic ? "MeshBasicNodeMaterial" : "MeshStandardNodeMaterial";
     switch (type) {
         case MaterialType::Basic: return "MeshBasicMaterial";

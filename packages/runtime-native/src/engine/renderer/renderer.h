@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <memory>
 #include <tuple>
@@ -57,7 +58,7 @@ struct DrawItem {
     const Texture* normalMap = nullptr;
     double normalScaleX = 1, normalScaleY = 1;
     /** MeshStandardMaterial's roughnessMap, metalnessMap, aoMap and emissiveMap, and MeshPhysicalMaterial's
-     *  specularColorMap and specularIntensityMap, by shader::PbrMap (decoded image, uv present). */
+     *  specularColorMap, specularIntensityMap and clearcoat maps, by shader::PbrMap (decoded image, uv present). */
     std::array<const Texture*, shader::kPbrMapCount> pbrMaps{};
     double aoMapIntensity = 1;
     /** The environment (scene.environment or material.envMap): its PMREM is sampled for IBL. */
@@ -74,6 +75,8 @@ struct DrawItem {
     WGPUTextureView reflectorView = nullptr;
     WGPUSampler reflectorSampler = nullptr;
     MaterialKind kind = MaterialKind::Standard;
+    /** three's Line (LineStrip) and LineSegments (LineList) draw lines; everything else triangles. */
+    WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
     // Render-list inputs, as three's RenderList reads them.
     uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
     int renderOrder = 0;       // Object3D.renderOrder
@@ -177,6 +180,14 @@ struct OutputState {
     double toneMappingExposure = 1;
     bool srgb = true;  // false: LinearSRGBColorSpace
 };
+
+/**
+ * three's renderer settings by their JS values: the `toneMapping` constant, `toneMappingExposure` and
+ * `outputColorSpace`. Returns the OutputState, or empty with `refusal` naming the value the renderer
+ * does not implement; a value is never mapped to a neighbour. Shared by the V8 player and the web host.
+ */
+std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
+                                         std::string& refusal);
 
 /**
  * The native renderer's draw core (PRD-514): standard-material meshes into a linear RGBA16Float
@@ -315,7 +326,8 @@ public:
     /** Every built program's vertex WGSL by program key: what a test reads to see how the frame's programs were compiled. */
     std::vector<std::pair<std::string, std::string>> programVertexSources() const {
         std::vector<std::pair<std::string, std::string>> out;
-        for (const auto& [key, program] : programs_) out.emplace_back(key, program->vertex.wgsl.code);
+        for (const auto& [key, program] : programs_)
+            if (program) out.emplace_back(key, program->vertex.wgsl.code);
         return out;
     }
     GpuResources& gpu() { return gpu_; }
@@ -331,7 +343,8 @@ private:
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
         kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kCameraPosition, kCameraProjectionMatrix,
         kRoughnessMapUvTransform, kMetalnessMapUvTransform, kAoMapUvTransform, kEmissiveMapUvTransform, kSpecularColorMapUvTransform,
-        kSpecularIntensityMapUvTransform, kAoMapIntensity,
+        kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
+        kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale,
         kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
@@ -352,8 +365,10 @@ private:
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
     };
     void buildLayouts(Program& program);
-    /** The program for a material kind, vertex variant and light layout, built on first use. */
-    Program& program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights,
+    /** The program for a material kind, vertex variant and light layout, built on first use; null
+     *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
+     *  as three logs a shader error and draws the rest of the scene. */
+    Program* program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights,
                      bool softShadows = false);
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
     Program& depthProgram(const shader::VertexVariant& variant);
@@ -424,7 +439,8 @@ private:
     PipelineCache pipelines_;
     // By MaterialKind, vertex variant (0 plain, 1 instanced, 2 instanced with instanceColor) and light
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.
-    std::map<std::string, std::unique_ptr<Program>> programs_;
+    std::map<std::string, std::unique_ptr<Program>> programs_;  // a null entry: refused, never retried
+    std::map<std::string, std::string> refusedPrograms_;          // why, reported each frame it skips draws
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;

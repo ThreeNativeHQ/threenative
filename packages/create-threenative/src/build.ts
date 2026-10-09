@@ -803,7 +803,14 @@ export async function buildWeb(
 ): Promise<void> {
   const config = await loadConfig(cwd, { target: "web", profile });
   announceProfile(config);
-  await compileAssets({ config: config.assets, cwd, platform: "web" });
+  // The Wasm engine's glTF loader decodes no Meshopt or KTX2, so a native web build cooks models
+  // decoder-free, as the native targets do (PRD-540).
+  await compileAssets({
+    config: config.assets,
+    cwd,
+    platform: "web",
+    ...(config.engine === "native" ? { runtimeDecoders: { ktx2: false, meshopt: false } } : {}),
+  });
   const assets = assetRoot(cwd, config);
   // Vite empties and rewrites its outDir in place, so a build that dies half-way through leaves a
   // truncated `dist` where a working one used to be — the same failure a native artifact had, and

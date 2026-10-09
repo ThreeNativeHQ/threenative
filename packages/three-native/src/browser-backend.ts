@@ -52,11 +52,10 @@ export interface IBrowserRuntime {
   get(self: IEngineRef, path: string): EngineValue;
   set(self: IEngineRef, path: string, value: EngineValue): void;
   release(self: IEngineRef): void;
-  /**
-   * three's `attribute.array`: a typed array over the attribute's own storage, so an element write
-   * is a write to the attribute (see createWasmRuntime). Absent where no memory is shared.
-   */
+  /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
   attributeArray?(self: IEngineRef): TypedArray;
+  /** Writes `array` into the attribute's data; present with attributeArray. */
+  attributeWrite?(self: IEngineRef, array: TypedArray): void;
   /** Sets (or, with null, clears) a callback the engine runs; `handler` gets the engine's arguments. */
   setCallback(
     self: IEngineRef,
@@ -65,6 +64,8 @@ export interface IBrowserRuntime {
   ): void;
   /** TSL by name (PRD-540), when the module carries `tn_tsl_call`. */
   readonly tsl?: ITslRuntime;
+  /** A GLB through the engine's own glTF loader (PRD-540), when the module carries the web host. */
+  loadGltf?(bytes: Uint8Array): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
 }
 
 /** The engine node id a TSL wrapper (`browser-tsl.ts`) carries. */
@@ -79,6 +80,8 @@ export interface IBrowserEngine {
    * captured are a cycle the collector reclaims.
    */
   collect(): void;
+  /** The wrapper for an engine object the engine handed over (a loaded model's scene). */
+  wrap(ref: IEngineRef): object;
 }
 
 const REF = Symbol("tn.engineRef");
@@ -252,6 +255,24 @@ export function defineBrowserClasses(
   // when a detached one is released.
   const userData = new Map<string, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
+  // three's `attribute.array` is the attribute's own JS typed array (PRD-540): the array the
+  // constructor was handed, or a copy of the engine's data on first read. A view of Wasm memory
+  // would detach when the memory grows. A read hands the game the array, so the attribute is
+  // `pending` until its array is written back before the next engine call; a geometry or attribute
+  // method that may write attribute data bumps `epoch`, and a later read refreshes the copy.
+  // ponytail: a game that writes a kept array after such a method and before its next read loses
+  // that write to the refresh; track writes per attribute if a game does that.
+  const { attributeArray, attributeWrite } = runtime;
+  const arrays = new WeakMap<object, { array: TypedArray; epoch: number }>();
+  const pending = new Set<object>();
+  let epoch = 0;
+  const writeBack = (): void => {
+    for (const attribute of pending) {
+      const entry = arrays.get(attribute);
+      if (entry !== undefined) attributeWrite?.call(runtime, refOf(attribute), entry.array);
+    }
+    pending.clear();
+  };
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
       wrappers.delete(ref.key);
@@ -329,6 +350,10 @@ export function defineBrowserClasses(
   };
 
   for (const [name, binding] of Object.entries(registry.classes)) {
+    const adopts =
+      attributeWrite !== undefined &&
+      (name === "BufferAttribute" || name === "InstancedBufferAttribute");
+    const writesAttributes = ATTRIBUTE_CLASSES.has(name) || name.endsWith("Geometry");
     const cls = class {
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
@@ -342,16 +367,24 @@ export function defineBrowserClasses(
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
         if (parameters !== undefined) setValues(this, name, parameters);
+        // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
+        const handed = args[0];
+        if (adopts && ArrayBuffer.isView(handed) && !(handed instanceof DataView)) {
+          arrays.set(this, { array: handed as TypedArray, epoch });
+          pending.add(this);
+        }
       }
     };
     Object.defineProperty(cls, "name", { value: name });
     const prototype = cls.prototype as Record<string, unknown>;
     for (const method of binding.methods) {
+      const bumps = writesAttributes && !/^(get|has|clone|equals|toJSON)/u.test(method);
       Object.defineProperty(prototype, method, {
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
           const intersections = method === "intersectObject" || method === "intersectObjects";
+          if (pending.size > 0) writeBack();
           const result = fromEngine(
             runtime.invoke(
               refOf(this),
@@ -359,6 +392,7 @@ export function defineBrowserClasses(
               (intersections ? args.slice(0, 2) : args).map(toEngine),
             ),
           );
+          if (bumps) epoch++;
           if (intersections && args[2] !== undefined) {
             if (!Array.isArray(args[2]) || !Array.isArray(result))
               throw new TypeError("intersection target must be an array");
@@ -510,24 +544,41 @@ export function defineBrowserClasses(
     classes[name] = cls;
     byType.set(runtime.typeId(name), cls);
   }
-  // three's `attribute.array` is the attribute's own typed array: one per attribute, viewed again
-  // only when Wasm memory growth detached the last one.
-  const attributeArray = runtime.attributeArray;
-  if (attributeArray !== undefined) {
-    const arrays = new WeakMap<object, TypedArray>();
+  if (attributeArray !== undefined && attributeWrite !== undefined) {
     for (const name of ATTRIBUTE_CLASSES) {
       const cls = classes[name];
       if (cls === undefined) continue;
       Object.defineProperty(cls.prototype, "array", {
         configurable: true,
         get(this: object) {
-          const cached = arrays.get(this);
-          if (cached !== undefined && cached.buffer.byteLength !== 0) return cached;
-          const array = attributeArray.call(runtime, refOf(this));
-          arrays.set(this, array);
-          return array;
+          let entry = arrays.get(this);
+          if (entry === undefined) {
+            entry = { array: attributeArray.call(runtime, refOf(this)), epoch };
+            arrays.set(this, entry);
+          } else if (entry.epoch !== epoch && !pending.has(this)) {
+            const fresh = attributeArray.call(runtime, refOf(this));
+            if (fresh.length === entry.array.length) entry.array.set(fresh);
+            else entry.array = fresh;
+            entry.epoch = epoch;
+          }
+          pending.add(this);
+          return entry.array;
         },
       });
+      // needsUpdate is a property write, not a call, so it writes the array back itself.
+      const needsUpdate = Object.getOwnPropertyDescriptor(cls.prototype, "needsUpdate");
+      if (needsUpdate?.set !== undefined)
+        Object.defineProperty(cls.prototype, "needsUpdate", {
+          ...needsUpdate,
+          set(this: object, value: unknown) {
+            const entry = arrays.get(this);
+            if (value === true && entry !== undefined) {
+              attributeWrite.call(runtime, refOf(this), entry.array);
+              pending.delete(this);
+            }
+            needsUpdate.set?.call(this, value);
+          },
+        });
     }
   }
   const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
@@ -549,6 +600,7 @@ export function defineBrowserClasses(
   }
   return {
     classes,
+    wrap,
     collect() {
       for (const [key, names] of callbackNames) {
         const wrapper = wrappers.get(key)?.deref();
@@ -639,6 +691,40 @@ interface IAbiHelpers {
   handleOf(ref: IEngineRef): number;
   writeHandle(pointer: number, ref: IEngineRef): void;
   view(): DataView;
+}
+
+/** The engine glTF loader over the product web host's `tnw_web_load_gltf`, when the module has it. */
+function gltfOf(
+  abi: TnAbiModule,
+  context: number,
+  h: Pick<IAbiHelpers, "scoped" | "alloc"> & { keyOf(pointer: number): IEngineRef },
+): Pick<IBrowserRuntime, "loadGltf"> {
+  const host = abi as unknown as Partial<
+    Record<"_tnw_web_load_gltf" | "_tnw_web_load_error", (...args: number[]) => number>
+  >;
+  const { _tnw_web_load_gltf: load, _tnw_web_load_error: error } = host;
+  if (load === undefined || error === undefined) return {};
+  return {
+    loadGltf: (bytes) =>
+      h.scoped(() => {
+        const data = h.alloc(Math.max(1, bytes.byteLength));
+        abi.HEAPU8.set(bytes, data);
+        const count = h.alloc(4);
+        // Retried once with the exact size when the model has more clips than the first guess.
+        for (let capacity = 64; ; ) {
+          const out = h.alloc(HANDLE * capacity);
+          const status = load(context, data, bytes.byteLength, out, capacity, count);
+          const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
+          if (status === 0) {
+            const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
+            return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
+          }
+          const reason = abi.UTF8ToString(error());
+          if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
+          capacity = needed;
+        }
+      }),
+  };
 }
 
 /** TSL by name over `tn_tsl_call`, when the module exports it (the product web host does). */
@@ -945,34 +1031,30 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     }, "vi");
   };
 
-  // A view over the attribute's storage, leased so it cannot reallocate under the view; the lease
-  // goes back when the collector takes the view. Memory growth detaches a view over a fixed-size
-  // heap, and every later read of a kept array would be silently empty, so the getter refuses by
-  // name. The modules are not built with -sGROWABLE_ARRAYBUFFERS: Chromium's GPUQueue.writeTexture
-  // and writeBuffer reject a view of a resizable buffer, so every upload would fail instead.
-  const viewAttribute = (handle: number, out: number): number => {
-    if ((abi.HEAPU8.buffer as { resizable?: boolean }).resizable !== true)
-      throw new TypeError(
-        "TN_WASM_ATTRIBUTE_VIEW_UNSAFE: attribute.array would be a view of the engine's Wasm memory, which memory growth detaches, so a kept array would read as empty; read the attribute (getX, count) instead",
-      );
-    const call = abi._tnw_attribute_view;
-    if (call === undefined)
-      throw new TypeError("TN_WASM_MODULE: this module exports no attribute views");
-    return call(handle, out);
-  };
-  const leases = new FinalizationRegistry<number>((lease) =>
-    abi._tnw_attribute_view_release?.(lease),
-  );
-  const attributeView = (
-    Typed: (typeof SCALARS)[number],
-    address: number,
-    count: number,
-    lease: number,
-  ): TypedArray => {
-    const array = new Typed(abi.HEAPU8.buffer as ArrayBuffer, address, count);
-    leases.register(array, lease);
-    return array;
-  };
+  // A view over the attribute's storage, used only inside one call: the lease pins the storage and
+  // nothing in between can grow the memory and detach the view. A kept view would detach on growth,
+  // so the back end keeps JS arrays and copies through this (see defineBrowserClasses).
+  const withAttributeView = <T>(self: IEngineRef, use: (view: TypedArray) => T): T =>
+    scoped(() => {
+      const call = abi._tnw_attribute_view;
+      if (call === undefined)
+        throw new TypeError("TN_WASM_MODULE: this module exports no attribute views");
+      const out = alloc(24);
+      const lease = call(handleOf(self), out);
+      if (lease === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
+      try {
+        const v = view();
+        const [address, count, scalar] = [0, 8, 16].map((at) =>
+          Number(v.getBigUint64(out + at, true)),
+        );
+        const Typed = SCALARS[scalar ?? -1];
+        if (Typed === undefined)
+          throw new TypeError(`TN_NATIVE_UNSUPPORTED array: scalar ${String(scalar)}`);
+        return use(new Typed(abi.HEAPU8.buffer as ArrayBuffer, address ?? 0, count ?? 0));
+      } finally {
+        abi._tnw_attribute_view_release?.(lease);
+      }
+    });
 
   const context = scoped(() => {
     const version = alloc(32);
@@ -994,6 +1076,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       writeHandle,
       view,
     }) ?? {}),
+    ...gltfOf(abi, context, { scoped, alloc, keyOf }),
     typeId: (className) => scoped(() => abi._tn_type_id(string(className).pointer)),
     construct: (className, args) =>
       scoped(() => {
@@ -1054,19 +1137,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         abi._tn_object_release(handleOf(self), diag);
         abi._tn_diagnostic_release(diag);
       }),
-    attributeArray: (self) =>
-      scoped(() => {
-        const out = alloc(24);
-        const lease = viewAttribute(handleOf(self), out);
-        if (lease === 0) throw new TypeError("TN_NATIVE_UNSUPPORTED array: not an attribute");
-        const v = view();
-        const [address, count, scalar] = [0, 8, 16].map((at) =>
-          Number(v.getBigUint64(out + at, true)),
-        );
-        const Typed = SCALARS[scalar ?? -1];
-        if (Typed === undefined)
-          throw new TypeError(`TN_NATIVE_UNSUPPORTED array: scalar ${String(scalar)}`);
-        return attributeView(Typed, address ?? 0, count ?? 0, lease);
+    attributeArray: (self) => withAttributeView(self, (array) => array.slice()),
+    attributeWrite: (self, array) =>
+      withAttributeView(self, (target) => {
+        if (target.length !== array.length)
+          throw new RangeError(
+            `TN_NATIVE_ATTRIBUTE_LENGTH: attribute.array has ${String(array.length)} elements, the attribute ${String(target.length)}`,
+          );
+        target.set(array);
       }),
     setCallback: (self, name, handler) =>
       scoped(() => {

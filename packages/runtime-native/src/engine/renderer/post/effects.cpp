@@ -172,6 +172,20 @@ void PostEffects::resize(uint32_t width, uint32_t height) {
         target.view = wgpuTextureCreateView(target.texture, nullptr);
     }
 }
+bool PostEffects::syncScales() {
+    bool changed = false;
+    for (auto& pass : passes_)
+        if (pass.source.effect && pass.source.effect->resolutionScale != pass.source.resolutionScale) {
+            pass.source.resolutionScale = pass.source.effect->resolutionScale;
+            changed = true;
+        }
+    if (!changed || !width_ || !height_)
+        return false;
+    const uint32_t width = width_, height = height_;
+    width_ = height_ = 0;
+    resize(width, height);
+    return true;
+}
 void PostEffects::input(const std::string& name, WGPUTextureView view) {
     if (name == "scene" || name == "depth" || targets_.contains(name) || images_.contains(name))
         throw std::runtime_error("TN_POST_INPUT_RESERVED: " + name);
@@ -238,6 +252,8 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
         const auto& stages = pass.source.package.variants.at(0).stages;
         const auto& fragment = stages[1];
         auto values = pass.source.uniforms;
+        for (const auto& node : pass.source.live)
+            values[node->name] = node->values;
         if (pass.source.effect)
             for (const auto& [name, value] : pass.source.effect->parameters)
                 if (name != "sampleVectors") values[name] = value;

@@ -152,13 +152,17 @@ describe("TSL on the browser back end", () => {
     const ticks = (tsl.exports.uniform as Fn)(0);
     let seen: unknown;
     // Midway's ocean: center.onRenderUpdate(() => syncTexture()); a returned value becomes .value.
-    expect((ticks.onRenderUpdate as Fn)(function (this: unknown, frame: { frameId: number }) {
-      seen = this;
-      return frame.frameId * 10;
-    })).toBe(ticks);
+    expect(
+      (ticks.onRenderUpdate as Fn)(function (this: unknown, frame: { frameId: number }) {
+        seen = this;
+        return frame.frameId * 10;
+      }),
+    ).toBe(ticks);
     const side = (tsl.exports.uniform as Fn)(7);
     let frames = 0;
-    (side.onFrameUpdate as Fn)(() => { frames++; });
+    (side.onFrameUpdate as Fn)(() => {
+      frames++;
+    });
     tsl.sync();
     tsl.sync();
     expect(seen).toBe(ticks);
@@ -194,7 +198,11 @@ describe("TSL on the browser back end", () => {
     for (const alias of ["xz", "zxy", "st", "bgr", "xxxx"]) expect(v[alias], alias).toBeDefined();
     expect(v.xyzwx).toBeUndefined();
     expect(calls.map((c) => c.name).filter((n) => n.startsWith("swizzle:"))).toEqual([
-      "swizzle:xz", "swizzle:zxy", "swizzle:xy", "swizzle:zyx", "swizzle:xxxx",
+      "swizzle:xz",
+      "swizzle:zxy",
+      "swizzle:xy",
+      "swizzle:zyx",
+      "swizzle:xxxx",
     ]);
   });
 

@@ -639,6 +639,19 @@ std::string key(const Graph& graph) {
     return out;
 }
 
+std::vector<Node> uniformNodes(const Graph& graph) {
+    std::vector<Node> result;
+    std::unordered_set<const NodeData*> seen;
+    const std::function<void(Node)> visit = [&](Node n) {
+        if (!n || !seen.insert(n.get()).second) return;
+        if (n->kind == Kind::Uniform && !n->values.empty()) result.push_back(n);
+        for (const auto* list : {&n->args, &n->body, &n->otherwise})
+            for (const auto& child : *list) visit(child);
+    };
+    visit(graph);
+    return result;
+}
+
 std::map<std::string, std::vector<float>> uniforms(const Graph& graph) {
     std::map<std::string, std::vector<float>> result;
     std::unordered_set<const NodeData*> seen;

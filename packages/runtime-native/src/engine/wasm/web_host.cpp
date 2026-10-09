@@ -5,6 +5,9 @@
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
 #include "engine/renderer/render_database.h"
+#if TN_WEB_GLTF
+#include "engine/assets/gltf/loader.h"
+#endif
 
 #include <emscripten/emscripten.h>
 
@@ -31,6 +34,12 @@ EventQueue events;
 std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
 tn::engine::shader::graph::Node pendingPost;  // a RenderPipeline set before the device was ready
+// three's renderer settings the game last set (WebGPURenderer's defaults until it does), applied
+// before the next frame, as the V8 player's setRendererState does.
+OutputState output{std::nullopt, 1, true};
+bool outputChanged = true;
+bool shadowMap = false;
+int shadowMapType = 1;  // PCFShadowMap
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -170,6 +179,10 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     wgpuSurfaceGetCurrentTexture(surface, &frame);
     if (frame.texture == nullptr) return fail("TN_WASM_SURFACE: no canvas texture");
     WGPUTextureView view = wgpuTextureCreateView(frame.texture, nullptr);
+    if (outputChanged) renderer->setOutput(output);
+    outputChanged = false;
+    database.shadowMapEnabled = shadowMap;
+    database.shadowMapType = shadowMapType;
     {
         Renderer::PresentScope present(*renderer, view, surfaceFormat);
         database.render(*renderer, *scene, *camera, {r, g, b, a});
@@ -177,6 +190,31 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(frame.texture);
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
+    return 0;
+}
+
+/**
+ * three's `toneMapping`, `toneMappingExposure`, `outputColorSpace` and `shadowMap.{enabled,type}`,
+ * applied before the next frame. A value the engine does not implement is refused by name; a refusal
+ * leaves the renderer running.
+ */
+extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const char* colorSpace, int shadowEnabled,
+                                      double shadowType) {
+    std::string refusal;
+    const auto next = outputStateOf(toneMapping, exposure, colorSpace, refusal);
+    // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
+    if (next && shadowType != 1 && shadowType != 2) refusal = "shadowMap.type must be PCFShadowMap or PCFSoftShadowMap";
+    if (!refusal.empty()) {
+        if (state != Failed) failure = "TN_NATIVE_RENDERER_STATE: " + refusal;
+        return 1;
+    }
+    if (next->toneMapping != output.toneMapping || next->toneMappingExposure != output.toneMappingExposure ||
+        next->srgb != output.srgb) {
+        output = *next;
+        outputChanged = true;
+    }
+    shadowMap = shadowEnabled != 0;
+    shadowMapType = static_cast<int>(shadowType);
     return 0;
 }
 
@@ -197,6 +235,49 @@ extern "C" int tnw_web_set_post(tn_context_t* context, const uint64_t* node) {
     if (state == Ready && renderer) renderer->setPostGraph(graph);
     else pendingPost = graph;
     return 0;
+}
+
+namespace {
+std::string loadFailure;  // why the last tnw_web_load_gltf refused; never fails the host itself
+}
+
+/** Why the last tnw_web_load_gltf call refused, or empty. */
+extern "C" const char* tnw_web_load_error() { return loadFailure.c_str(); }
+
+/**
+ * A GLB through the engine's own glTF loader (PRD-540), the same C++ the V8 player's loadAsset runs:
+ * the default scene, then each animation clip, as handles in `context`. `out` holds `capacity`
+ * handles; `count` answers how many there are (scene + clips), so a short buffer can be retried.
+ * Returns 0, or 1 with tnw_web_load_error set. A model whose images did not decode is refused by
+ * name, as on V8, rather than drawn without its textures.
+ */
+extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, uint32_t size, tn_handle_t* out,
+                                 uint32_t capacity, uint32_t* count) {
+    loadFailure.clear();
+#if TN_WEB_GLTF
+    if (!context || !bytes || !size || !count) return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
+    auto loaded = gltf::load(std::span<const uint8_t>(bytes, size));
+    if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
+    if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
+    bool undecoded = false;
+    loaded.scene->traverse([](Object3D& object, void* result) {
+        auto* mesh = dynamic_cast<Mesh*>(&object);
+        if (!mesh || !mesh->material) return;
+        for (const auto& [slot, map] : mesh->material->maps)
+            if (map && !map->hasImage()) *static_cast<bool*>(result) = true;
+    }, &undecoded);
+    if (undecoded) return loadFailure = "TN_NATIVE_GLTF_IMAGE_UNSUPPORTED: the model has undecoded images", 1;
+    *count = 1 + static_cast<uint32_t>(loaded.animations.size());
+    if (!out || capacity < *count) return loadFailure = "TN_WASM_GLTF_CAPACITY", 1;
+    out[0] = tn::abi::shareObject(context, "Group", loaded.scene);
+    for (uint32_t i = 0; i < loaded.animations.size(); ++i)
+        out[1 + i] = tn::abi::shareObject(context, "AnimationClip", loaded.animations[i]);
+    return 0;
+#else
+    (void)context; (void)bytes; (void)size; (void)out; (void)capacity; (void)count;
+    loadFailure = "TN_WASM_GLTF_UNAVAILABLE: this web engine was built without cgltf";
+    return 1;
+#endif
 }
 
 /** The last frame's draws (0) and triangles (1), as three's `renderer.info.render` reports them. */

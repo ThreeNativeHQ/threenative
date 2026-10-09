@@ -248,29 +248,9 @@ engine.collect();
   check(heard.includes("listener:0,1,5"), `listener pose ${heard.join(" ")}`);
   check(heard.includes("voice:-4,0,1"), `voice pose ${heard.join(" ")}`);
 }
-// attribute.array is a view of the engine's memory; over a fixed-size heap, memory growth would
-// detach a kept view, so the getter refuses by name (checked below) and the checks that read arrays
-// need a module whose heap is resizable (none is built so: GPUQueue uploads reject resizable views).
-const resizable = (abi.HEAPU8.buffer as unknown as { resizable?: boolean }).resizable === true;
-if (!resizable) {
-  const web = (await bindWebEngine(createTnAbi, [
-    "Float32BufferAttribute",
-  ])) as unknown as typeof THREE;
-  const attribute = new web.Float32BufferAttribute([1, 2, 3] as never, 3);
-  let refused = "";
-  try {
-    void attribute.array;
-  } catch (error) {
-    refused = String(error);
-  }
-  check(
-    refused.includes("TN_WASM_ATTRIBUTE_VIEW_UNSAFE"),
-    `attribute.array refuses by name: ${refused}`,
-  );
-}
 // The engine's Shape and ExtrudeGeometry on the web: a hole pushed onto shape.holes is cut, and the
 // options object reaches the generator; positions, normals and uvs equal the pinned three's.
-if (resizable) {
+{
   type Ctor = new (...args: unknown[]) => Record<string, unknown>;
   const names = ["Shape", "Path", "Vector2", "ExtrudeGeometry", "ShapeGeometry", "BufferGeometry"];
   const web = (await bindWebEngine(createTnAbi, names)) as Record<string, Ctor>;
@@ -309,9 +289,29 @@ if (resizable) {
     "extrude is a BufferGeometry",
   );
 }
-// three's attribute.array is the attribute's own typed array: of its scalar type, one per attribute,
-// and an element write is what the engine reads back.
-if (resizable) {
+// The templates' check (src/render/materialAssignments.ts): a material whose hooks are three's
+// defaults reads them from Material.prototype, and a game's own hook is told apart (PRD-546).
+{
+  type Hooks = { onBeforeCompile: unknown; customProgramCacheKey: () => unknown };
+  const web = (await bindWebEngine(createTnAbi, ["MeshStandardMaterial", "Material"])) as Record<
+    string,
+    new () => Hooks
+  >;
+  const base = (web.Material as unknown as { prototype: Hooks }).prototype;
+  const lit = new (web.MeshStandardMaterial as new () => Hooks)();
+  check(
+    lit.onBeforeCompile === base.onBeforeCompile &&
+      lit.customProgramCacheKey === base.customProgramCacheKey &&
+      typeof lit.customProgramCacheKey() === "string",
+    "Material hooks read three's defaults",
+  );
+  lit.onBeforeCompile = () => {};
+  check(lit.onBeforeCompile !== base.onBeforeCompile, "a game's onBeforeCompile is its own");
+}
+// three's attribute.array is the attribute's own JS typed array (PRD-540): of its scalar type, one
+// per attribute, kept across Wasm memory growth; an element write is what the engine reads back
+// before its next call, BufferAttribute keeps the array it is handed, and needsUpdate sends a write.
+{
   let grown: TnAbiModule | undefined;
   const web = (await bindWebEngine(async () => {
     grown = await createTnAbi();
@@ -330,7 +330,7 @@ if (resizable) {
   const p = g.getAttribute("position") as InstanceType<typeof THREE.BufferAttribute>;
   const a = p.array;
   a[3] = 5;
-  // A view a game keeps stays the attribute's across memory growth: grow the heap by 64 MB.
+  // A kept array stays the attribute's across memory growth: grow the heap by 64 MB.
   const heap = grown as TnAbiModule;
   const before = heap.HEAPU8.buffer.byteLength;
   heap._free(heap._malloc(64 << 20));
@@ -338,23 +338,32 @@ if (resizable) {
   a[4] = 7;
   check(
     a.length === 9 && a[3] === 5 && p.getY(1) === 7,
-    `a kept view survives growth: ${String(a.length)}`,
+    `a kept array survives growth: ${String(a.length)}`,
   );
   g.computeBoundingBox();
+  g.translate(1, 0, 0);
   const index = new web.BoxGeometry().getIndex() as InstanceType<typeof THREE.BufferAttribute>;
-  const wide = new web.BufferAttribute(new Uint32Array([7, 8]), 1);
+  const handed = new Uint32Array([7, 8]);
+  const wide = new web.BufferAttribute(handed, 1);
   wide.array[1] = 9;
+  const late = new web.Float32BufferAttribute([0, 0, 0] as never, 3);
+  const lateArray = late.array;
+  lateArray[2] = 4;
+  (late as unknown as { needsUpdate: boolean }).needsUpdate = true;
   const got = [
     a instanceof Float32Array,
     p.array === a,
     p.getX(1),
     g.boundingBox?.max.x,
+    a[3],
     index.array instanceof Uint16Array,
     index.array.length,
-    wide.array instanceof Uint32Array,
+    wide.array === handed,
     wide.getX(1),
+    late.getZ(0),
+    late.version,
   ].join();
-  check(got === "true,true,5,5,true,36,true,9", `attribute arrays ${got}`);
+  check(got === "true,true,6,6,6,true,36,true,9,4,1", `attribute arrays ${got}`);
 }
 // three's geometry.clone() is a deep copy of the same class, dispose() leaves the CPU data usable,
 // and morphAttributes reads back the attributes it was given, on the web as on V8.
@@ -385,7 +394,7 @@ if (resizable) {
 }
 // BufferGeometryUtils.mergeGeometries over the web engine's geometries equals three's over its own:
 // indexed parts with groups and morph targets, the arrays' types included.
-if (resizable) {
+{
   // biome-ignore lint/suspicious/noExplicitAny: three's and the engine's classes, compared by value.
   type Loose = any;
   const fromCore = createRequire(path.join(import.meta.dirname, "../../core/package.json"));
@@ -460,4 +469,4 @@ if (runtime.tsl !== undefined) {
   }
   check(wrong.includes("reflector"), `reflector refuses a camera as its target: ${wrong}`);
 }
-process.stdout.write(`TN_BROWSER_BACKEND_OK resizable=${resizable ? 1 : 0}\n`);
+process.stdout.write("TN_BROWSER_BACKEND_OK\n");

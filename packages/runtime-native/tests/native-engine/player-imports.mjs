@@ -26,7 +26,7 @@ const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
-  "ExtrudeGeometry", "SpriteMaterial", "InstancedMesh", "InstancedBufferAttribute", ...constants];
+  "ExtrudeGeometry", "SpriteMaterial", "InstancedMesh", "InstancedBufferAttribute", "Line", "LineSegments", "LineBasicMaterial", ...constants];
 const panel = (T) => {
   const shape = new T.Shape();
   shape.moveTo(-0.3, -0.2); shape.lineTo(0.25, -0.2); shape.quadraticCurveTo(0.3, -0.2, 0.3, -0.15);
@@ -488,7 +488,10 @@ contact.radius.value = 0.35; contact.resolutionScale = 0.5;
 check(contact.radius.value === Math.fround(0.35) && contact.resolutionScale === 0.5 && contact.getTextureNode() === contact, "GTAO uniforms");
 const occlusion = denoise(contact.getTextureNode(), sceneDepth, sceneNormal, camera);
 let composed = scenePass.getTextureNode().mul(occlusion.r);
-composed = composed.add(bloom(convertToTexture(composed), 0.22, 0.6, 1));
+const glow = bloom(convertToTexture(composed), 0.22, 0.6, 1);
+glow.strength.value = 0.5;
+check(glow.strength.value === 0.5 && glow.radius.value === Math.fround(0.6) && glow.threshold.value === 1, "bloom uniforms");
+composed = composed.add(glow);
 const fall = screenUV.sub(0.5).length().oneMinus();
 pipeline.outputNode = smaa(composed.mul(fall));
 pipeline.render(); pipeline.render();

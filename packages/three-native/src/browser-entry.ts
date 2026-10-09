@@ -22,6 +22,7 @@ import {
 import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
+import { Material, defineObjectSurface } from "./object-surface.js";
 import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -79,158 +80,6 @@ export function bindUpstreamExports(
   return bound;
 }
 
-/**
- * three's `shape.holes` is the plain array a game pushes paths into, and the engine's getter answers
- * a copy: each change to the view writes the whole array through the native setter, as the V8
- * facade does, so the geometry built from the shape sees it.
- */
-function liveHoles(Shape: { prototype: object } | undefined): void {
-  if (Shape === undefined) return;
-  const native = Object.getOwnPropertyDescriptor(Shape.prototype, "holes");
-  if (native?.get === undefined || native.set === undefined)
-    throw new TypeError("TN_BROWSER_UNBOUND: Shape.holes needs the engine's getter and setter");
-  const { get, set } = native;
-  const views = new WeakMap<object, unknown[]>();
-  Object.defineProperty(Shape.prototype, "holes", {
-    configurable: true,
-    get(this: object) {
-      let view = views.get(this);
-      if (view === undefined) {
-        const shape = this;
-        view = new Proxy(get.call(this) as unknown[], {
-          set(target, key, value) {
-            Reflect.set(target, key, value);
-            set.call(shape, [...target]);
-            return true;
-          },
-        });
-        views.set(this, view);
-      }
-      return view;
-    },
-    set(this: object, value: readonly unknown[]) {
-      set.call(this, [...value]);
-      views.delete(this);
-    },
-  });
-}
-
-// three's `geometry.attributes` map and `groups` array over the engine's, as the V8 facade gives them:
-// one live view per geometry, reading through getAttribute and writing through setAttribute and
-// deleteAttribute. ponytail: names are three's standard ones plus those set from JS; a custom name
-// only a native loader added is readable by name but not enumerated.
-const STANDARD_ATTRIBUTES = [
-  "position",
-  "normal",
-  "uv",
-  "uv1",
-  "uv2",
-  "uv3",
-  "color",
-  "tangent",
-  "skinIndex",
-  "skinWeight",
-];
-
-interface IGeometryLike {
-  hasAttribute(name: string): boolean;
-  getAttribute(name: string): unknown;
-  setAttribute(name: string, attribute: unknown): unknown;
-  deleteAttribute(name: string): unknown;
-}
-
-function attributeViews(classes: Readonly<Record<string, { prototype: object }>>): void {
-  const base = classes.BufferGeometry?.prototype;
-  if (base === undefined) return;
-  const authored = new WeakMap<object, Set<string>>();
-  const views = new WeakMap<object, object>();
-  for (const { prototype } of Object.values(classes)) {
-    const own = prototype as Partial<IGeometryLike>;
-    if (
-      !Object.hasOwn(prototype, "setAttribute") ||
-      own.setAttribute === undefined ||
-      own.deleteAttribute === undefined
-    )
-      continue;
-    const { setAttribute, deleteAttribute } = own as IGeometryLike;
-    // The registry answers `groups` as canonical JSON text (the fixtures' protocol); three's is an
-    // array of { start, count, materialIndex }. ponytail: a fresh array per read, as on V8.
-    const groups = Object.getOwnPropertyDescriptor(prototype, "groups")?.get;
-    if (groups !== undefined)
-      Object.defineProperty(prototype, "groups", {
-        configurable: true,
-        get(this: object) {
-          const parsed = JSON.parse(groups.call(this) as string) as {
-            start: number;
-            count: number;
-            materialIndex: number;
-          }[];
-          return parsed.map(({ start, count, materialIndex }) => ({ start, count, materialIndex }));
-        },
-      });
-    Object.defineProperties(prototype, {
-      setAttribute: {
-        configurable: true,
-        writable: true,
-        value(this: IGeometryLike, name: string, attribute: unknown) {
-          const names = authored.get(this) ?? new Set<string>();
-          authored.set(this, names.add(String(name)));
-          return setAttribute.call(this, name, attribute);
-        },
-      },
-      deleteAttribute: {
-        configurable: true,
-        writable: true,
-        value(this: IGeometryLike, name: string) {
-          authored.get(this)?.delete(String(name));
-          return deleteAttribute.call(this, name);
-        },
-      },
-    });
-  }
-  Object.defineProperty(base, "attributes", {
-    configurable: true,
-    get(this: IGeometryLike) {
-      const cached = views.get(this);
-      if (cached !== undefined) return cached;
-      const names = () =>
-        [...new Set([...STANDARD_ATTRIBUTES, ...(authored.get(this) ?? [])])].filter((name) =>
-          this.hasAttribute(name),
-        );
-      const view = new Proxy(
-        {},
-        {
-          get: (_, name) =>
-            typeof name === "string" && this.hasAttribute(name)
-              ? this.getAttribute(name)
-              : undefined,
-          has: (_, name) => typeof name === "string" && this.hasAttribute(name),
-          set: (_, name, attribute) => {
-            this.setAttribute(String(name), attribute);
-            return true;
-          },
-          deleteProperty: (_, name) => {
-            this.deleteAttribute(String(name));
-            return true;
-          },
-          ownKeys: () => names(),
-          getOwnPropertyDescriptor: (_, name) =>
-            typeof name === "string" && this.hasAttribute(name)
-              ? {
-                  value: this.getAttribute(name),
-                  writable: true,
-                  enumerable: true,
-                  configurable: true,
-                }
-              : undefined,
-        },
-      );
-      views.set(this, view);
-      return view;
-    },
-  });
-}
-
 /** Boots the Wasm module and returns every upstream export name bound over it. */
 export async function bindWebEngine(
   createModule: () => Promise<TnAbiModule>,
@@ -238,19 +87,39 @@ export async function bindWebEngine(
 ): Promise<Record<string, unknown>> {
   const module = await createModule();
   const runtime = createWasmRuntime(module);
-  const { classes } = defineBrowserClasses(
+  const { classes, wrap } = defineBrowserClasses(
     registry as IRegistryDump,
     runtime,
     catalogJson as unknown as ICatalog,
   );
-  liveHoles(classes.Shape);
-  attributeViews(classes);
+  // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
+  const entries = (catalogJson as unknown as ICatalog).entries;
+  const extending = (base: string) =>
+    entries
+      .filter(
+        (entry) =>
+          entry.kind === "class" && entry.extends === base && classes[entry.name] !== undefined,
+      )
+      .map((entry) => classes[entry.name] as new (...args: never[]) => object);
+  if (classes.BufferGeometry !== undefined)
+    defineObjectSurface({
+      bufferGeometry: classes.BufferGeometry,
+      // Every geometry class that binds its own setAttribute, not only BufferGeometry's children.
+      geometries: Object.values(classes).filter(
+        (cls) => cls !== classes.BufferGeometry && Object.hasOwn(cls.prototype, "setAttribute"),
+      ) as (new (
+        ...args: never[]
+      ) => object)[],
+      ...(classes.Shape === undefined ? {} : { shape: classes.Shape }),
+      materials: extending("Material"),
+    });
   // TSL through the engine's shared name table (tn_tsl_call), when the module carries it.
   const tsl = runtime.tsl ? defineTsl(runtime.tsl) : undefined;
   const bound: Record<string, unknown> = {
     ...withTextureSources(classes, runtime),
     ...tsl?.exports,
   };
+  bound.Material = Material;
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
   // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
   const audio = defineAudioClasses({
@@ -270,6 +139,13 @@ export async function bindWebEngine(
       tsl?.sync();
       audio.updateAudio();
     });
+  // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
+  const { loadGltf } = runtime;
+  if (loadGltf !== undefined)
+    bound.__tnLoadGltf = (bytes: Uint8Array) => {
+      const loaded = loadGltf.call(runtime, bytes);
+      return { scene: wrap(loaded.scene), animations: loaded.animations.map(wrap) };
+    };
   if (tsl !== undefined && runtime.tsl !== undefined) {
     const native = tsl.exports.reflector as (...args: unknown[]) => object;
     bound.reflector = defineReflector(native, classes as never);

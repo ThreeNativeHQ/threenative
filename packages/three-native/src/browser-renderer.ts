@@ -5,6 +5,7 @@
  * engine did. What it does not implement throws its diagnostic rather than doing nothing.
  */
 import { type TnAbiModule, engineRef } from "./browser-backend.js";
+import { ShadowMap } from "./shadow-map.js";
 
 /** The product host's exports beside the catalog ABI (all numbers: pointers, sizes, status). */
 type HostCall =
@@ -14,6 +15,7 @@ type HostCall =
   | "_tnw_web_adapter"
   | "_tnw_web_resize"
   | "_tnw_web_render"
+  | "_tnw_web_renderer_state"
   | "_tnw_web_frame";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
@@ -104,6 +106,7 @@ export function defineWebRenderer(
     toneMapping = 0;
     toneMappingExposure = 1;
     outputColorSpace = "srgb";
+    readonly shadowMap = new ShadowMap();
     /** What core reads to name the adapter: the engine's own device, not a second request. */
     readonly backend: { readonly gpu: { requestAdapter(): Promise<{ info: IAdapterInfo }> } };
     #pixelRatio = 1;
@@ -113,6 +116,7 @@ export function defineWebRenderer(
     #initialized: Promise<this> | undefined;
     #adapter: IAdapterInfo | undefined;
     #last: [unknown, unknown] | undefined;
+    #state: string | undefined;
 
     constructor(parameters: Record<string, unknown> = {}) {
       if (claimed)
@@ -223,6 +227,7 @@ export function defineWebRenderer(
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       beforeRender();
       this.#last = [scene, camera];
+      this.#applyState();
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
       check(module._tnw_web_render(handles, handles + 12, ...this.#clear));
@@ -233,9 +238,36 @@ export function defineWebRenderer(
       this.info.render.triangles = module._tnw_web_frame(1);
     }
 
+    /** three's output and shadow settings, handed to the engine when they change. */
+    #applyState(): void {
+      const { toneMapping, toneMappingExposure, outputColorSpace, shadowMap } = this;
+      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}`;
+      if (key === this.#state) return;
+      const space = string(String(outputColorSpace));
+      try {
+        check(
+          module._tnw_web_renderer_state(
+            toneMapping,
+            toneMappingExposure,
+            space,
+            shadowMap.enabled ? 1 : 0,
+            shadowMap.type,
+          ),
+        );
+      } finally {
+        module._free(space);
+      }
+      this.#state = key;
+    }
+
     /** The last scene and camera again: RenderPipeline.render() draws through its post graph. */
     [RENDER_AGAIN](): void {
       if (this.#last !== undefined) this.render(...this.#last);
+    }
+
+    /** WebGPUCapabilities.getMaxAnisotropy, as on the V8 player: WebGPU samplers clamp to 16. */
+    getMaxAnisotropy(): number {
+      return 16;
     }
 
     compileAsync(): Promise<void> {

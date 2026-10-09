@@ -42,7 +42,8 @@ bool PipelineCache::IdKey::operator==(const IdKey& o) const {
            target.depthWrite == o.target.depthWrite && target.depthBias == o.target.depthBias &&
            target.depthBiasSlopeScale == o.target.depthBiasSlopeScale && target.layout == o.target.layout &&
            target.skinIndex == o.target.skinIndex && target.frontFace == o.target.frontFace &&
-           target.depthCompare == o.target.depthCompare;
+           target.depthCompare == o.target.depthCompare && target.topology == o.target.topology &&
+           target.stripIndexFormat == o.target.stripIndexFormat;
 }
 
 size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
@@ -56,6 +57,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
         uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58);
     mix(uint64_t(static_cast<uint32_t>(key.target.depthBias)) | uint64_t(std::bit_cast<uint32_t>(key.target.depthBiasSlopeScale)) << 32);
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
+    mix(uint64_t(key.target.topology) | uint64_t(key.target.stripIndexFormat) << 32);
     return h;
 }
 
@@ -76,7 +78,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
            std::to_string(target.cull) + ':' + std::to_string(target.blend) + ':' + std::to_string(target.depthWrite) +
            ':' + std::to_string(target.depthBias) + ':' + std::to_string(target.depthBiasSlopeScale) +
            ':' + std::to_string(reinterpret_cast<uintptr_t>(target.layout)) + ':' + std::to_string(target.skinIndex) +
-           ':' + std::to_string(target.frontFace) + ':' + std::to_string(target.depthCompare);
+           ':' + std::to_string(target.frontFace) + ':' + std::to_string(target.depthCompare) + ':' +
+           std::to_string(target.topology) + ':' + std::to_string(target.stripIndexFormat);
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
         if (named) byId_.emplace(idKey, found->second);  // the same text under another id
         return found->second;
@@ -113,7 +116,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
     WGPU_SET_ENTRY_POINT(desc.vertex, "main");
     desc.vertex.bufferCount = buffers.size();
     desc.vertex.buffers = buffers.data();
-    desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    desc.primitive.topology = target.topology;
+    desc.primitive.stripIndexFormat = target.stripIndexFormat;
     desc.primitive.cullMode = target.cull;
     desc.primitive.frontFace = target.frontFace;
     desc.multisample.count = 1;

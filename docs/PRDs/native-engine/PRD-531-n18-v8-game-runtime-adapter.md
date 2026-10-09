@@ -143,18 +143,22 @@ the V8 adapter and the Wasm back end (`tn_tsl_call`) build the same graph.
 
 ## Open items (QA review, 2026-10-08)
 
+Engine gaps from this list moved to [N22](N22-three-surface-coverage/README.md) on 2026-10-08, so
+each gap has one box. The items left here are V8 back-end work.
+
 - `native_engine_v8_catalog_coverage` is red after the feat merge (41aca5170): the installed
   globals plus constants no longer sum to `capability_count` (`v8_adapter_test.cpp:458`).
-- `aoPass.resolutionScale` set after the first render does nothing: `rawPass` copies it at
-  lowering (`post_effects.cpp:281`). Resize must read `source.effect->resolutionScale`.
+- Moved to [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md):
+  `aoPass.resolutionScale` set after the first render does nothing.
 - Every `pass()` overwrites `tn.scene`/`tn.camera` (`core-tsl.mjs`); a second distinct scene or
   camera must refuse by name.
 - `adapterIdentity()` (`v8_main.cpp`) opens its own wgpu instance; read the renderer's adapter.
 - `renderer.info`: `frame` never increments, `compute` is empty, `memory` is missing. Make each
   real or absent.
 - Low: the MRT slot markers (`normalView`, `metalness`, `roughness`, `output`) are frozen
-  objects; `bloom()` lacks strength/radius/threshold uniforms; `getVertexPosition` lacks a skinned
-  case; `AnimationMixer.clipAction` ignores its `optionalRoot` argument (`bindings_scene.cpp:972`).
+  objects. Moved: the `bloom()` uniforms to [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md), the skinned
+  `getVertexPosition` to [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md). In the [N22 backlog](N22-three-surface-coverage/README.md#backlog-gaps-no-corpus-game-reaches) (no corpus user):
+  `AnimationMixer.clipAction` ignores its `optionalRoot` argument.
 - The V8 player's performance series (owner decision above) is not built yet. Core announces a
   runner through `TN_PLAYTEST_ENDPOINT`, which the V8 player does not set, and announcing freezes
   core's loop, so the player's ticks must then drive the bridge's advance and its rAF must fire

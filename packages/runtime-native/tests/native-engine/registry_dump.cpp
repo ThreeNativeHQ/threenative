@@ -4,6 +4,7 @@
 // the sync script reads the same JSON to update the catalog.
 
 #include "engine/abi/bindings.h"
+#include "engine/foundation/ThreeConstants.h"
 
 #include <algorithm>
 #include <cctype>
@@ -53,7 +54,19 @@ std::string dump(const tn::binding::Registry& registry) {
         out << "      \"callbacks\": " << keys(binding.callbacks) << "\n";
         out << "    }";
     }
-    out << "\n  }\n}\n";
+    out << "\n  },\n  \"constants\": [";
+    std::vector<std::string> constantNames;
+    constantNames.reserve(sizeof(tn::engine::kThreeConstants) / sizeof(tn::engine::kThreeConstants[0]));
+    for (const auto& c : tn::engine::kThreeConstants) {
+        constantNames.push_back(c.name);
+    }
+    std::sort(constantNames.begin(), constantNames.end());
+    for (size_t i = 0; i < constantNames.size(); ++i) {
+        if (i > 0) out << ", ";
+        out << "\n    \"" << escape(constantNames[i]) << "\"";
+    }
+    if (!constantNames.empty()) out << "\n  ";
+    out << "]\n}\n";
     return out.str();
 }
 

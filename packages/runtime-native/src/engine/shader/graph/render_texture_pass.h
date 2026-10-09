@@ -28,6 +28,7 @@ inline PostPass renderTexturePass(Node node) {
     for (const auto& binding : fragment.bindings)
         if (binding.kind == BindingKind::Texture) pass.reads[binding.name.substr(2)] = binding.name.substr(2);
     pass.uniforms = uniforms(node->args[0]);
+    pass.live = uniformNodes(node->args[0]);
     pass.package.variants.push_back({0, {buildStage(programs.vertex), std::move(fragment)}});
     return pass;
 }

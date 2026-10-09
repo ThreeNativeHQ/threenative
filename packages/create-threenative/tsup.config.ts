@@ -37,6 +37,7 @@ export default defineConfig([
       "web-engine-buffer-geometry-utils": "../three-native/src/addons/buffer-geometry-utils.ts",
       "web-engine-hdr-loader": "../three-native/src/addons/hdr-loader.ts",
       "web-engine-post-effects": "../three-native/src/addons/post-effects-web.ts",
+      "web-engine-gltf-loader": "../three-native/src/addons/gltf-loader-web.ts",
     },
     // `three` is the engine binding the web build aliases it to, never upstream three.
     external: ["three"],

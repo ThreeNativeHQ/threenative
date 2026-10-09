@@ -212,9 +212,15 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "ior", &Material::ior);
     materialNumber(b, "specularIntensity", &Material::specularIntensity);
     materialColor(b, "specularColor", &Material::specularColor);
-    materialMapSlot(b, "specularColorMap");
-    materialMapSlot(b, "specularIntensityMap");
+    // The physical program's own PbrMaps: specularColorMap, specularIntensityMap and the clearcoat maps.
+    for (int k = shader::kStandardPbrMapCount; k < shader::kPbrMapCount; ++k) materialMapSlot(b, shader::kPbrMapNames[k]);
     materialNumber(b, "clearcoat", &Material::clearcoat);
+    materialNumber(b, "clearcoatRoughness", &Material::clearcoatRoughness);
+    fixedMember(b, "clearcoatNormalScale", memberAliasMethod(&Material::clearcoatNormalScale, "Vector2"));
+    b.setters["clearcoatNormalScale"] = [](void* self, const Value& v, Store& store) {
+        as<Material>(self)->clearcoatNormalScale.copy(store.ref<Vector2>(v, "Vector2"));
+        as<Material>(self)->needsUpdate();
+    };
     materialNumber(b, "sheen", &Material::sheen);
     materialNumber(b, "transmission", &Material::transmission);
     materialNumber(b, "iridescence", &Material::iridescence);
@@ -542,6 +548,16 @@ void registerMaterialBindings(Registry& classes) {
         b.setters["rotation"] = [](void* self, const Value& v) { as<Material>(self)->rotation = number(v); };
         b.getters["sizeAttenuation"] = [](void* self) { return Value::of(as<Material>(self)->sizeAttenuation); };
         b.setters["sizeAttenuation"] = [](void* self, const Value& v) { as<Material>(self)->sizeAttenuation = flag(v); };
+    }
+    {
+        auto& line = classes["LineBasicMaterial"];
+        registerMeshMaterial(line, MaterialType::Basic);
+        const auto ctor = line.ctor;
+        line.ctor = [ctor](const Args& a, Store& store) {
+            auto value = ctor(a, store);
+            static_cast<Material*>(value.get())->lineMaterial = true;
+            return value;
+        };
     }
     registerMeshMaterial(classes["MeshBasicMaterial"], MaterialType::Basic);
     registerMeshMaterial(classes["MeshBasicNodeMaterial"], MaterialType::Basic, true);

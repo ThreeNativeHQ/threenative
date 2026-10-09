@@ -36,10 +36,22 @@ std::shared_ptr<BufferGeometry> makeConeGeometry(double radius = 1, double heigh
 std::shared_ptr<BufferGeometry> makeCircleGeometry(double radius = 1, double segments = 32,
                                                    double thetaStart = 0,
                                                    double thetaLength = 6.283185307179586);
+std::shared_ptr<BufferGeometry> makeIcosahedronGeometry(double radius = 1, double detail = 0);
+std::shared_ptr<BufferGeometry> makeOctahedronGeometry(double radius = 1, double detail = 0);
+std::shared_ptr<BufferGeometry> makeDodecahedronGeometry(double radius = 1, double detail = 0);
+std::shared_ptr<BufferGeometry> makePolyhedronGeometry(const std::vector<double>& vertices,
+                                                       const std::vector<uint32_t>& indices,
+                                                       double radius = 1, double detail = 0);
+std::shared_ptr<BufferGeometry> makeCapsuleGeometry(double radius = 1, double height = 1,
+                                                    double capSegments = 4, double radialSegments = 8,
+                                                    double heightSegments = 1);
 std::shared_ptr<BufferGeometry> makeTorusGeometry(double radius = 1, double tube = 0.4,
                                                   double radialSegments = 12, double tubularSegments = 48,
                                                   double arc = 6.283185307179586, double thetaStart = 0,
                                                   double thetaLength = 6.283185307179586);
+std::shared_ptr<BufferGeometry> makeTorusKnotGeometry(double radius = 1, double tube = 0.4,
+                                                      double tubularSegments = 64, double radialSegments = 8,
+                                                      double p = 2, double q = 3);
 std::shared_ptr<BufferGeometry> makeRingGeometry(double innerRadius = 0.5, double outerRadius = 1,
                                                  double thetaSegments = 32, double phiSegments = 1,
                                                  double thetaStart = 0,

@@ -187,5 +187,7 @@ ExprId lower(const Graph& graph, Program& program,
 std::string key(const Graph& graph);
 /** Named uniform data reachable from the graph. Conflicting values fail rather than pick one. */
 std::map<std::string, std::vector<float>> uniforms(const Graph& graph);
+/** The graph's authored uniform nodes (each with a value), so a pass reads `uniform.value` every frame. */
+std::vector<Node> uniformNodes(const Graph& graph);
 
 }  // namespace tn::engine::shader::graph

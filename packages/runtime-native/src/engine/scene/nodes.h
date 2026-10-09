@@ -97,6 +97,25 @@ class Mesh : public Object3D {
     virtual const Box3& cachedBounds();
 };
 
+/** three's Line: its geometry's vertices drawn as one connected line strip, unlit. */
+class Line : public Mesh {
+public:
+    using Mesh::Mesh;
+    [[nodiscard]] std::string_view type() const override { return "Line"; }
+    /** three's LineSegments draws each vertex pair as its own segment (a line list). */
+    [[nodiscard]] virtual bool segments() const { return false; }
+    /** three's Line.raycast: each segment within the raycaster's line threshold of the ray. */
+    bool raycast(const Raycaster& caster, std::vector<Intersection>& hits) override;
+};
+
+/** three's LineSegments: vertex pairs drawn as separate segments. */
+class LineSegments final : public Line {
+public:
+    using Line::Line;
+    [[nodiscard]] std::string_view type() const override { return "LineSegments"; }
+    [[nodiscard]] bool segments() const override { return true; }
+};
+
 /** three's Sprite: a view-aligned quad; count supports GPUParticles3D's instanced sprites. */
 class Sprite : public Mesh {
 public:
