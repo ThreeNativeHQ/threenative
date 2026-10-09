@@ -1679,23 +1679,25 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
-    std::map<uint64_t, Box3> casterBounds;
-    for (const DrawItem& item : virtualShadows_.empty() ? std::span<const DrawItem>{} : items) {
-        if (!item.castShadow || !item.positions || item.instanceCount == 0) continue;
-        Box3 bounds;
-        if (item.positions->scalar() == Scalar::F32) {
-            for (uint64_t i = 0; i + 2 < item.positions->count(); i += 3) {
-                float p[3]; item.positions->read(i * 4, p, sizeof(p));
-                bounds.expandByPoint(Vector3(p[0], p[1], p[2]));
-            }
-        }
-        Matrix4 model; model.elements = item.matrixWorld;
-        bounds.applyMatrix4(model);
-        casterBounds[item.key] = bounds;
-    }
+    std::map<std::size_t, std::map<uint64_t, Box3>> casterBounds;
     for (auto& [i, shadow] : virtualShadows_) {
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
+        const uint32_t mask = lights.direct[i].shadow->layersMask;
+        auto& lightCasterBounds = casterBounds[i];
+        for (const DrawItem& item : items) {
+            if (!item.castShadow || !item.positions || item.instanceCount == 0 || (item.layers & mask) == 0) continue;
+            Box3 bounds;
+            if (item.positions->scalar() == Scalar::F32) {
+                for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
+                    float p[3]; item.positions->read(idx * 4, p, sizeof(p));
+                    bounds.expandByPoint(Vector3(p[0], p[1], p[2]));
+                }
+            }
+            Matrix4 model; model.elements = item.matrixWorld;
+            bounds.applyMatrix4(model);
+            lightCasterBounds[item.key] = bounds;
+        }
         const auto& direction = lights.direct[i].direction;
         const Vector3 towards(direction[0], direction[1], direction[2]);
         if (!std::isfinite(towards.lengthSq()) || towards.lengthSq() == 0)
@@ -1704,10 +1706,10 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         if (!std::isfinite(radius) || radius < 0 || radius + 0.5 > shadow.atlas.options().border)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
         for (const auto& [key, bounds] : shadow.casters) {
-            const auto now = casterBounds.find(key);
-            if (now == casterBounds.end() || !shadows::boundsEqual(bounds, now->second)) shadow.atlas.invalidate(bounds);
+            const auto now = lightCasterBounds.find(key);
+            if (now == lightCasterBounds.end() || !shadows::boundsEqual(bounds, now->second)) shadow.atlas.invalidate(bounds);
         }
-        for (const auto& [key, bounds] : casterBounds) {
+        for (const auto& [key, bounds] : lightCasterBounds) {
             const auto old = shadow.casters.find(key);
             if (old == shadow.casters.end() || !shadows::boundsEqual(bounds, old->second)) shadow.atlas.invalidate(bounds);
         }
@@ -1715,7 +1717,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         // silently clipping a caster whose deformation cannot be evaluated on the CPU.
         std::map<uint64_t, std::string> casterPrograms;
         for (const DrawItem& item : items) {
-            if (!item.castShadow || !item.positions || item.instanceCount == 0) continue;
+            if (!item.castShadow || !item.positions || item.instanceCount == 0 || (item.layers & mask) == 0) continue;
             std::string signature = std::to_string(item.positions->version());
             if (item.instanceMatrices) signature += ":instances:" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
             if (item.nodes.positionNode) {
@@ -1730,7 +1732,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             casterPrograms[item.key] = std::move(signature);
         }
         shadow.casterPrograms = std::move(casterPrograms);
-        shadow.casters = casterBounds;
+        shadow.casters = lightCasterBounds;
         virtualPages[i] = shadow.atlas.update(Vector3(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]), towards, virtualCut_);
     }
     virtualCut_ = false;
@@ -1940,6 +1942,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
+        if (!item.mainPass) continue;
         Program* built = this->program(item.kind, variantOf(item),
                                        item.kind == MaterialKind::Basic ? ""
                                        : item.receiveShadow            ? lightKinds
@@ -2107,8 +2110,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         for (const auto& [depthKey, drawn] : opaque) {
             const DrawItem& item = *drawn;
             if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
+            if ((item.layers & shadow.layersMask) == 0) continue;
             if (page && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
-                !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(item.key))) continue;
+                !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
             Program& program = depthProgram(variantOf(item));
             // three's _shadowSide: a front-sided caster draws its back faces, a back-sided one its
             // front faces, a double-sided one both.
@@ -2389,6 +2393,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             if (counted) lastFrame_.triangles += uint64_t{item.instanceCount} * (count / 3);
         }
         if (counted) ++lastFrame_.draws;
+        else ++lastFrame_.shadowDraws;
         if (item.boneMatrices) {
             auto& stats = counted ? lastFrame_.mainSkinned : lastFrame_.shadowSkinned;
             ++stats.draws;
@@ -2495,6 +2500,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         const auto shadowStats = lastFrame_.shadowSkinned;
+        const auto shadowDraws = lastFrame_.shadowDraws;
         lastFrame_ = FrameStats{};
         const auto record = [&](std::size_t from, std::size_t to) {
             const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
@@ -2511,6 +2517,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         if (viewportSplit < plan.size()) viewportBundle_ = record(viewportSplit, plan.size());
         mainBundleStats_ = lastFrame_;
         lastFrame_.shadowSkinned = shadowStats;
+        lastFrame_.shadowDraws = shadowDraws;
         mainBundleKey_ = std::move(bundleKey);
     } else {
         lastFrame_.draws = mainBundleStats_.draws;

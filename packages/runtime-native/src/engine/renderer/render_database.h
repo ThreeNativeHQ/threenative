@@ -129,7 +129,7 @@ class RenderDatabase {
     Record& record(const Mesh& mesh, Record& cached, bool materialize = true);
     DrawItem& refresh(const Mesh& mesh, Record& record);
     void batchMeshes(std::vector<DrawItem>& items);
-    void addBatchMesh(const Mesh& mesh, Record& record);
+    void addBatchMesh(const Mesh& mesh, Record& record, bool mainPass);
     struct BatchMember {
         const Mesh* mesh;
         const Material* material;
@@ -137,6 +137,8 @@ class RenderDatabase {
         uint64_t id;
         int order;
         Record* record;
+        bool mainPass = true;
+        uint32_t layers = 1;
     };
     struct MeshGroup {
         GeometryKey geometry;

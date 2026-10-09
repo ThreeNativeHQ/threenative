@@ -136,7 +136,8 @@ constexpr uint64_t kBackSidePassKey = uint64_t(1) << 62;
 
 // LightShadow.updateMatrices in three's WebGPU coordinate system: the shadow camera stands at the
 // light, looks at the target, and `matrix` is the uv/depth bias matrix times its projection-view.
-DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& from, const std::array<double, 3>& to) {
+DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& from, const std::array<double, 3>& to,
+                             uint32_t layersMask) {
     Camera& camera = *shadow.camera;
     if (camera.coordinateSystem != CoordinateSystem::WebGPU) camera.coordinateSystem = CoordinateSystem::WebGPU;
     if (auto* o = dynamic_cast<OrthographicCamera*>(&camera)) o->updateProjectionMatrix();
@@ -159,12 +160,14 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.intensity = shadow.intensity;
     out.width = static_cast<uint32_t>(shadow.mapSize.x);
     out.height = static_cast<uint32_t>(shadow.mapSize.y);
+    out.layersMask = layersMask;
     return out;
 }
 
 // PointShadowNode.renderShadow in WebGPU: the camera at the light, far = distance || far, turned to
 // each face in _cubeDirectionsWebGPU with _cubeUpsWebGPU; shadow.matrix is the translation to the light.
-DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 3>& at, double distance) {
+DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 3>& at, double distance,
+                                  uint32_t layersMask) {
     static const double kDirections[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, -1, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, -1}};
     static const double kUps[6][3] = {{0, -1, 0}, {0, -1, 0}, {0, 0, -1}, {0, 0, 1}, {0, -1, 0}, {0, -1, 0}};
     auto& camera = static_cast<PerspectiveCamera&>(*shadow.camera);
@@ -192,7 +195,13 @@ DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 
     out.width = out.height = static_cast<uint32_t>(shadow.mapSize.x);
     out.near = camera.near;
     out.far = camera.far;
+    out.layersMask = layersMask;
     return out;
+}
+
+uint32_t effectiveShadowLayersMask(const Camera& shadowCamera, const Camera& mainCamera) {
+    const uint32_t shadowMask = Layers::bits(shadowCamera.layers().mask);
+    return (shadowMask & 0xFFFFFFFEu) == 0 ? Layers::bits(mainCamera.layers().mask) : shadowMask;
 }
 
 /** How many PbrMaps a material reads: Standard its four, Physical also its specular and clearcoat maps, others none. */
@@ -468,6 +477,8 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     if (mesh.geometry) geometryInputsOf(*mesh.geometry, d);
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
+    d.layers = Layers::bits(mesh.layers().mask);
+    d.mainPass = true;
     return d;
 }
 
@@ -494,11 +505,15 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 child->updateMatrixWorld(force);
         return;
     }
-    if (object.layers().test(camera.layers())) {
+    const bool mainPass = object.layers().test(camera.layers());
+    const bool shadowCaster = shadowMapEnabled && object.castShadow();
+    if (mainPass || shadowCaster) {
         const std::string_view type = plainMesh ? "Mesh" : object.type();
         if (type == "LOD") {
-            auto& lod = static_cast<LOD&>(object);
-            if (lod.autoUpdate) lod.update(camera);
+            if (mainPass) {
+                auto& lod = static_cast<LOD&>(object);
+                if (lod.autoUpdate) lod.update(camera);
+            }
         }
         if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
             type == "LineSegments") {
@@ -514,10 +529,12 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             if (r.drawable && r.material->visible) {
                 if (compact) {
                     if (r.materialized) { r.draw.reset(); r.materialized = false; }
-                    addBatchMesh(mesh, r);
+                    addBatchMesh(mesh, r, mainPass);
                 } else {
                     DrawItem& d = refresh(mesh, r);
                     d.batchable = false;
+                    d.mainPass = mainPass;
+                    d.layers = Layers::bits(mesh.layers().mask);
                     const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();
                     d.morphGeometry = morphed ? mesh.geometry.get() : nullptr;
                     d.morphInfluences = morphed ? &mesh.morphTargetInfluences : nullptr;
@@ -553,6 +570,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                         DrawItem& d = items.back();
                         d.topology = type == "Line" ? WGPUPrimitiveTopology_LineStrip : WGPUPrimitiveTopology_LineList;
                         d.castShadow = false;  // ponytail: three's shadow pass draws lines; no corpus line casts one
+                        if (!mainPass) items.pop_back();
                     }
                     if (type == "Sprite") {
                         const auto& sprite = static_cast<const Sprite&>(mesh);
@@ -563,8 +581,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                         d.spriteCenter = {sprite.center.x, sprite.center.y};
                         d.spriteRotation = mesh.material->rotation;
                         d.spriteSizeAttenuation = mesh.material->sizeAttenuation;
+                        if (!mainPass) items.pop_back();
                     }
-                    if (mesh.onBeforeRender)
+                    if (mesh.onBeforeRender && mainPass)
                         callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
                 }
             }
@@ -572,19 +591,19 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             // three's BatchedMesh: each geometry's visible instances, drawn as one instanced mesh.
             for (const auto& batch : static_cast<BatchedMesh&>(object).drawBatches())
                 project(*batch, camera, items, lights, false, false, nullptr, false);
-        } else if (type == "AmbientLight") {
+        } else if (mainPass && type == "AmbientLight") {
             const auto& l = static_cast<const AmbientLight&>(object);
             for (int c = 0; c < 3; ++c)
                 lights.ambient[c] += scaled(l.color, l.intensity)[c];
-        } else if (type == "DirectionalLight") {
+        } else if (mainPass && type == "DirectionalLight") {
             auto& l = static_cast<DirectionalLight&>(object); // its shadow camera moves, as three's does
             l.target->updateWorldMatrix(true, false);
             const auto from = worldPosition(l), to = worldPosition(*l.target);
             direct_.emplace_back(object.id(), DirectLight::directional(normalized({from[0] - to[0], from[1] - to[1], from[2] - to[2]}),
                                                                       scaled(l.color, l.intensity)));
             if (shadowMapEnabled && l.castShadow())
-                direct_.back().second.shadow = shadowOf(l.shadow, from, to);
-        } else if (type == "PointLight") {
+                direct_.back().second.shadow = shadowOf(l.shadow, from, to, effectiveShadowLayersMask(*l.shadow.camera, camera));
+        } else if (mainPass && type == "PointLight") {
             auto& l = static_cast<PointLight&>(object); // its shadow camera moves, as three's does
             DirectLight d;
             d.kind = DirectLight::Kind::Point;
@@ -593,9 +612,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             d.distance = l.distance;
             d.decay = l.decay;
             if (shadowMapEnabled && l.castShadow())
-                d.shadow = pointShadowOf(l.shadow, d.position, l.distance);
+                d.shadow = pointShadowOf(l.shadow, d.position, l.distance, effectiveShadowLayersMask(*l.shadow.camera, camera));
             direct_.emplace_back(object.id(), d);
-        } else if (type == "SpotLight") {
+        } else if (mainPass && type == "SpotLight") {
             // SpotLightNode.update: coneCos = cos(angle), penumbraCos = cos(angle * (1 - penumbra)); the
             // axis is lightTargetDirection, from the target to the light.
             auto& l = static_cast<SpotLight&>(object); // its shadow camera moves, as three's does
@@ -612,14 +631,14 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             if (shadowMapEnabled && l.castShadow()) {
                 // SpotLightShadow.updateMatrices: the camera's fov covers the cone (times focus), its
                 // aspect is the map's, and its far is the light's distance when it has one.
-                auto& camera = static_cast<PerspectiveCamera&>(*l.shadow.camera);
-                camera.fov = kRadToDeg * 2 * l.angle * l.shadow.focus;
-                camera.aspect = (l.shadow.mapSize.x / l.shadow.mapSize.y) * l.shadow.aspect;
-                camera.far = l.distance != 0 ? l.distance : camera.far;
-                d.shadow = shadowOf(l.shadow, d.position, to);
+                auto& shadowCamera = static_cast<PerspectiveCamera&>(*l.shadow.camera);
+                shadowCamera.fov = kRadToDeg * 2 * l.angle * l.shadow.focus;
+                shadowCamera.aspect = (l.shadow.mapSize.x / l.shadow.mapSize.y) * l.shadow.aspect;
+                shadowCamera.far = l.distance != 0 ? l.distance : shadowCamera.far;
+                d.shadow = shadowOf(l.shadow, d.position, to, effectiveShadowLayersMask(*l.shadow.camera, camera));
             }
             direct_.emplace_back(object.id(), d);
-        } else if (type == "HemisphereLight") {
+        } else if (mainPass && type == "HemisphereLight") {
             const auto& l = static_cast<const HemisphereLight&>(object);
             if (hemisphere_++ == 0) {
                 lights.hemisphereSky = scaled(l.color, l.intensity);
@@ -701,7 +720,8 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
                    (o.materialKey == d.materialKey || (!skinned && d.renderOrder == 0 &&
                     projection::detail::sameUniforms(*static_cast<const Material*>(o.materialKey),
                                                     *static_cast<const Material*>(d.materialKey)))) &&
-                   o.castShadow == d.castShadow && o.receiveShadow == d.receiveShadow;
+                   o.castShadow == d.castShadow && o.receiveShadow == d.receiveShadow &&
+                   o.mainPass == d.mainPass && o.layers == d.layers;
         };
         std::size_t hash = !skinned && d.renderOrder == 0
                                ? projection::detail::uniformHash(*static_cast<const Material*>(d.materialKey))
@@ -709,6 +729,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         hash ^= std::hash<const void*>{}(d.positions);
         hash ^= std::hash<int>{}(d.renderOrder);
         hash ^= std::size_t(d.castShadow) * 31 + std::size_t(d.receiveShadow) * 67;
+        hash ^= std::size_t(d.mainPass) * 101 + std::size_t(d.layers) * 131;
         if (skinned)
             hash ^= std::hash<const void*>{}(d.skinnedRig->geometry.get()) ^
                     std::hash<double>{}(projection::detail::batchFlags(*d.skinnedRig)) ^
@@ -801,8 +822,9 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
 
 // Capture members while their scene/material cache lines are hot. DrawItems are made only for
 // submitted draws; sorting and packing touch compact arrays rather than the authored object graph.
-void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record) {
+void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPass) {
     const auto& geometry = record.buffers;
+    const uint32_t layers = Layers::bits(mesh.layers().mask);
     const auto same = [&](std::size_t index) {
         const MeshGroup& group = meshGroups_[index];
         const auto& member = batchMeshes_[group.members.front()];
@@ -810,6 +832,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record) {
         return ((record.geometry == member.record->geometry && record.geometryRevision == member.record->geometryRevision) ||
                 group.geometry == geometry) && first.renderOrder() == mesh.renderOrder() &&
                first.castShadow() == mesh.castShadow() && first.receiveShadow() == mesh.receiveShadow() &&
+               member.mainPass == mainPass && member.layers == layers &&
                first.material->type == mesh.material->type &&
                (first.material == mesh.material ||
                 (mesh.renderOrder() == 0 && projection::detail::sameUniforms(*first.material, *mesh.material)));
@@ -826,6 +849,8 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record) {
         mix(static_cast<std::size_t>(mesh.renderOrder()));
         mix(mesh.castShadow());
         mix(mesh.receiveShadow());
+        mix(static_cast<std::size_t>(mainPass));
+        mix(static_cast<std::size_t>(layers));
         auto& bucket = meshCandidates_[hash];
         const auto found = std::find_if(bucket.begin(), bucket.end(), same);
         if (found == bucket.end()) {
@@ -851,7 +876,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record) {
     batchMeshes_.push_back(
         {&mesh, mesh.material.get(),
          (p[2] * m[12] + p[6] * m[13] + p[10] * m[14] + p[14]) / (p[3] * m[12] + p[7] * m[13] + p[11] * m[14] + p[15]),
-         mesh.id(), mesh.renderOrder(), &record});
+         mesh.id(), mesh.renderOrder(), &record, mainPass, layers});
     BatchTransform packed;
     for (int i = 0; i < 16; ++i)
         packed.matrix[i] = static_cast<float>(m[i]);
@@ -927,13 +952,20 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         const auto& members = group.members;
         if (members.size() < kMinBatchMembers) {
             for (std::size_t index : members) {
-                const Mesh& mesh = *batchMeshes_[index].mesh;
-                items.push_back(refresh(mesh, record(mesh, *batchMeshes_[index].record)));
+                const auto& member = batchMeshes_[index];
+                const Mesh& mesh = *member.mesh;
+                DrawItem item = refresh(mesh, record(mesh, *member.record));
+                item.mainPass = member.mainPass;
+                item.layers = member.layers;
+                items.push_back(std::move(item));
             }
             continue;
         }
-        const Mesh& first = *batchMeshes_[members.front()].mesh;
-        DrawItem d = refresh(first, record(first, *batchMeshes_[members.front()].record));
+        const auto& firstMember = batchMeshes_[members.front()];
+        const Mesh& first = *firstMember.mesh;
+        DrawItem d = refresh(first, record(first, *firstMember.record));
+        d.mainPass = firstMember.mainPass;
+        d.layers = firstMember.layers;
         const auto slot = batchGroups_++;
         if (batchStores_.size() <= slot)
             batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
@@ -1065,6 +1097,8 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
         for (const auto& member : batchMeshes_) {
             auto& item = refresh(*member.mesh, record(*member.mesh, *member.record));
             item.batchable = true;
+            item.mainPass = member.mainPass;
+            item.layers = member.layers;
             items.push_back(item);
         }
         batchMeshes_.clear();
@@ -1177,6 +1211,8 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
         sky.material = &backgroundParams_;
         sky.map = world->backgroundTexture.get();
         sky.kind = MaterialKind::Basic; sky.side = 1; sky.depthWrite = false;
+        sky.mainPass = true;
+        sky.layers = Layers::bits(camera.layers().mask);
         items.insert(items.begin(), sky);
     }
     if (profiling) prepareMs_ = {
@@ -1218,7 +1254,7 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
     std::vector<std::shared_ptr<const Reflector>> drawn;
     std::vector<Material*> hidden;
     for (const DrawItem& item : items) {
-        if (!item.reflector) continue;
+        if (!item.mainPass || !item.reflector) continue;
         auto* material = const_cast<Material*>(static_cast<const Material*>(item.materialKey));
         if (std::find(hidden.begin(), hidden.end(), material) == hidden.end()) hidden.push_back(material);
         if (std::none_of(drawn.begin(), drawn.end(), [&](const auto& r) { return r.get() == item.reflector; }))

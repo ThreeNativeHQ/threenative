@@ -1994,12 +1994,111 @@ void msaaEdges() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// Shadow-camera layers: a light shadow camera can draw casters on layers excluded by the main camera.
+void shadowCameraLayers() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+
+    Scene scene;
+    PerspectiveCamera camera(60, 4.0 / 3, 0.1, 100);
+    camera.position.set(0, 2, 5);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+
+    auto light = std::make_shared<DirectionalLight>(Color(1, 1, 1), 1.0);
+    light->position.set(5, 10, 5);
+    light->setCastShadow(true);
+    light->shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+    scene.add(*light);
+
+    auto geom = makeBoxGeometry(1, 1, 1);
+    auto mat0 = std::make_shared<Material>(MaterialType::Standard);
+    auto mesh0 = std::make_shared<Mesh>(geom, mat0);
+    mesh0->setCastShadow(true);
+    mesh0->setLayer(0);
+    scene.add(*mesh0);
+
+    auto mat2 = std::make_shared<Material>(MaterialType::Standard);
+    auto mesh2 = std::make_shared<Mesh>(geom, mat2);
+    mesh2->setCastShadow(true);
+    mesh2->setLayer(2);
+    mesh2->position.set(2, 0, 0);
+    scene.add(*mesh2);
+
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.batching = false;
+
+    // 1. Shadow camera mask = (1<<0)|(1<<2):
+    // layer-2 mesh is drawn in light's shadow pass and NOT in main pass;
+    // layer-0 mesh is in both.
+    database.render(renderer, scene, camera);
+    auto stats = renderer.lastFrame();
+    CHECK(stats.draws == 2);
+    CHECK(stats.shadowDraws == 2);
+
+    // 2. Default case: shadow camera with mask 1 uses the main camera's mask.
+    // A layer-2 mesh casts only if the main camera enables layer 2.
+    light->shadow.camera->setLayerMask(1);
+    database.render(renderer, scene, camera);
+    stats = renderer.lastFrame();
+    CHECK(stats.draws == 2);
+    CHECK(stats.shadowDraws == 1);
+
+    camera.enableLayer(2);
+    database.render(renderer, scene, camera);
+    stats = renderer.lastFrame();
+    CHECK(stats.draws == 3);
+    CHECK(stats.shadowDraws == 2);
+
+    // 3. Batching: items never merge across distinct mainPass or layer bits.
+    Scene batchScene;
+    PerspectiveCamera batchCam(60, 4.0 / 3, 0.1, 100);
+    batchCam.position.set(0, 2, 5);
+    batchCam.lookAt(0, 0, 0);
+    batchCam.updateProjectionMatrix();
+    auto batchLight = std::make_shared<DirectionalLight>(Color(1, 1, 1), 1.0);
+    batchLight->setCastShadow(true);
+    batchLight->shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+    batchScene.add(*batchLight);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 4; ++i) {
+        auto m = std::make_shared<Mesh>(geom, mat0);
+        m->setCastShadow(true);
+        m->setLayer(0);
+        m->position.set(-2.0 + i, 0, 0);
+        batchScene.add(*m);
+        meshes.push_back(m);
+    }
+    for (int i = 0; i < 4; ++i) {
+        auto m = std::make_shared<Mesh>(geom, mat0);
+        m->setCastShadow(true);
+        m->setLayer(2);
+        m->position.set(-2.0 + i, 2, 0);
+        batchScene.add(*m);
+        meshes.push_back(m);
+    }
+    RenderDatabase batchDb;
+    batchDb.shadowMapEnabled = true;
+    batchDb.batching = true;
+    batchDb.render(renderer, batchScene, batchCam);
+    auto batchStats = renderer.lastFrame();
+    // Main pass draws only layer-0 batch (1 merged draw) + 1 output quad = 2
+    CHECK(batchStats.draws == 2);
+    // Shadow pass draws 2 batches (layer-0 merged batch + layer-2 merged batch) = 2
+    CHECK(batchStats.shadowDraws == 2);
+    CHECK(batchDb.lastBatches().first == 2 && batchDb.lastBatches().second == 8);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers})
 
 
 

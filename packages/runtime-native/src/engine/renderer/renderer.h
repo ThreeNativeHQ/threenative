@@ -45,6 +45,8 @@ using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
+    uint32_t layers = 1;
+    bool mainPass = true;
     bool background = false;
     const Fog* fog = nullptr;
     Matrix backgroundRotation{};
@@ -172,6 +174,7 @@ struct DirectLight {
         bool cube = false;
         std::array<Matrix, 6> faceViews{};
         double near = 0, far = 0;
+        uint32_t layersMask = 1;
     };
     std::optional<Shadow> shadow;
     static DirectLight directional(std::array<double, 3> towards, std::array<double, 3> color) {
@@ -349,6 +352,7 @@ public:
     struct FrameStats {
         uint32_t draws = 0;
         uint64_t triangles = 0;
+        uint32_t shadowDraws = 0;
         struct SkinnedPass {
             uint32_t batches = 0, draws = 0, exactDraws = 0, instances = 0;
         };
