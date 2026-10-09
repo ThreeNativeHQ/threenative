@@ -246,6 +246,8 @@ export function defineBrowserClasses(
 ): IBrowserEngine {
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object }>();
+  const typeNames = new Map<number, string>();
+  (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
   const wrappers = new Map<string, WeakRef<object>>();
   // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
   // the collector sees; `held` roots a wrapper while the engine may still call it.
@@ -635,6 +637,7 @@ export function defineBrowserClasses(
     }
     classes[name] = cls;
     byType.set(runtime.typeId(name), cls);
+    typeNames.set(runtime.typeId(name), name);
   }
   if (attributeArray !== undefined && attributeWrite !== undefined) {
     for (const name of ATTRIBUTE_CLASSES) {
@@ -934,6 +937,18 @@ function tslOf(
 }
 
 /** The runtime over a loaded ABI module: one engine context, every call checked. */
+/**
+ * Opt-in boundary census for `pnpm profile:wasm-page --calls`: while the page sets
+ * `globalThis.__tnCallCounts` to a Map, every engine get, set and invoke counts under
+ * "<kind> <type id>.<name>" (`__tnEngineTypes` names the type ids). Off, it costs one global read.
+ */
+function countCall(kind: string, self: IEngineRef, name: string): void {
+  const counts = (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts;
+  if (counts === undefined) return;
+  const key = `${kind} ${self.type}.${name}`;
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   let dataView = new DataView(abi.HEAPU8.buffer);
   const view = () => {
@@ -1219,6 +1234,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       }),
     invoke: (self, method, args) =>
       scoped(() => {
+        countCall("call", self, method);
         const out = alloc(VALUE);
         const diag = diagnostic();
         check(
@@ -1230,6 +1246,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       }),
     get: (self, path) =>
       scoped(() => {
+        countCall("get", self, path);
         const out = alloc(VALUE);
         const diag = diagnostic();
         check(abi._tn_get(handleOf(self), name(path), out, diag), diag, `get ${path}`);
@@ -1237,6 +1254,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       }),
     set: (self, path, value) =>
       scoped(() => {
+        countCall("set", self, path);
         const pointer = values([value]);
         const diag = diagnostic();
         check(abi._tn_set(handleOf(self), name(path), pointer, diag), diag, `set ${path}`);
