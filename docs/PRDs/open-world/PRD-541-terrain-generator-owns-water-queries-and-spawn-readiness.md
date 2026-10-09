@@ -39,9 +39,11 @@ The generator should expose the mechanism once; the density rules and looks stay
 
 ### Phase 2 — Terrain-relative slope thresholds
 
-- [ ] `@threenative/terrain` reports a world's slope quantiles from its own heightfield, and the
+- [x] `@threenative/terrain` reports a world's slope quantiles from its own heightfield, and the
   preview's outcrop rule reads its 98th percentile instead of computing it locally. proof: terrain
-  spec on fixtures; forest still places 7 outcrops, coastal 75
+  spec on fixtures; forest still places 7 outcrops, coastal 75 — PASS: `slopeQuantile` (built on
+  `slopeAtIndex`), `slope-quantile.spec.ts` 2/2; preview placements identical to HEAD (forest
+  `c28dcd7b709f7de2` 7 outcrops, coastal `172e610299240db8` 75, tundra `64de36d111a3bba3` 0).
 
 ### Phase 3 — Spawn readiness without simulation ticks, in core
 

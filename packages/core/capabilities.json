@@ -6968,6 +6968,25 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "interior vertices only (edges have one-sided differences); quantile must be in [0, 1]"
+      ],
+      "example": "const steep = slopeQuantile(grid, 0.98); if (slopeAt(x, z) > Math.min(30, steep)) placeRock(x, z);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function slopeQuantile(grid: ISampledGrid, quantile: number): number { … }",
+      "situations": [
+        "place rocks or cliffs on a terrain's own steepest ground instead of a fixed slope in degrees"
+      ],
+      "summary": "A slope, in degrees, that the given share of this terrain's interior vertices lie at or below. Placement rules keyed to fixed degrees break when a world is rebaked smoother or rougher: an outcrop rule of \"over 30 degrees\" placed nothing on a forest whose 98th percentile is 22. Asking the terrain for its own steepest share keeps the rule meaning the same thing on every world.",
+      "supersedes": [],
+      "symbol": "slopeQuantile"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const points = splinePoints([[0, 4, 0], [10, 2, 10]], 3, false);",
       "importPath": "@threenative/terrain",

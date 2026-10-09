@@ -10,7 +10,7 @@ import { createRandom } from "@threenative/core";
 // Placement is seeded and deterministic: the same world always grows the same forest, and a camera
 // can walk through it twice without the trees moving. Nothing here reads the frame clock.
 import type { Heightfield } from "@threenative/core/world";
-import { type IPlacement, createSegmentIndex } from "@threenative/terrain";
+import { type IPlacement, createSegmentIndex, slopeQuantile } from "@threenative/terrain";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 import type { WorldName } from "./biomes.js";
 import { type IBakedWorld, depositAtIndex } from "./terrain.js";
@@ -632,15 +632,14 @@ export function scatterProps(
     // Separate seed: dressing the rock/shore never reshuffles the established stands.
     const dressing = createRandom(SCATTER.seed + 12);
     // Rock outcrops take this terrain's own steepest ground: its steepest 2%, but never ground gentler
-    // than 30 degrees would allow. A fixed 30 left the rebaked forest (98th percentile 22 degrees,
-    // 282 cells over 30 of 66,000) with no outcrop at all.
-    const spacing = data.size / Math.max(1, data.resolution - 1);
-    const slopes: number[] = [];
-    for (let z = -half + spacing; z < half - spacing; z += spacing)
-      for (let x = -half + spacing; x < half - spacing; x += spacing)
-        slopes.push(slopeDegrees(data, x, z));
-    slopes.sort((a, b) => a - b);
-    const outcropSlope = Math.min(30, slopes[Math.floor(slopes.length * 0.98)] ?? 30);
+    // than 30 degrees would allow (`@threenative/terrain` slopeQuantile).
+    const outcropSlope = Math.min(
+      30,
+      slopeQuantile(
+        { height: data.field.heights, resolution: data.resolution, size: data.size },
+        0.98,
+      ),
+    );
     for (let z = -half + 12; z < half - 12; z += 12)
       for (let x = -half + 12; x < half - 12; x += 12) {
         const sx = x + (dressing() - 0.5) * 10;

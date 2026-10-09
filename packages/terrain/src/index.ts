@@ -1,7 +1,13 @@
 export { Terrain, TerrainEvaluator } from "./core/terrain.js";
 export type { OperationOptions, LayerPatch, PatchCommand } from "./core/terrain.js";
 export { Mask, MATERIAL_IDS } from "./core/masks.js";
-export { sampleHeight, gradientAt, slopeAtIndex, splinePoints } from "./core/math.js";
+export {
+  sampleHeight,
+  gradientAt,
+  slopeAtIndex,
+  slopeQuantile,
+  splinePoints,
+} from "./core/math.js";
 export { validateDocument, RESOLUTIONS, PARAMS } from "./core/validation.js";
 export { bakeMesh, bakeTerrain } from "./core/bake.js";
 export { applyPlacementOverrides, validatePlacementOverrides } from "./core/placements.js";

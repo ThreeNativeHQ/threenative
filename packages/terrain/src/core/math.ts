@@ -198,6 +198,32 @@ export function slopeAtIndex(grid: ISampledGrid, i: number): number {
   return Math.atan(Math.hypot(gx, gz)) * (180 / Math.PI);
 }
 
+/**
+ * A slope, in degrees, that the given share of this terrain's interior vertices lie at or below.
+ *
+ * Placement rules keyed to fixed degrees break when a world is rebaked smoother or rougher: an
+ * outcrop rule of "over 30 degrees" placed nothing on a forest whose 98th percentile is 22. Asking
+ * the terrain for its own steepest share keeps the rule meaning the same thing on every world.
+ *
+ * @requires npm i @threenative/terrain
+ * @situation place rocks or cliffs on a terrain's own steepest ground instead of a fixed slope in degrees
+ * @constraint interior vertices only (edges have one-sided differences); quantile must be in [0, 1]
+ * @example const steep = slopeQuantile(grid, 0.98); if (slopeAt(x, z) > Math.min(30, steep)) placeRock(x, z);
+ */
+export function slopeQuantile(grid: ISampledGrid, quantile: number): number {
+  if (!(quantile >= 0 && quantile <= 1))
+    throw new Error(
+      `TN_TERRAIN_SLOPE_QUANTILE_INVALID: quantile must be in [0, 1], received ${String(quantile)}.`,
+    );
+  const n = grid.resolution;
+  const slopes: number[] = [];
+  for (let z = 1; z < n - 1; z++)
+    for (let x = 1; x < n - 1; x++) slopes.push(slopeAtIndex(grid, z * n + x));
+  if (slopes.length === 0) return 0;
+  slopes.sort((a, b) => a - b);
+  return slopes[Math.min(slopes.length - 1, Math.floor(slopes.length * quantile))] as number;
+}
+
 /** Radial brush weight: 1 at the centre, 0 at `radius`, softened over the outer `softness`. */
 export function falloff(distance: number, radius: number, softness = 0.6): number {
   const d = distance / radius;

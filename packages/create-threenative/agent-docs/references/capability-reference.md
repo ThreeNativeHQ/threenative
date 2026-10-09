@@ -5749,6 +5749,22 @@ export function slopeAtIndex(grid: ISampledGrid, i: number): number { … }
 const slope = slopeAtIndex(new Terrain({ resolution: 17 }).evaluate(), 0);
 ```
 
+### `slopeQuantile`
+
+`function` — A slope, in degrees, that the given share of this terrain's interior vertices lie at or below. Placement rules keyed to fixed degrees break when a world is rebaked smoother or rougher: an outcrop rule of "over 30 degrees" placed nothing on a forest whose 98th percentile is 22. Asking the terrain for its own steepest share keeps the rule meaning the same thing on every world.
+
+```ts
+export function slopeQuantile(grid: ISampledGrid, quantile: number): number { … }
+```
+
+- **Use when:** place rocks or cliffs on a terrain's own steepest ground instead of a fixed slope in degrees
+- **Constraints:** interior vertices only (edges have one-sided differences); quantile must be in [0, 1]
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const steep = slopeQuantile(grid, 0.98); if (slopeAt(x, z) > Math.min(30, steep)) placeRock(x, z);
+```
+
 ### `splinePoints`
 
 `function` — Recovered horizontal Catmull–Rom and vertically linear profile sampler.
