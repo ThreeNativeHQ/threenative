@@ -20,7 +20,8 @@ type HostCall =
   | "_tnw_web_frame"
   | "_tnw_web_render_target"
   | "_tnw_web_read_target"
-  | "_tnw_web_read_target_take";
+  | "_tnw_web_read_target_take"
+  | "_tnw_web_gpu_timer";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
   readonly specialHTMLTargets: Record<string, unknown>;
@@ -124,6 +125,8 @@ export function defineWebRenderer(
     #initialized: Promise<this> | undefined;
     #adapter: IAdapterInfo | undefined;
     #last: [unknown, unknown] | undefined;
+    /** GPU times already read (frame field 8); -1 until a profiler turned the timer on. */
+    #gpuSamples = -1;
     #state: string | undefined;
 
     constructor(parameters: Record<string, unknown> = {}) {
@@ -252,6 +255,15 @@ export function defineWebRenderer(
       engine.bindGroups = module._tnw_web_frame(4);
       engine.graphKeys = module._tnw_web_frame(5);
       engine.programs = module._tnw_web_frame(6);
+      // A profiler opts into GPU time by setting `__tnGpuMs` to an array: each timed frame's GPU
+      // milliseconds are appended once (the engine times nothing unless asked).
+      const gpuMs = (globalThis as { __tnGpuMs?: number[] }).__tnGpuMs;
+      if (Array.isArray(gpuMs)) {
+        if (this.#gpuSamples < 0) check(module._tnw_web_gpu_timer(1));
+        const samples = module._tnw_web_frame(8);
+        if (samples > this.#gpuSamples && this.#gpuSamples >= 0) gpuMs.push(module._tnw_web_frame(7));
+        this.#gpuSamples = samples;
+      }
     }
 
     /** three's output and shadow settings, handed to the engine when they change. */

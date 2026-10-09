@@ -102,6 +102,13 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     callback.mode = WGPUCallbackMode_AllowProcessEvents;
     callback.callback = onDevice;
     WGPUDeviceDescriptor desc = {};
+    // timestamp-query when the adapter offers it, so a profiler can ask the renderer for GPU time
+    // (tnw_web_gpu_timer); the renderer times nothing until asked.
+    static const WGPUFeatureName timestamps = WGPUFeatureName_TimestampQuery;
+    if (wgpuAdapterHasFeature(adapter, timestamps)) {
+        desc.requiredFeatureCount = 1;
+        desc.requiredFeatures = &timestamps;
+    }
     desc.uncapturedErrorCallbackInfo.callback = [](WGPUDevice const*, WGPUErrorType, WGPUStringView message, void*, void*) {
         events.post([message = text(message)] { fail("TN_WASM_DEVICE_ERROR: " + message); });
     };
@@ -381,6 +388,15 @@ extern "C" double tnw_web_frame(int field) {
         case 4: return double(bindGroupsCreated());
         case 5: return double(shader::graph::keyBuilds());
         case 6: return double(renderer->programCount());
+        case 7: return renderer->lastGpuMs();  // negative until a timed frame came back
+        case 8: return double(renderer->gpuSamples());
         default: return 0;
     }
+}
+
+/** Times frames on the GPU (lastGpuMs, frame fields 7 and 8): off unless a profiler asks. */
+extern "C" int tnw_web_gpu_timer(int on) {
+    if (!renderer) return fail("TN_WASM_GPU_TIMER: no renderer");
+    renderer->setGpuTimer(on != 0);
+    return 0;
 }

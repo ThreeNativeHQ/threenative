@@ -1,5 +1,5 @@
 /**
- * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--json]`
+ * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--gpu-calls] [--gpu-time] [--json]`
  *
  * Profiles a running game page the way a Wasm-engine performance question needs: frame time from
  * requestAnimationFrame, a Chrome CPU profile grouped into engine Wasm, JavaScript and WebGPU calls
@@ -26,6 +26,7 @@ interface IOptions {
   warmupMs: number;
   calls: boolean;
   gpuCalls: boolean;
+  gpuTime: boolean;
   json: boolean;
   allowSoftware: boolean;
 }
@@ -52,6 +53,7 @@ function options(argv: readonly string[]): IOptions {
     warmupMs,
     calls: argv.includes("--calls"),
     gpuCalls: argv.includes("--gpu-calls"),
+    gpuTime: argv.includes("--gpu-time"),
     json: argv.includes("--json"),
     allowSoftware: argv.includes("--allow-software"),
   };
@@ -131,6 +133,29 @@ async function cpu(page: Page, seconds: number) {
       .slice(0, limit)
       .map(([key, n]) => ({ name: key, percent: Number(((100 * n) / total).toFixed(1)) }));
   return { samples: total, groups: share(groups, 12), inclusive: share(inclusive, 30) };
+}
+
+// The engine's own GPU time per frame (timestamp-query, scene or first shadow pass start to output
+// pass end), which three-native's renderer appends to `__tnGpuMs` once a page sets it to an array.
+async function gpuTime(page: Page) {
+  // Wall time, not frames: a timed frame waits for its readback before the next one is timed, so
+  // samples arrive a few per second whatever the frame rate.
+  return page.evaluate(
+    () =>
+      new Promise<{ samples: number; p50: number; p95: number } | undefined>((resolve) => {
+        const g = globalThis as { __tnGpuMs?: number[] };
+        g.__tnGpuMs = [];
+        setTimeout(() => {
+          const times = [...(g.__tnGpuMs ?? [])].filter((ms) => ms >= 0).sort((a, b) => a - b);
+          g.__tnGpuMs = undefined;
+          const at = (q: number) =>
+            times[Math.min(times.length - 1, Math.floor(q * times.length))] ?? Number.NaN;
+          resolve(
+            times.length === 0 ? undefined : { samples: times.length, p50: at(0.5), p95: at(0.95) },
+          );
+        }, 4000);
+      }),
+  );
 }
 
 async function calls(page: Page) {
@@ -258,6 +283,7 @@ async function measure(url: string, o: IOptions) {
     const profile = await cpu(page, o.seconds);
     const census = o.calls ? await calls(page) : undefined;
     const gpu = o.gpuCalls ? await gpuCalls(page) : undefined;
+    const gpuMs = o.gpuTime ? await gpuTime(page) : undefined;
     if (errors.length > 0) throw new Error(`TN_PROFILE_PAGE_ERROR: ${errors[0]}`);
     return {
       url,
@@ -266,6 +292,7 @@ async function measure(url: string, o: IOptions) {
       profile,
       ...(census ? { calls: census } : {}),
       ...(gpu ? { gpu } : {}),
+      ...(o.gpuTime ? { gpuMs: gpuMs ?? null } : {}),
     };
   } finally {
     await browser.close();
@@ -282,6 +309,12 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   );
   for (const row of r.profile.inclusive)
     console.log(`  ${String(row.percent).padStart(5)}%  ${row.name}`);
+  if ("gpuMs" in r)
+    console.log(
+      r.gpuMs === null
+        ? "gpu time: not reported (not the Wasm engine, or no timestamp-query)"
+        : `gpu time p50 ${r.gpuMs.p50.toFixed(3)} ms, p95 ${r.gpuMs.p95.toFixed(3)} ms (${r.gpuMs.samples} frames)`,
+    );
   if (r.gpu) {
     console.log(
       `webgpu calls per frame: ${r.gpu.reduce((sum, row) => sum + row.perFrame, 0).toFixed(1)}`,
