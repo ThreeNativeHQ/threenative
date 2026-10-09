@@ -43,17 +43,19 @@ bool PipelineCache::IdKey::operator==(const IdKey& o) const {
 }
 
 size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
-    size_t h = 0;
+    // 64-bit on every target: size_t is 32 bits on wasm32, where `size << 32` was undefined and gave
+    // equal keys different hashes, so every lookup missed and the alias map grew each frame.
+    uint64_t h = 0;
     const auto mix = [&](uint64_t v) { h = (h ^ v) * 0x9e3779b97f4a7c15ull; h ^= h >> 29; };
     mix(key.vertex);
     mix(key.fragment);
-    mix(key.vertexSize ^ key.fragmentSize << 32);
+    mix(uint64_t(key.vertexSize) ^ uint64_t(key.fragmentSize) << 32);
     mix(uint64_t(key.target.color) | uint64_t(key.target.depth) << 32);
     mix(uint64_t(key.target.cull) | uint64_t(key.target.frontFace) << 8 | uint64_t(key.target.depthCompare) << 16 |
         uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58);
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
     mix(uint64_t(key.target.topology) | uint64_t(key.target.stripIndexFormat) << 32);
-    return h;
+    return size_t(h ^ h >> 32);
 }
 
 WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const shader::StageModule* fragment,
