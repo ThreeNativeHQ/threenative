@@ -97,7 +97,7 @@ export async function bindWebEngine(
   const module = await createModule();
   const runtime = createWasmRuntime(module);
   const { classes, wrap } = defineBrowserClasses(
-    registry as IRegistryDump,
+    registry as unknown as IRegistryDump,
     runtime,
     catalogJson as unknown as ICatalog,
   );
@@ -165,10 +165,17 @@ export async function bindWebEngine(
     // The engine's TSL functions three does not export by name (ao, bloom, ...), for the shared post
     // effects (addons/post-effects-web.ts), and three's RenderPipeline over the web host.
     bound.__tnTsl = tsl.exports;
-    bound.RenderPipeline = defineRenderPipeline(runtime.tsl);
-    // three's pass() and mrt() over the engine's scene pass, as on the V8 player; RenderPipeline draws
-    // the renderer's last scene, so the pass's own scene and camera are not followed here.
-    Object.assign(bound, definePass(tsl.exports as never));
+    // three's pass() and mrt() over the engine's scene pass, as on the V8 player: RenderPipeline
+    // draws the scene and camera the pass points at.
+    const target: { scene?: unknown; camera?: unknown } = {};
+    bound.RenderPipeline = defineRenderPipeline(runtime.tsl, target);
+    Object.assign(
+      bound,
+      definePass(tsl.exports as never, (scene, camera) => {
+        target.scene = scene;
+        target.camera = camera;
+      }),
+    );
   }
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }
@@ -184,18 +191,22 @@ export function withTextureSources(
   return { ...classes, ...defineTextureSources(classes, runtime), DataUtils };
 }
 
+interface IPipelineRenderer {
+  [RENDER_AGAIN]?: () => void;
+  render?(scene: unknown, camera: unknown): void;
+}
+
 /**
  * three's RenderPipeline on the Wasm engine, as on the V8 player: render() hands the output graph to
- * the web host, which draws it between the scene and the output, then draws the renderer's last
- * scene. ponytail: the scene comes from the renderer's last render() until `pass(scene, camera)` is
- * in the shared table (lane-531); then it comes from the graph.
+ * the web host, which draws it between the scene and the output, over the scene and camera the
+ * graph's `pass(scene, camera)` points at (`target`), else the renderer's last scene.
  */
-function defineRenderPipeline(tsl: ITslRuntime) {
+function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camera?: unknown }) {
   return class RenderPipeline {
     outputNode: unknown;
-    readonly renderer: { [RENDER_AGAIN]?: () => void };
+    readonly renderer: IPipelineRenderer;
 
-    constructor(renderer: { [RENDER_AGAIN]?: () => void }, outputNode?: unknown) {
+    constructor(renderer: IPipelineRenderer, outputNode?: unknown) {
       this.renderer = renderer;
       this.outputNode = outputNode;
     }
@@ -204,7 +215,9 @@ function defineRenderPipeline(tsl: ITslRuntime) {
       if (!isTslNode(this.outputNode))
         throw new TypeError("TN_WASM_POST: RenderPipeline.outputNode is not a TSL node");
       tsl.setPost(this.outputNode[TSL_NODE]);
-      this.renderer[RENDER_AGAIN]?.();
+      if (target.scene !== undefined && target.camera !== undefined && this.renderer.render)
+        this.renderer.render(target.scene, target.camera);
+      else this.renderer[RENDER_AGAIN]?.();
     }
 
     dispose(): void {
