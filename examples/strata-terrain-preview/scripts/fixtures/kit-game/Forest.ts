@@ -25,7 +25,9 @@ const TRUNK = new Vector3(stand.fir.x, stand.groundY + 6, stand.fir.z);
 /** From the fir towards the player's start; the open side of the stand. */
 const AWAY = new Vector3(stand.spawn.x - stand.fir.x, 0, stand.spawn.z - stand.fir.z).normalize();
 
-/** The three fixed views the scenario captures. */
+/** The recipe's lake centre, on the water's level: the lake view looks at it from above the terrain. */
+const LAKE = new Vector3(-70, 13.3, 25);
+/** The fixed views the scenario captures. */
 // Eye-height cameras inside a 4.5 m stand sit inside crowns, whose one-sided cards vanish from
 // behind; so the close view looks out of the clearing and the edge view stands back from the stand.
 const VIEWS = {
@@ -40,6 +42,11 @@ const VIEWS = {
   overview: {
     at: new Vector3(stand.fir.x + 160, stand.groundY + 220, stand.fir.z + 160),
     look: TRUNK,
+  },
+  // Above the tallest ground (about 38 m) and back far enough to frame the whole basin and its shore.
+  lake: {
+    at: new Vector3(20, 84, 115),
+    look: LAKE,
   },
 } satisfies Readonly<Record<string, { at: Vector3; look: Vector3 }>>;
 const VIEW_NAMES = Object.keys(VIEWS);
@@ -250,6 +257,7 @@ export class Forest extends Scene<GameState, IPhysicsContext> {
       ["ground", "ground"],
       ["edge", "edge"],
       ["overview", "overview"],
+      ["lake", "lake"],
     ] as const)
       if (ctx.input.justPressed(action)) this.#setView(ctx, view);
     this.#placeCamera();

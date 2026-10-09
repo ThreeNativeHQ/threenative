@@ -18,6 +18,12 @@ interface ITable {
   readonly textures: string;
 }
 
+/** The lake and river the bake writes beside the world, for the game to draw. */
+interface IKitWater {
+  readonly lakes: readonly { id: string; at: number[]; radius: number; level: number }[];
+  readonly rivers: readonly { id: string; width: number; points: number[][] }[];
+}
+
 /** Copies the kit into a temp directory whose node_modules resolves the workspace package. */
 function kitInTempDir(): string {
   const dir = makeTempDirSync("terrain-starter-kit-");
@@ -115,6 +121,16 @@ describe("forest starter kit", () => {
     }
   });
 
+  it("bakes the lake and river the game draws, at the generator's own level and course", () => {
+    const out = join(makeTempDirSync("terrain-starter-water-"), "world");
+    bake(out);
+    const water = JSON.parse(readFileSync(join(out, "water.json"), "utf8")) as IKitWater;
+    expect(water.lakes).toEqual([{ id: "lake", at: [-70, 25], radius: 105, level: 13.3 }]);
+    expect(water.rivers).toHaveLength(1);
+    expect(water.rivers[0]?.points.length).toBeGreaterThan(10);
+    expect(water.rivers[0]?.width).toBeGreaterThan(0);
+  });
+
   it("ships the kit and its shared starter assets in the package", () => {
     const packed = JSON.parse(
       execFileSync("npm", ["pack", "--dry-run", "--json"], {
@@ -131,6 +147,7 @@ describe("forest starter kit", () => {
       "starter/forest/surface.json",
       "starter/forest/bake.mjs",
       "starter/forest/world.ts",
+      "starter/forest/water.ts",
       "starter/forest/sky.ts",
       "starter-assets/fir_tree_01/fir-b-lod2.glb",
     ])

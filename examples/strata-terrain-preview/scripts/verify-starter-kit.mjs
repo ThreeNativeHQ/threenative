@@ -74,7 +74,8 @@ const round = (value) => Math.round(value * 1_000) / 1_000;
  * is on the flattest stand in the world, and the clearest of twenty-four directions at four metres
  * is one that starts no walk inside another prop.
  */
-function chooseStand(game, world) {
+/** Every placed prop in the baked world, read from its placement records. */
+function readProps(world) {
   const manifest = JSON.parse(readFileSync(join(world, "world.json"), "utf8"));
   const bytes = readFileSync(join(world, manifest.placements));
   const records = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
@@ -88,18 +89,35 @@ function chooseStand(game, world) {
           y: records[index * 8 + 1],
           z: records[index * 8 + 2],
         });
+  return props;
+}
+
+function chooseStand(game, world) {
+  const props = readProps(world);
   const firs = props.filter((prop) => prop.asset === "fir");
   assert(firs.length > 0, "the bake placed no fir to stand next to");
   const layers = JSON.parse(readFileSync(join(game, "src/terrain/forest/recipe.json"), "utf8"))
     .recipe.layers;
   const pad = layers.find((layer) => layer.id === "building-pad")?.params.at ?? [0, 0];
-  const fir = firs.reduce((nearest, prop) =>
-    Math.hypot(prop.x - pad[0], prop.z - pad[1]) <
-    Math.hypot(nearest.x - pad[0], nearest.z - pad[1])
+  const fir = nearestTo(firs, pad);
+  const others = props.filter((prop) => prop !== fir);
+  const { spawn, clearance } = chooseSpawn(fir, others);
+  const { edge, edgeClear } = chooseEdge(fir, props);
+  return { fir, spawn, clearance, edge, edgeClear };
+}
+
+/** The prop nearest `point` in the ground plane; the first one wins a tie. */
+function nearestTo(props, point) {
+  return props.reduce((nearest, prop) =>
+    Math.hypot(prop.x - point[0], prop.z - point[1]) <
+    Math.hypot(nearest.x - point[0], nearest.z - point[1])
       ? prop
       : nearest,
   );
-  const others = props.filter((prop) => prop !== fir);
+}
+
+/** The clearest of 24 points four metres from the fir's trunk, measured against `others`. */
+function chooseSpawn(fir, others) {
   let spawn = { x: fir.x + 4, z: fir.z };
   let clearance = -1;
   for (let step = 0; step < 24; step += 1) {
@@ -113,13 +131,36 @@ function chooseStand(game, world) {
       spawn = candidate;
     }
   }
-  // The edge camera stands back from the stand in the clearest spot 25-40 m out, so it frames the
-  // trees instead of sitting inside a crown (crowns reach ~4 m; stands are 4 m apart).
+  return { spawn, clearance };
+}
+
+/**
+ * The edge camera stands back from the stand in the clearest spot 25-40 m out, so it frames the
+ * trees instead of sitting inside a crown (crowns reach ~4 m; stands are 4 m apart).
+ */
+function chooseEdge(fir, props) {
   let edge = { x: fir.x + 30, z: fir.z };
   let edgeClear = -1;
-  // On the sun's side of the stand (the kit's sun azimuth is atan2(0.56, 0.55)), so the view is
-  // front-lit like a beauty shot rather than always looking into the light.
+  for (const candidate of edgeCandidates(fir)) {
+    const clear = Math.min(
+      ...props.map((prop) => Math.hypot(prop.x - candidate.x, prop.z - candidate.z)),
+    );
+    if (clear > edgeClear) {
+      edgeClear = clear;
+      edge = candidate;
+    }
+  }
+  return { edge, edgeClear };
+}
+
+/**
+ * The points the edge camera may use, in the order the search reads them: 24 bearings, 25-40 m out,
+ * kept to the sun's side of the stand (the kit's sun azimuth is atan2(0.56, 0.55)) so the view is
+ * front-lit like a beauty shot rather than always looking into the light, and inside 250 m.
+ */
+function edgeCandidates(fir) {
   const sunAzimuth = Math.atan2(0.56, 0.55);
+  const candidates = [];
   for (let step = 0; step < 24; step += 1)
     for (const reach of [25, 30, 35, 40]) {
       const angle = (2 * Math.PI * step) / 24;
@@ -127,15 +168,9 @@ function chooseStand(game, world) {
       if (off > Math.PI / 3) continue;
       const candidate = { x: fir.x + reach * Math.cos(angle), z: fir.z + reach * Math.sin(angle) };
       if (Math.abs(candidate.x) > 250 || Math.abs(candidate.z) > 250) continue;
-      const clear = Math.min(
-        ...props.map((prop) => Math.hypot(prop.x - candidate.x, prop.z - candidate.z)),
-      );
-      if (clear > edgeClear) {
-        edgeClear = clear;
-        edge = candidate;
-      }
+      candidates.push(candidate);
     }
-  return { fir, spawn, clearance, edge, edgeClear };
+  return candidates;
 }
 
 async function main() {
@@ -216,6 +251,12 @@ export const stand = {
     join(import.meta.dirname, "../src/render/loading.ts"),
     join(game, "src/render/loading.ts"),
   );
+  // loading.ts takes its progress type from this leaf module. Copying propStreaming.ts instead would
+  // drag in props.ts and the rest of the preview's render closure, which the game does not ship.
+  cpSync(
+    join(import.meta.dirname, "../src/render/propProgress.ts"),
+    join(game, "src/render/propProgress.ts"),
+  );
 
   // --- it has to typecheck and build, and ship no authoring package ----------------------------------
   run("pnpm", ["typecheck"], { cwd: game });
@@ -285,9 +326,10 @@ export const stand = {
     edge: value(`${path}.edge`),
     ground: value(`${path}.ground`),
     overview: value(`${path}.overview`),
+    lake: value(`${path}.lake`),
   });
   const summary = {
-    captures: ["edge.png", "ground.png", "overview.png"].map((file) =>
+    captures: ["edge.png", "ground.png", "lake.png", "overview.png"].map((file) =>
       join("artifacts/playtest/starter-kit", file),
     ),
     closestToTrunk: value("closestToTrunk"),
@@ -314,6 +356,11 @@ export const stand = {
         frameP95: perView("viewFrameP95").overview,
         gpuP50: perView("viewGpuP50").overview,
         gpuP95: perView("viewGpuP95").overview,
+      },
+      lake: {
+        frameP95: perView("viewFrameP95").lake,
+        gpuP50: perView("viewGpuP50").lake,
+        gpuP95: perView("viewGpuP95").lake,
       },
     },
   };

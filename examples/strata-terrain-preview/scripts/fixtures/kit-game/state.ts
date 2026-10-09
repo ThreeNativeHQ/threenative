@@ -7,7 +7,7 @@ export type GameState = {
   spawnTerrainRequired: number;
   /** The kit's world streamed, its colliders built and the daylight mounted. */
   worldReady: number;
-  /** Which fixed camera view is up; the scenario switches it with 1, 2 and 3. */
+  /** Which fixed camera view is up; the scenario switches it with 1, 2, 3 and 4. */
   view: string;
   /** |player foot − terrain height| under the player, once it has settled. */
   groundError: number;
@@ -43,8 +43,8 @@ export const initialState: GameState = {
   groundError: -1,
   propColliders: -1,
   view: "ground",
-  viewFrameP95: { edge: -1, ground: -1, overview: -1 },
-  viewGpuP50: { edge: -1, ground: -1, overview: -1 },
-  viewGpuP95: { edge: -1, ground: -1, overview: -1 },
+  viewFrameP95: { edge: -1, ground: -1, lake: -1, overview: -1 },
+  viewGpuP50: { edge: -1, ground: -1, lake: -1, overview: -1 },
+  viewGpuP95: { edge: -1, ground: -1, lake: -1, overview: -1 },
   worldReady: 0,
 };

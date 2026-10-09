@@ -9,6 +9,7 @@ import {
 } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
 import { Box3, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
+import type { IPropPreparationProgress } from "./propProgress.js";
 import {
   DRAW_REACH,
   FADED_ASSETS,
@@ -21,6 +22,8 @@ import {
   preparePose,
   variantFor,
 } from "./props.js";
+
+export type { IPropPreparationProgress } from "./propProgress.js";
 
 interface IStreamOptions {
   readonly placements: readonly IPlacement[];
@@ -36,23 +39,6 @@ interface IStreamOptions {
   readonly onProgress?: (progress: IPropPreparationProgress) => void;
 }
 
-/** Consumer preparation only; the worlds still own admission, residency and prewarm. */
-export interface IPropPreparationProgress {
-  readonly phase:
-    | "grounding"
-    | "partition"
-    | "bounds"
-    | "models"
-    | "records"
-    | "world-load"
-    | "complete";
-  readonly bucket: string;
-  readonly added: number;
-  readonly total: number;
-  readonly worlds: readonly WorldCells[];
-  /** Live promise settlements, distinct from load completion and the last rendered counters. */
-  readonly prewarmedWorlds: number;
-}
 /** Keep WorldCells' changed caster bounds when forwarding to the existing shadow renderer. */
 export function invalidatePropShadows(
   shadow: { invalidateRegion(region: IShadowRegion): void; invalidateAll(): void },

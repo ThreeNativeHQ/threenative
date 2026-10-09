@@ -11,6 +11,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     edge: { keys: ["Digit2"] },
     ground: { keys: ["Digit1"] },
     overview: { keys: ["Digit3"] },
+    lake: { keys: ["Digit4"] },
   },
   // A short window so a playtest run closes several per view; the scene reads them into state,
   // which is what puts the measured per-view frame cost into the run report.

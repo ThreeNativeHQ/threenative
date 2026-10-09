@@ -1229,6 +1229,9 @@ importers:
       '@threenative/core':
         specifier: workspace:*
         version: link:../core
+      '@threenative/physics':
+        specifier: workspace:*
+        version: link:../physics
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43

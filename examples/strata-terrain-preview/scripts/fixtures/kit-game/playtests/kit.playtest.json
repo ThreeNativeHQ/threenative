@@ -63,6 +63,20 @@
       "waitTicks": 150,
       "release": true,
       "screenshot": "overview"
+    },
+    {
+      "kind": "input",
+      "label": "lake-view",
+      "press": "Digit4",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "lake",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "lake"
     }
   ],
   "assert": {
@@ -162,6 +176,24 @@
       {
         "id": "GameState",
         "path": "viewFrameP95.overview",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP50.lake",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewGpuP95.lake",
+        "gte": 0,
+        "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
+      },
+      {
+        "id": "GameState",
+        "path": "viewFrameP95.lake",
         "gte": 0,
         "allowTrivial": "Presence row: a view whose frame-budget windows never closed reads -1 and fails; the numbers are reported, not capped here."
       },

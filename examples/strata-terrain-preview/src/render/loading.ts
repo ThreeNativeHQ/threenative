@@ -10,7 +10,7 @@ import {
   type Scene,
   type Texture,
 } from "three";
-import type { IPropPreparationProgress } from "./propStreaming.js";
+import type { IPropPreparationProgress } from "./propProgress.js";
 const palette = { skyLow: 0x142321, skyHigh: 0x304636, accent: 0xb6c586 };
 
 type SpawnStartup = Pick<
