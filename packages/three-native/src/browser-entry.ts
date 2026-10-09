@@ -25,6 +25,7 @@ import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
 import { definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
+import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -145,6 +146,8 @@ export async function bindWebEngine(
   });
   const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
   Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
+  // three's QuadMesh over the engine Mesh (quad-mesh.ts), shared with the V8 player.
+  bound.QuadMesh = defineQuadMesh(classes as never);
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
   // and the wrapper safe point runs (collect: held while the engine references them).

@@ -17660,13 +17660,83 @@
       "kind": "class",
       "source": "three/webgpu",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_RENDERTARGET"
+        "kind": "supported"
       },
-      "extends": null,
+      "extends": "EventDispatcher",
       "constructor": [],
-      "fields": [],
-      "methods": []
+      "fields": [
+        {
+          "name": "height",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "width",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "texture",
+          "type": "Texture",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "setSize",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "width",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "height",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "depth",
+                  "type": "number",
+                  "optional": true
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
     },
     {
       "name": "Renderer",
@@ -19866,6 +19936,24 @@
         {
           "name": "source",
           "type": "Source",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "format",
+          "type": "number",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "type",
+          "type": "number",
           "mutable": false,
           "lifetime": "owned",
           "status": {

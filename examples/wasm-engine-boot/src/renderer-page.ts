@@ -8,15 +8,18 @@ import {
   BoxGeometry,
   DataTexture,
   DirectionalLight,
+  HalfFloatType,
   Mesh,
   MeshStandardMaterial,
   PCFShadowMap,
   PerspectiveCamera,
+  RenderTarget,
   Scene,
   SphereGeometry,
+  UnsignedByteType,
 } from "three";
 import { uniform, vec4 } from "three/tsl";
-import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
+import { MeshBasicNodeMaterial, QuadMesh, WebGPURenderer } from "three/webgpu";
 
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
 const probe = {
@@ -39,6 +42,9 @@ const probe = {
   steadyBindGroups: -1,
   steadyGraphKeys: -1,
   steadyPrograms: -1,
+  /** PRD-551: a QuadMesh's flat colour read back from a HalfFloat target (half bits) and a byte target. */
+  targetHalf: "",
+  targetBytes: "",
 };
 const started = performance.now();
 
@@ -123,6 +129,23 @@ try {
   sun.position.set(3, 5, 4);
   scene.add(sun, new AmbientLight(0xffffff, 0.4));
   renderer.setClearColor(0x102030, 1);
+  // PRD-551: a QuadMesh draws (0.25, 0.5, 0.75) into two render targets, read back typed as three types them.
+  const flat = new MeshBasicNodeMaterial();
+  flat.colorNode = vec4(0.25, 0.5, 0.75, 1);
+  const quad = new QuadMesh(flat);
+  const halfTarget = new RenderTarget(4, 4, { type: HalfFloatType });
+  const byteTarget = new RenderTarget(4, 4, { type: UnsignedByteType });
+  for (const target of [halfTarget, byteTarget]) {
+    renderer.setRenderTarget(target);
+    quad.render(renderer);
+  }
+  renderer.setRenderTarget(null);
+  const [halfPixels, bytePixels] = await Promise.all([
+    renderer.readRenderTargetPixelsAsync(halfTarget, 1, 1, 1, 1),
+    renderer.readRenderTargetPixelsAsync(byteTarget, 0, 0, 1, 1),
+  ]);
+  probe.targetHalf = `${halfPixels.constructor.name}:${Array.from(halfPixels).join(",")}`;
+  probe.targetBytes = `${bytePixels.constructor.name}:${Array.from(bytePixels).join(",")}`;
   // Midway's renderer settings: they reach the engine before each frame, as on the V8 player.
   renderer.toneMapping = 5;
   try {

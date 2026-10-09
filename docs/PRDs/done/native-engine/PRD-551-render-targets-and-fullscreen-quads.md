@@ -1,11 +1,11 @@
 # PRD-551 — Render targets and fullscreen quads on the native engine
 
-**Status:** IN PROGRESS
+**Status:** DONE (2026-10-09)
 **Priority:** P1 — the `minimal` template's V8 bundle is refused for `RenderTarget` and `QuadMesh` (PRD-531's last box), and render-to-texture is everyday three.js (minimaps, portals, GPGPU, readbacks)
 **Complexity:** 6 (MEDIUM) — the renderer's target switch and readback, one binding class, one shared JS facade; no new module
 **Owner:** João
-**Work package:** N22d renderer layer, back-end binding per [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) Context (PRD-540 phase 3 for Wasm, PRD-531 for V8)
-**Depends on:** [PRD-514](../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md) (done), [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md), [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md)
+**Work package:** N22d renderer layer, back-end binding per [PRD-548](../../native-engine/N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) Context (PRD-540 phase 3 for Wasm, PRD-531 for V8)
+**Depends on:** [PRD-514](PRD-514-n09-native-renderer-and-standard-materials.md) (done), [PRD-531](../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md), [PRD-540](../../native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md)
 
 ## Context
 
@@ -36,11 +36,15 @@ back (`readPixels`); post passes own offscreen targets. This PRD adds the user-v
 - [x] A frame that renders into a target and then to the canvas adds no setup work after warm-up (steady-state counters at 0). proof: the same ctest — 2026-10-09 pass: 30 target-then-frame rounds add 0 compiles, 0 text keys, 0 bind groups, 0 programs.
 
 #### Phase 2: V8 and Wasm bind it, and `QuadMesh` is shared JS
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-09)
 
-- [ ] The Wasm renderer facade binds `setRenderTarget`, `getRenderTarget` and `readRenderTargetPixelsAsync`, and `QuadMesh.render` draws a node material fullscreen into a target. proof: `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend` and `pnpm --filter wasm-engine-boot playtest:renderer`
-- [ ] The V8 player binds the same calls through the shared facade. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_player_imports`
-- [ ] The `minimal` template bundles for the V8 player with no `TN_NATIVE_ENGINE_UNBOUND` for `RenderTarget` or `QuadMesh`. proof: `node packages/runtime-native/scripts/bundle-native-engine.mjs --engine native --game-runtime v8 --entry <minimal>/src/game.ts --out <dir>/game.js`
+- [x] The Wasm renderer facade binds `setRenderTarget`, `getRenderTarget` and `readRenderTargetPixelsAsync`, and `QuadMesh.render` draws a node material fullscreen into a target. proof: `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend` and `pnpm --filter wasm-engine-boot playtest:renderer` — 2026-10-09 both pass: the renderer page's QuadMesh draws (0.25, 0.5, 0.75) into a HalfFloat and an UnsignedByte target and reads back `Uint16Array:13312,14336,14848,15360` (three's `DataUtils.toHalfFloat`) and `Uint8Array:64,128,191,255`; steady-state counters stay 0. Host calls `tnw_web_render_target`, `tnw_web_read_target`, `tnw_web_read_target_take`; shared facade `render-target.ts`, `quad-mesh.ts`.
+- [x] The V8 player binds the same calls through the shared facade. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_player_render_target` — 2026-10-09 pass on the real player (headless GPU): the same QuadMesh into HalfFloat and UnsignedByte targets reads back three's half bits and bytes (red first: the HalfFloat target came back as bytes until `Texture.type` was bound). Host calls `tn.renderTarget`, `tn.readTarget`.
+- [x] The `minimal` template bundles for the V8 player with no `TN_NATIVE_ENGINE_UNBOUND` for `RenderTarget` or `QuadMesh`. proof: `node packages/runtime-native/scripts/bundle-native-engine.mjs --engine native --game-runtime v8 --entry <minimal>/src/game.ts --out <dir>/game.js` — 2026-10-09: the bundler now reports only `normalLocal`, `positionPrevious`, `storage` and `tangentLocal` (PRD-547 TSL names, on lane-midway-native), no longer `RenderTarget` or `QuadMesh`.
+
+## Acceptance criteria
+
+- [x] A game renders into a `RenderTarget`, samples `target.texture` and reads the target back with three's typed arrays on both the V8 player and the Wasm engine, with no setup work per steady frame. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -R "native_engine_render_target|native_engine_player_render_target"` and `pnpm --filter wasm-engine-boot playtest:renderer` — 2026-10-09: all pass (see phases 1 and 2).
 
 ## Decisions
 

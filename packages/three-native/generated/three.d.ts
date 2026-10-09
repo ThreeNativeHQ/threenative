@@ -2217,6 +2217,18 @@ export declare const RedIntegerFormat: 1029;
 /** Catalog partial (native-not-implemented): three/ReinhardToneMapping. */
 export declare const ReinhardToneMapping: 2;
 
+/** Catalog supported: three/webgpu/RenderTarget. */
+export declare class RenderTarget extends EventDispatcher {
+constructor();
+readonly height: number;
+readonly width: number;
+readonly texture: Texture;
+
+  dispose(): void;
+
+  setSize(width: number, height: number, depth?: number): void;
+}
+
 /** Catalog supported: three/RepeatWrapping. */
 export declare const RepeatWrapping: 1000;
 
@@ -2549,6 +2561,8 @@ flipY: boolean;
 anisotropy: number;
 generateMipmaps: boolean;
 readonly source: Source;
+readonly format: number;
+readonly type: number;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */

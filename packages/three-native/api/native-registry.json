@@ -760,6 +760,7 @@
         "anisotropy",
         "colorSpace",
         "flipY",
+        "format",
         "generateMipmaps",
         "magFilter",
         "mapping",
@@ -770,6 +771,7 @@
         "repeat.x",
         "repeat.y",
         "rotation",
+        "type",
         "version",
         "wrapS",
         "wrapT"
@@ -1168,6 +1170,7 @@
         "anisotropy",
         "colorSpace",
         "flipY",
+        "format",
         "generateMipmaps",
         "magFilter",
         "mapping",
@@ -1178,6 +1181,7 @@
         "repeat.x",
         "repeat.y",
         "rotation",
+        "type",
         "version",
         "wrapS",
         "wrapT"
@@ -5085,6 +5089,17 @@
       "fixedMembers": ["layers", "ray"],
       "fields": {}
     },
+    "RenderTarget": {
+      "constructor": true,
+      "methods": ["dispose", "setSize"],
+      "getters": ["height", "width"],
+      "setters": [],
+      "members": ["texture"],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["texture"],
+      "fields": {}
+    },
     "RingGeometry": {
       "constructor": true,
       "methods": [
@@ -6508,6 +6523,7 @@
         "anisotropy",
         "colorSpace",
         "flipY",
+        "format",
         "generateMipmaps",
         "magFilter",
         "mapping",
@@ -6518,6 +6534,7 @@
         "repeat.x",
         "repeat.y",
         "rotation",
+        "type",
         "version",
         "wrapS",
         "wrapT"

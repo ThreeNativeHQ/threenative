@@ -65,6 +65,11 @@ const unknown: string[] = [];
 
 /** A bound field whose three type the catalog narrows to what the binding accepts. */
 const FIELD_TYPE_OVERRIDE: Record<string, string> = {
+  // @types/three's RenderTarget<TTexture> is generic; the engine's target colour is a Texture.
+  "RenderTarget.texture": "Texture",
+  // @types/three names these by union aliases the catalog does not publish; they are three's numbers.
+  "Texture.format": "number",
+  "Texture.type": "number",
   "BufferGeometry.groups": "string",
   // The binding answers three's `{ start, count }[]` as its canonical JSON text.
   "BufferAttribute.updateRanges": "string",

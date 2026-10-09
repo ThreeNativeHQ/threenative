@@ -5,6 +5,7 @@
  * engine did. What it does not implement throws its diagnostic rather than doing nothing.
  */
 import { type TnAbiModule, engineRef } from "./browser-backend.js";
+import { defineRenderTargets } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 
 /** The product host's exports beside the catalog ABI (all numbers: pointers, sizes, status). */
@@ -16,7 +17,10 @@ type HostCall =
   | "_tnw_web_resize"
   | "_tnw_web_render"
   | "_tnw_web_renderer_state"
-  | "_tnw_web_frame";
+  | "_tnw_web_frame"
+  | "_tnw_web_render_target"
+  | "_tnw_web_read_target"
+  | "_tnw_web_read_target_take";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
   readonly specialHTMLTargets: Record<string, unknown>;
@@ -33,6 +37,7 @@ const CANVAS_TARGET = "!threenative-canvas";
 const READY = 1;
 /** The facade's own redraw, for RenderPipeline (browser-entry.ts). */
 export const RENDER_AGAIN = Symbol("tn.renderAgain");
+const DRAW_TARGET = Symbol("tn.drawTarget");
 const FAILED = 2;
 
 interface IAdapterInfo {
@@ -70,7 +75,7 @@ export function defineWebRenderer(
   const check = (status: number): void => {
     if (status !== 0) throw new Error(module.UTF8ToString(module._tnw_web_error()));
   };
-  // Two tn_handle_t (12 bytes each): the scene and the camera of the current render() call.
+  // Three tn_handle_t (12 bytes each): the scene, the camera and the render target of the current call.
   let handles = 0;
   const writeHandle = (offset: number, object: unknown, what: string): void => {
     const ref = typeof object === "object" && object !== null ? engineRef(object) : undefined;
@@ -89,7 +94,7 @@ export function defineWebRenderer(
     view.setUint32(handles + offset + 8, generation, true);
   };
 
-  return class WebGPURenderer {
+  const Renderer = class WebGPURenderer {
     readonly isWebGPURenderer = true;
     readonly domElement: HTMLCanvasElement;
     readonly info = {
@@ -146,7 +151,7 @@ export function defineWebRenderer(
     init(): Promise<this> {
       this.#initialized ??= (async () => {
         module.specialHTMLTargets[CANVAS_TARGET] = this.domElement;
-        handles = module._malloc(24);
+        handles = module._malloc(36);
         const selector = string(CANVAS_TARGET);
         try {
           check(module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight()));
@@ -271,6 +276,18 @@ export function defineWebRenderer(
       this.#state = key;
     }
 
+    /** render() while a render target is set (render-target.ts): draws into the target. */
+    [DRAW_TARGET](target: unknown, root: unknown, camera: unknown): void {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: render() before init() finished.");
+      beforeRender();
+      this.#applyState();
+      writeHandle(0, root, "scene");
+      writeHandle(12, camera, "camera");
+      writeHandle(24, target, "render target");
+      check(module._tnw_web_render_target(handles + 24, handles, handles + 12, ...this.#clear));
+    }
+
     /** The last scene and camera again: RenderPipeline.render() draws through its post graph. */
     [RENDER_AGAIN](): void {
       if (this.#last !== undefined) this.render(...this.#last);
@@ -299,4 +316,32 @@ export function defineWebRenderer(
 
     dispose(): void {}
   };
+  const read = async (target: unknown, x: number, y: number, width: number, height: number) => {
+    writeHandle(24, target, "render target");
+    const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
+    if (id === 0) check(1);
+    const size = width * height * 8;
+    const out = module._malloc(size);
+    try {
+      for (;;) {
+        module._tnw_web_poll();
+        const status = module._tnw_web_read_target_take(id, out, size);
+        if (status === 1) return module.HEAPU8.slice(out, out + size);
+        if (status < 0) throw new Error("TN_WASM_READ_TARGET: the read failed");
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    } finally {
+      module._free(out);
+    }
+  };
+  defineRenderTargets(Renderer.prototype, (renderer) => ({
+    draw: (target, root, camera) =>
+      (renderer as { [DRAW_TARGET](t: unknown, r: unknown, c: unknown): void })[DRAW_TARGET](
+        target,
+        root,
+        camera,
+      ),
+    read,
+  }));
+  return Renderer;
 }

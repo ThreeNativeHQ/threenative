@@ -13,6 +13,7 @@
 #include "engine/foundation/math/Color.h"
 #include "engine/scene/lights.h"
 #include "engine/scene/material.h"
+#include "engine/scene/render_target.h"
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
 #include "engine/shader/standard.h"
@@ -471,6 +472,10 @@ void registerTextureFields(ClassBinding& b) {
     };
     b.getters["flipY"] = [](void* self) { return Value::of(as<Texture>(self)->flipY); };
     b.setters["flipY"] = [](void* self, const Value& v) { as<Texture>(self)->flipY = flag(v); as<Texture>(self)->needsUpdate(); };
+    // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat), read
+    // only: they are fixed by the constructor or the render target that owns the texture.
+    b.getters["type"] = [](void* self) { return Value::of(double(as<Texture>(self)->type)); };
+    b.getters["format"] = [](void* self) { return Value::of(double(as<Texture>(self)->format)); };
     textureNumber<Texture>(b, "mapping", &Texture::mapping);
     textureNumber<Texture>(b, "wrapS", &Texture::wrapS);
     textureNumber<Texture>(b, "wrapT", &Texture::wrapT);
@@ -587,6 +592,43 @@ void registerTextureBindings(Registry& classes) {
     };
     registerTextureClass(classes["Texture"], false);
     registerTextureClass(classes["DataTexture"], true);
+    // three's RenderTarget (PRD-551): its size, type and colour texture. The renderer facades draw into it
+    // (setRenderTarget) and read it back; a material samples `target.texture`.
+    // ponytail: the colour is RGBA16Float whatever the type, so a FloatType target reads back at half
+    // precision; depth testing is always on (depthBuffer: false is accepted and not modelled).
+    ClassBinding& target = classes["RenderTarget"];
+    target.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+        const double width = a.size() > 0 ? number(a[0]) : 1, height = a.size() > 1 ? number(a[1]) : 1;
+        if (!(width >= 1) || !(height >= 1) || width > 16384 || height > 16384)
+            throw Unsupported{"RenderTarget size must be 1 to 16384"};
+        uint16_t type = kTextureUnsignedByteType;
+        if (a.size() > 2 && a[2].kind == Value::Kind::Record)
+            for (const auto& [key, value] : a[2].fields) {
+                if (key == "type") {
+                    type = static_cast<uint16_t>(number(value));
+                    if (type != kTextureUnsignedByteType && type != kTextureHalfFloatType && type != kTextureFloatType)
+                        throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
+                } else if (key == "format") {
+                    if (number(value) != kTextureRGBAFormat) throw Unsupported{"RenderTarget format must be RGBAFormat"};
+                } else if (key != "depthBuffer" && key != "stencilBuffer") {
+                    throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
+                }
+            }
+        return RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
+    };
+    fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
+        return store.share("Texture", as<RenderTarget>(self)->texture);
+    });
+    target.getters["width"] = [](void* self) { return Value::of(double(as<RenderTarget>(self)->width)); };
+    target.getters["height"] = [](void* self) { return Value::of(double(as<RenderTarget>(self)->height)); };
+    target.methods["setSize"] = [](void* self, const Args& a, Store&) {
+        as<RenderTarget>(self)->setSize(static_cast<uint32_t>(number(a.at(0))), static_cast<uint32_t>(number(a.at(1))));
+        return chain();
+    };
+    target.methods["dispose"] = [](void* self, const Args&, Store&) {
+        as<RenderTarget>(self)->dispose();
+        return Value{};
+    };
     // three's CanvasTexture: the canvas's RGBA pixels as a DataTexture with Texture's own defaults
     // (flipped rows, linear filters, a generated mip chain). Each back end reads the canvas
     // (getImageData) and passes (pixels, width, height, mapping, wrapS, wrapT, magFilter, minFilter).

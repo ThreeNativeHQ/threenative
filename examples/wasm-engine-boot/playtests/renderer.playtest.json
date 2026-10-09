@@ -3,10 +3,21 @@
   "name": "wasm-engine-renderer",
   "target": "web",
   "subject": "wasm-renderer",
-  "viewport": { "width": 640, "height": 360 },
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
   "warmupFrames": 10,
-  "artifacts": { "screenshots": true },
-  "steps": [{ "kind": "wait", "label": "rendered", "waitTicks": 30 }],
+  "artifacts": {
+    "screenshots": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "rendered",
+      "waitTicks": 30
+    }
+  ],
   "assert": {
     "components": [
       {
@@ -30,7 +41,26 @@
         "equals": "TN_NATIVE_RENDERER_STATE: toneMapping 5.000000",
         "allowTrivial": "Set once before the first frame; the engine names the tone mapping it refused."
       },
-      { "entity": "wasm-renderer", "component": "probe", "path": "frames", "gte": 30 },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "frames",
+        "gte": 30
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "targetHalf",
+        "equals": "Uint16Array:13312,14336,14848,15360",
+        "allowTrivial": "PRD-551: three's DataUtils.toHalfFloat of 0.25, 0.5, 0.75, 1, read back from a HalfFloat target."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "targetBytes",
+        "equals": "Uint8Array:64,128,191,255",
+        "allowTrivial": "PRD-551: the same colour from an UnsignedByte target."
+      },
       {
         "entity": "wasm-renderer",
         "component": "probe",
@@ -83,7 +113,13 @@
     ],
     "visual": [
       {
-        "region": { "x": 120, "y": 80, "width": 400, "height": 200, "minNonblankPixelRatio": 0.2 }
+        "region": {
+          "x": 120,
+          "y": 80,
+          "width": 400,
+          "height": 200,
+          "minNonblankPixelRatio": 0.2
+        }
       }
     ]
   }

@@ -5,9 +5,13 @@
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
 #include "engine/renderer/render_database.h"
+#include "engine/abi/binding.h"
+#include "engine/renderer/render_target_pass.h"
 #include "engine/shader/graph/graph.h"
 
 #include <cstdio>
+#include <cstring>
+#include <map>
 #include <set>
 #if TN_WEB_GLTF
 #include "engine/assets/gltf/loader.h"
@@ -118,6 +122,13 @@ T* objectAs(const tn_handle_t* handle, const char* cls) {
     return static_cast<T*>(object->ptr.get());
 }
 
+/** three renders any Object3D as the root (a QuadMesh is a Mesh), not only a Scene. */
+Object3D* rootOf(const tn_handle_t* handle) {
+    auto* object = handle == nullptr ? nullptr : tn::abi::objectOf(*handle);
+    if (object == nullptr || !tn::binding::isObject3DClass(object->cls)) return nullptr;
+    return static_cast<Object3D*>(object->ptr.get());
+}
+
 Camera* cameraOf(const tn_handle_t* handle) {
     if (auto* camera = objectAs<PerspectiveCamera>(handle, "PerspectiveCamera")) return camera;
     return objectAs<OrthographicCamera>(handle, "OrthographicCamera");
@@ -176,7 +187,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
                               double b, double a) {
     tnw_web_poll();
     if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
-    auto* scene = objectAs<Scene>(sceneHandle, "Scene");
+    auto* scene = rootOf(sceneHandle);
     auto* camera = cameraOf(cameraHandle);
     if (scene == nullptr || camera == nullptr) return fail("TN_WASM_RENDER: scene or camera handle invalid");
     WGPUSurfaceTexture frame = {};
@@ -200,6 +211,66 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
         if (reported.insert(diagnostic).second) std::fprintf(stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
     return 0;
+}
+
+/**
+ * three's render() while a render target is set (PRD-551): draws `root` through `camera` into the
+ * target, the linear scene colour, as r185 writes a target. Fails, naming the first refusal, when the
+ * target's render refused or skipped anything.
+ */
+extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_handle_t* rootHandle,
+                                     const tn_handle_t* cameraHandle, double r, double g, double b, double a) {
+    tnw_web_poll();
+    if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
+    auto* target = objectAs<RenderTarget>(targetHandle, "RenderTarget");
+    auto* root = rootOf(rootHandle);
+    auto* camera = cameraOf(cameraHandle);
+    if (target == nullptr || root == nullptr || camera == nullptr)
+        return fail("TN_WASM_RENDER_TARGET: target, root or camera handle invalid");
+    const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap);
+    if (!refused.empty()) return fail(refused.front());
+    return 0;
+}
+
+namespace {
+/** readRenderTargetPixelsAsync's pending reads by id: RGBA16Float rows once delivered. */
+struct TargetRead {
+    int status = 0;  // 0 pending, 1 delivered, -1 failed
+    std::vector<uint8_t> bytes;
+};
+std::map<uint32_t, TargetRead> targetReads;
+uint32_t nextTargetRead = 0;
+}  // namespace
+
+/** Starts reading [x, y, w, h] of the target's last render; returns its id, or 0 (tnw_web_error says why). */
+extern "C" uint32_t tnw_web_read_target(const tn_handle_t* targetHandle, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    auto* target = objectAs<RenderTarget>(targetHandle, "RenderTarget");
+    if (target == nullptr) return fail("TN_WASM_READ_TARGET: not a RenderTarget"), 0;
+    const uint32_t id = ++nextTargetRead;
+    targetReads[id] = {};
+    const GpuStatus started = readRenderTarget(*target, x, y, w, h, [id](GpuStatus status, std::vector<uint8_t> bytes) {
+        auto found = targetReads.find(id);
+        if (found == targetReads.end()) return;
+        found->second.status = status == GpuStatus::Ok ? 1 : -1;
+        found->second.bytes = std::move(bytes);
+    });
+    if (started != GpuStatus::Ok) {
+        targetReads.erase(id);
+        return fail(started == GpuStatus::InvalidHandle ? "TN_WASM_READ_TARGET: the target never rendered"
+                                                        : "TN_WASM_READ_TARGET: region outside the target"), 0;
+    }
+    return id;
+}
+
+/** The read's state (0 pending, 1 delivered, -1 failed); delivered bytes are copied to `out` and the read ends. */
+extern "C" int tnw_web_read_target_take(uint32_t id, uint8_t* out, uint32_t capacity) {
+    auto found = targetReads.find(id);
+    if (found == targetReads.end()) return -1;
+    const int status = found->second.status;
+    if (status == 1 && (out == nullptr || capacity < found->second.bytes.size())) return -1;
+    if (status == 1) std::memcpy(out, found->second.bytes.data(), found->second.bytes.size());
+    if (status != 0) targetReads.erase(found);
+    return status;
 }
 
 /**

@@ -1370,18 +1370,10 @@ void registerInstancedMesh(ClassBinding& b) {
  * valid child of a Group, so the argument is matched against the classes the scene graph owns.
  */
 Object3D& objectArg(Store& store, const Value& arg) {
-    static const char* const kClasses[] = {"Object3D",        "Group",           "Mesh",
-                                           "Scene",           "Camera",          "PerspectiveCamera",
-                                           "OrthographicCamera", "AmbientLight", "DirectionalLight",
-                                           "HemisphereLight", "InstancedMesh",      "PointLight",
-                                           "Sprite", "SpotLight",       "Bone",               "SkinnedMesh", "LOD",
-                                           "Line", "LineSegments"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
-    for (const char* cls : kClasses) {
-        if (found->cls == cls) return *static_cast<Object3D*>(found->ptr.get());
-    }
-    throw Unsupported{"argument is not an Object3D, it is a " + found->cls};
+    if (!isObject3DClass(found->cls)) throw Unsupported{"argument is not an Object3D, it is a " + found->cls};
+    return *static_cast<Object3D*>(found->ptr.get());
 }
 
 void registerObject3DBindings(ClassBinding& b) {
