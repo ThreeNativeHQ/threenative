@@ -57,8 +57,11 @@ const response = resolve(mailbox, "tn-playtest-response.json");
 const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy", TN_PLAYTEST_MAILBOX_ROOT: mailbox };
 const child = spawn(resolve(executable), [outfile], { env });
 let output = "";
-child.stdout.on("data", (chunk) => (output += chunk));
-child.stderr.on("data", (chunk) => (output += chunk));
+const read = (chunk) => {
+  output += chunk;
+};
+child.stdout.on("data", read);
+child.stderr.on("data", read);
 const exited = new Promise((done) => child.once("exit", done));
 
 // Reads the response file once it holds the frame for `id`, then clears it for the next one.
