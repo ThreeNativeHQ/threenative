@@ -206,13 +206,11 @@ WGPUFilterMode filterMode(uint16_t filter) {
 }
 
 // three's Texture.updateMatrix: Matrix3.setUvTransform(offset.x, offset.y, repeat.x, repeat.y,
-// rotation, center.x, center.y), column-major, as the fragment's mat3x3 uniform reads it.
+// rotation, center.x, center.y). Its elements are column-major, as the fragment's mat3x3 uniform reads them.
 std::array<double, 9> uvTransformOf(const Texture& t) {
-    const double c = std::cos(t.rotation), s = std::sin(t.rotation);
-    const double cx = t.center.x, cy = t.center.y, sx = t.repeat.x, sy = t.repeat.y, tx = t.offset.x, ty = t.offset.y;
-    return {sx * c, sx * s, -sx * (c * cx + s * cy) + cx + tx,   // column 0
-            -sy * s, sy * c, -sy * (-s * cx + c * cy) + cy + ty,  // column 1
-            0, 0, 1};
+    return tn::engine::Matrix3()
+        .setUvTransform(t.offset.x, t.offset.y, t.repeat.x, t.repeat.y, t.rotation, t.center.x, t.center.y)
+        .elements;
 }
 
 // A program that samples a material `map` or an environment cannot have one shared fragment group:
