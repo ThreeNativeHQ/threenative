@@ -2,11 +2,13 @@
 #include "engine/shader/standard.h"
 #include "engine/shader/wgsl.h"
 #include "engine/shader/package.h"
+#include "engine/shader/graph/post_effects.h"
 
 #include <bit>
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
+#include <set>
 #include <string>
 
 using namespace tn::engine::shader;
@@ -304,6 +306,20 @@ void nodeKey() {
     CHECK(graph::keyId(copy) != graph::keyId(filled.colorNode));
 }
 
+// A render target is one pass, however many times the graph samples it: the bloom chain is its
+// high-pass, two blur directions for each of five mips and the composite, 12 passes. Each blur tap
+// samples its source through a copy of the target node; counting copies once rendered the 22-tap
+// mip's source 43 times a direction, 283 passes a frame for the template's chain.
+void bloomPasses() {
+    const auto colour = graph::texture("scene", graph::uv());
+    const auto passes = graph::postPasses(graph::add(colour, graph::bloom(colour, 0.7, 0.5, 0.2)));
+    std::set<std::string> outputs;
+    for (const auto& pass : passes) outputs.insert(pass.output);
+    std::fprintf(stderr, "bloom: %zu passes, %zu distinct outputs\n", passes.size(), outputs.size());
+    CHECK(passes.size() == 12);
+    CHECK(outputs.size() == passes.size());
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey})
+TN_TEST_MAIN({"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses})

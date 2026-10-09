@@ -456,13 +456,16 @@ Node importPostEffect(const json::Value& record, const std::vector<Node>& args, 
 std::vector<PostPass> postPasses(Node root) {
     std::vector<PostPass> passes;
     std::unordered_set<const NodeData*> seen;
+    // A target is rendered once however it is sampled: a sample at another coordinate is a copy of
+    // the target node (sampleAt), the same name over the same source, so targets count by name.
+    std::unordered_set<std::string> targets;
     const std::function<void(Node)> visit = [&](Node n) {
         if (!n || !seen.insert(n.get()).second)
             return;
         for (const auto* list : {&n->args, &n->body, &n->otherwise})
             for (const auto& child : *list)
                 visit(child);
-        if (n->kind == Kind::RenderTexture)
+        if (n->kind == Kind::RenderTexture && targets.insert(n->name).second)
             passes.push_back(renderTexturePass(n));
         if (!n->post)
             return;

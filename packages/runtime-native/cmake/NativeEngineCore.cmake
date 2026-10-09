@@ -246,7 +246,8 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
     native_engine_fog_math=fog
-    native_engine_material_node_key=node_key)
+    native_engine_material_node_key=node_key
+    native_engine_material_bloom_passes=bloom_passes)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
 
 tn_native_engine_test(tn-native-engine-members-test tests/native-engine/members_test.cpp
