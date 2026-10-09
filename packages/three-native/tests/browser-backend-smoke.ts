@@ -403,6 +403,19 @@ engine.collect();
   mixer.update(1.25);
   check(loops.length === 1 && loops[0] === 1, "loop event");
 }
+// three's MathUtils is a namespace object, not a constructor: its functions are called on the export
+// itself (the minimal template's Player wraps its heading with MathUtils.euclideanModulo).
+{
+  const web = (await bindWebEngine(createTnAbi, ["MathUtils"])) as {
+    MathUtils: {
+      euclideanModulo(n: number, m: number): number;
+      clamp(v: number, a: number, b: number): number;
+    };
+  };
+  check(typeof web.MathUtils === "object", "MathUtils is a namespace object");
+  check(web.MathUtils.euclideanModulo(-1, 3) === 2, "MathUtils.euclideanModulo");
+  check(web.MathUtils.clamp(5, 0, 1) === 1, "MathUtils.clamp");
+}
 // three's attribute.array is the attribute's own JS typed array (PRD-540): of its scalar type, one
 // per attribute, kept across Wasm memory growth; an element write is what the engine reads back
 // before its next call, BufferAttribute keeps the array it is handed, and needsUpdate sends a write.

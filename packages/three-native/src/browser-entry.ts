@@ -68,7 +68,11 @@ export function bindUpstreamExports(
   const bound: Record<string, unknown> = {};
   for (const name of names) {
     const entry = entries.get(name);
-    if (Object.hasOwn(classes, name)) bound[name] = classes[name];
+    // three's MathUtils is a namespace object: the engine binds it as a class, exported as its one
+    // instance (as the V8 player's core-three.mjs does).
+    if (Object.hasOwn(classes, name))
+      bound[name] =
+        name === "MathUtils" ? new (classes[name] as new () => object)() : classes[name];
     else if (entry !== undefined && constantValue(entry) !== undefined)
       bound[name] = constantValue(entry);
     else
