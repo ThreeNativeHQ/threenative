@@ -50,13 +50,20 @@ The generator should expose the mechanism once; the density rules and looks stay
   fixed-step stub that never ticks while the hold is pending (red before, green after) — PASS:
   `startup-readiness.spec.ts` "releases a predicate hold on the first frame it reads true" red
   (released at once) → green; startup and game specs 99/99; core tsc clean.
-- [ ] The preview's spawn gate uses it and drops its `beforeRender` duplicate. proof:
-  `pnpm --filter strata-terrain-preview test:terrain:web` reaches its assertions
-  Open: the change is in (`game.ts` passes a predicate to `ctx.startup.hold`). The 2026-10-09 run
-  (host load 24) settled the spawn gate (no `TN_STRATA_SPAWN_FAILURE`, about 430 s into the scenario
-  past a world transition) but ended at exit 2 on a 15 s bridge `sample` timeout amid 14 main-thread
-  stalls of 2.5–11.6 s. The PRD-466 branch shows the same stalls without this change, so they are a
-  separate defect; the box stays open until a run reaches its assertions.
+- [x] The preview's spawn gate uses it and drops its `beforeRender` duplicate. proof:
+  `pnpm --filter strata-terrain-preview test:terrain:web` reaches its assertions — PASS
+  (2026-10-09, host load 29, after the stall fixes below): 62 assertions, 59 pass; the three left
+  are the PRD-466 performance bounds (`afterFirstFrameTaskMs` 1,387, `timeToReadyMs` 37,915,
+  `maxViewGpuMs` 35.6).
+
+**Main-thread stalls found on the way** (the previous run died on a bridge timeout amid 14 stalls
+up to 11.6 s). A CPU profile of a view-cycling session attributed them to (1) core
+`VelocityTracker.commit` allocating a fresh `Float32Array` per instanced mesh per frame, about
+14 MB/frame for 218,809 instances, plus a 10.3 s collector stall, fixed by double buffering
+(`58a112f16`) and by skipping unchanged meshes by `instanceMatrix.version` (`26a830ab0`), both red →
+green in `render-velocity.spec.ts`; and (2) the preview walking every streamed world three times per
+fixed step for prop counts (`bf3485fc7`, now every 30 steps). Busy stretches over 1.5 s: 50 → 8;
+playtest stalls: 14 (max 11.6 s) → 4 (max 2.6 s).
 
 ### Acceptance
 
