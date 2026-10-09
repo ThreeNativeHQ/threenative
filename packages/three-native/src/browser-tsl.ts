@@ -283,7 +283,7 @@ export function defineTsl(runtime: ITslRuntime): {
   const node = (id: number): TslArgValue => ({ kind: "node", node: id });
   const capture = (form: string, callback: unknown, input?: unknown): number => {
     if (typeof callback !== "function") throw new TypeError(`TN_TSL ${form}: expected a callback`);
-    runtime.call("scope:open", null, []);
+    runtime.release(runtime.call("scope:open", null, []));
     depth++;
     let returned: TslArgValue[] = [];
     try {
@@ -296,6 +296,11 @@ export function defineTsl(runtime: ITslRuntime): {
     }
     depth--;
     return runtime.call("scope:close", null, returned);
+  };
+  // A statement's body crosses into the statement's own node, so its handle is released after the call.
+  const consume = (body: number, made: number): number => {
+    runtime.release(body);
+    return made;
   };
   const statement = (form: string): void => {
     if (depth === 0) throw new TypeError(`TN_TSL ${form}: statement outside Fn`);
@@ -316,7 +321,8 @@ export function defineTsl(runtime: ITslRuntime): {
   }
   prototype.Else = function (this: ITslNode, callback: unknown) {
     statement("Else");
-    return wrap(runtime.call("Else", this[TSL_NODE], [node(capture("Else", callback))]));
+    const body = capture("Else", callback);
+    return wrap(consume(body, runtime.call("Else", this[TSL_NODE], [node(body)])));
   };
   prototype.__effect = function (this: ITslNode, name: string, value?: number) {
     return runtime.effectParameter(this[TSL_NODE], name, value);
@@ -343,14 +349,18 @@ export function defineTsl(runtime: ITslRuntime): {
   exports.If = (condition: unknown, callback: unknown) => {
     statement("If");
     const test = argument("If", 0, condition);
-    return wrap(runtime.call("If", null, [test, node(capture("If", callback))]));
+    const body = capture("If", callback);
+    return wrap(consume(body, runtime.call("If", null, [test, node(body)])));
   };
   exports.Loop = (count: unknown, callback: unknown) => {
     statement("Loop");
     const index = wrap(runtime.call("Loop:index", null, []));
     const body = capture("Loop", callback, { i: index });
     return wrap(
-      runtime.call("Loop", null, [argument("Loop", 0, count), node(index[TSL_NODE]), node(body)]),
+      consume(
+        body,
+        runtime.call("Loop", null, [argument("Loop", 0, count), node(index[TSL_NODE]), node(body)]),
+      ),
     );
   };
   // A storage buffer: setName names it, element(index) reads or assigns one element.

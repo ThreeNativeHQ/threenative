@@ -743,6 +743,7 @@ interface ITrace {
   readonly calls: { name: string; receiver: number | null; args: TslArgValue[] }[];
   readonly sets: string[];
   readonly uniforms: string[];
+  readonly released: number[];
   readonly runtime: ITslRuntime;
   // biome-ignore lint/suspicious/noExplicitAny: smoke test calls dynamic TSL methods
   readonly tsl: Record<string, any>;
@@ -753,6 +754,7 @@ function traceTsl(real: ITslRuntime): ITrace {
   const calls: ITrace["calls"] = [];
   const sets: string[] = [];
   const uniforms: string[] = [];
+  const released: number[] = [];
   const numbered = new Map<number, number>();
   let made = 0;
   const ordinal = (node: number): number => numbered.get(node) ?? node;
@@ -773,7 +775,10 @@ function traceTsl(real: ITslRuntime): ITrace {
       numbered.set(node, ++made);
       return node;
     },
-    release: (node) => real.release(node),
+    release(node) {
+      released.push(ordinal(node));
+      real.release(node);
+    },
     set(material, path, node) {
       sets.push(`${material.type}.${path}=${ordinal(node)}`);
       real.set(material, path, node);
@@ -793,7 +798,7 @@ function traceTsl(real: ITslRuntime): ITrace {
     setPost: (node) => real.setPost(node),
   };
   const live = defineTsl(runtime);
-  return { calls, sets, uniforms, runtime, tsl: live.exports, sync: live.sync };
+  return { calls, sets, uniforms, released, runtime, tsl: live.exports, sync: live.sync };
 }
 
 // TSL by name over the real ABI: pmremTexture's texture crosses as a handle in tn_tsl_arg_t.
@@ -1117,6 +1122,13 @@ if (runtime.tsl !== undefined) {
         "scope:close",
       ]),
       "Fn, If, Else and Loop open and close their scopes in order",
+    );
+    // Each scope's handles are the engine's to hold once they cross: only Fn's graph stays with the game.
+    const made = (name: string) => t.calls.flatMap((c, i) => (c.name === name ? [i + 1] : []));
+    const handles = [...made("scope:open"), ...made("scope:close").slice(0, -1)];
+    check(
+      handles.every((handle) => t.released.includes(handle)),
+      `every scope handle but Fn's graph is released: made ${handles.join()}, released ${t.released.join()}`,
     );
     t.calls.length = 0;
     let threw = "";
