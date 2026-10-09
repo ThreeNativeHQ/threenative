@@ -211,8 +211,11 @@ export function defineTsl(runtime: ITslRuntime): {
   };
   const argument = (name: string, index: number, value: unknown): TslArgValue => {
     if (isTslNode(value)) return { kind: "node", node: value[TSL_NODE] };
-    // An omitted optional input (denoise's normal node) has no TSL meaning of its own.
+    // An omitted optional input (denoise's normal node) has no TSL meaning of its own, and ao's and
+    // denoise's camera is the render camera, whose matrices the engine's effect reads each frame.
     if (value === null || value === undefined) return { kind: "other" };
+    if ((name === "ao" && index === 2) || (name === "denoise" && index === 3))
+      return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
     // texture(engineTexture, uv) samples that texture itself; a plain object names a material map,

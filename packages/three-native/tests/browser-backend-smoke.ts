@@ -344,6 +344,54 @@ engine.collect();
   texture.needsUpdate = true;
   check(reads === 2, "CanvasTexture re-reads its canvas on needsUpdate");
 }
+// The mixer's EventDispatcher on the Wasm engine, as on V8: listeners live in JS and the engine calls
+// back for `finished` and `loop` while something listens (the minimal template's AnimationPlayer).
+{
+  type Ctor = new (
+    ...args: unknown[]
+  ) => Record<string, (...args: unknown[]) => unknown> & Record<string, unknown>;
+  const web = (await bindWebEngine(createTnAbi, [
+    "AnimationMixer",
+    "AnimationClip",
+    "VectorKeyframeTrack",
+    "Object3D",
+    "LoopOnce",
+    "LoopRepeat",
+  ])) as Record<string, unknown>;
+  const root = new (web.Object3D as Ctor)();
+  const track = new (web.VectorKeyframeTrack as Ctor)(".position", [0, 1], [0, 0, 0, 1, 2, 3]);
+  const clip = new (web.AnimationClip as Ctor)("move", 1, [track]);
+  const mixer = new (web.AnimationMixer as Ctor)(root);
+  const action = mixer.clipAction(clip) as Record<string, (...args: unknown[]) => unknown> &
+    Record<string, unknown>;
+  action.setLoop(web.LoopOnce, 1);
+  action.clampWhenFinished = true;
+  action.play();
+  const events: Record<string, unknown>[] = [];
+  const onFinished = (event: Record<string, unknown>) => events.push({ ...event });
+  mixer.addEventListener("finished", onFinished);
+  check(mixer.hasEventListener("finished", onFinished) === true, "mixer listener registered");
+  mixer.update(0.5);
+  check(events.length === 0, "no finished event mid-clip");
+  mixer.update(1);
+  check(
+    events.length === 1 &&
+      events[0]?.type === "finished" &&
+      events[0]?.action === action &&
+      events[0]?.direction === 1 &&
+      events[0]?.target === mixer,
+    "finished event reaches its listener with its action and target",
+  );
+  mixer.removeEventListener("finished", onFinished);
+  check(mixer.hasEventListener("finished", onFinished) === false, "mixer listener removed");
+  const loops: unknown[] = [];
+  mixer.addEventListener("loop", (event: Record<string, unknown>) => loops.push(event.loopDelta));
+  action.reset();
+  action.setLoop(web.LoopRepeat, Number.POSITIVE_INFINITY);
+  action.play();
+  mixer.update(1.25);
+  check(loops.length === 1 && loops[0] === 1, "loop event");
+}
 // three's attribute.array is the attribute's own JS typed array (PRD-540): of its scalar type, one
 // per attribute, kept across Wasm memory growth; an element write is what the engine reads back
 // before its next call, BufferAttribute keeps the array it is handed, and needsUpdate sends a write.

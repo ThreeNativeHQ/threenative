@@ -22,6 +22,8 @@ export interface IRegistryClass {
   readonly members: readonly string[];
   /** Language callbacks the engine calls back (`onBeforeRender`). */
   readonly callbacks: readonly string[];
+  /** Event types the engine dispatches (AnimationMixer's `finished`, `loop`). */
+  readonly events?: readonly string[];
 }
 
 export interface IRegistryDump {
@@ -520,6 +522,96 @@ export function defineBrowserClasses(
           callbackFunctions.set(this, functions);
           callbackNames.set(ref.key, (callbackNames.get(ref.key) ?? new Set()).add(callback));
           held.add(this);
+        },
+      });
+    }
+    // three's EventDispatcher, as the V8 adapter keeps it: listeners live in JS, and the engine
+    // calls back once per native event type something listens to; `target` is set while they run.
+    if (binding.methods.includes("addEventListener")) {
+      const native = new Set(binding.events ?? []);
+      type Listener = (this: object, event: Record<string, unknown>) => void;
+      const listeners = new WeakMap<object, Map<string, Listener[]>>();
+      const dispatch = (target: object, event: Record<string, unknown>): void => {
+        const list = listeners.get(target)?.get(String(event.type));
+        if (list === undefined) return;
+        event.target = target;
+        for (const listener of [...list]) listener.call(target, event);
+        event.target = null;
+      };
+      const listenerArgs = (name: string, type: unknown, listener: unknown): Listener => {
+        if (typeof type !== "string" || typeof listener !== "function")
+          throw new TypeError(`${name} needs a type and a function`);
+        return listener as Listener;
+      };
+      Object.defineProperties(prototype, {
+        addEventListener: {
+          configurable: true,
+          writable: true,
+          value(this: object, type: unknown, fn: unknown): void {
+            const listener = listenerArgs("addEventListener", type, fn);
+            const table = listeners.get(this) ?? new Map<string, Listener[]>();
+            listeners.set(this, table);
+            let list = table.get(type as string);
+            if (list === undefined) {
+              list = [];
+              table.set(type as string, list);
+              if (native.has(type as string)) {
+                const ref = refOf(this);
+                const self = new WeakRef(this);
+                runtime.setCallback(ref, type as string, (args) => {
+                  const target = self.deref();
+                  if (target !== undefined)
+                    dispatch(target, fromEngine(args[0] as EngineValue) as Record<string, unknown>);
+                });
+                callbackNames.set(
+                  ref.key,
+                  (callbackNames.get(ref.key) ?? new Set()).add(type as string),
+                );
+                held.add(this);
+              }
+            }
+            if (!list.includes(listener)) list.push(listener);
+          },
+        },
+        hasEventListener: {
+          configurable: true,
+          writable: true,
+          value(this: object, type: unknown, fn: unknown): boolean {
+            const listener = listenerArgs("hasEventListener", type, fn);
+            return (
+              listeners
+                .get(this)
+                ?.get(type as string)
+                ?.includes(listener) ?? false
+            );
+          },
+        },
+        removeEventListener: {
+          configurable: true,
+          writable: true,
+          value(this: object, type: unknown, fn: unknown): void {
+            const listener = listenerArgs("removeEventListener", type, fn);
+            const table = listeners.get(this);
+            const list = table?.get(type as string);
+            if (table === undefined || list === undefined || !list.includes(listener)) return;
+            list.splice(list.indexOf(listener), 1);
+            if (list.length > 0) return;
+            table.delete(type as string);
+            if (native.has(type as string)) {
+              const ref = refOf(this);
+              runtime.setCallback(ref, type as string, null);
+              callbackNames.get(ref.key)?.delete(type as string);
+            }
+          },
+        },
+        dispatchEvent: {
+          configurable: true,
+          writable: true,
+          value(this: object, event: unknown): void {
+            if (typeof event !== "object" || event === null)
+              throw new TypeError("dispatchEvent needs an event object");
+            dispatch(this, event as Record<string, unknown>);
+          },
         },
       });
     }
