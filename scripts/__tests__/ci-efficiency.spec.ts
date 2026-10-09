@@ -223,7 +223,9 @@ describe("PRD-380 an ordinary pull request owes only the Linux native rows", () 
     expect(classify(["--event-name", "pull_request", "--target", "develop"], "github")).toContain(
       "native_tier=full\n",
     );
-    // Queue qualification owes all supported systems regardless of the target branch.
+    // A queue entry whose base/head this classifier cannot resolve still owes every row: with no
+    // proven candidate identity it has no diff to narrow by. (A resolved develop queue run narrows
+    // exactly like a pull request — ci-qualification.spec.ts proves that case.)
     expect(
       JSON.parse(classify(["--event-name", "merge_group", "--target", "develop"])),
     ).toMatchObject({ nativeTier: "full" });

@@ -129,9 +129,9 @@ qualifying run. A PR can still opt in to qualifying on the merge path with a lab
 - [ ] No `test-unit` spec times out in 10 consecutive merge groups. proof: `node scripts/ci-merge-latency.mjs` first-failing-job column.
 
 #### Phase 2: One gating board, run once
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `.github/workflows/ci.yml`, `scripts/ci-change-scope.mjs`, `scripts/ci-required.mjs`, `.github/workflows/ci-janitor.yml`, root `AGENTS.md` (+ `pnpm sync:agents`), `scripts/__tests__/ci-structure.spec.ts`.
-**Implementation:** Add a `gating` scope for `merge_group`; keep `full` for develop push, schedule, `workflow_dispatch` and `main`. Prove `test-unit` shard expansion from the run's job list and drop it from `UNPROVEN_REUSE_BOARDS`. Extend `ci-janitor.yml` to open an issue and a revert PR on a red qualifying `develop` run.
+**Implementation:** Add a `gating` scope for `merge_group`; keep `full` for develop push, schedule, `workflow_dispatch` and `main`. Prove `test-unit` shard expansion from the run's job list and drop it from `UNPROVEN_REUSE_BOARDS`. Extend `ci-janitor.yml` to open an issue and a revert PR on a red qualifying `develop` run. Committed so far: a `merge_group` on develop selects the same narrowed plan a pull request earns (it reviews the exact tree a merge would produce) and a develop push selects `full`, so the exhaustive board moved from the queue to the promotion. Both outcome boxes below stay open until a CI run proves them.
 - [ ] A merge group runs only gating jobs and finishes in ≤ 15 min wall. proof: CI run id.
 - [ ] A red qualifying run on `develop` opens an issue and a revert PR. proof: `ci-janitor.yml` run id on a seeded red branch.
 
