@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-354 — the manifest never names an import a scaffolded game cannot resolve
 
-**Status: PROPOSED, 2026-09-04.** Filed in `agent-leverage/`, measured at `dae30759`.
+**Status: IN PROGRESS, 2026-10-08.** Proposed 2026-09-04. Filed in `agent-leverage/`, measured at `dae30759`.
 
 **Priority:** P1 — 27 manifest entries still name imports a scaffolded game cannot resolve; resolvers unlanded.
 **Complexity:** +3 for 10+ files (ten templates, the generator, the scaffolder, the reference
@@ -113,25 +113,51 @@ writes, and nothing else. Phase 0 pastes both readings side by side so the diffe
 
 ## 4. Phases
 
-**Phase 0 — the red, and the per-package ruling.** Paste the 27-entry count. Paste the
+### Phase 0 — the red, and the per-package ruling
+
+Paste the 27-entry count. Paste the
 root-relative resolver reporting zero, beside the scaffold-closure resolver reporting 27 — that
 pair *is* the red, and it is also the proof the instrument is not measuring pnpm. Then read the
 importer's call sites and rule (a) / (b) / (c) for `raw-unreal` and for `ueformat` separately;
 record the ruling and its reversal condition in this file.
 
-**Phase 1 — the resolver.** Compute the scaffold dependency closure per template. It must be
+- [ ] Red pair pasted: root-relative resolver 0 problems, scaffold-closure resolver 27, same manifest.
+- [ ] Ruling recorded for `raw-unreal` and `ueformat`, each with its reversal condition.
+
+### Phase 1 — the resolver
+
+Compute the scaffold dependency closure per template. It must be
 derived from the template manifests and the scaffolder, never hard-coded, or it becomes the
 sixth hand-maintained package enumeration in this repository.
 
-**Phase 2 — the gate**, wired through `pnpm budgets` beside the existing capability checks. Fail
+- [ ] Closure derived from each template's `package.json` and source imports, never a typed list (AC4 red pasted).
+- [ ] Closure checked per template, not as the union of all templates.
+
+### Phase 2 — the gate
+
+Wire it through `pnpm budgets` beside the existing capability checks. Fail
 closed: an entry whose `importPath` is neither in the closure nor carrying `requires` fails.
 
-**Phase 3 — the ruling, applied.** Whichever of (a)/(b)/(c) Phase 0 chose, for both packages.
+- [ ] Gate runs in `pnpm budgets` and `pnpm capabilities:check`.
+- [ ] A fabricated `@threenative/nope` entry fails naming the symbol and the package (AC2 red pasted).
+
+### Phase 3 — the ruling, applied
+
+Whichever of (a)/(b)/(c) Phase 0 chose, for both packages.
 If (b): the doc tag, the generator field, both manifest copies, the MCP output and
 `capability-reference.md`.
 
-**Phase 4 — the agent actually sees it.** An `engine_capability_detail` call on one affected
+- [ ] The 27 `raw-unreal`/`ueformat` entries carry `requires`; both manifest copies agree (AC3, AC6).
+- [ ] Every per-template gap the tightened gate finds is resolved by the same ruling, not a suppression list.
+
+### Phase 4 — the agent actually sees it
+
+An `engine_capability_detail` call on one affected
 symbol prints the install line. Paste the tool output, not the JSON.
+
+- [ ] `engine_capability_detail` on `createThreeObject` prints the install line (AC5 output pasted).
+- [ ] A scaffolded-game test scaffolds every template and resolves every manifest import with Node.
+- [ ] AC7 and AC8 gates run, output pasted.
 
 ## 5. Acceptance criteria
 
