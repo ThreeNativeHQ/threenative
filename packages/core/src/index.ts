@@ -114,7 +114,7 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
  * @situation load assets from a nonstandard base path or a compiled asset manifest
- * @alias different props in each area
+ * @alias different area props
  * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
  * @example const assets = createAssetLoader({ basePath: "/assets" });
@@ -187,9 +187,9 @@ export type { IRandom } from "./random.js";
  * @situation register physics and gameplay plugins
  * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
  * @situation frame a camera behind the player
- * @alias firing line nearest target crosshair
+ * @alias nearest target crosshair spawns
  * @alias third-person camera
- * @alias restart the run without a page reload
+ * @alias restart run without page reload
  * @alias field of view while aiming
  * @constraint keep DOM and React mounting in src/main.ts
  * @constraint bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener
