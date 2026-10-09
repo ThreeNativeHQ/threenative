@@ -4043,4 +4043,11 @@ in-page on a localhost origin with three flag sets). The `Timestamp tracking is 
 is benign: core samples timestamps every Nth frame and three warns once when a resolve lands on an
 untracked frame. Why the game records 0 GPU view windows is not yet traced.
 
+Native rerun with both fixes (licensed set staged for the run, host load 8): the desktop scenario no
+longer hits the 120 s spawn deadline. `timeToReadyMs` is 84,113 and the run evaluates all 62
+assertions: **39 pass, 23 fail**. Most failures are the measurements the desktop target cannot
+provide (Long Tasks, per-view frame and triangle windows, GPU timestamp windows); the others are
+`props.crags.drawn` at `overview`, `player.visible` at two steps, 6 console errors, and the three
+extra worlds rendering 57–62 frames against a floor of 120. The staging script stays public-only.
+
 No box changes. Computed progress remains **50%: 2/4 phases, 7/13 phase boxes**.
