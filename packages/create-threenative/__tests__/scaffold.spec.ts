@@ -185,19 +185,19 @@ const BUG_REPORT_SKILL_PATHS = [
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed on the PRD-478 merge into PR 473 (develop f7dd08621 + the runbook branch): the
   // merged Three patch changes every kit; starter also carries the merged render source.
-  "action-rpg": "6290ebada667c653ad0dd4183c1360c57cdb100e97e63b74da6bc8f1aabb9905",
-  minimal: "033f1c132812284d256eec7eeb32d31368af172c050aef5ce3cbcec697a7c592",
-  platformer: "7eb5b9e461fbfd8775afefde8ee5cdc9fe424d86b8e2ed23e0f309cc45597fbb",
-  puzzle: "5aaa232645204a4e3db1b51afcb3827e7817bf23f27e493ce77a501d72fe5d4e",
-  racing: "9024d19aa167f196c359d6aa4d1b1982dbc7597f03db0be312ad2f81a6cc2afe",
-  rain: "993b07771f4d89939c654c85fac94a5be57df6ce79e3050d85759960c0a0f3ef",
-  rts: "32917ec8d47eae294ddcb57111ccbf01e935610de6748cb32577bcee17980a82",
-  runner: "110a6143136e63d4aafa64963c044f07f226ea4efbdbd656d97d66f53b0ca017",
-  sailing: "e0488d7edfa402a1917ddf6601290cba5d6d8714357f7e7c84b3e88226954173",
-  shooter: "5e47ad5c3220b9d0c4490ed3c430df9c4881509b7231d550197e6f007532cc53",
-  snow: "a4c6d586a7bdcd9bc762cd3da0a9c6cfd59bfe18ae7d5063c82a6a96f5a8de02",
-  starter: "0de01670d419d82da65df78232b5854c90ba1732d798f89ca3a4d8e50317c0fd",
-  "tower-defense": "79183bdd8c3d0f5e20ff05944fc8ba64dd0bc2b81be6816971dcb189d327d0eb",
+  "action-rpg": "ca3c58ab561319c2c6671a5714019f18b8b2b82dc0be699fbf05b1231504be71",
+  minimal: "44979db5dd573a297c6d66c08d5366fc66f7ddaf0bdc553c4781fae0059fa0fc",
+  platformer: "a0f9f7f33b14041062b0a91789ebdb0cea61f4dd889f67762a14244dbf398266",
+  puzzle: "c92bdc29939c43a8a2bf418f31aabbd2de1b31481eb51286bd834bf2cc9bd84f",
+  racing: "8b7b7cf6b8660790b604d819968f7a48e950823373525660e04f26fe3ef16dba",
+  rain: "c67cd41c5140131e0262927501c5553bceee04818989a01da3754932cded8ceb",
+  rts: "d5008c09be975e3dea93ae1c1d19163b7fba7f785d4e031a523b4e9c8a69edac",
+  runner: "b8b4d65a033df2dddffe2462dbbbd42a203d7ff8e1a0c8658c0a22088f5378aa",
+  sailing: "7212532cca11fc11e9346461cc3468a59a92237ca800f2e1fe142681d344ff1b",
+  shooter: "874b9d1a0f053970ad381e3703ac5dc288581ece212f53cbb2f86a095f0df561",
+  snow: "b9ef634e808b6c4a79c8a8768955cb2979ec949cdb147e3c77bca4803089b470",
+  starter: "76c53dd1337161dcfadda2ff25867f47007ce4242148687c5db37ac5184e6f6d",
+  "tower-defense": "4f10541731f30c25b31bb7b5770c1bef1ffe9327d713d980e0847b0ed751f863",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
