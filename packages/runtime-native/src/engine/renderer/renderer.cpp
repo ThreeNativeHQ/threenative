@@ -2026,6 +2026,15 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{instanceBases.at(&item)});
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
             put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], page ? page->projection.elements : shadow.projection);
+            // r185 draws a caster through the shadow camera, so TSL's camera accessors (a billboard's
+            // positionNode) read that camera here: its world matrix is the view's inverse.
+            Matrix4 shadowCamera;
+            shadowCamera.elements = view;
+            shadowCamera.invert();
+            const std::array<double, 3> shadowPosition{shadowCamera.elements[12], shadowCamera.elements[13], shadowCamera.elements[14]};
+            put(frameUniforms_, v, program.vertexSlots[kCameraWorldMatrix], shadowCamera.elements);
+            put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
+            put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
             putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_);
             pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});

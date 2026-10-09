@@ -382,6 +382,24 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         quads->material->needsUpdate();
         return "";
     }
+    if (program == "shadow-billboard") {
+        // A camera-facing card through the shared TSL table: cameraWorldMatrix's right and up axes.
+        if (object.cls != "Scene") return "TN_FIXTURE_BILLBOARD_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto* card = dynamic_cast<engine::Mesh*>(scene.getObjectByName("card"));
+        if (!card || !card->material) return "TN_FIXTURE_BILLBOARD_INVALID: card";
+        namespace g = engine::shader::graph;
+        g::Node world;
+        for (auto& [label, node] : abi::tslConstants())
+            if (label == "cameraWorldMatrix") world = node;
+        const auto axis = [&](float x, float y) {
+            return g::swizzle(g::mul(world, g::vec4({g::float_(x), g::float_(y), g::float_(0), g::float_(0)})), "xyz");
+        };
+        const auto local = g::positionLocal();
+        card->material->nodes.positionNode = g::add(g::mul(axis(1, 0), g::swizzle(local, "x")), g::mul(axis(0, 1), g::swizzle(local, "y")));
+        card->material->needsUpdate();
+        return "";
+    }
     if (program == "skinned-clone") {
         // SkeletonUtils.clone, as the binding calls it: the copy's own bones bend its skin.
         if (object.cls != "Scene") return "TN_FIXTURE_SKINNED_CLONE: requires scene";

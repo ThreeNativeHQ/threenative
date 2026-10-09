@@ -25,6 +25,7 @@ import {
   cameraNear,
   cameraProjectionMatrix,
   cameraViewMatrix,
+  cameraWorldMatrix,
   convertToTexture,
   float,
   instanceIndex,
@@ -769,6 +770,14 @@ export const programs = {
    *  plane over a lit floor. */
   /** The depth reads r185 gives a water surface: the scene depth behind it, its own, and the camera range. */
   /** SkeletonUtils.clone on a SkinnedMesh: the copy's own bones bend its skin, the original keeps its pose. */
+  /** A camera-facing card: its positionNode spans cameraWorldMatrix's right and up axes. */
+  async "shadow-billboard"({ target }) {
+    const right = cameraWorldMatrix.mul(vec4(1, 0, 0, 0)).xyz;
+    const up = cameraWorldMatrix.mul(vec4(0, 1, 0, 0)).xyz;
+    target.getObjectByName("card").material.positionNode = right
+      .mul(positionLocal.x)
+      .add(up.mul(positionLocal.y));
+  },
   async "skinned-clone"({ target }) {
     const copy = cloneSkinned(target.getObjectByName("skin"));
     copy.position.x = 1.2;
