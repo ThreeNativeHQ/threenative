@@ -19,7 +19,9 @@ const {
   float,
   floor,
   fract,
+  frameGroup,
   fwidth,
+  getViewPosition,
   hash,
   instanceIndex,
   instancedArray,
@@ -117,6 +119,8 @@ const CORPUS = [
   ["screen-size", "color", vec4(screenSize, 0, 1)],
   ["depth", "color", vec4(depth, 0, 0, 1)],
   ["normal-world-geometry", "color", vec4(normalWorldGeometry, 1)],
+  ["get-view-position", "color", vec4(getViewPosition(uv(), u, cameraProjectionMatrix), 1)],
+  ["set-group", "color", vec4(uniform(0.25).setName("grouped").setGroup(frameGroup), 0, 0, 1)],
 ];
 
 const positions = instancedArray(16, "vec4").setName("positions");

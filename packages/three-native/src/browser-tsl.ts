@@ -105,6 +105,7 @@ const FUNCTIONS = [
   "pmremTexture",
   "reflector",
   "transformDirection",
+  "getViewPosition",
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
@@ -138,9 +139,13 @@ const CONSTANTS = [
   "tangentLocal",
   "positionPrevious",
   "normalWorldGeometry",
+  "frameGroup",
+  "renderGroup",
+  "objectGroup",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
+  "setGroup",
   "add",
   "sub",
   "mul",

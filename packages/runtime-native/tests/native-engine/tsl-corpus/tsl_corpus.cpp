@@ -132,6 +132,13 @@ int main() {
     });
     graph("normal-world-geometry", "color",
           [] { return vec4({normalize(Node(program().varying("normalWorldGeometry", Type::vec(3)))), 1}); });
+    graph("get-view-position", "color", [] {
+        const Node uvs = uv();
+        const Node screen = vec2({uvs.x(), float_(1).sub(uvs.y())}).mul(2).sub(1);
+        const Node view = uniform("cameraProjectionMatrix", Type::mat(4, 4)).mul(vec4({vec3({screen, u()}), 1}));
+        return vec4({view.xyz().div(view.w()), 1});
+    });
+    graph("set-group", "color", [] { return vec4({uniform("grouped", Type::f32()), 0, 0, 1}); });
 
     compute("fn-if-store", [](Storage positions) {
         const Var acc = toVar(float_(0));

@@ -106,6 +106,24 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(1);
         return arg(0);
     }
+    // r185's uniform(...).setGroup(group): how often three uploads the uniform. The engine reads every
+    // graph uniform each frame, so the node is unchanged; frameGroup, renderGroup and objectGroup are
+    // the markers it takes.
+    if (method && name == "setGroup") {
+        arity(1);
+        if (!receiver->node || receiver->node->kind != g::Kind::Uniform) throw std::runtime_error("setGroup requires a uniform");
+        return receiver->node;
+    }
+    // r185's getViewPosition(screenPosition, depth, projectionMatrixInverse), WebGPU's branch:
+    // vec4(vec3(vec2(uv.x, uv.y.oneMinus()).mul(2).sub(1), depth), 1), then view.xyz / view.w.
+    if (!method && name == "getViewPosition") {
+        arity(3);
+        const auto uv = arg(0);
+        const auto screen = g::sub(g::mul(g::vec2({g::swizzle(uv, "x"), g::sub(g::float_(1), g::swizzle(uv, "y"))}),
+                                          g::float_(2)), g::float_(1));
+        const auto view = g::mul(arg(2), g::vec4({g::vec3({screen, arg(1)}), g::float_(1)}));
+        return g::div(g::swizzle(view, "xyz"), g::swizzle(view, "w"));
+    }
     // three r185's post addons, built live as the engine's effects (PRD-531 slice 4): ao(depth, normal,
     // camera), denoise(input, depth, normal, camera), smaa(input), bloom(input, strength, radius,
     // threshold). The camera three takes is the render camera here: a pass reads its matrices each
@@ -650,6 +668,9 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
                              "normalGeometry", "tangentGeometry", "normalLocal", "tangentLocal", "positionPrevious",
                              "normalWorldGeometry"})
         constants.emplace_back(name, tslCall(name, nullptr, {}, serial));
+    // setGroup's markers (UniformGroupNode r185): a uniform takes one and stays as it is.
+    for (const char* name : {"frameGroup", "renderGroup", "objectGroup"})
+        constants.emplace_back(name, g::uniform(name, Type::f32()));
     // viewportLinearDepth = linearDepth(viewportDepthTexture()).
     constants.emplace_back("viewportLinearDepth",
                            tslCall("linearDepth", nullptr, {TslArg::of(g::viewportDepth(g::screenUV()))}, serial));

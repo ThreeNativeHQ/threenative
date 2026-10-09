@@ -30,9 +30,11 @@ import {
   float,
   floor,
   fract,
+  frameGroup,
   time as frameTime,
   fwidth,
   getCurrentStack,
+  getViewPosition,
   hash,
   instanceIndex,
   instancedArray,
@@ -277,6 +279,8 @@ function canon(node: TslNode, fragment: boolean): string {
       const keys = ["aNode", "bNode", "cNode"].filter((key) => node[key] != null);
       const args = keys.map(child);
       if (method === "negate") return `neg(${args[0]}):${typeOf(node)}`;
+      // MathNode.generate writes oneMinus as ( 1.0 - a ), the engine's sub(1, a).
+      if (method === "oneMinus") return `sub(1f:f32, ${args[0]}):${typeOf(node)}`;
       // MathNode.generate: on WebGPU, atan with two operands is atan2.
       const name = method === "atan" && node.bNode != null ? "atan2" : method;
       // MathNode.generate builds each operand as the widest operand type, so a scalar operand of a
@@ -383,6 +387,8 @@ export const CORPUS: [string, string, unknown][] = [
   ["screen-size", "color", vec4(screenSize, 0, 1)],
   ["depth", "color", vec4(depth, 0, 0, 1)],
   ["normal-world-geometry", "color", vec4(normalWorldGeometry, 1)],
+  ["get-view-position", "color", vec4(getViewPosition(uv(), u, cameraProjectionMatrix), 1)],
+  ["set-group", "color", vec4(uniform(0.25).setName("grouped").setGroup(frameGroup), 0, 0, 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

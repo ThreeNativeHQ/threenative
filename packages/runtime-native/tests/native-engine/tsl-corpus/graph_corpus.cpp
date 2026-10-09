@@ -176,6 +176,14 @@ int main() {
     });
     shaderGraph("normal-world-geometry", "color",
           [] { return vec4({normalize(varying("normalWorldGeometry", Type::vec(3))), float_(1)}); });
+    shaderGraph("get-view-position", "color", [] {
+        const Node uvs = uv();
+        const Node screen = sub(mul(vec2({swizzle(uvs, "x"), sub(float_(1), swizzle(uvs, "y"))}), float_(2)), float_(1));
+        const Node view = mul(uniform("cameraProjectionMatrix", Type::mat(4, 4)), vec4({vec3({screen, u()}), float_(1)}));
+        return vec4({div(swizzle(view, "xyz"), swizzle(view, "w")), float_(1)});
+    });
+    shaderGraph("set-group", "color",
+          [] { return vec4({uniform("grouped", Type::f32()), float_(0), float_(0), float_(1)}); });
 
     compute("fn-if-store", [](Block& b, Storage positions) {
         const Var acc = b.var(float_(0));
