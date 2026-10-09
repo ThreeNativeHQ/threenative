@@ -4071,3 +4071,11 @@ judges name: no understory at range, the flat yellow-green open ground, and dapp
 Rejected the same day: a cooler meadow turf multiplier (`MEADOW` 0.47/0.72/0.40 → 0.41/0.68/0.43). A
 fresh judge scored the elevated view 6 → 6.5 but the meadow 7 → 6.5, with speckle between the blades
 and the ochre patches more conspicuous, so the turf colour stays.
+
+Rejected the same day, both measured on the elevated view: (1) a gentler distance thinning for ferns
+and scrub (`1 − seed²`, median reach about 86 m against 53 m) changed nothing visible, because few
+understory placements stand near these stands; (2) a separate understory pass, one bush and three
+ferns within each spruce's crown reach on its own seed (existing placements unchanged, +12,800
+placements), was barely visible in a side-by-side crop: the licensed bushes and ferns are too small
+to read from that height. Understory that reads from height needs larger shrub content, an owner
+content decision.
