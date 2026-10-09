@@ -4079,3 +4079,15 @@ ferns within each spruce's crown reach on its own seed (existing placements unch
 placements), was barely visible in a side-by-side crop: the licensed bushes and ferns are too small
 to read from that height. Understory that reads from height needs larger shrub content, an owner
 content decision.
+
+GPU view windows. The game recorded 0 GPU view windows because three's `Renderer.init` starts its
+own rAF loop, which overwrites `info.frame` with `nodeFrame.frameId` every animation frame, while
+the engine keys its timestamp queries by its own counter. Read in `beforeRender`, a resolved sample
+said frame 384 while `info.frame` said 370, so `gpuFrameSample()` returned `undefined` (frame <
+sampled) and the game never set its first-view GPU frame. **Fixed** in core (`e8e8ff4af`): both
+`gpuFrameSample` and `gpuFrameAge` compare against the engine's counter once it has rendered.
+Red → green renderer spec; 59 timestamp specs pass. Web `terrain.playtest.json` rerun (host load
+20): **62 assertions, 58 pass**. `measuredGpuViewCount` now passes, and `afterFirstFrameTaskMs` fell
+8,671 → 3,630 ms with the scatter fix. Still red: `afterFirstFrameTaskMs` 3,630 > 250,
+`timeToReadyMs` 48,031 > 15,000, `maxViewGpuMs` **53.0 > 12** (now a real measured GPU cost, not a
+missing reading), and `props.crags.drawn` at `overview`.
