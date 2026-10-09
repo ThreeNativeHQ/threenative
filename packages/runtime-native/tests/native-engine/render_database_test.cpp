@@ -1020,6 +1020,13 @@ void steadyState() {
     s.light.setCastShadow(true);
     auto rim = std::make_shared<Material>(MaterialType::Standard, true);
     rim->color.setRGB(0.6, 0.6, 0.65);
+    // A diffuse map: its program samples a texture, so the sampler path and a per-draw fragment
+    // group run every frame (the Midway case: many textures, one descriptor each).
+    auto map = std::make_shared<Texture>();
+    map->width = map->height = 4;
+    for (int i = 0; i < 16; ++i) map->data.insert(map->data.end(), {200, 200, 200, 255});
+    map->needsUpdate();
+    rim->maps["map"] = map;
     const auto gain = g::uniform("steadyGain", shader::Type::f32(), {0.25f});
     rim->nodes.emissiveNode = g::mul(g::swizzle(g::uniform("diffuse", shader::Type::vec(4)), "xyz"), gain);
     s.mesh.material = rim;
@@ -1040,22 +1047,106 @@ void steadyState() {
     const auto compiles = renderer.pipelines().compiles(), texts = renderer.pipelines().textLookups();
     const auto groups = bindGroupsCreated(), keys = g::keyBuilds(), uniformMaps = g::uniformMapBuilds();
     const auto programs = renderer.programCount();
+    const auto programKeys = renderer.programKeyBuilds(), lookups = renderer.programLookups();
+    const auto samplers = renderer.samplersCreated();
     for (int i = 0; i < 60; ++i) {
         if (i % 2) s.mesh.position.x = 0.01 * i;  // a moving object is still a steady frame
         frame();
     }
-    std::fprintf(stderr, "steady state over 60 frames: compiles +%llu, text keys +%llu, bind groups +%llu, graph keys +%llu, uniform maps +%llu, programs +%zu\n",
+    std::fprintf(stderr, "steady state over 60 frames: compiles +%llu, text keys +%llu, bind groups +%llu, graph keys +%llu, uniform maps +%llu, programs +%zu, program keys +%llu, lookups +%llu, samplers +%llu\n",
                  (unsigned long long)(renderer.pipelines().compiles() - compiles),
                  (unsigned long long)(renderer.pipelines().textLookups() - texts),
                  (unsigned long long)(bindGroupsCreated() - groups), (unsigned long long)(g::keyBuilds() - keys),
-                 (unsigned long long)(g::uniformMapBuilds() - uniformMaps), renderer.programCount() - programs);
+                 (unsigned long long)(g::uniformMapBuilds() - uniformMaps), renderer.programCount() - programs,
+                 (unsigned long long)(renderer.programKeyBuilds() - programKeys),
+                 (unsigned long long)(renderer.programLookups() - lookups),
+                 (unsigned long long)(renderer.samplersCreated() - samplers));
     CHECK(renderer.pipelines().compiles() == compiles);
     CHECK(renderer.pipelines().textLookups() == texts);
     CHECK(bindGroupsCreated() == groups);
     CHECK(g::keyBuilds() == keys);
     CHECK(g::uniformMapBuilds() == uniformMaps);  // per-draw uniform packing reads the nodes in place
     CHECK(renderer.programCount() == programs);
+    // A steady frame reuses every resolved draw: no program key is built, no Program* looked up, no
+    // sampler created. three caches all of these on the material and version; so does the record.
+    CHECK(renderer.programKeyBuilds() == programKeys);
+    CHECK(renderer.programLookups() == lookups);
+    CHECK(renderer.samplersCreated() == samplers);
     CHECK(database.diagnostics().empty() && renderer.diagnostics().empty());
+}
+
+// The steady-state cache must not hide a real change: a texture whose descriptor moves (anisotropy)
+// rebuilds its sampler, two textures with one descriptor share it, and a material edit rebuilds the
+// record while a draw that only moves reuses everything.
+void steadyCacheInvalidation() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    const auto texture = [] {
+        auto map = std::make_shared<Texture>();
+        map->width = map->height = 4;
+        for (int i = 0; i < 16; ++i) map->data.insert(map->data.end(), {200, 200, 200, 255});
+        map->needsUpdate();
+        return map;
+    };
+    auto mapA = texture(), mapB = texture();
+    auto materialA = std::make_shared<Material>(MaterialType::Standard);
+    materialA->maps["map"] = mapA;
+    auto materialB = std::make_shared<Material>(MaterialType::Standard);
+    materialB->maps["map"] = mapB;
+    Scene scene;
+    PerspectiveCamera camera;
+    camera.fov = 45; camera.aspect = 4.0 / 3; camera.near = 0.1; camera.far = 50;
+    camera.position.z = 4; camera.lookAt(0, 0, 0); camera.updateProjectionMatrix();
+    auto geometry = makePlaneGeometry(3, 3);
+    Mesh meshA{geometry, materialA};
+    meshA.setCastShadow(true); meshA.setReceiveShadow(true);
+    Mesh meshB{geometry, materialB};
+    meshB.position.x = 10;  // off screen until it is added: its texture must not be uploaded early
+    DirectionalLight light{Color().setHex(0xffffff), 3};
+    light.position.set(2, 3, 1);
+    light.setCastShadow(true);
+    scene.add(meshA);
+    scene.add(light);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto frame = [&] { database.render(renderer, scene, camera, {0, 0, 0, 1}); events.drain(); };
+    for (int i = 0; i < 4; ++i) frame();
+    CHECK(database.diagnostics().empty());
+    const auto created = renderer.samplersCreated(), distinct = renderer.samplerCount();
+    // Anisotropy is part of the descriptor: a changed value yields a new sampler (a changed key).
+    mapA->anisotropy = 8;
+    mapA->needsUpdate();
+    frame();
+    CHECK(renderer.samplersCreated() == created + 1 && renderer.samplerCount() == distinct + 1);
+    frame();  // and the new sampler is reused
+    CHECK(renderer.samplersCreated() == created + 1);
+    // A second texture with the same descriptor shares the sampler instead of building another.
+    meshB.position.x = 0;
+    scene.add(meshB);
+    scene.updateMatrixWorld(true);
+    frame();
+    frame();
+    CHECK(renderer.samplersCreated() == created + 1 && renderer.samplerCount() == distinct + 1);
+    // Back to the first descriptor: the original sampler is served again, nothing new is built.
+    mapA->anisotropy = 1;
+    mapA->needsUpdate();
+    frame();
+    frame();
+    CHECK(renderer.samplersCreated() == created + 1);
+    // A material edit rebuilds the record, but a still frame after it reuses every program again.
+    const auto rebuilds = database.rebuilds();
+    materialA->color.setRGB(0.1, 0.2, 0.9);
+    materialA->needsUpdate();
+    frame();
+    CHECK(database.rebuilds() > rebuilds);
+    const auto lookups = renderer.programLookups();
+    frame();
+    frame();
+    CHECK(renderer.programLookups() == lookups);
 }
 
 // PRD-514: an edit between frames shows on the next frame, and nothing a frame no longer draws stays
@@ -2095,7 +2186,7 @@ void shadowCameraLayers() {
 
 }  // namespace
 
-TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers})

@@ -43,6 +43,27 @@ enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 /** A material graph's texture(object, uv) reads: the binding name ("nodeMap<id>") and the texture. */
 using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
 
+/**
+ * Per-draw resolved GPU state, reused by the renderer while the draw's program variant and pipeline
+ * target are unchanged. The render database owns one per record (a record rebuild clears it), and
+ * DrawItem::cache points at it; a synthesized (batched) draw carries none and resolves afresh. The
+ * fields the renderer compares are the same inputs three keys its program cache on. The handle fields
+ * are the renderer's opaque types (Program*, WGPURenderPipeline, WGPUBindGroup).
+ */
+struct DrawCache {
+    MaterialKind kind = MaterialKind::Standard;
+    shader::VertexVariant variant;
+    uint64_t lightsKey = 0;       // the light layout and receiveShadow the program was resolved for
+    uint64_t targetKey = 0;       // the pipeline target inputs (side, blend, front face, ...)
+    uint64_t depthTargetKey = 0;  // the shadow-pass pipeline target inputs
+    uint64_t mapGroupKey = 0;     // the textures/epoch the fragment bind group was built for
+    void* program = nullptr;
+    void* depthProgram = nullptr;
+    void* pipeline = nullptr;
+    void* depthPipeline = nullptr;
+    void* mapGroup = nullptr;
+};
+
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
     uint32_t layers = 1;
@@ -137,6 +158,8 @@ struct DrawItem {
     bool batchable = false;
     shader::MaterialNodes nodes;
     std::shared_ptr<const shader::PositionNode> positionNode;  // the material's; null keeps positionLocal
+    /** The record's resolved-state cache, or null for a synthesized draw (the renderer then resolves afresh). */
+    DrawCache* cache = nullptr;
 };
 
 struct CameraState {
@@ -391,6 +414,12 @@ public:
     const PipelineCache& pipelines() const { return pipelines_; }
     /** Material programs built or refused so far; a steady frame adds none. */
     size_t programCount() const { return programs_.size(); }
+    /** Program key strings built and Program* lookups done so far; a steady frame adds none. */
+    uint64_t programKeyBuilds() const { return programKeyBuilds_; }
+    uint64_t programLookups() const { return programLookups_; }
+    /** GPU samplers created so far and the distinct sampler descriptors they are deduplicated to. */
+    uint64_t samplersCreated() const { return samplersCreated_; }
+    size_t samplerCount() const { return textures_->samplers.size(); }
 
 private:
     // The uniforms a material program may read, resolved to block offsets once per program.
@@ -507,6 +536,10 @@ private:
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.
     std::map<std::string, std::unique_ptr<Program>> programs_;  // a null entry: refused, never retried
     std::map<std::string, std::string> refusedPrograms_;          // why, reported each frame it skips draws
+    uint64_t programKeyBuilds_ = 0, programLookups_ = 0, samplersCreated_ = 0;
+    // Moves whenever the per-draw bind groups (mapGroups_) are released, so a DrawCache's group
+    // handles built under an older epoch are never reused.
+    uint64_t groupEpoch_ = 0;
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;
@@ -544,6 +577,7 @@ private:
     // Map textures, shared with every sibling(), as three's one renderer serves every render target.
     struct MaterialTextureStore {
         std::unordered_map<uint64_t, MaterialTexture> records;  // by Texture::ident, never an address
+        std::map<std::string, WGPUSampler> samplers;  // deduplicated by full descriptor, shared with siblings
         uint64_t generation = 0;  // moves when a record's view is replaced or released
         uint64_t uploadBytes = 0;
         ExternalImageCopy copyExternal;
@@ -551,6 +585,11 @@ private:
     };
     std::shared_ptr<MaterialTextureStore> textures_ = std::make_shared<MaterialTextureStore>();
     uint64_t texturesSeen_ = 0;
+    /**
+     * The GPU sampler for a full descriptor, created once and shared: three's one sampler per
+     * descriptor instead of one per texture. The store owns every sampler it hands out.
+     */
+    WGPUSampler samplerFor(const WGPUSamplerDescriptor& descriptor);
     /** A shared map texture's view went away: drop the groups bound to views, here and (by generation) in siblings. */
     void texturesChanged();
     bool overlayBgra_ = false;

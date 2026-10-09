@@ -409,6 +409,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     r.draw = std::make_unique<Record::Draw>();
     r.materialized = true;
     DrawItem& d = r.draw->item;
+    d.cache = &r.cache;
     d.key = d.id = mesh.id();
     d.positions = r.buffers[0];
     d.normals = r.buffers[1];
@@ -448,6 +449,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
 
 DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     auto& d = r.draw->item;
+    d.cache = &r.cache;  // the record owns the cache; refresh the pointer in case the record moved
     r.draw->params = paramsOf(*r.material);
     d.material = &r.draw->params;
     d.transparent = r.material->transparent;
@@ -788,6 +790,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         }
         store.needsUpdate();
         DrawItem d = items[g.front()];
+        d.cache = nullptr;  // a merged draw's state is its own; never write it back to the first member's record
         d.sortOrigin = {d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]};
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         d.instanceMatrices = &store;
@@ -966,6 +969,7 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         DrawItem d = refresh(first, record(first, *firstMember.record));
         d.mainPass = firstMember.mainPass;
         d.layers = firstMember.layers;
+        d.cache = nullptr;  // a merged draw's state is its own; never write it back to the first member's record
         const auto slot = batchGroups_++;
         if (batchStores_.size() <= slot)
             batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));

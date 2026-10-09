@@ -3,6 +3,7 @@
 #include "engine/renderer/render_target_pass.h"
 
 #include <algorithm>
+#include <bit>
 #include <span>
 #include <cctype>
 #include <cmath>
@@ -1002,7 +1003,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
                                     sampler.mipmapFilter == WGPUMipmapFilterMode_Linear
                                 ? static_cast<uint16_t>(std::min(texture.anisotropy, 16.0))
                                 : 1;
-    record.sampler = wgpuDeviceCreateSampler(device_, &sampler);
+    record.sampler = samplerFor(sampler);
     record.version = texture.version();
     return &record;
 }
@@ -1103,6 +1104,7 @@ void Renderer::dropMapGroups() {
     for (auto& [key, group] : mapGroups_)
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+    ++groupEpoch_;
 }
 
 void Renderer::texturesChanged() {
@@ -1112,13 +1114,35 @@ void Renderer::texturesChanged() {
 
 void Renderer::MaterialTexture::release() {
     if (view) wgpuTextureViewRelease(view);
-    if (sampler) wgpuSamplerRelease(sampler);
     if (texture) wgpuTextureRelease(texture);
+    // The sampler is shared by descriptor and owned by the store's cache; it is not released here.
+    sampler = nullptr;
     *this = MaterialTexture{};
+}
+
+WGPUSampler Renderer::samplerFor(const WGPUSamplerDescriptor& descriptor) {
+    // The full descriptor is the key, so a changed filter, wrap, anisotropy, compare or LOD clamp
+    // yields a different sampler instead of a stale one. Floats compare by their bit pattern.
+    std::string key;
+    key.reserve(48);
+    const auto add = [&key](uint64_t v) {
+        for (int i = 0; i < 8; ++i) key.push_back(char((v >> (i * 8)) & 0xff));
+    };
+    add(uint64_t(uint32_t(descriptor.addressModeU)) | uint64_t(uint32_t(descriptor.addressModeV)) << 8 |
+        uint64_t(uint32_t(descriptor.addressModeW)) << 16 | uint64_t(uint32_t(descriptor.magFilter)) << 24 |
+        uint64_t(uint32_t(descriptor.minFilter)) << 32 | uint64_t(uint32_t(descriptor.mipmapFilter)) << 40 |
+        uint64_t(uint32_t(descriptor.compare)) << 48);
+    add(std::bit_cast<uint32_t>(descriptor.lodMinClamp) | uint64_t(std::bit_cast<uint32_t>(descriptor.lodMaxClamp)) << 32);
+    add(uint64_t(descriptor.maxAnisotropy));
+    if (const auto found = textures_->samplers.find(key); found != textures_->samplers.end()) return found->second;
+    ++samplersCreated_;
+    return textures_->samplers.emplace(std::move(key), wgpuDeviceCreateSampler(device_, &descriptor)).first->second;
 }
 
 Renderer::MaterialTextureStore::~MaterialTextureStore() {
     for (auto& [id, record] : records) record.release();
+    for (auto& [key, sampler] : samplers)
+        if (sampler) wgpuSamplerRelease(sampler);
 }
 
 void Renderer::sweepTextures() {
@@ -1478,6 +1502,8 @@ void Renderer::buildLayouts(Program& program) {
 
 Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
                                      bool softShadows) {
+    ++programKeyBuilds_;
+    ++programLookups_;
     const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights + (softShadows ? "|soft" : "");
     const auto refuse = [&](const std::string& reason) -> Program* {
         if (std::find(diagnostics_.begin(), diagnostics_.end(), reason) == diagnostics_.end()) diagnostics_.push_back(reason);
@@ -1520,6 +1546,8 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
 }
 
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
+    ++programKeyBuilds_;
+    ++programLookups_;
     shader::VertexVariant kind = variant;
     kind.instanceColor = false;
     kind.vertexColors = 0;
@@ -1562,6 +1590,7 @@ void Renderer::rebuildGroups() {
     for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+    ++groupEpoch_;
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program
         for (int g = 0; g < 2; ++g) {
@@ -1928,6 +1957,41 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         return v;
     };
 
+    // The program invalidators (PRD-...): a draw whose VertexVariant, kind and light layout are
+    // unchanged reuses its record's cached Program*, exactly as three keys a material's program cache.
+    const auto hashBytes = [](const void* data, std::size_t size) {
+        uint64_t h = 0xcbf29ce484222325ull;  // FNV-1a: stable across runs and targets
+        for (const unsigned char* p = static_cast<const unsigned char*>(data), *end = p + size; p != end; ++p)
+            h = (h ^ *p) * 0x100000001b3ull;
+        return h;
+    };
+    const uint64_t lightKindsKey = hashBytes(lightKinds.data(), lightKinds.size());
+    const uint64_t unshadowedKindsKey = hashBytes(unshadowedKinds.data(), unshadowedKinds.size());
+    const uint64_t basicLightsKey = hashBytes("", 0) ^ 0x5bf03635ull;
+    const auto drawLightsKey = [&](const DrawItem& item) {
+        uint64_t key = item.kind == MaterialKind::Basic ? basicLightsKey
+                       : item.receiveShadow              ? lightKindsKey
+                                                          : unshadowedKindsKey;
+        // A receiving mesh takes the soft-shadow filter (three keys a program on receiveShadow + type).
+        if (item.receiveShadow && lights.softShadows) key ^= 0x9e3779b97f4a7c15ull;
+        return key;
+    };
+    // The pipeline target inputs not already in the VertexVariant: side, blending, depth state and
+    // the vertex layout. Equal keys mean the same pipeline, so the cached handle can be reused.
+    const auto drawTargetKey = [&](const DrawItem& item, const shader::StageModule& vertex) {
+        uint64_t h = 0xcbf29ce484222325ull;
+        const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
+        mix(item.side); mix(item.blending); mix(item.transparent); mix(item.depthWrite);
+        mix(item.depthBias); mix(std::bit_cast<uint32_t>(item.depthBiasSlopeScale));
+        mix(item.background); mix(item.frontFace() == WGPUFrontFace_CW);
+        mix(static_cast<uint64_t>(item.topology));
+        mix(item.indices ? item.indices->scalar() == Scalar::U32 : 0);
+        mix(static_cast<uint64_t>(skinIndexFormat(item)));
+        mix(instanceStepMask(vertex, item));
+        mix(sampleCount_);
+        return h;
+    };
+
     // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
     struct Planned {
         const DrawItem* item;
@@ -1943,12 +2007,26 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
         if (!item.mainPass) continue;
-        Program* built = this->program(item.kind, variantOf(item),
-                                       item.kind == MaterialKind::Basic ? ""
-                                       : item.receiveShadow            ? lightKinds
-                                                                       : unshadowedKinds,
-                                       item.receiveShadow && lights.softShadows);
-        if (!built) continue;
+        shader::VertexVariant variant = variantOf(item);
+        const uint64_t lightsKey = drawLightsKey(item);
+        DrawCache* cache = item.cache;
+        Program* built = nullptr;
+        if (cache && cache->program && cache->kind == item.kind && cache->lightsKey == lightsKey &&
+            cache->variant == variant) {
+            built = static_cast<Program*>(cache->program);
+        } else {
+            built = this->program(item.kind, variant,
+                                  item.kind == MaterialKind::Basic ? ""
+                                  : item.receiveShadow            ? lightKinds
+                                                                  : unshadowedKinds,
+                                  item.receiveShadow && lights.softShadows);
+            if (!built) continue;
+            if (cache) {
+                cache->kind = item.kind; cache->variant = variant; cache->lightsKey = lightsKey;
+                cache->program = built; cache->pipeline = nullptr; cache->targetKey = 0;
+                cache->depthProgram = nullptr; cache->depthPipeline = nullptr;
+            }
+        }
         Program& program = *built;
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
@@ -1968,8 +2046,15 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         target.skinIndex = skinIndexFormat(item);
         target.instanceStepMask = instanceStepMask(program.vertex, item);
         lineTopology(target, item);
-        WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
-        if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
+        const uint64_t targetKey = drawTargetKey(item, program.vertex);
+        WGPURenderPipeline pipeline;
+        if (cache && cache->pipeline && cache->targetKey == targetKey) {
+            pipeline = static_cast<WGPURenderPipeline>(cache->pipeline);
+        } else {
+            pipeline = pipelines_.get(program.vertex, &program.fragment, target);
+            if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
+            if (cache) { cache->targetKey = targetKey; cache->pipeline = pipeline; }
+        }
         const uint64_t v = frameUniforms_.size();
         const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
         frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
@@ -2113,7 +2198,19 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             if ((item.layers & shadow.layersMask) == 0) continue;
             if (page && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
                 !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
-            Program& program = depthProgram(variantOf(item));
+            shader::VertexVariant variant = variantOf(item);
+            DrawCache* cache = item.cache;
+            Program* cachedDepth = nullptr;
+            if (cache && cache->depthProgram && cache->variant == variant)
+                cachedDepth = static_cast<Program*>(cache->depthProgram);
+            else {
+                cachedDepth = &depthProgram(variant);
+                if (cache) {
+                    cache->variant = variant;  // a shadow-only draw has no main program to set it
+                    cache->depthProgram = cachedDepth; cache->depthPipeline = nullptr; cache->depthTargetKey = 0;
+                }
+            }
+            Program& program = *cachedDepth;
             // three's _shadowSide: a front-sided caster draws its back faces, a back-sided one its
             // front faces, a double-sided one both.
             const WGPUCullMode cull =
@@ -2123,8 +2220,15 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(program.vertex, item);
-            WGPURenderPipeline pipeline = pipelines_.get(program.vertex, nullptr, target);
-            if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
+            const uint64_t depthTargetKey = drawTargetKey(item, program.vertex);
+            WGPURenderPipeline pipeline;
+            if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
+                pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);
+            } else {
+                pipeline = pipelines_.get(program.vertex, nullptr, target);
+                if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
+                if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
+            }
             const uint64_t v = frameUniforms_.size();
             frameUniforms_.resize(v + aligned(program.vertex.uniformBlockSize), 0);
             put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
@@ -2229,6 +2333,35 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
 
+    // A draw's fragment group depends on its program, its textures (identity and version, which the
+    // descriptor derives from) and the group epoch (a rebuilt uniform buffer or dropped groups). Equal
+    // keys mean the record's cached group can be bound without rebuilding it or its key string.
+    const auto textureToken = [](const Texture* t) -> uint64_t {
+        if (!t) return 0;
+        uint64_t h = reinterpret_cast<uintptr_t>(t);
+        return h ^ (uint64_t(t->version()) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2));
+    };
+    const auto drawGroupKey = [&](const Planned& p) {
+        const DrawItem& item = *p.item;
+        uint64_t h = 0xcbf29ce484222325ull;
+        const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
+        mix(reinterpret_cast<uintptr_t>(p.program));
+        mix(textureToken(item.map)); mix(textureToken(item.normalMap));
+        for (const Texture* t : item.pbrMaps) mix(textureToken(t));
+        mix(textureToken(item.envMap)); mix(textureToken(item.pmremMap));
+        mix(reinterpret_cast<uintptr_t>(item.reflectorView));
+        mix(reinterpret_cast<uintptr_t>(item.reflectorSampler));
+        if (item.nodeTextures)
+            for (const auto& [label, texture] : *item.nodeTextures) {
+                mix(hashBytes(label.data(), label.size()));
+                mix(textureToken(texture));
+            }
+        mix(reinterpret_cast<uintptr_t>(viewportColorView_));
+        mix(reinterpret_cast<uintptr_t>(viewportDepthView_));
+        mix(groupEpoch_);
+        return h;
+    };
+
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
@@ -2239,6 +2372,12 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         const bool viewport = readsViewport(p.program->fragment);
         if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
             !p.item->reflectorView && !graphTextures && !viewport) continue;
+        DrawCache* cache = p.item->cache;
+        const uint64_t groupKey = drawGroupKey(p);
+        if (cache && cache->mapGroup && cache->mapGroupKey == groupKey) {
+            p.mapGroup = static_cast<WGPUBindGroup>(cache->mapGroup);
+            continue;
+        }
         if (viewport)
             graphKey += "|viewport," + std::to_string(reinterpret_cast<uintptr_t>(viewportColorView_)) + "," +
                         std::to_string(reinterpret_cast<uintptr_t>(viewportDepthView_));
@@ -2274,6 +2413,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                                                          pmrem ? pmrem->view : nullptr, pmrem ? pmrem->sampler : nullptr,
                                                          p.item->reflectorView, p.item->reflectorSampler, graphTextures))
                                .first->second;
+        if (cache) { cache->mapGroupKey = groupKey; cache->mapGroup = p.mapGroup; }
     }
 
     // A post pass that reads "normal" (GTAO, denoise) gets three's MRT normal output as a second

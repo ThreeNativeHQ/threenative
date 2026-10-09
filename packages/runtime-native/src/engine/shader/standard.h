@@ -145,6 +145,8 @@ struct VertexVariant {
     /** The position output is @invariant: this frame draws a normal pass that shares the vertex stage, or TRAA's velocity pass depth-Equal against it. */
     bool invariantPosition = false;
     MaterialNodes nodes;
+    /** Equal variants build the same program: a draw whose variant is unchanged reuses its Program*. */
+    bool operator==(const VertexVariant&) const = default;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
