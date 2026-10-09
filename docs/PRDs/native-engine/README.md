@@ -34,14 +34,15 @@ file.
 | 2 | [PRD-546 — Corpus gaps in materials, textures and render state (N22b)](../done/native-engine/N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | DONE (2026-10-09) | `prd:100%` | PRD-545; PRD-509, PRD-514 (done) | — |
 | 3 | [PRD-547 — Corpus gaps in TSL and shader nodes (N22c)](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | IN PROGRESS | `prd:25%` | PRD-546; PRD-510 to PRD-512 (done) | The TSL names that corpus games import and the shared table lacks (helper lane) |
 | 4 | [PRD-548 — Corpus gaps in renderer passes, loaders, animation and addons (N22d)](../done/native-engine/N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) | DONE (2026-10-09) | `prd:100%` | PRD-547; PRD-515, PRD-518, PRD-523 to PRD-526 (done) | — |
-| 5 | [PRD-540 — Web games boot on the Wasm engine](PRD-540-web-games-boot-on-the-wasm-engine.md) | IN PROGRESS | `prd:25%` | PRD-532 (done), PRD-531 | A `@threenative/core` game without TSL boots through `createRenderer` under `engine: "native"` |
-| 6 | [PRD-531 — V8 game runtime adapter (N18)](PRD-531-n18-v8-game-runtime-adapter.md) | IN PROGRESS | `prd:75%` | PRD-500, N04, PRD-508, PRD-514 (done) | The minimal template, unchanged, runs its journey on the native engine on desktop |
-| 7 | [PRD-533 — Platform qualification, performance and default promotion (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md) | PARTIAL | `prd:50%` | PRD-534, PRD-540, PRD-531, N22 | New projects scaffold with the native engine profile and can select legacy |
-| 8 | [PRD-519 — Native batching, visibility, LOD and GPU scene (N12)](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | IN PROGRESS | `prd:75%` | PRD-514 (done), N11 (done), PRD-534 | The batching CPU stage of the heterogeneous fixture costs less than legacy projection on desktop |
-| 9 | [PRD-534 — The native engine earns the port (CP1)](PRD-534-cp1-the-native-engine-earns-the-port.md) | IN PROGRESS | `prd:50%` | PRD-498, PRD-508, PRD-514 (done), PRD-531 | Pixel 8 result for all three arms (owner's device) |
-| 10 | [PRD-499 — The host links and runs without a JS engine (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md) | IN PROGRESS | `prd:75%` | PRD-497 (done) | CI's `test-native` job runs the gate-E driver, the inspector and the sanitizer tests (PR run) |
-| 11 | [PRD-530 — Strict native-TypeScript game packaging (N17)](PRD-530-n17-strict-native-typescript-game-packaging.md) | IN PROGRESS | `prd:50%` | N05 (done), PRD-499, PRD-533 | The representative game's strict Linux artifact passes JS-free inspection |
-| 12 | [PRD-535 — The JS engine is deleted (N21)](PRD-535-n21-the-js-engine-is-deleted.md) | PROPOSED | `prd:0%` | PRD-533 plus one release, PRD-532 (done) | The `legacy` engine profile no longer resolves |
+| 5 | [PRD-540 — Web games boot on the Wasm engine](../done/native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md) | DONE (2026-10-09) | `prd:100%` | PRD-532 (done), PRD-531 | — |
+| 6 | [PRD-552 — BatchedMesh on the native engine](PRD-552-engine-batchedmesh.md) | NOT STARTED | `prd:0%` | PRD-514 (done) | A `BatchedMesh` with two geometries and several instances draws as r185 draws it |
+| 7 | [PRD-531 — V8 game runtime adapter (N18)](PRD-531-n18-v8-game-runtime-adapter.md) | IN PROGRESS | `prd:75%` | PRD-500, N04, PRD-508, PRD-514 (done) | The minimal template, unchanged, runs its journey on the native engine on desktop |
+| 8 | [PRD-533 — Platform qualification, performance and default promotion (N20)](PRD-533-n20-platform-qualification-performance-default-promotion.md) | PARTIAL | `prd:50%` | PRD-534, PRD-540, PRD-531, N22 | New projects scaffold with the native engine profile and can select legacy |
+| 9 | [PRD-519 — Native batching, visibility, LOD and GPU scene (N12)](PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) | IN PROGRESS | `prd:75%` | PRD-514 (done), N11 (done), PRD-534 | The batching CPU stage of the heterogeneous fixture costs less than legacy projection on desktop |
+| 10 | [PRD-534 — The native engine earns the port (CP1)](PRD-534-cp1-the-native-engine-earns-the-port.md) | IN PROGRESS | `prd:50%` | PRD-498, PRD-508, PRD-514 (done), PRD-531 | Pixel 8 result for all three arms (owner's device) |
+| 11 | [PRD-499 — The host links and runs without a JS engine (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md) | IN PROGRESS | `prd:75%` | PRD-497 (done) | CI's `test-native` job runs the gate-E driver, the inspector and the sanitizer tests (PR run) |
+| 12 | [PRD-530 — Strict native-TypeScript game packaging (N17)](PRD-530-n17-strict-native-typescript-game-packaging.md) | IN PROGRESS | `prd:50%` | N05 (done), PRD-499, PRD-533 | The representative game's strict Linux artifact passes JS-free inspection |
+| 13 | [PRD-535 — The JS engine is deleted (N21)](PRD-535-n21-the-js-engine-is-deleted.md) | PROPOSED | `prd:0%` | PRD-533 plus one release, PRD-532 (done) | The `legacy` engine profile no longer resolves |
 
 The N22 folder index ([README](N22-three-surface-coverage/README.md)) holds the layer map of all
 495 catalog entries, the ranked gaps, the backlog and the per-game scorecard.
@@ -140,7 +141,7 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) | Platform qualification, performance and default promotion (N20) | 2/9 | in progress |
 | [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 2/5 | in progress |
 | [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
-| [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md) | Web games boot on the Wasm engine (N20 support) | 4/10 | in progress |
+| [PRD-540](../done/native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md) | Web games boot on the Wasm engine (N20 support) | 4/10 | in progress |
 | [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | Corpus gaps in math, the object model and geometry (N22a) | 5/6 | in progress |
 | [PRD-546](../done/native-engine/N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | Corpus gaps in materials, textures and render state (N22b) | 8/8 | done |
 | [PRD-547](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | Corpus gaps in TSL and shader nodes (N22c) | 0/8 | not started |

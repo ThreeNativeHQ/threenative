@@ -29,7 +29,7 @@ early, for example the in-progress `InstancedBufferGeometry` and `polygonOffset`
 Every gap is implemented once, in the shared C++ engine (`packages/runtime-native/src/engine`),
 and reaches the language back ends through the shared binding registry and `tn_tsl_call`. The V8
 back end ([PRD-531](../PRD-531-n18-v8-game-runtime-adapter.md)) and the browser back end over Wasm
-([PRD-540](../PRD-540-web-games-boot-on-the-wasm-engine.md)) then get it with no second
+([PRD-540](../../done/native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md)) then get it with no second
 implementation. A box that needs JavaScript in one back end only is back-end work: it goes to
 PRD-531 or PRD-540, not here. Each gap lives in exactly one box.
 
@@ -137,7 +137,7 @@ The proposed decision below closes both.
   `RenderPipeline`, `RenderTarget`, `QuadMesh`, `PassNode`, `TempNode`, `RendererUtils`,
   `NodeUpdateType`, `NoToneMapping` as the output tone mapping and the nine
   `three/addons/tsl/display/*` nodes, all in 13 templates — is
-  [PRD-540](../PRD-540-web-games-boot-on-the-wasm-engine.md) phase 3 (Wasm) and
+  [PRD-540](../../done/native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md) phase 3 (Wasm) and
   [PRD-531](../PRD-531-n18-v8-game-runtime-adapter.md) (V8). Nodes that a template imports but never
   runs at its tier leave the bundle (lane-tier-imports, PRD-531 `## Blocked on`). The
   `WebGPURenderer` facade is PRD-540 phase 2 and PRD-531.

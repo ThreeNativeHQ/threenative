@@ -5,7 +5,7 @@
 **Complexity:** 5 (MEDIUM) — 6–10 engine files across the TSL table, the shader IR and WGSL emission; no new module
 **Owner:** João
 **Work package:** N22c, layer 5 — [three.js surface coverage](README.md)
-**Depends on:** [PRD-546](../../done/native-engine/N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) for its layers; [PRD-510 (N08a)](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md), [PRD-511 (N08b)](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) and [PRD-512 (N08c)](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) (done); [PRD-531](../PRD-531-n18-v8-game-runtime-adapter.md) and [PRD-540](../PRD-540-web-games-boot-on-the-wasm-engine.md) carry the result to each game
+**Depends on:** [PRD-546](../../done/native-engine/N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) for its layers; [PRD-510 (N08a)](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-510-n08a-a-typed-shader-ir-with-ordered-effects.md), [PRD-511 (N08b)](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-511-n08b-shader-packages-not-wgsl-text.md) and [PRD-512 (N08c)](../../done/native-engine/N08-native-tsl-and-shader-packages/PRD-512-n08c-standard-pbr-and-deformation-that-shadows.md) (done); [PRD-531](../PRD-531-n18-v8-game-runtime-adapter.md) and [PRD-540](../../done/native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md) carry the result to each game
 
 ## Context
 

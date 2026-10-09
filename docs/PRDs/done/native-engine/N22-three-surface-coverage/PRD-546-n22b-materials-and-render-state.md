@@ -5,7 +5,7 @@
 **Complexity:** 5 (MEDIUM) — 6–10 engine files across scene materials, GPU resources and the standard shader; no new module
 **Owner:** João
 **Work package:** N22b, layer 4 — [three.js surface coverage](../../../native-engine/N22-three-surface-coverage/README.md)
-**Depends on:** [PRD-545](../../../native-engine/N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) for its layers; [PRD-514 (N09)](../PRD-514-n09-native-renderer-and-standard-materials.md) and [PRD-509 (N07)](../PRD-509-n07-gpu-resources-presentation-and-device-loss.md) (done); [PRD-531](../../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md) and [PRD-540](../../../native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md) carry the result to each game
+**Depends on:** [PRD-545](../../../native-engine/N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) for its layers; [PRD-514 (N09)](../PRD-514-n09-native-renderer-and-standard-materials.md) and [PRD-509 (N07)](../PRD-509-n07-gpu-resources-presentation-and-device-loss.md) (done); [PRD-531](../../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md) and [PRD-540](../PRD-540-web-games-boot-on-the-wasm-engine.md) carry the result to each game
 
 ## Context
 

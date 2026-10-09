@@ -5,7 +5,7 @@
 **Complexity:** 6 (MEDIUM) — the renderer's target switch and readback, one binding class, one shared JS facade; no new module
 **Owner:** João
 **Work package:** N22d renderer layer, back-end binding per [PRD-548](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) Context (PRD-540 phase 3 for Wasm, PRD-531 for V8)
-**Depends on:** [PRD-514](PRD-514-n09-native-renderer-and-standard-materials.md) (done), [PRD-531](../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md), [PRD-540](../../native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md)
+**Depends on:** [PRD-514](PRD-514-n09-native-renderer-and-standard-materials.md) (done), [PRD-531](../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md), [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md)
 
 ## Context
 

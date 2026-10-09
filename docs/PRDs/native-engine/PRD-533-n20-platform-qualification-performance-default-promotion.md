@@ -161,7 +161,7 @@ Value imports of `three*` per template source, against the catalog (core adds 20
 | starter | 106 | 27 | 14 | 54 | 11 |
 | tower-defense | 97 | 25 | 12 | 44 | 16 |
 
-The counts come from a regex scan of named and namespace imports in non-test `.ts`/`.tsx` files, so they are approximate. The blocker does not depend on them. No journey, visual gate or A/B ran, on either engine. The gap is the web port of the renderer, TSL and post chain plus the import resolution, not a lane-sized engine fix. [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md) plans that work.
+The counts come from a regex scan of named and namespace imports in non-test `.ts`/`.tsx` files, so they are approximate. The blocker does not depend on them. No journey, visual gate or A/B ran, on either engine. The gap is the web port of the renderer, TSL and post chain plus the import resolution, not a lane-sized engine fix. [PRD-540](../done/native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md) plans that work.
 
 ## Decisions
 
