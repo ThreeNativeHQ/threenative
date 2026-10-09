@@ -493,6 +493,7 @@ Renderer::~Renderer() {
     mainBundle_ = nullptr;
     if (timestamps_) wgpuQuerySetRelease(timestamps_);
     for (auto& [key, program] : programs_) {
+        if (!program) continue;  // a refused program
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
             if (program->layouts[g]) wgpuBindGroupLayoutRelease(program->layouts[g]);
@@ -1310,25 +1311,47 @@ void Renderer::buildLayouts(Program& program) {
     }
 }
 
-Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
+Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
                                      bool softShadows) {
     const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights + (softShadows ? "|soft" : "");
-    if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
+    const auto refuse = [&](const std::string& reason) -> Program* {
+        if (std::find(diagnostics_.begin(), diagnostics_.end(), reason) == diagnostics_.end()) diagnostics_.push_back(reason);
+        return nullptr;
+    };
+    if (const auto found = programs_.find(key); found != programs_.end())
+        return found->second ? found->second.get() : refuse(refusedPrograms_.at(key));
+    const auto refuseBuild = [&](const std::string& why) {
+        programs_[key] = nullptr;
+        return refuse(refusedPrograms_[key] = "TN_NATIVE_SHADER_INVALID: material program " + key.substr(0, 120) +
+                                              (key.size() > 120 ? "...: " : ": ") + why);
+    };
     const shader::LightLayout layout{lights, softShadows};
     shader::StandardPrograms source;
-    switch (kind) {
-    case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, vv, layout); break;
-    case MaterialKind::Basic: source = vv.sprite ? shader::buildSprite(vv) : shader::buildBasic(vv); break;
-    case MaterialKind::Lambert: source = shader::buildLambert(vv, layout); break;
-    case MaterialKind::Phong: source = shader::buildPhong(vv, layout); break;
-    case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, vv, layout); break;
+    try {
+        switch (kind) {
+        case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, vv, layout); break;
+        case MaterialKind::Basic: source = vv.sprite ? shader::buildSprite(vv) : shader::buildBasic(vv); break;
+        case MaterialKind::Lambert: source = shader::buildLambert(vv, layout); break;
+        case MaterialKind::Phong: source = shader::buildPhong(vv, layout); break;
+        case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, vv, layout); break;
+        }
+    } catch (const std::exception& error) {
+        return refuseBuild(error.what());  // a graph the builder refuses (TN_TSL_VARYING_CONFLICT, ...)
     }
+    // The first construction diagnostic names the node; the WGSL error only says there was one.
+    for (const shader::Program* stage : {&source.vertex, &source.fragment})
+        if (!stage->diagnostics().empty()) {
+            const auto& d = stage->diagnostics().front();
+            return refuseBuild(d.code + ": " + d.node + ": " + d.reason);
+        }
     source.vertex.setInvariantPosition(vv.invariantPosition);
     shader::StageModule vertex = shader::buildStage(source.vertex, 0);
     shader::StageModule fragment = shader::buildStage(source.fragment, 1);
-    if (!vertex.wgsl.ok() || !fragment.wgsl.ok())
-        throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + key);
-    return add(key, std::move(vertex), std::move(fragment));
+    if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
+        const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
+        return refuseBuild(errors.empty() ? "no reason" : errors.front());
+    }
+    return &add(key, std::move(vertex), std::move(fragment));
 }
 
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
@@ -1371,6 +1394,7 @@ void Renderer::rebuildGroups() {
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
     for (auto& [key, program] : programs_) {
+        if (!program) continue;  // a refused program
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
             program->groups[g] = (g == 1 && perDrawFragment(program->fragment))
@@ -1717,11 +1741,13 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
-        Program& program = this->program(item.kind, variantOf(item),
-                                         item.kind == MaterialKind::Basic ? ""
-                                         : item.receiveShadow            ? lightKinds
-                                                                         : unshadowedKinds,
-                                         item.receiveShadow && lights.softShadows);
+        Program* built = this->program(item.kind, variantOf(item),
+                                       item.kind == MaterialKind::Basic ? ""
+                                       : item.receiveShadow            ? lightKinds
+                                                                       : unshadowedKinds,
+                                       item.receiveShadow && lights.softShadows);
+        if (!built) continue;
+        Program& program = *built;
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals) || !item.material) continue;

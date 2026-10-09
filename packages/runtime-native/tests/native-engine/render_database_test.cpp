@@ -812,6 +812,58 @@ void materialUnsupported() {
     CHECK(database.diagnostics().size() == 1);  // the standard mesh beside it is not refused
 }
 
+// A material whose program cannot be built is refused by name and skipped, every frame it is drawn,
+// and the rest of the frame still draws, as three logs a shader error and draws the rest of the scene.
+// Two ways to fail: a type error leaves construction diagnostics, a varying conflict throws.
+void shaderInvalid() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    LitScene s;
+    auto typed = std::make_shared<Material>(MaterialType::Standard);
+    typed->nodes.colorNode = g::add(g::vec4({g::float_(1), g::float_(0), g::float_(0), g::float_(1)}),
+                                    g::vec2({g::float_(1), g::float_(1)}));
+    auto clashing = std::make_shared<Material>(MaterialType::Basic);
+    const auto position = g::positionLocal();
+    clashing->nodes.colorNode = g::vec4({g::add(g::varying(position, "dup"), g::varying(g::mul(position, g::float_(2)), "dup")),
+                                         g::float_(1)});
+    Mesh typedMesh{s.geometry, typed}, clashingMesh{s.geometry, clashing};
+    typedMesh.position.x = 1.5;
+    clashingMesh.position.x = -1.5;
+    s.scene.add(typedMesh);
+    s.scene.add(clashingMesh);
+    RenderDatabase database;
+    for (int frame = 0; frame < 2; ++frame) {
+        database.render(renderer, s.scene, s.camera);
+        int refused = 0;
+        bool reasons = false;
+        for (const std::string& d : renderer.diagnostics()) {
+            if (d.rfind("TN_NATIVE_SHADER_INVALID: material program", 0) != 0) continue;
+            ++refused;
+            reasons = reasons || d.find("TN_TSL_TYPE") != std::string::npos;
+        }
+        CHECK(refused == 2 && reasons);
+        CHECK(database.diagnostics().empty());
+    }
+    std::vector<uint8_t> pixels;
+    bool read = false;
+    renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+        if (status == GpuStatus::Ok) pixels = std::move(px);
+        read = true;
+    });
+    for (int i = 0; i < 5000 && !read; ++i) {
+        renderer.poll();
+        events.drain();
+        if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    // The valid sphere at the centre still draws: its pixel is not the clear colour.
+    const size_t centre = (size_t{24} * 64 + 32) * 4;
+    CHECK(pixels.size() == size_t{64} * 48 * 4 && (pixels[centre] | pixels[centre + 1] | pixels[centre + 2]) != 0);
+}
+
 // PRD-514: an edit between frames shows on the next frame, and nothing a frame no longer draws stays
 // behind: a released geometry's GPU copies are freed and never served to a geometry that reuses its
 // address.
@@ -1448,6 +1500,6 @@ void gpuTimerIsOptIn() {
 }  // namespace
 
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
-             {"material_unsupported", materialUnsupported}, {"updates", updates},
+             {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn})
