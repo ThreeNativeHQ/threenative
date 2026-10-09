@@ -1,15 +1,15 @@
 # PRD-545 — Corpus gaps in math, the object model and geometry (N22a)
 
-**Status:** IN PROGRESS — the `InstancedBufferGeometry` box is in progress on lane-wasm-templates
+**Status:** DONE (2026-10-09)
 **Priority:** P1 — rain, Midway, Bayview, shooter, snow and five more corpus games construct a class here that the engine refuses, so their journeys cannot pass on Wasm or V8
 **Complexity:** 5 (MEDIUM) — 6–10 engine files across foundation, scene and the bindings; no new module
 **Owner:** João
-**Work package:** N22a, layers 1–3 — [three.js surface coverage](README.md)
-**Depends on:** [PRD-501 (N04a)](../../done/native-engine/N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md), [PRD-508 (N06)](../../done/native-engine/PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-504 (N04d)](../../done/native-engine/N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) and [PRD-514 (N09)](../../done/native-engine/PRD-514-n09-native-renderer-and-standard-materials.md) (done); [PRD-531](../PRD-531-n18-v8-game-runtime-adapter.md) and [PRD-540](../../done/native-engine/PRD-540-web-games-boot-on-the-wasm-engine.md) carry the result to each game
+**Work package:** N22a, layers 1–3 — [three.js surface coverage](../../../native-engine/N22-three-surface-coverage/README.md)
+**Depends on:** [PRD-501 (N04a)](../N04-lifetime-and-numerics/PRD-501-n04a-math-matches-the-pinned-reference.md), [PRD-508 (N06)](../PRD-508-n06-native-scene-graph-transforms-cameras-geometry.md), [PRD-504 (N04d)](../N04-lifetime-and-numerics/PRD-504-n04d-buffers-cross-the-abi-with-an-owner.md) and [PRD-514 (N09)](../PRD-514-n09-native-renderer-and-standard-materials.md) (done); [PRD-531](../../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md) and [PRD-540](../PRD-540-web-games-boot-on-the-wasm-engine.md) carry the result to each game
 
 ## Context
 
-These are the three lowest engine layers in the [N22 layer map](README.md#the-catalog-by-engine-layer):
+These are the three lowest engine layers in the [N22 layer map](../../../native-engine/N22-three-surface-coverage/README.md#the-catalog-by-engine-layer):
 math foundation (15 of 37 entries supported), object model and scene graph (25 of 37) and geometry
 and buffers (20 of 42). The higher layers build on them, so this PRD runs first. The phases follow
 the layers; inside a phase, the box with more corpus games comes first. Gaps in these layers that
@@ -36,24 +36,25 @@ The registry snapshot and the catalog follow each new member (`native_engine_reg
 ## Execution Phases
 
 #### Phase 1: Math foundation
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** found by the reproduction; likely `packages/runtime-native/src/engine/abi/bindings_math.cpp`
-- [ ] Midway's update loop on the native engine reports no `TN_NATIVE_UNSUPPORTED` "argument is not a Vector3" error. The first step names the call that raises it and reproduces it in a native test against r185 behaviour; it is filed under math because the refusal is a math-argument check, and moves if the reproduction shows another layer. Users: Midway. proof: the reproduction's ctest in `ctest --test-dir packages/runtime-native/build/tn-linux -L native-engine`, then `node packages/playtest/dist/runner/cli.js <midway journey>.playtest.json --target desktop` with no such error in its log
+- [x] Midway's update loop on the native engine reports no `TN_NATIVE_UNSUPPORTED` "argument is not a Vector3" error. The first step names the call that raises it and reproduces it in a native test against r185 behaviour; it is filed under math because the refusal is a math-argument check, and moves if the reproduction shows another layer. Users: Midway. proof: the reproduction's ctest in `ctest --test-dir packages/runtime-native/build/tn-linux -L native-engine`, then `node packages/playtest/dist/runner/cli.js <midway journey>.playtest.json --target desktop` with no such error in its log
   2026-10-08: named and fixed. The call is core `AudioBus.playAt` -> `voice.position.copy({ x, y, z })` from Midway's `Soundscape.syncEmitters` (a plain object, which r185 reads by field). `Store::in` now reads a plain object for Vector2/3/4 read-only arguments; fixture `math-core-plain-vector-arguments` passes in `native_engine_math_core` and `native_engine_v8_math_fixtures` (red: BLOCKED "argument is not a Vector3"). On the V8 player Midway's update loop no longer raises it (90 s run, 0 occurrences). Open: the journey proof cannot run yet, because the bundler refuses ten core TSL names (`viewportLinearDepth`, `linearDepth`, `cameraNear`, `cameraFar`, `viewportSharedTexture`, `viewportDepthTexture`, `normalLocal`, `tangentLocal`, `positionPrevious`, `storage`) and the player stops at `TN_NATIVE_ATTRIBUTE_MISSING: aColor` (custom instanced attributes, phase 3 box 2).
+  2026-10-09: proved. Both blockers are gone (the ten TSL names lower, and custom instanced attributes draw). The journey then failed on the player, not on math: `TN_INSPECT_GAME_BRIDGE: describe observation remains pending`. Fixed in the shared player (`1f112d809`): a pending bridge promise is answered on a later frame, frame callbacks run before the game publishes its scene, and audio decodes settle on frames (`native_engine_player_async_bridge`, red then green; red again with the per-frame decode removed). Midway's own native boot journey on a private copy bundled with this branch, `node packages/playtest/dist/runner/cli.js native-playtests/boot.playtest.json --target desktop --executable packages/runtime-native/build/tn-linux/tn-native-engine-player-v8`: exit 0, 3/3 assertions, and its log has 0 "not a Vector3", 0 `TN_NATIVE_UNSUPPORTED`, 0 update or frame failures. The longer `launch` journey still times out waiting for its flight screen; that is not this box.
 
 #### Phase 2: Object model and scene graph
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/runtime-native/src/engine/scene/`, `packages/runtime-native/src/engine/renderer/` (topology), `packages/runtime-native/src/engine/abi/bindings_scene.cpp`
 - [x] `Line`, `LineSegments` and `LineBasicMaterial` draw line-strip and line-list topology. Users: Bayview, shooter, snow; core `projection-apply.ts`, `world-cells.ts`, `geometry-capture.ts`. Extends PRD-508 and PRD-514. proof: fixture `lines-basic` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_lines`
   Done 2026-10-08: fixture `lines-basic` (a Line strip, a LineSegments list and an indexed strip, golden from headed WebGPU Chromium) passes in `native_engine_render_lines` (red: BLOCKED "class Line"). Engine `Line`/`LineSegments` with r185's `Line.raycast` (`native_engine_raycaster` against the regenerated three oracle; red: `line-0 hit count` with the triangle raycast); `LineBasicMaterial` on the unlit program; pipeline topology and strip index format. V8 exports all three (`player_imports`), Wasm smoke passes. Not bound yet: `raycaster.params.Line.threshold` from JS (default 1 natively; no corpus user), and lines cast no shadow.
 - [x] Assigning a new `InstancedBufferAttribute` to `InstancedMesh.instanceColor` colours the instances on the next frame. Users: rts, tower-defense, Midway (world tracers); core. Extends PRD-508. proof: fixture `instanced-mesh-color-set` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_instanced`, and `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend` — **done 2026-10-09**: the engine already read `instanceColor` every frame; proved, not changed. Desktop: `native_engine_renderer_instanced` draws an uncoloured `InstancedMesh`, assigns a new colour attribute and draws again: 1270 pixels change and 0 differ from the nine-mesh reference (negative control, engine ignoring the attribute: 0 changed, 1270 differ). Wasm: `examples/wasm-engine-boot` renderer playtest reads a 4x1 target before and after the assignment (`instanceColorSet`, white ×4 then red, green, blue, black), exit 0. The named fixture `instanced-mesh-color-set` was not added: fixtures have no op that renders between two edits.
   2026-10-08: written on lane-midway-native, not committed.
-- [x] `Mesh.getVertexPosition` on a `SkinnedMesh` applies the skin, as r185 does. Users: Bayview (enemy hit tests). Extends PRD-508 and [PRD-518](../../done/native-engine/N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md). proof: fixture `scene-object-bounds-skinned-vertex` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene_object_bounds`
+- [x] `Mesh.getVertexPosition` on a `SkinnedMesh` applies the skin, as r185 does. Users: Bayview (enemy hit tests). Extends PRD-508 and [PRD-518](../N11-native-animation/PRD-518-n11c-skinning-palettes-and-pose-history.md). proof: fixture `scene-object-bounds-skinned-vertex` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene_object_bounds`
   Moved from PRD-531 open items (2026-10-08).
   Done 2026-10-08: no engine change was needed (SkinnedMesh::getVertexPosition already applies applyBoneTransform through the shared binding). Fixture `scene-object-bounds-skinned-vertex` (three vertices of the posed rig; v0 reads (-0.304, -0.996, -0.237) against the raw (-1, -1, 0)) passes in `native_engine_scene_object_bounds` and `native_engine_v8_scene_fixtures`.
 
 #### Phase 3: Geometry and buffers
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/runtime-native/src/engine/scene/geometries.cpp`, `packages/runtime-native/src/engine/scene/geometry.cpp`, `packages/runtime-native/src/engine/abi/bindings_geometry.cpp`
 - [x] `IcosahedronGeometry`, `CapsuleGeometry`, `DodecahedronGeometry`, `OctahedronGeometry` and `TorusKnotGeometry` build the same vertex, normal, uv and index buffers as r185. Users: Bayview, platformer, racing, rts, shooter, snow, tower-defense. Extends PRD-508. proof: one `geometry-<class>` fixture per class through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_geometry`
   Done 2026-10-08: `native_engine_geometry` 17/17 pass, bit-exact at `abs: 0`, with fixtures `geometry-icosahedron`, `-capsule`, `-dodecahedron`, `-octahedron`, `-torus-knot` (red: all five BLOCKED, class unsupported). V8 exports them; registry, catalog and ABI digest regenerated; `player_imports`, `v8_catalog_coverage`, `v8_geometry_lifecycle` pass.
@@ -63,3 +64,7 @@ The registry snapshot and the catalog follow each new member (`native_engine_reg
 New render groups need a line in the render-case list in `packages/runtime-native/cmake/NativeEngine.cmake`:
 `render_instanced:instanced-*` and `render_lines:lines-*`. The `geometry-*` and
 `scene-object-bounds-*` globs already exist.
+
+## Acceptance criteria
+
+- [x] Every math, object-model and geometry gap above holds on one tree, on desktop and Wasm. proof: `ctest --test-dir packages/runtime-native/build/tn-linux -L native-engine -R "math|scene|geometry|object|instanced|player"` and `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm` — 2026-10-09 at `1f112d809`: 48/48 and 3/3.

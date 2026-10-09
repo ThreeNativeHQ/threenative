@@ -162,7 +162,7 @@ each gap has one box. The items left here are V8 back-end work.
   real or absent.
 - Low: the MRT slot markers (`normalView`, `metalness`, `roughness`, `output`) are frozen
   objects. Moved: the `bloom()` uniforms to [PRD-548](../done/native-engine/N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md), the skinned
-  `getVertexPosition` to [PRD-545](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md). In the [N22 backlog](N22-three-surface-coverage/README.md#backlog-gaps-no-corpus-game-reaches) (no corpus user):
+  `getVertexPosition` to [PRD-545](../done/native-engine/N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md). In the [N22 backlog](N22-three-surface-coverage/README.md#backlog-gaps-no-corpus-game-reaches) (no corpus user):
   `AnimationMixer.clipAction` ignores its `optionalRoot` argument.
 - The V8 player's performance series (owner decision above) is not built yet. Core announces a
   runner through `TN_PLAYTEST_ENDPOINT`, which the V8 player does not set, and announcing freezes
