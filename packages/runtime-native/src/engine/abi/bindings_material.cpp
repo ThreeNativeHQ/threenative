@@ -111,6 +111,10 @@ void registerMaterialBase(ClassBinding& b) {
         const std::shared_ptr<Material> copy = as<Material>(self)->clone();
         return store.adopt(std::string(copy->typeName()), std::static_pointer_cast<void>(copy));
     };
+    // three's Material.dispose(): it tells the renderer to free the material's GPU programs. The
+    // engine frees a material's GPU state when the material itself is released, so there is nothing to
+    // free early; the material stays usable, as three's does after dispose().
+    b.methods["dispose"] = [](void*, const Args&, Store&) { return Value{}; };
     b.methods["copy"] = [](void* self, const Args& a, Store& store) {
         as<Material>(self)->copy(*store.shared<Material>(a.at(0), "Material"));
         return chain();

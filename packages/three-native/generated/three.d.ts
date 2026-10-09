@@ -1039,6 +1039,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/LineSegments. */
@@ -1399,6 +1401,8 @@ readonly type: string;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog partial (shader-parameters): three/MeshBasicMaterialParameters. */
@@ -1439,6 +1443,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1523,6 +1529,8 @@ readonly type: string;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog partial (shader-parameters): three/MeshStandardMaterialParameters. */
@@ -1578,6 +1586,8 @@ bumpMap: Texture | null;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -2464,6 +2474,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2503,6 +2515,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -3163,6 +3177,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -3198,6 +3214,8 @@ polygonOffsetUnits: number;
   clone(): this;
 
   copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */

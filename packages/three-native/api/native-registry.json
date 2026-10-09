@@ -2968,7 +2968,7 @@
     },
     "LineBasicMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "blending",
@@ -3659,7 +3659,7 @@
     },
     "MeshBasicMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "blending",
@@ -3715,7 +3715,7 @@
     },
     "MeshBasicNodeMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "blending",
@@ -3787,7 +3787,7 @@
     },
     "MeshLambertMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "blending",
@@ -3854,7 +3854,7 @@
     },
     "MeshPhongMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "blending",
@@ -3930,7 +3930,7 @@
     },
     "MeshPhysicalMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "anisotropy",
@@ -4063,7 +4063,7 @@
     },
     "MeshStandardMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "aoMapIntensity",
@@ -4158,7 +4158,7 @@
     },
     "MeshStandardNodeMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "aoMapIntensity",
@@ -6537,7 +6537,7 @@
     },
     "SpriteMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "blending",
@@ -6597,7 +6597,7 @@
     },
     "SpriteNodeMaterial": {
       "constructor": true,
-      "methods": ["clone", "copy"],
+      "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
         "blending",

@@ -7826,6 +7826,19 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -11111,6 +11124,19 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -11414,6 +11440,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -12262,6 +12301,19 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -12700,6 +12752,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -19376,6 +19441,19 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -19687,6 +19765,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
@@ -25966,6 +26057,19 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },
@@ -26241,6 +26345,19 @@
                 }
               ],
               "returns": "this"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "dispose",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "void"
             }
           ],
           "status": {
