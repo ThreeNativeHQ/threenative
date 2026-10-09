@@ -1728,6 +1728,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.sprite = item.sprite;
         v.backSide = item.side == 1;
         v.doubleSide = item.side == 2;
+        v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
         v.instanceStorage = v.instanced;
@@ -2148,6 +2149,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             BufferStore* source = a.name == "position"        ? item.positions
                                   : a.name == "normal"        ? item.normals
                                   : a.name == "uv"            ? item.uvs
+                                  : a.name == "color"         ? item.colors
                                   : a.name == "instanceColor" ? item.instanceColors
                                   : a.name == "skinIndex"     ? item.skinIndices
                                   : a.name == "skinWeight"    ? item.skinWeights

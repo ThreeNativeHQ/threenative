@@ -125,6 +125,7 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "depthTest", &Material::depthTest);
     materialBool(b, "depthWrite", &Material::depthWrite);
     materialBool(b, "forceSinglePass", &Material::forceSinglePass);
+    materialBool(b, "vertexColors", &Material::vertexColors);
     materialBool(b, "visible", &Material::visible);
     materialBool(b, "toneMapped", &Material::toneMapped);
     materialBool(b, "fog", &Material::fog);

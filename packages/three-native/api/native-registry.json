@@ -2532,6 +2532,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "vertexColors",
         "visible"
       ],
       "setters": [
@@ -2552,6 +2553,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "vertexColors",
         "visible"
       ],
       "members": ["color", "map"],
@@ -2584,6 +2586,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "vertexColors",
         "visible"
       ],
       "setters": [
@@ -2611,6 +2614,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "vertexColors",
         "visible"
       ],
       "members": ["color", "map"],
@@ -2640,6 +2644,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "vertexColors",
         "visible"
       ],
       "setters": [
@@ -2667,6 +2672,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "vertexColors",
         "visible"
       ],
       "members": ["color", "emissive", "map", "normalMap", "normalScale"],
@@ -2700,6 +2706,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "vertexColors",
         "visible"
       ],
       "setters": [
@@ -2732,6 +2739,7 @@
         "specular.r",
         "toneMapped",
         "transparent",
+        "vertexColors",
         "visible"
       ],
       "members": ["color", "emissive", "map", "normalMap", "normalScale", "specular"],
@@ -2777,6 +2785,7 @@
         "transmission",
         "transparent",
         "type",
+        "vertexColors",
         "visible"
       ],
       "setters": [
@@ -2832,6 +2841,7 @@
         "toneMapped",
         "transmission",
         "transparent",
+        "vertexColors",
         "visible"
       ],
       "members": [
@@ -2883,6 +2893,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "vertexColors",
         "visible"
       ],
       "setters": [
@@ -2919,6 +2930,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "vertexColors",
         "visible"
       ],
       "members": [
@@ -2970,6 +2982,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "vertexColors",
         "visible"
       ],
       "setters": [
@@ -3013,6 +3026,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "vertexColors",
         "visible"
       ],
       "members": [
@@ -5049,6 +5063,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "vertexColors",
         "visible"
       ],
       "setters": [
@@ -5071,6 +5086,7 @@
         "sizeAttenuation",
         "toneMapped",
         "transparent",
+        "vertexColors",
         "visible"
       ],
       "members": ["color", "map"],
@@ -5105,6 +5121,7 @@
         "toneMapped",
         "transparent",
         "type",
+        "vertexColors",
         "visible"
       ],
       "setters": [
@@ -5134,6 +5151,7 @@
         "sizeAttenuation",
         "toneMapped",
         "transparent",
+        "vertexColors",
         "visible"
       ],
       "members": ["color", "map"],

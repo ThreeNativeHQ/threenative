@@ -402,6 +402,19 @@ static void outputInstanceColor(Program& v, const LocalVertex& local) {
     if (local.instanceColor != kInvalid) v.output("instanceColor", local.instanceColor);
 }
 
+// three's vertexColor(): the geometry's `color` attribute, passed through as a varying.
+static void outputVertexColor(Program& v, const VertexVariant& variant) {
+    if (variant.vertexColors) v.output("vertexColor", v.attribute("color", Type::vec(variant.vertexColors)));
+}
+
+// NodeMaterial.setupDiffuseColor with vertexColors: the colour node times vertexColor() (a vec3
+// colour widens to alpha 1, as three's vertexColor() does).
+static ExprId vertexColored(Program& f, const VertexVariant& variant, ExprId diffuse) {
+    if (!variant.vertexColors) return diffuse;
+    const ExprId color = f.varying("vertexColor", Type::vec(variant.vertexColors));
+    return f.mul(diffuse, variant.vertexColors == 4 ? color : f.construct(Type::vec(4), {color, f.constant(1.0f)}));
+}
+
 // A map's uv varying, written after instanceColor so both stages agree on the location order.
 static void outputMapUv(Program& v, const LocalVertex& local) {
     if (local.uv != kInvalid) v.output("uv", local.uv);
@@ -839,6 +852,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
     if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
     outputInstanceColor(v, local);
+    outputVertexColor(v, variant);
     outputMapUv(v, local);
 
     Program& f = out.fragment;
@@ -855,7 +869,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
+    const ExprId diffuse = vertexColored(f, variant, nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4))));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
@@ -1114,6 +1128,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // positionWorld, before instanceColor: varyings take locations in creation order in both stages.
     if (lights.shadowed()) v.output("positionWorld", v.swizzle(v.mul(model, position), "xyz"));
     outputInstanceColor(v, local);
+    outputVertexColor(v, variant);
     outputMapUv(v, local);
 
     Program& f = out.fragment;
@@ -1126,7 +1141,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
+    const ExprId diffuse = vertexColored(f, variant, nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4))));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
@@ -1208,9 +1223,10 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
         v.output("backgroundDirection", normalWorld);
     }
     outputInstanceColor(v, local);
+    outputVertexColor(v, variant);
     if (!variant.background) outputMapUv(v, local);
     Program& f = out.fragment;
-    const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
+    const ExprId diffuse = vertexColored(f, variant, nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4))));
     ExprId texel = kInvalid;
     if (variant.background) {
         const ExprId normal = f.call("normalize", {f.varying("backgroundDirection", Type::vec(3))});

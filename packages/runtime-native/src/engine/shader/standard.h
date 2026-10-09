@@ -80,6 +80,9 @@ struct VertexVariant {
     bool backSide = false;
     /** material.side is DoubleSide: lit fragments turn the normal toward the viewer on a back face. */
     bool doubleSide = false;
+    /** material.vertexColors with a `color` attribute of 3 or 4 components (0: none): three's
+     *  vertexColor() multiplies the diffuse colour (and alpha, with 4). */
+    uint8_t vertexColors = 0;
     bool instanced = false;
     bool instanceColor = false;
     bool instanceStorage = false; // packed matrix columns and colour in one frame storage buffer
@@ -140,7 +143,7 @@ struct VertexVariant {
     MaterialNodes nodes;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
+        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (vertexColors ? "vc" + std::to_string(vertexColors) + "|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();

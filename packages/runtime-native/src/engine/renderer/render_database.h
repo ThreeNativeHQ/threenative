@@ -81,6 +81,7 @@ class RenderDatabase {
     };
     std::unordered_map<const Material*, GraphSources> graphSources_;
     const GraphSources& graphSources(const Material& material);
+    void vertexColorsOf(const BufferGeometry& geometry, const Material& material, DrawItem& d);
     // One mirrored pass per live reflector: its own targets and its own records, so the pass never
     // resizes the frame or churns the frame's draw records. A pass draws no further reflections.
     struct ReflectionPass {
