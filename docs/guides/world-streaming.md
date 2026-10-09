@@ -261,7 +261,9 @@ The in-repo fixture
 [`world-flythrough.playtest.json`](../../examples/abyss-framework/playtests/world-flythrough.playtest.json)
 flies the camera across the `world-v1` package committed as the example's own
 [`assets/world/`](../../examples/abyss-framework/assets/world) source and asserts residency rises,
-cells are evicted, loads settle and no load fails, with a measured p95 frame budget. The scene
+cells are evicted, loads settle and no load fails, with a measured p95 frame budget. Under
+`?world&viewDistance` it runs the view-distance recipe above and also asserts 49 terrain tiles, 9
+collider bodies, and no body farther than 1.5 tiles from the camera. The scene
 behind it is
 [`WorldProbe.ts`](../../examples/abyss-framework/src/scenes/WorldProbe.ts), which uses only the
 public exports. Build first: the scenario runs against compiled, content-addressed output, not
@@ -271,7 +273,7 @@ against a dev server.
 pnpm --filter abyss-framework build
 CI=true node packages/playtest/dist/runner/cli.js \
   examples/abyss-framework/playtests/world-flythrough.playtest.json \
-  --url 'http://127.0.0.1:5181/?world' \
+  --url 'http://127.0.0.1:5181/?world&viewDistance' \
   --server-command 'pnpm --filter abyss-framework preview --host 127.0.0.1 --port 5181 --strictPort' \
   --browser-recipe webgpu --headed
 ```
