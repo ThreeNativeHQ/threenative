@@ -54,7 +54,7 @@
       "license": "CC0",
       "groundLayer": "sand",
       "metresPerTile": 3.2,
-      "note": null
+      "note": "The 1K diffuse and GL normal map are seam-blended for tiling: each cross-fades its edges with a half-shifted copy. Diffuse left-right seam ratio 1.51 to 0.95; top-bottom 1.43 to 1.13. Only the edges changed; the source is Poly Haven, CC0."
     },
     "snow_02": {
       "asset": "Snow 02",
