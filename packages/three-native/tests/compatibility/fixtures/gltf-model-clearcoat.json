@@ -1,6 +1,6 @@
 {
   "name": "gltf-model-clearcoat",
-  "adaptedFrom": "original \u2014 two rough dark dielectric spheres loaded by three's GLTFLoader and the native glTF loader with KHR_materials_clearcoat: one coated by factors only (clearcoat 1, clearcoatRoughness 0.05), one with clearcoatTexture and clearcoatRoughnessTexture over factors 0.9 and 0.6. Each becomes a MeshPhysicalMaterial whose coat highlight the plain base lacks",
+  "adaptedFrom": "original \u2014 two rough dark dielectric spheres loaded by three's GLTFLoader and the native glTF loader with KHR_materials_clearcoat: one coated by factors only (clearcoat 1, clearcoatRoughness 0.05), one with clearcoatTexture and clearcoatRoughnessTexture over factors 0.9 and 1.0 (fully rough where the map does not sharpen it). Each becomes a MeshPhysicalMaterial whose coat highlight the plain base lacks",
   "tolerance": {
     "abs": 0
   },

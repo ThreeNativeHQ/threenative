@@ -54,7 +54,7 @@ transparent material samples after the opaque pass, as in r185.
 #### Phase 2: Loaders and assets
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/src/engine/assets/gltf/`, `packages/runtime-native/src/engine/renderer/` (PMREM input)
-- [ ] A glTF material with `KHR_materials_clearcoat` loads into the clearcoat layer (f6c846377) instead of being refused. Users: Midway (imported aircraft). Extends PRD-515. proof: fixture `gltf-model-clearcoat` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_gltf`
+- [x] A glTF material with `KHR_materials_clearcoat` loads into the clearcoat layer (f6c846377) instead of being refused. Users: Midway (imported aircraft). Extends PRD-515. proof: fixture `gltf-model-clearcoat` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_gltf` — **done 2026-10-09** (`24c9f626e`): `gltf-model-clearcoat` (a factor-only coat and a texture-driven one) was refused with `TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED` before and matches the r185 golden after, 2/2 observations, in `native_engine_render_gltf`. The coat-roughness map changes too few pixels for the 1% frame gate, so `native_engine_gltf_hierarchy` also checks the loaded type, factors and both maps; a control that drops the roughness map fails it.
 - [ ] `HDRLoader` loads Midway's equirectangular environment into a texture that PMREM filters as r185 does. Users: Midway (`src/render/environment.ts`). Extends PRD-515 and [PRD-525](../../done/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md). proof: fixture `pmrem-hdr-equirect` through `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_render_pmrem`
 
 #### Phase 3: Animation and addons

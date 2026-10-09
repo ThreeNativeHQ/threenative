@@ -265,6 +265,22 @@ int main() {
         infinite->ior != 1000 || infinite->specularColor.b != 0.3) {
         std::printf("physical: wrong material type or ior/specular inputs: %s\n", physical.error.c_str()); ++differ;
     }
+    // KHR_materials_clearcoat (GLTFMaterialsClearcoatExtension): a MeshPhysicalMaterial with the coat's
+    // factors and its clearcoat and clearcoat-roughness maps.
+    const std::string coatBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/three-native/tests/compatibility/fixtures/gltf-model-clearcoat.glb");
+    auto coat = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(coatBytes.data()), coatBytes.size()));
+    const auto coatOf = [&](const char* name) -> const Material* {
+        auto* mesh = coat.scene ? dynamic_cast<Mesh*>(coat.scene->getObjectByName(name)) : nullptr;
+        return mesh ? mesh->material.get() : nullptr;
+    };
+    const Material* coated = coatOf("coated");
+    const Material* coatMapped = coatOf("coatMapped");
+    if (!coat.error.empty() || !coated || !coatMapped || coated->type != MaterialType::Physical || coated->clearcoat != 1 ||
+        coated->clearcoatRoughness != 0.05 || !coated->maps.empty() || coatMapped->clearcoat != 0.9 ||
+        coatMapped->clearcoatRoughness != 1 || !coatMapped->maps.count("clearcoatMap") ||
+        !coatMapped->maps.count("clearcoatRoughnessMap")) {
+        std::printf("clearcoat: wrong material type, factors or maps: %s\n", coat.error.c_str()); ++differ;
+    }
     // PRD-526: a texture's image decodes at load (PNG and JPEG), with the sampler GLTFLoader applies.
     const std::string imageBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/runtime-native/tests/native-engine/assets/image-textures.gltf");
     auto images = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(imageBytes.data()), imageBytes.size()));

@@ -1,7 +1,7 @@
 {
   "name": "gltf-model-clearcoat",
   "threeVersion": "0.185.1",
-  "adaptedFrom": "original — two rough dark dielectric spheres loaded by three's GLTFLoader and the native glTF loader with KHR_materials_clearcoat: one coated by factors only (clearcoat 1, clearcoatRoughness 0.05), one with clearcoatTexture and clearcoatRoughnessTexture over factors 0.9 and 0.6. Each becomes a MeshPhysicalMaterial whose coat highlight the plain base lacks",
+  "adaptedFrom": "original — two rough dark dielectric spheres loaded by three's GLTFLoader and the native glTF loader with KHR_materials_clearcoat: one coated by factors only (clearcoat 1, clearcoatRoughness 0.05), one with clearcoatTexture and clearcoatRoughnessTexture over factors 0.9 and 1.0 (fully rough where the map does not sharpen it). Each becomes a MeshPhysicalMaterial whose coat highlight the plain base lacks",
   "blocked": null,
   "observations": [
     {
@@ -16,13 +16,13 @@
       "index": 1,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:2e6ed6a74f8a307e6952e21337620a61ea5cd834af2b6190a912b8f33c60b8a8",
-      "decimal": "2e6ed6a74f8a307e6952e21337620a61ea5cd834af2b6190a912b8f33c60b8a8"
+      "value": "s:e849e2e0221fb41d034a03b29c42fc841728d915200da7e8074441fafc474d09",
+      "decimal": "e849e2e0221fb41d034a03b29c42fc841728d915200da7e8074441fafc474d09"
     }
   ],
   "render": {
     "png": "gltf-model-clearcoat.png",
-    "pngSha256": "2e6ed6a74f8a307e6952e21337620a61ea5cd834af2b6190a912b8f33c60b8a8",
+    "pngSha256": "e849e2e0221fb41d034a03b29c42fc841728d915200da7e8074441fafc474d09",
     "width": 320,
     "height": 240,
     "adapter": {
