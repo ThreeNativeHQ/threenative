@@ -433,6 +433,9 @@ export function codecLadder(
       ];
 }
 
+/** Above this, a source ETC1S cannot beat skips the UASTC rungs; the RDO bound uses the same size. */
+const LARGE_LADDER_TEXELS = 256 * 256;
+
 /** Both compression passes retain the smallest eligible encoded candidate that passes. */
 export async function encodeTextureLadder(
   data: Uint8Array,
@@ -453,8 +456,10 @@ export async function encodeTextureLadder(
   const slots = options.slots ?? ["baseColorTexture"];
   let smallest: { encoded: Uint8Array; codec: TextureCodec; quality: ITextureQuality } | undefined;
   let smallerThanSource = options.maxBytes === undefined;
+  let sourceWins = false;
   for (const candidate of codecLadder(slots, options.forced)) {
     if (candidate.codec === "none" && smallest !== undefined) return smallest;
+    if (sourceWins && candidate.codec !== "none") continue;
     const rung =
       candidate.codec === "etc1s"
         ? `etc1s@${options.quality}`
@@ -476,7 +481,14 @@ export async function encodeTextureLadder(
             ...(candidate.rdoLambda === undefined ? {} : { rdoLambda: candidate.rdoLambda }),
           });
     if (encoded !== undefined && options.maxBytes !== undefined) {
-      if (encoded.byteLength >= options.maxBytes) continue;
+      if (encoded.byteLength >= options.maxBytes) {
+        // ponytail: ETC1S is the ladder's lowest bitrate, so on a large image the UASTC rungs it
+        // cannot beat are not encoded: the starter's 4096x2048 sky spent 50 s on three of them to
+        // ship its source anyway. Ceiling: a smooth image whose UASTC+RDO+zstd would undercut both
+        // ETC1S and the source ships the source; walk the full ladder if that case is measured.
+        if (candidate.codec === "etc1s" && width * height > LARGE_LADDER_TEXELS) sourceWins = true;
+        continue;
+      }
       smallerThanSource = true;
     }
     // A larger candidate cannot replace the passing minimum, regardless of its score.

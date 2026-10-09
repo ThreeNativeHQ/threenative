@@ -14,7 +14,11 @@ import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import * as qualityInstrument from "../src/image-quality.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
 import * as encoder from "../src/ktx2-encoder.js";
-import { codecLadder, compressEmbeddedTextures } from "../src/passes/model-textures.js";
+import {
+  codecLadder,
+  compressEmbeddedTextures,
+  encodeTextureLadder,
+} from "../src/passes/model-textures.js";
 import { modelPass } from "../src/passes/model.js";
 import { createSharedImageStore } from "../src/passes/shared-images.js";
 import { parsePng } from "../src/png.js";
@@ -529,6 +533,32 @@ describe("embedded model textures", () => {
       for (const call of measure.mock.calls) expect(call[4]?.alphaThresholds).toEqual([0.25, 0.6]);
     } finally {
       measure.mockRestore();
+      encode.mockRestore();
+    }
+  });
+
+  it("stops encoding a large image once ETC1S cannot beat its source bytes", async () => {
+    // The starter's 4096x2048 sky.jpg spent 50 s on four encodes and shipped its source: no rung
+    // beat the JPEG's bytes. ETC1S is the ladder's lowest bitrate, so on a large image the UASTC
+    // rungs are not encoded once it fails; a small image still walks the whole ladder.
+    const encode = vi
+      .spyOn(encoder, "encodeToKTX2")
+      .mockImplementation(async () => new Uint8Array(4096));
+    try {
+      const ladder = (size: number) =>
+        encodeTextureLadder(new Uint8Array(size * size * 4).fill(128), size, size, {
+          maxBytes: 100,
+          quality: 128,
+          srgb: true,
+        });
+      const large = await ladder(600);
+      expect(large.codec).toBe("none");
+      expect(large.quality.compressionSkipped).toBe("not-smaller");
+      expect(encode).toHaveBeenCalledTimes(1);
+      encode.mockClear();
+      expect((await ladder(64)).codec).toBe("none");
+      expect(encode).toHaveBeenCalledTimes(4);
+    } finally {
       encode.mockRestore();
     }
   });
