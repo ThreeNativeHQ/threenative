@@ -139,7 +139,8 @@ export function unsupported() {
   throw new Error("TN_CORE_NATIVE_UNSUPPORTED: this native profile does not provide this import");
 }
 
-export const BatchedMesh = unsupported;
+// three's BatchedMesh: an engine class (PRD-552), each geometry's instances drawn as one instanced mesh.
+export const { BatchedMesh } = globalThis;
 // three's InstancedBufferGeometry: an engine class, drawn instanceCount times.
 export const { InstancedBufferGeometry } = globalThis;
 export const LineLoop = unsupported;

@@ -1,5 +1,5 @@
 export * from "./core-three.mjs";
-import { BufferAttribute, unsupported } from "./core-three.mjs";
+import { BufferAttribute, Color, unsupported } from "./core-three.mjs";
 import { syncUniforms } from "./core-tsl.mjs";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
@@ -41,6 +41,16 @@ export class WebGPURenderer {
   toneMapping = 0;
   toneMappingExposure = 1;
   outputColorSpace = "srgb";
+  // three's clear colour and alpha (linear), black and opaque by default; the player clears each frame
+  // and each render target to them (`__clearColor`, read by tn.setRendererState).
+  __clearColor = [0, 0, 0, 1];
+  setClearColor(color, alpha = 1) {
+    const value = typeof color === "object" && color !== null ? color : new Color(color);
+    this.__clearColor = [value.r, value.g, value.b, alpha];
+  }
+  getClearColor(target) { return target.setRGB(this.__clearColor[0], this.__clearColor[1], this.__clearColor[2]); }
+  getClearAlpha() { return this.__clearColor[3]; }
+  setClearAlpha(alpha) { this.__clearColor[3] = alpha; }
   setPixelRatio() {}
   // WebGPUCapabilities.getMaxAnisotropy: WebGPU samplers clamp maxAnisotropy to 16.
   getMaxAnisotropy() { return 16; }
@@ -60,9 +70,10 @@ export class WebGPURenderer {
 
 // three's render targets (shared with the Wasm back end): render() while a target is set draws into
 // it at the call, and readRenderTargetPixelsAsync reads it back once the GPU copy lands.
-defineRenderTargets(WebGPURenderer.prototype, () => ({
+defineRenderTargets(WebGPURenderer.prototype, (renderer) => ({
   draw(target, root, camera) {
     syncUniforms();
+    globalThis.tn.setRendererState(renderer);  // the target clears to the renderer's current clear colour
     globalThis.tn.renderTarget(target, root, camera);
   },
   read: (target, x, y, width, height) => globalThis.tn.readTarget(target, x, y, width, height),

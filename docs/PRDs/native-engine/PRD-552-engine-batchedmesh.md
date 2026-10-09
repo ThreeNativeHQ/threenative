@@ -36,9 +36,9 @@ draw, over the `InstancedMesh` path. One binding serves V8 and Wasm; the catalog
 - [x] `getMatrixAt`, `getColorAt` and `getVisibleAt` read back what was set, and `addInstance` past `maxInstanceCount` refuses as three does. proof: a scene test case in `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_scene` — 2026-10-09: `native_engine_scene_batched_mesh` passes: read-back, a freed id reused first, and three's messages for the instance cap, the reserved space and a deleted id.
 
 #### Phase 2: Both back ends bind it, and a core game bundles on V8
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 
-- [ ] The V8 player and the Wasm module construct and draw a `BatchedMesh`. proof: `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend` and a V8 player test
+- [x] The V8 player and the Wasm module construct and draw a `BatchedMesh`. proof: `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend` and a V8 player test — 2026-10-09: the Wasm renderer playtest reads `batchedStrip` (red, green, then the clear colour for the hidden instance and the empty column), exit 0; the new `native_engine_player_batched_mesh` reads the same strip back from a V8 render target, pass. That test found the V8 facade had no `setClearColor` and the player cleared V8 frames to the demos' dark blue: the facade now has three's clear-colour methods, and V8 frames and targets clear to them (black, opaque, by default).
 - [ ] A `@threenative/core` game bundles for the V8 player. proof: `native_engine_player_imports` asserts that the core game bundles, where it now asserts the refusal
 
 ## Acceptance criteria

@@ -118,6 +118,8 @@ class V8Game {
     Camera* camera() const { return camera_; }
     bool shadowMapEnabled() const { return shadowMap_; }
     int shadowMapType() const { return shadowMapType_; }
+    /** The renderer's clear colour and alpha (setClearColor), each frame's and each render target's. */
+    std::array<double, 4> clearColor() const { return clear_; }
 
   private:
     std::unique_ptr<mystral::js::Engine> services_;
@@ -147,6 +149,7 @@ class V8Game {
     uint64_t triangles_ = 0;
     bool shadowMap_ = false;  // three's WebGPURenderer defaults: shadowMap off, PCFShadowMap
     int shadowMapType_ = 1;
+    std::array<double, 4> clear_{0, 0, 0, 1};  // three's WebGPURenderer clear colour: black, opaque
     bool outputChanged_ = true;
     static void loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -320,6 +323,19 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
     }
     game.shadowMap_ = enabled->IsTrue();
     game.shadowMapType_ = static_cast<int>(type.As<v8::Number>()->Value());
+    // The facade's clear colour and alpha (setClearColor), linear, as `__clearColor: [r, g, b, a]`.
+    v8::Local<v8::Value> clear;
+    if (settings->Get(ctx, v8str(isolate, "__clearColor")).ToLocal(&clear) && clear->IsArray()) {
+        const auto lanes = clear.As<v8::Array>();
+        std::array<double, 4> value{};
+        for (uint32_t i = 0; i < 4; ++i) {
+            v8::Local<v8::Value> lane;
+            if (!lanes->Get(ctx, i).ToLocal(&lane) || !lane->IsNumber() || !std::isfinite(lane.As<v8::Number>()->Value()))
+                return refuse("__clearColor must be four finite numbers");
+            value[i] = lane.As<v8::Number>()->Value();
+        }
+        game.clear_ = value;
+    }
 }
 
 // three's `adapter` as the facade backend hands it out: `{ info: { architecture, ... }, limits: {} }`,
@@ -422,10 +438,10 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto* camera = info.Length() == 3 ? game.engineObject(info[2], "Camera") : nullptr;
     if (target == nullptr || root == nullptr || camera == nullptr)
         return refuse("TN_NATIVE_RENDER_TARGET: expected a RenderTarget, an Object3D and a camera");
-    // three's WebGPURenderer clears to its clear colour, black and opaque by default.
+    // three's WebGPURenderer clears a target to its clear colour (setClearColor), black and opaque by default.
     const auto refused = renderToTarget(*game.renderer_, *static_cast<RenderTarget*>(target->ptr.get()),
                                         *static_cast<Object3D*>(root->ptr.get()), *static_cast<Camera*>(camera->ptr.get()),
-                                        {0, 0, 0, 1}, game.shadowMap_);
+                                        game.clear_, game.shadowMap_);
     if (!refused.empty()) refuse(refused.front());
 }
 
@@ -874,6 +890,7 @@ int main(int argc, char** argv) {
     configured.update = [&game](double dt) { game.tick(dt); };
     configured.initialize = [&game](Renderer& renderer) { game.initialize(renderer); };
     configured.beforeRender = [&game](Renderer& renderer, RenderDatabase& database) { game.beforeRender(renderer, database); };
+    configured.clear = [&game] { return game.clearColor(); };
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.observe = [&game](const std::string& method, const json::Value* argument,
                                  json::Value& result, std::string& error) {

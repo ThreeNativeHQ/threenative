@@ -304,7 +304,7 @@ int run(const Game& game) {
             return;
         }
         if (game.beforeRender) game.beforeRender(renderer, database);
-        database.render(renderer, *scene, *camera, {0.05, 0.06, 0.09, 1});
+        database.render(renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1});
         for (const std::string& diagnostic : database.diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
         for (const std::string& diagnostic : renderer.diagnostics())

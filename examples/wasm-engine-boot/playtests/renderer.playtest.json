@@ -92,6 +92,13 @@
       {
         "entity": "wasm-renderer",
         "component": "probe",
+        "path": "batchedStrip",
+        "equals": "255,0,0,255,0,255,0,255,1,4,8,255,1,4,8,255",
+        "allowTrivial": "PRD-552: a BatchedMesh's red and green instances on columns 0 and 1; the hidden blue one and the empty column keep the clear colour."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
         "path": "steadyCompiles",
         "equals": 0,
         "allowTrivial": "A steady frame compiles no pipeline; -1 means frame 10 never drew."

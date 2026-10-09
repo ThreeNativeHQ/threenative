@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -56,6 +57,9 @@ struct Game {
      *  bundle's async boot, a later `renderer.render(other, camera)`): 1 bound, 0 not published yet
      *  (the frame stays undrawn), -1 failed, with `error` set. Without it, `scene`/`camera` are fixed. */
     std::function<int(Object3D*& scene, Camera*& camera, std::string& error)> view;
+    /** The frame's linear clear colour and alpha (a V8 bundle's renderer.setClearColor); without it,
+     *  the built-in games' dark blue. */
+    std::function<std::array<double, 4>()> clear;
 };
 
 /** Runs one game until the window closes or the runner stops the process. */

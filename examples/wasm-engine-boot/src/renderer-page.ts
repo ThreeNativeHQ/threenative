@@ -7,7 +7,9 @@ import {
   AmbientLight,
   AnimationClip,
   AnimationMixer,
+  BatchedMesh,
   BoxGeometry,
+  Color,
   Data3DTexture,
   DataTexture,
   DirectionalLight,
@@ -92,6 +94,8 @@ const probe = {
   volumeStrip: "",
   /** PRD-540: a TSL tile whose red is a uniform, before and after a uniform.value write. */
   tslTile: "",
+  /** PRD-552: a BatchedMesh strip, one unit quad per column: red, green, a hidden blue, then nothing. */
+  batchedStrip: "",
 };
 const started = performance.now();
 
@@ -366,6 +370,24 @@ try {
   const before = (await drawStrip(tileScene)).split(",").slice(0, 4).join(",");
   level.value = 0.75;
   probe.tslTile = `${before}|${(await drawStrip(tileScene)).split(",").slice(0, 4).join(",")}`;
+  // A BatchedMesh of unit quads: each instance's matrix places it on a column and its colour tints it.
+  const batch = new BatchedMesh(4, 64, 64, new MeshBasicNodeMaterial());
+  const quadId = batch.addGeometry(new PlaneGeometry(1, 1).toNonIndexed());
+  const tints: [number, number, number][] = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+  const ids = tints.map(([r, g, b], column) => {
+    const id = batch.addInstance(quadId);
+    batch.setMatrixAt(id, new Matrix4().makeTranslation(column + 0.5, 0.5, 0));
+    batch.setColorAt(id, new Color().setRGB(r, g, b));
+    return id;
+  });
+  batch.setVisibleAt(ids[2] as number, false);
+  const batchScene = new Scene();
+  batchScene.add(batch);
+  probe.batchedStrip = await drawStrip(batchScene);
   // Midway's renderer settings: they reach the engine before each frame, as on the V8 player.
   renderer.toneMapping = 5;
   try {
