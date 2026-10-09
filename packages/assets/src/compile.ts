@@ -16,6 +16,15 @@ import path from "node:path";
 import { assertBudget, measureBudget, parseBudget } from "./budget.js";
 import type { IAssetBudget, IAssetRuntimeDecoderCapabilities } from "./budget.js";
 import {
+  ASSETS_CONFIG_KEYS,
+  LIGHTMAP_CONFIG_KEYS,
+  MODELS_CONFIG_KEYS,
+  MODEL_PASS_KEYS,
+  MODEL_QUANTIZE_KEYS,
+  MODEL_VIRTUAL_COUNT_KEYS,
+  MODEL_VIRTUAL_KEYS,
+} from "./config-keys.js";
+import {
   type IModelDedupeSummary,
   formatModelDedupe,
   groupModelSources,
@@ -1014,18 +1023,8 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
-  const allowed = [
-    "compact",
-    "lightmap",
-    "passes",
-    "quantize",
-    "sharedImages",
-    "simplify",
-    "textures",
-    "virtual",
-  ];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!MODELS_CONFIG_KEYS.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.${key} is not recognised.`);
     }
   }
@@ -1253,16 +1252,15 @@ function parseModelVirtual(raw: unknown): IModelVirtualOptions | "none" {
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models.virtual must be "none" or an object.');
   }
-  const counts = ["groupSize", "maxTriangles", "minSourceTriangles", "minTriangles"] as const;
   for (const key of Object.keys(raw)) {
-    if (key !== "simplifyRatio" && !(counts as readonly string[]).includes(key)) {
+    if (!MODEL_VIRTUAL_KEYS.includes(key)) {
       throw new Error(
         `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.virtual.${key} is not recognised.`,
       );
     }
   }
   const parsed: Record<string, number> = {};
-  for (const key of counts) {
+  for (const key of MODEL_VIRTUAL_COUNT_KEYS) {
     const value = raw[key];
     if (value === undefined) continue;
     if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -1483,7 +1481,7 @@ function parseLightmap(raw: unknown): ILightmapPassOptions {
     throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.lightmap must be an object.");
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "atlasSize" && key !== "padding") {
+    if (!LIGHTMAP_CONFIG_KEYS.includes(key)) {
       throw new Error(
         `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.lightmap.${key} is not recognised.`,
       );
@@ -1494,6 +1492,11 @@ function parseLightmap(raw: unknown): ILightmapPassOptions {
       "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.atlasSize must be a positive integer.",
     );
   }
+  if ((raw.atlasSize as number) % 4 !== 0) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.atlasSize must be a multiple of 4.",
+    );
+  }
   if (!Number.isSafeInteger(raw.padding) || (raw.padding as number) <= 0) {
     throw new Error(
       "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.padding must be a positive integer.",
@@ -1501,8 +1504,6 @@ function parseLightmap(raw: unknown): ILightmapPassOptions {
   }
   return { atlasSize: raw.atlasSize as number, padding: raw.padding as number };
 }
-
-const MODEL_PASS_KEYS: readonly string[] = ["dedup", "meshopt", "prune", "quantize", "reorder"];
 
 function parseModelPasses(raw: unknown): IModelPassesOptions {
   if (!isRecord(raw)) {
@@ -1520,8 +1521,6 @@ function parseModelPasses(raw: unknown): IModelPassesOptions {
   }
   return raw as IModelPassesOptions;
 }
-
-const MODEL_QUANTIZE_KEYS: readonly string[] = ["normalBits", "positionBits", "uvBits"];
 
 function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
   if (!isRecord(raw)) {
@@ -1582,20 +1581,9 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     throw new Error("TN_ASSETS_CONFIG_INVALID: assets must be an object when declared.");
   }
   for (const key of Object.keys(config)) {
-    if (
-      key !== "audio" &&
-      key !== "budget" &&
-      key !== "exclude" &&
-      key !== "concurrency" &&
-      // `assets.lod` is validated and resolved by the project config loader; this package accepts
-      // it so the resolved config crosses the seam intact. Phase 2 consumes it for generation.
-      key !== "lod" &&
-      key !== "source" &&
-      key !== "output" &&
-      key !== "targets" &&
-      key !== "textures" &&
-      key !== "models"
-    ) {
+    // `assets.lod` is validated and resolved by the project config loader; this package accepts
+    // it so the resolved config crosses the seam intact. Phase 2 consumes it for generation.
+    if (!ASSETS_CONFIG_KEYS.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.${key} is not recognised.`);
     }
   }

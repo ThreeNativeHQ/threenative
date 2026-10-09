@@ -15,6 +15,7 @@ import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
 import { modelPass } from "../src/passes/model.js";
 import { unpackGlb } from "../src/passes/shared-images.js";
+import { sine, wavClip } from "./audio-fixtures.js";
 
 const TRANSCODER = basisTranscoderPaths();
 const THREE_INSTALL = path.resolve(import.meta.dirname, "../node_modules/three");
@@ -1241,4 +1242,50 @@ describe("compile cache", () => {
     expect(fifth.written).toBe(1);
     expect(applied).toBe(6);
   });
+});
+
+describe("manifest and per-kind pass isolation", () => {
+  it("rejects a corrupt existing manifest instead of rebuilding over it silently", async () => {
+    const root = await makeTempDir("threenative-corrupt-manifest-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets/keep.txt"), "kept");
+    await mkdir(path.join(root, "public"));
+    const config = { audio: "none", models: "none", textures: "none" } as const;
+    const manifest = path.join(root, "public/assets.manifest.json");
+
+    await writeFile(manifest, "{not json");
+    await expect(compileAssets({ cwd: root, config })).rejects.toThrow(
+      "TN_ASSETS_MANIFEST_INVALID",
+    );
+    await writeFile(manifest, JSON.stringify({ version: 2, entries: {} }));
+    await expect(compileAssets({ cwd: root, config })).rejects.toThrow(
+      "TN_ASSETS_MANIFEST_INVALID",
+    );
+  });
+
+  it("keeps a non-audio entry unchanged when only the audio options change", async () => {
+    const root = await makeTempDir("threenative-pass-isolation-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets/notes.txt"), "notes");
+    await writeFile(
+      path.join(root, "assets/tone.wav"),
+      wavClip({ frames: 4_410, sample: sine(440) }),
+    );
+    const entriesWith = async (audio: Record<string, unknown>) => {
+      await compileAssets({
+        cwd: root,
+        config: { audio, models: "none", textures: "none" } as never,
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+      );
+      return manifest.entries as Record<string, unknown>;
+    };
+
+    const before = await entriesWith({});
+    const after = await entriesWith({ seamMaxRatio: 2 });
+
+    expect(after["tone.wav"]).not.toEqual(before["tone.wav"]);
+    expect(after["notes.txt"]).toEqual(before["notes.txt"]);
+  }, 30_000);
 });

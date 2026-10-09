@@ -330,6 +330,32 @@ describe("loadTerrainSplat", () => {
     expect(info).toHaveBeenCalledWith("TN_TERRAIN_SPLAT layers=4 samplers=7 stacked=2");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("bind 4 samplers"));
   });
+
+  it("refuses a world.json without a numeric extent", async () => {
+    const { assets } = served({
+      "world/world.json": { terrain: { layers: { splat: "s", table: "t" } } },
+    });
+    await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(
+      /has no numeric extent/u,
+    );
+  });
+
+  it("refuses a mask the splat table does not name", async () => {
+    const broken = {
+      ...table,
+      layers: [
+        { channel: "r", hi: 1, id: "litter", lo: 0, mask: "ghost", tile: 3, tint: [1, 1, 1] },
+      ],
+    };
+    const { assets } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": broken,
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(
+      /unknown mask 'ghost'/u,
+    );
+  });
 });
 
 describe("stackLayers", () => {

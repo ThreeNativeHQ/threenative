@@ -50,6 +50,8 @@ async function probe() {
         if (name === "@threenative/core/world") return { WorldCells: { load: async () => world } };
         if (name === "three") return { Color, DirectionalLight, HemisphereLight };
         if (name === "../render/terrain.js") return { terrainMaterial: () => ({}) };
+        // Only the `?world&viewDistance` flight applies it, and this context has no location.
+        if (name === "../render/worldFog.js") return { worldFog: () => undefined };
         throw new Error(`Unexpected fixture dependency ${name}`);
       },
     },

@@ -668,6 +668,10 @@ export interface IWorldCellsGpuTally {
 export interface IWorldCellsStats {
   readonly residentCells: number;
   readonly residentKeys: readonly string[];
+  /** Terrain tiles drawn, out to `terrain.streamRadius`; independent of the props' `ring`. */
+  readonly residentTiles: number;
+  /** Tiles holding a `createCollider` body, inside `terrain.colliderRadius`; 0 with no factory. */
+  readonly residentColliders: number;
   /** Placement instances the resident cells hold, before any `maxDistance` filter. */
   readonly instances: number;
   readonly loadsInFlight: number;
@@ -3795,6 +3799,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #lastSample: { readonly x: number; readonly z: number; readonly t: number } | undefined;
   readonly #ring: number;
   readonly #terrain: TerrainTiles;
+  readonly #hasColliders: boolean;
   readonly #transparentScatter: "cutout" | "blend";
   readonly #baseUrl: string;
   readonly #logicalBase: string;
@@ -4302,6 +4307,7 @@ export class WorldCells extends Group implements IComputeDriven {
       tileResolution: init.terrain?.tileResolution ?? DEFAULT_TILE_RESOLUTION,
       tileSize: init.terrain?.tileSize ?? this.#cellSize,
     });
+    this.#hasColliders = init.createCollider !== undefined;
     this.add(this.#terrain);
   }
 
@@ -5289,6 +5295,8 @@ export class WorldCells extends Group implements IComputeDriven {
       unchanged: this.#unchanged,
       residentCells: this.#resident.size,
       residentKeys: [...this.#resident.keys()].sort(),
+      residentTiles: this.#terrain.residentTileCount,
+      residentColliders: this.#hasColliders ? this.#terrain.residentColliderKeys.length : 0,
     };
   }
 

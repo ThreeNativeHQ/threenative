@@ -183,14 +183,14 @@ const BUG_REPORT_SKILL_PATHS = [
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed on the PRD-478 merge into PR 473 (develop f7dd08621 + the runbook branch): the
+  // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
   // merged Three patch changes every kit; starter also carries the merged render source.
   "action-rpg": "ca3c58ab561319c2c6671a5714019f18b8b2b82dc0be699fbf05b1231504be71",
   minimal: "44979db5dd573a297c6d66c08d5366fc66f7ddaf0bdc553c4781fae0059fa0fc",
   platformer: "a0f9f7f33b14041062b0a91789ebdb0cea61f4dd889f67762a14244dbf398266",
   puzzle: "c92bdc29939c43a8a2bf418f31aabbd2de1b31481eb51286bd834bf2cc9bd84f",
   racing: "8b7b7cf6b8660790b604d819968f7a48e950823373525660e04f26fe3ef16dba",
-  rain: "c67cd41c5140131e0262927501c5553bceee04818989a01da3754932cded8ceb",
+  rain: "e43a82568eb6d6cd0bf069f3db2fe5e77ba92821cf983f018dea78ea40a30080",
   rts: "d5008c09be975e3dea93ae1c1d19163b7fba7f785d4e031a523b4e9c8a69edac",
   runner: "b8b4d65a033df2dddffe2462dbbbd42a203d7ff8e1a0c8658c0a22088f5378aa",
   sailing: "7212532cca11fc11e9346461cc3468a59a92237ca800f2e1fe142681d344ff1b",

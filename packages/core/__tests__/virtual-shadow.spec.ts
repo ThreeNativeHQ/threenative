@@ -2679,6 +2679,13 @@ describe("VirtualShadowNode adaptive refresh", () => {
     );
     expect(setupNode(light).options.expensiveRefreshShare).toBe(0.4);
   });
+
+  it("should default adaptiveRefresh to true", () => {
+    const { light } = world();
+    const node = setupNode(light);
+    expect(node.options.adaptiveRefresh).toBe(true);
+    node.dispose();
+  });
 });
 
 /**
