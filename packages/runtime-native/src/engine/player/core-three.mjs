@@ -9,7 +9,7 @@ export const {
   MeshBasicMaterial, MeshLambertMaterial, MeshPhongMaterial, MeshPhysicalMaterial, IcosahedronGeometry,
   MeshStandardMaterial, NumberKeyframeTrack, Object3D, OctahedronGeometry, OrthographicCamera, Path, PerspectiveCamera, Plane, PlaneGeometry,
   QuaternionKeyframeTrack, VectorKeyframeTrack, Shape, ShapeGeometry, ExtrudeGeometry,
-  PointLight, Quaternion, Ray, Raycaster, RingGeometry, RoundedBoxGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
+  Line, LineBasicMaterial, LineSegments, PointLight, Quaternion, Ray, Raycaster, RingGeometry, RoundedBoxGeometry, Scene, Skeleton, SkinnedMesh, Sphere,
   SphereGeometry, SpotLight, Sprite, SpriteMaterial, TorusGeometry, TorusKnotGeometry, TubeGeometry, Vector2, Vector3,
   Vector4, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, PCFSoftShadowMap,
   NoColorSpace, LinearSRGBColorSpace, SRGBColorSpace, RepeatWrapping, ClampToEdgeWrapping,
@@ -32,9 +32,7 @@ export function unsupported() {
 
 export const BatchedMesh = unsupported;
 export const InstancedBufferGeometry = unsupported;
-export const Line = unsupported;
 export const LineLoop = unsupported;
-export const LineSegments = unsupported;
 export const Points = unsupported;
 export const WebGLRenderer = unsupported;
 export const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
@@ -43,7 +41,7 @@ export const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader 
 const bags = new WeakMap();
 for (const name of ["Object3D", "Scene", "Mesh", "Group", "SkinnedMesh", "InstancedMesh",
   "Camera", "PerspectiveCamera", "OrthographicCamera", "DirectionalLight", "AmbientLight",
-  "HemisphereLight", "PointLight", "SpotLight", "Bone", "LOD", "Sprite"]) {
+  "HemisphereLight", "PointLight", "SpotLight", "Bone", "LOD", "Sprite", "Line", "LineSegments"]) {
   const prototype = globalThis[name].prototype;
   const parent = Object.getOwnPropertyDescriptor(prototype, "parent").get;
   Object.defineProperties(prototype, {
@@ -82,6 +80,6 @@ CatmullRomCurve3.prototype.isCatmullRomCurve3 = true;
 for (const light of [AmbientLight, DirectionalLight, HemisphereLight, PointLight, SpotLight])
   light.prototype.isLight = true;
 // attributes/groups, shape.holes and the abstract Material: shared with the Wasm back end.
-defineObjectSurface({ bufferGeometry: BufferGeometry, geometries, shape: Shape, materials: [MeshBasicMaterial, MeshLambertMaterial,
+defineObjectSurface({ bufferGeometry: BufferGeometry, geometries, shape: Shape, materials: [LineBasicMaterial, MeshBasicMaterial, MeshLambertMaterial,
   MeshPhongMaterial, MeshPhysicalMaterial, MeshStandardMaterial, SpriteMaterial] });
 export { Material };

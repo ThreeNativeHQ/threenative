@@ -75,6 +75,8 @@ struct DrawItem {
     WGPUTextureView reflectorView = nullptr;
     WGPUSampler reflectorSampler = nullptr;
     MaterialKind kind = MaterialKind::Standard;
+    /** three's Line (LineStrip) and LineSegments (LineList) draw lines; everything else triangles. */
+    WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
     // Render-list inputs, as three's RenderList reads them.
     uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
     int renderOrder = 0;       // Object3D.renderOrder

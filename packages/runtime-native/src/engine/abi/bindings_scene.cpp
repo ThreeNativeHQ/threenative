@@ -661,6 +661,12 @@ Value intersections(Store& store, const std::vector<Intersection>& hits) {
             using V = std::decay_t<decltype(v)>;
             return store.adopt(cls, std::make_shared<V>(v));
         };
+        if (h.index) {  // three's Line hit: the segment index, no face
+            values.push_back(Value::record({{"distance", Value::of(h.distance)}, {"point", vector(h.point, "Vector3")},
+                {"index", Value::of(double(*h.index))}, {"face", Value{}}, {"faceIndex", Value{}},
+                {"barycoord", Value{}}, {"object", foundObject(store, h.object)}}));
+            continue;
+        }
         std::vector<std::pair<std::string, Value>> fields = {
             {"distance", Value::of(h.distance)}, {"point", vector(h.point, "Vector3")},
             {"object", foundObject(store, h.object)}, {"faceIndex", Value::of(double(h.faceIndex))},
@@ -1267,7 +1273,8 @@ Object3D& objectArg(Store& store, const Value& arg) {
                                            "Scene",           "Camera",          "PerspectiveCamera",
                                            "OrthographicCamera", "AmbientLight", "DirectionalLight",
                                            "HemisphereLight", "InstancedMesh",      "PointLight",
-                                           "Sprite", "SpotLight",       "Bone",               "SkinnedMesh", "LOD"};
+                                           "Sprite", "SpotLight",       "Bone",               "SkinnedMesh", "LOD",
+                                           "Line", "LineSegments"};
     Object* found = store.find(arg);
     if (found == nullptr) throw Unsupported{"argument is not an Object3D"};
     for (const char* cls : kClasses) {
@@ -1312,6 +1319,23 @@ void registerSceneBindings(Registry& classes) {
     registerLOD(classes["LOD"]);
     registerMesh(classes["Mesh"]);
     registerInstancedMesh(classes["InstancedMesh"]);
+    for (const char* name : {"Line", "LineSegments"}) {
+        auto& line = classes[name];
+        registerMesh(line);
+        line.methods.erase("getVertexPosition");  // three's Line is no Mesh: it has no vertex reader
+        const bool segments = std::string_view(name) == "LineSegments";
+        line.ctor = [segments](const Args& a, Store& store) {
+            auto geometry = !a.empty() && a.at(0).kind == Value::Kind::Ref ? geometryArg(store, a.at(0))
+                                                                           : std::make_shared<BufferGeometry>();
+            auto material = a.size() >= 2 && a.at(1).kind == Value::Kind::Ref ? materialArg(store, a.at(1)) : nullptr;
+            if (!material) {  // three's default: a new LineBasicMaterial
+                material = std::make_shared<Material>(MaterialType::Basic);
+                material->lineMaterial = true;
+            }
+            if (segments) return std::static_pointer_cast<void>(std::make_shared<LineSegments>(geometry, material));
+            return std::static_pointer_cast<void>(std::make_shared<Line>(geometry, material));
+        };
+    }
     auto& sprite = classes["Sprite"];
     registerMesh(sprite);
     sprite.methods.erase("getVertexPosition");  // three's Sprite is no Mesh: it has no vertex reader

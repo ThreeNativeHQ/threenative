@@ -440,7 +440,8 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             auto& lod = static_cast<LOD&>(object);
             if (lod.autoUpdate) lod.update(camera);
         }
-        if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite") {
+        if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
+            type == "LineSegments") {
             const auto& mesh = static_cast<const Mesh&>(object);
             const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                  !mesh.material->transparent && !mesh.material->positionNode &&
@@ -486,6 +487,11 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                         d.instanceColors = instanced.instanceColor ? instanced.instanceColor->store.get() : nullptr;
                         d.instanceCount = static_cast<uint32_t>(
                             std::min<uint64_t>(instanced.count, instanced.instanceMatrix->count()));
+                    }
+                    if (type == "Line" || type == "LineSegments") {
+                        DrawItem& d = items.back();
+                        d.topology = type == "Line" ? WGPUPrimitiveTopology_LineStrip : WGPUPrimitiveTopology_LineList;
+                        d.castShadow = false;  // ponytail: three's shadow pass draws lines; no corpus line casts one
                     }
                     if (type == "Sprite") {
                         const auto& sprite = static_cast<const Sprite&>(mesh);

@@ -68,7 +68,8 @@ struct Object {
 
 /** Only registered classes backed by engine::Material may unwrap as that base type. */
 inline bool isMaterialClass(std::string_view cls) {
-    return cls == "SpriteMaterial" || cls == "SpriteNodeMaterial" || cls == "Material" || cls == "MeshBasicMaterial" || cls == "MeshLambertMaterial" ||
+    return cls == "SpriteMaterial" || cls == "SpriteNodeMaterial" || cls == "LineBasicMaterial" || cls == "Material" ||
+           cls == "MeshBasicMaterial" || cls == "MeshLambertMaterial" ||
            cls == "MeshPhongMaterial" || cls == "MeshStandardMaterial" || cls == "MeshPhysicalMaterial" ||
            cls == "MeshBasicNodeMaterial" || cls == "MeshStandardNodeMaterial";
 }

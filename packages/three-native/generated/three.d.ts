@@ -958,6 +958,16 @@ export declare const LessEqualStencilFunc: 515;
 /** Catalog partial (native-not-implemented): three/LessStencilFunc. */
 export declare const LessStencilFunc: 513;
 
+/** Catalog supported: three/Line. */
+export declare class Line extends Object3D {
+constructor();
+readonly morphTargetInfluences: number[] | undefined;
+readonly geometry: BufferGeometry;
+material: Material;
+
+  updateMorphTargets(): void;
+}
+
 /** Catalog partial (native-not-implemented): three/Line3. */
 export declare class Line3 {
 constructor(start?: Vector3, end?: Vector3);
@@ -989,6 +999,33 @@ end: Vector3;
   applyMatrix4(matrix: Matrix4): Line3;
 
   equals(line: Line3): boolean;
+}
+
+/** Catalog supported: three/LineBasicMaterial. */
+export declare class LineBasicMaterial extends Material {
+constructor();
+alphaTest: number;
+blending: Blending;
+depthTest: boolean;
+depthWrite: boolean;
+fog: boolean;
+readonly id: number;
+name: string;
+opacity: number;
+side: Side;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+visible: boolean;
+color: Color;
+map: Texture | null;
+
+  clone(): this;
+}
+
+/** Catalog supported: three/LineSegments. */
+export declare class LineSegments extends Line {
+constructor();
 }
 
 /** Catalog supported: three/LinearFilter. */

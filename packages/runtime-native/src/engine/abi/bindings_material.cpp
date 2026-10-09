@@ -546,6 +546,16 @@ void registerMaterialBindings(Registry& classes) {
         b.getters["sizeAttenuation"] = [](void* self) { return Value::of(as<Material>(self)->sizeAttenuation); };
         b.setters["sizeAttenuation"] = [](void* self, const Value& v) { as<Material>(self)->sizeAttenuation = flag(v); };
     }
+    {
+        auto& line = classes["LineBasicMaterial"];
+        registerMeshMaterial(line, MaterialType::Basic);
+        const auto ctor = line.ctor;
+        line.ctor = [ctor](const Args& a, Store& store) {
+            auto value = ctor(a, store);
+            static_cast<Material*>(value.get())->lineMaterial = true;
+            return value;
+        };
+    }
     registerMeshMaterial(classes["MeshBasicMaterial"], MaterialType::Basic);
     registerMeshMaterial(classes["MeshBasicNodeMaterial"], MaterialType::Basic, true);
     registerMeshMaterial(classes["MeshStandardNodeMaterial"], MaterialType::Standard, true);

@@ -41,6 +41,7 @@ public:
 
     // Material
     bool spriteMaterial = false;
+    bool lineMaterial = false;  // three's LineBasicMaterial: unlit, drawn by a Line or LineSegments
     double rotation = 0;
     bool sizeAttenuation = true;
     bool transparent = false;

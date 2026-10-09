@@ -26,7 +26,7 @@ const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
-  "ExtrudeGeometry", "SpriteMaterial", ...constants];
+  "ExtrudeGeometry", "SpriteMaterial", "Line", "LineSegments", "LineBasicMaterial", ...constants];
 const panel = (T) => {
   const shape = new T.Shape();
   shape.moveTo(-0.3, -0.2); shape.lineTo(0.25, -0.2); shape.quadraticCurveTo(0.3, -0.2, 0.3, -0.15);

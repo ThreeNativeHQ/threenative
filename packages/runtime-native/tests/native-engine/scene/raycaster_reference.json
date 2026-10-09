@@ -155,6 +155,30 @@
          0
         ],
         "clippedBox": true
+       },
+       {
+        "name": "line",
+        "kind": "line",
+        "position": [
+         40,
+         0,
+         0
+        ],
+        "scale": [
+         1.5,
+         1.5,
+         1.5
+        ]
+       },
+       {
+        "name": "segments",
+        "kind": "segments",
+        "position": [
+         45,
+         0,
+         0
+        ],
+        "indexed": false
        }
       ]
      }
@@ -211,6 +235,7 @@
      ],
      "object": "front",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -432,6 +457,7 @@
      ],
      "object": "back",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -593,6 +619,7 @@
      ],
      "object": "back",
      "faceIndex": 1,
+     "index": null,
      "face": {
       "a": 3,
       "b": 4,
@@ -654,6 +681,7 @@
      ],
      "object": "double",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -715,6 +743,7 @@
      ],
      "object": "double",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -876,6 +905,7 @@
      ],
      "object": "double",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -997,6 +1027,7 @@
      ],
      "object": "layer",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -1268,6 +1299,7 @@
      ],
      "object": "draw",
      "faceIndex": 1,
+     "index": null,
      "face": {
       "a": 3,
       "b": 4,
@@ -1329,6 +1361,7 @@
      ],
      "object": "morph",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -1390,6 +1423,7 @@
      ],
      "object": "morph",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -1551,6 +1585,7 @@
      ],
      "object": "morph",
      "faceIndex": 1,
+     "index": null,
      "face": {
       "a": 0,
       "b": 2,
@@ -1612,6 +1647,7 @@
      ],
      "object": "instances",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -1673,6 +1709,7 @@
      ],
      "object": "instances",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -1834,6 +1871,7 @@
      ],
      "object": "instances",
      "faceIndex": 1,
+     "index": null,
      "face": {
       "a": 0,
       "b": 2,
@@ -1895,6 +1933,7 @@
      ],
      "object": "box-out",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2389,6 +2428,553 @@
    "hits": []
   },
   {
+   "name": "line-0",
+   "origin": [
+    50.89918505684456,
+    -0.5,
+    2.465429816121125
+   ],
+   "direction": [
+    -0.04997916927067909,
+    0,
+    -0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4017ffffffffffff",
+     "point": [
+      "404910c9632eae58",
+      "bfc000000000008e",
+      "c00c077682d4a614"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4017ffffffffffff",
+     "point": [
+      "404910c9632eae58",
+      "bfc000000000008e",
+      "c00c077682d4a614"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 3,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "line-1",
+   "origin": [
+    50.299435025596416,
+    -0.5,
+    -9.519573308618472
+   ],
+   "direction": [
+    0.049979169270677894,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": [
+    {
+     "distance": "4018000000000000",
+     "point": [
+      "404910c9632eae58",
+      "bfc0000000000072",
+      "c00c077682d4a614"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4018000000000000",
+     "point": [
+      "404910c9632eae58",
+      "bfc0000000000072",
+      "c00c077682d4a614"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 3,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "line-2",
+   "origin": [
+    50.89918505684456,
+    -0.5,
+    2.465429816121125
+   ],
+   "direction": [
+    -0.04997916927067909,
+    0,
+    -0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-3",
+   "origin": [
+    50.299435025596416,
+    -0.5,
+    -9.519573308618472
+   ],
+   "direction": [
+    0.049979169270677894,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-4",
+   "origin": [
+    51.27371640449267,
+    -0.5,
+    2.446687627644621
+   ],
+   "direction": [
+    -0.11218216830151168,
+    0,
+    -0.9936876577250878
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-5",
+   "origin": [
+    50.299435025596416,
+    1.0000000000000002,
+    -9.519573308618472
+   ],
+   "direction": [
+    0.049979169270677894,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-6",
+   "origin": [
+    54.082701511853514,
+    -0.5,
+    2.306121214070838
+   ],
+   "direction": [
+    -0.04997916927067909,
+    0,
+    -0.9987502603949661
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-7",
+   "origin": [
+    49.73763800412425,
+    -0.2,
+    -9.491460025903715
+   ],
+   "direction": [
+    0.0499791692706779,
+    0,
+    0.9987502603949661
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4018000000000001",
+     "point": [
+      "404904cd3a047f21",
+      "bfc9999999999a1f",
+      "c00bfdddef57864e"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4018000000000001",
+     "point": [
+      "404904cd3a047f21",
+      "bfc9999999999a1f",
+      "c00bfdddef57864e"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 3,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "segments-0",
+   "origin": [
+    56.85415017194768,
+    -0.4,
+    0.1649305816277047
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "404c53bdec543248",
+      "bff3333333333333",
+      "c00ea3fbfb36f630"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 0,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "404c2bcab8723f91",
+      "bfc33333333332cf",
+      "c00e83ff64eb36f2"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "segments-1",
+   "origin": [
+    56.45431681778225,
+    -0.4,
+    -7.825071501532026
+   ],
+   "direction": [
+    0.04997916927067968,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "404c53bdec543248",
+      "bff3333333333333",
+      "c00ea3fbfb36f630"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 0,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "404c2bcab8723f91",
+      "bfc3333333333319",
+      "c00e83ff64eb36f2"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "segments-2",
+   "origin": [
+    56.85415017194768,
+    -0.4,
+    0.1649305816277047
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-3",
+   "origin": [
+    56.45431681778225,
+    -0.4,
+    -7.825071501532026
+   ],
+   "direction": [
+    0.04997916927067968,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-4",
+   "origin": [
+    57.10383773704642,
+    -0.4,
+    0.15243578931003476
+   ],
+   "direction": [
+    -0.11218216830151054,
+    0,
+    -0.993687657725088
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-5",
+   "origin": [
+    56.45431681778225,
+    0.6000000000000001,
+    -7.825071501532026
+   ],
+   "direction": [
+    0.04997916927067968,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-6",
+   "origin": [
+    58.976494475286984,
+    -0.4,
+    0.05872484692751323
+   ],
+   "direction": [
+    -0.04997916927067969,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-7",
+   "origin": [
+    56.07978547013414,
+    -0.2,
+    -7.806329313055521
+   ],
+   "direction": [
+    0.04997916927067793,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "400fffffffffffff",
+     "point": [
+      "404c23cd47ab756c",
+      "bff3333333333333",
+      "c00e7d99ad427719"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 0,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "400fffffffffffff",
+     "point": [
+      "404c23cd47ab756c",
+      "bfc99999999999b2",
+      "c00e7d99ad427719"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "400fffffffffffff",
+     "point": [
+      "404c23cd47ab756c",
+      "3fe999999999999a",
+      "c00e7d99ad427719"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 4,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
    "name": "instance-0-false",
    "origin": [
     0.6303891609767448,
@@ -2416,6 +3002,7 @@
      ],
      "object": "instances",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2477,6 +3064,7 @@
      ],
      "object": "instances",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2538,6 +3126,7 @@
      ],
      "object": "instances",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2599,6 +3188,7 @@
      ],
      "object": "instances",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2660,6 +3250,7 @@
      ],
      "object": "instances",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2721,6 +3312,7 @@
      ],
      "object": "instances",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2782,6 +3374,7 @@
      ],
      "object": "tie-a",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2822,6 +3415,7 @@
      ],
      "object": "tie-b",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2923,6 +3517,7 @@
      ],
      "object": "tie-a",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -2963,6 +3558,7 @@
      ],
      "object": "tie-b",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -3024,6 +3620,7 @@
      ],
      "object": "tie-a",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,
@@ -3064,6 +3661,7 @@
      ],
      "object": "tie-b",
      "faceIndex": 0,
+     "index": null,
      "face": {
       "a": 0,
       "b": 1,

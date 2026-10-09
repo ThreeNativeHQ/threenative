@@ -205,6 +205,15 @@ WGPUFilterMode filterMode(uint16_t filter) {
         ? WGPUFilterMode_Linear : WGPUFilterMode_Nearest;
 }
 
+// A Line or LineSegments draw: its topology, no culling, and an indexed strip's index format.
+void lineTopology(PipelineTarget& target, const DrawItem& item) {
+    if (item.topology == WGPUPrimitiveTopology_TriangleList) return;
+    target.topology = item.topology;
+    target.cull = WGPUCullMode_None;
+    if (item.topology == WGPUPrimitiveTopology_LineStrip && item.indices)
+        target.stripIndexFormat = item.indices->scalar() == Scalar::U32 ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16;
+}
+
 // three's Texture.updateMatrix: Matrix3.setUvTransform(offset.x, offset.y, repeat.x, repeat.y,
 // rotation, center.x, center.y). Its elements are column-major, as the fragment's mat3x3 uniform reads them.
 std::array<double, 9> uvTransformOf(const Texture& t) {
@@ -1761,6 +1770,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         if (item.background) target.depthCompare = WGPUCompareFunction_Always;
         target.frontFace = item.frontFace();
         target.skinIndex = skinIndexFormat(item);
+        lineTopology(target, item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);
         if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
         const uint64_t v = frameUniforms_.size();
@@ -1942,6 +1952,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             target.layout = velocity.pipelineLayout; target.depthWrite = false;
+            lineTopology(target, item);
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             const auto pipeline = pipelines_.get(velocity.vertex, &velocity.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");

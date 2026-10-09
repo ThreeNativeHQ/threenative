@@ -7746,6 +7746,21 @@
         "source": "three"
       },
       {
+        "symbol": "Line",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "LineBasicMaterial",
+        "kind": "class",
+        "source": "three"
+      },
+      {
+        "symbol": "LineSegments",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "LinearFilter",
         "kind": "constant",
         "source": "three"

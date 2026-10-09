@@ -46,7 +46,11 @@ std::shared_ptr<Object3D> build(const J& s) {
     else {
         auto g = geometry(s); auto m = std::make_shared<Material>(MaterialType::Basic);
         m->side = Side(int(number(s,"side",0)));
-        if (kind == "instanced") {
+        if (kind == "line" || kind == "segments") {
+            m->lineMaterial = true;
+            if (kind == "line") o = std::make_shared<Line>(g, m);
+            else o = std::make_shared<LineSegments>(g, m);
+        } else if (kind == "instanced") {
             auto mesh = std::make_shared<InstancedMesh>(g,m,3);
             for (int i = 0; i < 3; ++i) {
                 Matrix4 matrix; matrix.makeRotationY(i * 0.2); matrix.setPosition(Vector3{double(i * 3), 0, double(-i)}); mesh->setMatrixAt(i, matrix);
@@ -88,6 +92,13 @@ void hits(const std::vector<Intersection>& got, const J& expected, const std::st
         const auto& h=got[i]; const auto& e=expected.items()[i]; const auto at=where+"["+std::to_string(i)+"]";
         floating(h.distance,field(e,"distance"),at+" distance"); vec(h.point,field(e,"point"),at+" point");
         check(h.object && h.object->name == field(e,"object").string(),at+" object");
+        // A Line hit: its segment index; face, faceIndex and barycoord are null.
+        check(h.index.has_value() == !field(e,"index").isNull(),at+" index presence");
+        if (h.index) {
+            check(*h.index == field(e,"index").number(),at+" index");
+            check(field(e,"face").isNull() && field(e,"faceIndex").isNull() && field(e,"barycoord").isNull(),at+" line nulls");
+            continue;
+        }
         check(h.faceIndex == field(e,"faceIndex").number(),at+" faceIndex");
         const auto& f=field(e,"face");
         check(h.face.a==field(f,"a").number() && h.face.b==field(f,"b").number() && h.face.c==field(f,"c").number(),at+" face vertices");

@@ -71,6 +71,9 @@ const FIELD_TYPE_OVERRIDE: Record<string, string> = {
   "Scene.background": "Color | Texture | null",
   "SkinnedMesh.bindMode": '"attached" | "detached"',
   "SkinnedMesh.boundingBox": "Box3 | null",
+  // @types/three spells Line's members over its own type parameters, which no entry publishes.
+  "Line.geometry": "BufferGeometry",
+  "Line.material": "Material",
   "AnimationClip.tracks":
     "Array<{ name: string; times: number[]; values: number[]; ValueTypeName: string }>",
 };
