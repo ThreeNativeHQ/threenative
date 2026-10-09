@@ -2455,7 +2455,7 @@ sky, solar transmittance, sunward scattering and height-aware surface extinction
 Keep the GI chain/shadows/exposure unchanged. Biome additions own weather tuning.
 
 - [x] Physical sky, halo and clouds share the biome sun; proof: 1920×1080 scratch playtest captures (`atmosphere-candidate-3`, `atmosphere-edge`), 3/3 checks each, and 1:1 reference crops. Whole-scene Gaia parity remains open.
-- [ ] All fog-enabled lit surfaces share LUT air; proof: full licensed and fallback `terrain.playtest.json`, `verify-ocean.mjs`, every view CPU p50 ≤4 ms.
+- [ ] All fog-enabled lit surfaces share LUT air; proof: full licensed and fallback `terrain.playtest.json`, `verify-ocean.mjs`, every view CPU p50 ≤4 ms. Run 2026-10-09 (`pnpm --filter strata-terrain-preview test:terrain:web`, licensed assets present, nvidia/turing, 17 views measured): exit 1. timeToReadyMs 39,622 (limit 15,000), afterFirstFrameTaskMs 859 (limit 250) and maxViewGpuMs 37.56 (limit 12) fail. maxViewFrameP50 56.7 ms and overviewFrameP50 43.5 ms are reported, not capped, since the 2026-10-02 owner decision removed the CPU and draw budgets. The fallback run is not done. Box 56 and box 63 stay open.
 - [x] Required local checks pass; proof: example `tsc --noEmit` exit 0; Biome 73 files exit 0; terrain vitest 69/69; core atmosphere spec 31/31, core build exit 0.
 
 Engine defect: `sampleLut` used integer `textureLoad`, bypassing `LinearFilter`;
