@@ -1,11 +1,11 @@
 # PRD-554 — A game's UI runs on the native-engine player
 
-**Status:** IN PROGRESS
+**Status:** DONE on Linux (2026-10-09); Windows and macOS blocked on a hosted run
 **Priority:** P1 — Midway's `launch` journey cannot start a flight on the V8 player: its briefing's "take deck" button lives in its React UI, which the native-engine player never shows, so every UI-driven journey of a game with `src/ui/` fails there
 **Complexity:** 7 (HIGH) — the legacy host's UI overlay, state bridge, compositing and input routing, moved into the engine player's loop and renderer
 **Owner:** João
 **Work package:** native-engine, games with `ui.renderer: "web"` or `"native-css"` on the V8 player (desktop first)
-**Depends on:** [PRD-531](PRD-531-n18-v8-game-runtime-adapter.md) (V8 player), [PRD-545](../done/native-engine/N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) (done: Midway boots on the player)
+**Depends on:** [PRD-531](../../native-engine/PRD-531-n18-v8-game-runtime-adapter.md) (V8 player), [PRD-545](../../done/native-engine/N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) (done: Midway boots on the player)
 
 ## Context
 
@@ -46,16 +46,16 @@ nothing new.
 - [x] Game state reaches the page: core's `publishUiState` posts `tn:state` frames the page receives. proof: the same ctest reads a state value back through the page — 2026-10-09: the game posts `tn:state` with `score: 7` through `__tnUiPost` each frame, the page's `__tnUiReceive` reads it and echoes it in an intent, and the game receives `"score":7`; green.
 
 #### Phase 2: The page is drawn into the frame
-**Status:** PARTIAL
+**Status:** DONE
 
 - [x] The engine renderer composites the overlay's newest premultiplied frame over the world before present, uploading only when the frame changed. proof: a render test comparing a known overlay frame over a known scene, and a counter that a steady frame uploads nothing — 2026-10-09: `native_engine_renderer_overlay_over_frame`: a half-covering premultiplied red page over the lit sphere reads 180,126,97 -> 218,63,48 (premultiplied "over" gives 217.6, 62.8, 48.3), a padded B,G,R,A page gives the same pixels, the same version uploads nothing (`overlayUploads`), and removing the overlay gives the world back. `Renderer::setOverlay` keeps one texture and `blitTo` draws it in its own pass with the new premultiplied blend mode 3; the player hands it `uiOverlayFrame` each frame.
-- [ ] A Midway screenshot on the player shows its briefing UI. proof: `native-playtests/boot.playtest.json` capture on a private copy, judged against the legacy host's capture
+- [x] A Midway screenshot on the player shows its briefing UI. proof: `native-playtests/boot.playtest.json` capture on a private copy, judged against the legacy host's capture — 2026-10-09: a 420-tick briefing capture on the player against the legacy host's on the same packaged `ui/` (Midway's `dist-native`), judged by a fresh agent: PASS, UI panel mean difference 0.02-0.61 of 255, no halo or channel swap. The first judgement failed (text wrapped one line lower): GTK had joined the desktop's Wayland session through an inherited `WAYLAND_DISPLAY`; the player now forces X11 for the web UI, as the legacy host does. Screenshots with a UI read the presented frame (`Renderer::readPresented`).
 
 #### Phase 3: Input reaches the UI first
-**Status:** NOT STARTED
+**Status:** DONE
 
-- [ ] A pointer press inside a published hit region goes to the page and not the game; outside it, to the game. proof: a player ctest with one hit region and both presses
-- [ ] Midway's `launch` journey passes on the V8 player. proof: `node packages/playtest/dist/runner/cli.js native-playtests/launch.playtest.json --target desktop --executable packages/runtime-native/build/tn-linux/tn-native-engine-player-v8 --host-arg <private copy>/native/game.js`
+- [x] A pointer press inside a published hit region goes to the page and not the game; outside it, to the game. proof: a player ctest with one hit region and both presses — 2026-10-09: `native_engine_player_ui_input` through the playtest mailbox: one press inside the left-half island reaches the page, the one outside does not; red with the routing removed ("the page saw 0 presses"). It also holds that every held key reaches the game by code (red with the code set removed: "a held W never reached the game by code").
+- [x] Midway's `launch` journey passes on the V8 player. proof: `node packages/playtest/dist/runner/cli.js native-playtests/launch.playtest.json --target desktop --executable packages/runtime-native/build/tn-linux/tn-native-engine-player-v8 --host-arg <private copy>/native/game.js` — 2026-10-09: exit 0, 8/8 (briefing click, flight screen, throttle, airborne, altitude, speed) with Midway's packaged `ui/` beside the bundle. It also needed pointer lock (core's `releaseMouse` on the flight start) and every held key by code: the host shim had polled only the arrows, so W never throttled.
 
 ## Blocked on
 

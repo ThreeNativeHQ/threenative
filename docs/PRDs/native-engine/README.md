@@ -42,7 +42,7 @@ file.
 | 11 | [PRD-499 — The host links and runs without a JS engine (N02)](PRD-499-n02-the-host-links-without-a-js-engine.md) | IN PROGRESS | `prd:75%` | PRD-497 (done) | CI's `test-native` job runs the gate-E driver, the inspector and the sanitizer tests (PR run) |
 | 12 | [PRD-530 — Strict native-TypeScript game packaging (N17)](PRD-530-n17-strict-native-typescript-game-packaging.md) | IN PROGRESS | `prd:50%` | N05 (done), PRD-499, PRD-533 | The representative game's strict Linux artifact passes JS-free inspection |
 | 13 | [PRD-535 — The JS engine is deleted (N21)](PRD-535-n21-the-js-engine-is-deleted.md) | PROPOSED | `prd:0%` | PRD-533 plus one release, PRD-532 (done) | The `legacy` engine profile no longer resolves |
-| 14 | [PRD-554 — A game's UI runs on the native-engine player](PRD-554-game-ui-on-the-native-engine-player.md) | NOT STARTED | `prd:0%` | PRD-531, PRD-545 (done) | The V8 player installs the UI bridge globals |
+| 14 | [PRD-554 — A game's UI runs on the native-engine player](../BLOCKED/requires-hosted-run/PRD-554-game-ui-on-the-native-engine-player.md) | DONE on Linux (2026-10-09); BLOCKED on Windows/macOS | `prd:75%` | PRD-531, PRD-545 (done) | Windows and macOS need a hosted run |
 
 The N22 folder index ([README](N22-three-surface-coverage/README.md)) holds the layer map of all
 495 catalog entries, the ranked gaps, the backlog and the per-game scorecard.
