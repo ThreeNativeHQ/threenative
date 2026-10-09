@@ -271,6 +271,12 @@ void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Materi
     d.colorSize = static_cast<uint8_t>(it->second->itemSize);
 }
 
+// three's polygonOffset as WebGPUPipelineUtils sets it: depthBias = units, slope scale = factor.
+void RenderDatabase::depthBiasOf(const Material& material, DrawItem& d) {
+    d.depthBias = material.polygonOffset ? static_cast<int32_t>(material.polygonOffsetUnits) : 0;
+    d.depthBiasSlopeScale = material.polygonOffset ? static_cast<float>(material.polygonOffsetFactor) : 0.0f;
+}
+
 BufferStore* RenderDatabase::floatStore(const BufferGeometry& g, const char* name) {
     const auto it = g.attributes.find(name);
     if (it == g.attributes.end() || !it->second) return nullptr;
@@ -382,6 +388,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.normalScaleX = material->normalScale.x;
     d.normalScaleY = material->normalScale.y;
     vertexColorsOf(*mesh.geometry, *material, d);
+    depthBiasOf(*material, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
@@ -422,6 +429,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.normalScaleX = r.material->normalScale.x;
     d.normalScaleY = r.material->normalScale.y;
     if (mesh.geometry) vertexColorsOf(*mesh.geometry, *r.material, d);
+    depthBiasOf(*r.material, d);
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     return d;

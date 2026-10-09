@@ -50,6 +50,9 @@ public:
     bool depthWrite = true;
     /** three's forceSinglePass: a transparent DoubleSide material draws both faces in one pass. */
     bool forceSinglePass = false;
+    /** three's polygonOffset, polygonOffsetFactor and polygonOffsetUnits: a depth bias. */
+    bool polygonOffset = false;
+    double polygonOffsetFactor = 0, polygonOffsetUnits = 0;
     Side side = Side::Front;
     Blending blending = Blending::Normal;
     bool visible = true;

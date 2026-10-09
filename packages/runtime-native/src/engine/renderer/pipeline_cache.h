@@ -23,6 +23,10 @@ struct PipelineTarget {
     WGPUVertexFormat skinIndex = WGPUVertexFormat_Uint16x4;
     WGPUFrontFace frontFace = WGPUFrontFace_CCW;
     WGPUCompareFunction depthCompare = WGPUCompareFunction_LessEqual;
+    // material.polygonOffset: WebGPUPipelineUtils' depthBias (polygonOffsetUnits) and
+    // depthBiasSlopeScale (polygonOffsetFactor); zero without it.
+    int32_t depthBias = 0;
+    float depthBiasSlopeScale = 0;
 };
 
 /**

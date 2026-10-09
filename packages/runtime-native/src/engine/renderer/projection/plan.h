@@ -103,6 +103,8 @@ inline bool sameUniforms(const Material& a, const Material& b) {
     const auto eq = [](const Color& x, const Color& y) { return (x.r == y.r) & (x.g == y.g) & (x.b == y.b); };
     return a.type == b.type && a.transparent == b.transparent &&
            a.depthTest == b.depthTest && a.depthWrite == b.depthWrite && a.forceSinglePass == b.forceSinglePass &&
+           a.polygonOffset == b.polygonOffset && a.polygonOffsetFactor == b.polygonOffsetFactor &&
+           a.polygonOffsetUnits == b.polygonOffsetUnits &&
            a.side == b.side && a.visible == b.visible &&
            a.toneMapped == b.toneMapped && a.fog == b.fog &&
            ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & eq(a.emissive, b.emissive) &
@@ -131,6 +133,9 @@ inline std::size_t uniformHash(const Material& m) {
                      double(m.depthTest),
                      double(m.depthWrite),
                      double(m.forceSinglePass),
+                     double(m.polygonOffset),
+                     m.polygonOffsetFactor,
+                     m.polygonOffsetUnits,
                      double(m.side),
                      double(m.visible),
                      double(m.toneMapped),

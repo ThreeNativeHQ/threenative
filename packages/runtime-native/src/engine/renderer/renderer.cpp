@@ -1781,6 +1781,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                               item.depthWrite};
         target.layout = program.pipelineLayout;
         if (item.background) target.depthCompare = WGPUCompareFunction_Always;
+        target.depthBias = item.depthBias;
+        target.depthBiasSlopeScale = item.depthBiasSlopeScale;
         target.frontFace = item.frontFace();
         target.skinIndex = skinIndexFormat(item);
         WGPURenderPipeline pipeline = pipelines_.get(program.vertex, &program.fragment, target);

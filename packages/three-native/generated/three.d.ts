@@ -1359,6 +1359,9 @@ fog: boolean;
 blending: Blending;
 forceSinglePass: boolean;
 vertexColors: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 }
@@ -1487,6 +1490,9 @@ aoMap: Texture | null;
 emissiveMap: Texture | null;
 forceSinglePass: boolean;
 vertexColors: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 }
@@ -2351,6 +2357,9 @@ fog: boolean;
 blending: Blending;
 forceSinglePass: boolean;
 vertexColors: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 }
@@ -2384,6 +2393,9 @@ fog: boolean;
 blending: Blending;
 forceSinglePass: boolean;
 vertexColors: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 }
@@ -3032,6 +3044,9 @@ normalMap: Texture | null;
 normalScale: Vector2;
 forceSinglePass: boolean;
 vertexColors: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 }
@@ -3062,6 +3077,9 @@ normalMap: Texture | null;
 normalScale: Vector2;
 forceSinglePass: boolean;
 vertexColors: boolean;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
 
   clone(): this;
 }

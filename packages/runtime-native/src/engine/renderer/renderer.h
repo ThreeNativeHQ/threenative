@@ -50,6 +50,9 @@ struct DrawItem {
     BufferStore* positions = nullptr;    // vec3 float
     BufferStore* normals = nullptr;      // vec3 float; unused by Basic
     BufferStore* uvs = nullptr;          // vec2 float; only a mapped material's program reads it
+    /** material.polygonOffset's depth bias (units) and slope scale (factor), zero without it. */
+    int32_t depthBias = 0;
+    float depthBiasSlopeScale = 0;
     /** material.vertexColors: the geometry's `color` attribute (float) and its 3 or 4 components. */
     BufferStore* colors = nullptr;
     uint8_t colorSize = 0;
