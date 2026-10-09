@@ -1,4 +1,4 @@
-# Coastal starter kit (bake only)
+# Coastal starter kit
 
 A 512 m coastline on a real survey (USGS 1 m DEM, Colorado), with hydraulic and thermal erosion,
 rock on the steep ground, sand on the low ground, an ocean at 1.5 m and fir stands kept out of the
@@ -10,6 +10,9 @@ water. It is game source: once copied, every file is yours to edit.
 | `assets.json` | The fir model, its LOD distance and draw distance, and its bounds. |
 | `surface.json` | The ground: the sand base, the rock layer, tiles, tints and blend thresholds. |
 | `bake.mjs` | Writes the world package and `world/water.json` from the three files above. |
+| `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the firs near the player, and the sky as the props' light. |
+| `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
+| `sea.ts` | The sea: a flat sheet of water at the level the bake wrote, drawn with the lakes' water material. |
 
 Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-assets/credits.json`.
 
@@ -21,11 +24,14 @@ ocean is written to `water.json` as the one entry in `lakes`, with no `at`: the 
 
 ## Status
 
-This kit bakes. It has no scene, ocean look, collider or playtest yet. Until `world.ts`, `sky.ts`
-and the water look exist, a game cannot add it to a scene.
+The kit bakes, streams and draws its sea. The kit ships no scene: the game writes one. The sea is a
+flat sheet at the baked level, so its look (the sky's mirror, the body colour, the shore fade) is in
+`sea.ts`. It has no waves yet. The close-up view is named `boulders` in the shared captures, although
+it frames a fir.
 
 ## Steps
 
 1. Copy `node_modules/@threenative/terrain/starter/coastal` to `src/terrain/coastal`.
 2. Run `node src/terrain/coastal/bake.mjs --out assets/terrain/coastal` (needs `@threenative/terrain`
    as a devDependency). The same recipe always writes the same bytes.
+3. In the scene, call `addCoastal(ctx, follow)` for the world and `coastalDaylight(follow)` for the light.

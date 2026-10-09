@@ -168,6 +168,13 @@ describe("forest starter kit", () => {
       "starter/tundra/world.ts",
       "starter/tundra/sky.ts",
       "starter/tundra/water.ts",
+      "starter/coastal/recipe.json",
+      "starter/coastal/assets.json",
+      "starter/coastal/surface.json",
+      "starter/coastal/bake.mjs",
+      "starter/coastal/world.ts",
+      "starter/coastal/sky.ts",
+      "starter/coastal/sea.ts",
       "starter-assets/fir_tree_01/fir-b-lod2.glb",
     ])
       expect(files.has(path), `packed tarball is missing ${path}`).toBe(true);

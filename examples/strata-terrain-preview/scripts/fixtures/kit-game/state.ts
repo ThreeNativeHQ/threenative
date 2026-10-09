@@ -17,6 +17,10 @@ export type GameState = {
   closestToBoulder: number;
   /** Placement instances the streamed cells hold, as the world reports them. */
   boulderInstances: number;
+  /** Smallest horizontal distance from the player's centre to the anchor tree's origin while it walked. */
+  closestToTree: number;
+  /** Placement instances the streamed cells hold, for the coastal kit's firs. */
+  treeInstances: number;
   /** Ground the player actually covered; without it a tree that never moved could pass the row above. */
   driveMetres: number;
   /** One collider per placed fir and boulder, from `addForest`'s result. */
@@ -45,6 +49,8 @@ export const initialState: GameState = {
   closestToTrunk: -1,
   closestToBoulder: -1,
   boulderInstances: -1,
+  closestToTree: -1,
+  treeInstances: -1,
   driveDone: 0,
   driveMetres: 0,
   firInstancesDrawn: -1,

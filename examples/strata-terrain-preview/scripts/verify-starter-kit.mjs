@@ -51,6 +51,7 @@ const KITS = {
     generatedStand: true,
     water: true,
     cooked: "cookedForestBytes",
+    numbers: ["closestToTrunk", "firInstancesDrawn", "waterLakes", "waterRivers"],
     captures: ["edge", "ground", "lake", "overview"],
     views: ["edge", "ground", "lake", "overview"],
   },
@@ -60,6 +61,7 @@ const KITS = {
     generatedStand: false,
     water: false,
     cooked: "cookedAlpineBytes",
+    numbers: ["boulderInstances", "closestToBoulder"],
     captures: ["boulders", "edge", "ground", "overview"],
     views: ["boulders", "edge", "ground", "overview"],
   },
@@ -69,6 +71,7 @@ const KITS = {
     generatedStand: false,
     water: false,
     cooked: "cookedDesertBytes",
+    numbers: ["boulderInstances", "closestToBoulder"],
     captures: ["boulders", "edge", "ground", "overview"],
     views: ["boulders", "edge", "ground", "overview"],
   },
@@ -78,6 +81,17 @@ const KITS = {
     generatedStand: false,
     water: true,
     cooked: "cookedTundraBytes",
+    numbers: ["boulderInstances", "closestToBoulder", "waterLakes", "waterRivers"],
+    captures: ["boulders", "edge", "ground", "overview"],
+    views: ["boulders", "edge", "ground", "overview"],
+  },
+  coastal: {
+    scene: "Coastal.ts",
+    playtest: "coastal.playtest.json",
+    generatedStand: false,
+    water: true,
+    cooked: "cookedCoastalBytes",
+    numbers: ["treeInstances", "closestToTree", "waterLakes"],
     captures: ["boulders", "edge", "ground", "overview"],
     views: ["boulders", "edge", "ground", "overview"],
   },
@@ -452,22 +466,9 @@ export const stand = {
     assert(after !== undefined, `the playtest asserted nothing at GameState.${path}`);
     return after;
   };
-  // Each kit reports the numbers its own scene defines. A name with no playtest row fails in value().
-  const kitNumbers =
-    KIT === "forest"
-      ? {
-          closestToTrunk: value("closestToTrunk"),
-          firInstancesDrawn: value("firInstancesDrawn"),
-          waterLakes: value("waterLakes"),
-          waterRivers: value("waterRivers"),
-        }
-      : {
-          boulderInstances: value("boulderInstances"),
-          closestToBoulder: value("closestToBoulder"),
-          ...(CONFIG.water
-            ? { waterLakes: value("waterLakes"), waterRivers: value("waterRivers") }
-            : {}),
-        };
+  // Each kit reports the numbers its own scene defines (`numbers` in KITS). A name with no playtest row
+  // fails in value().
+  const kitNumbers = Object.fromEntries(CONFIG.numbers.map((name) => [name, value(name)]));
   const views = Object.fromEntries(
     CONFIG.views.map((view) => [
       view,
