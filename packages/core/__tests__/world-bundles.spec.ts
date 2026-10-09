@@ -874,6 +874,55 @@ describe("the main pass's draw bundles", () => {
     cells.dispose();
   });
 
+  it("re-records a main shard in the same update that changed which meshes it holds", async () => {
+    // A record fixes its render list, so a mesh that joins a shard and is not followed by a re-record
+    // of that shard is not drawn until some later event happens to bump the same group. With one
+    // group that was masked: any key minted in the same load bumped it. With a group per shard the
+    // repair needs a bump in the *same* shard, so a join without one hides geometry for as long as
+    // that shard stays quiet — Machinefall's first capture lost its mid-field forest at the pose the
+    // overlay drops on, and a re-capture of the same build had it.
+    const {
+      follow,
+      renderer,
+      world: cells,
+    } = await world({
+      bundles: true,
+      gpuScene: false,
+      rockInWest: true,
+    });
+    const members = (group: BundleGroup): string =>
+      group.children
+        .map((child) => `${child.name}#${child.id}`)
+        .sort()
+        .join(",");
+    const stale: string[] = [];
+    const check = (label: string, camera: PerspectiveCamera): void => {
+      const before = new Map(
+        mainBundleGroups(cells).map((group) => [group, [members(group), group.version] as const]),
+      );
+      cells.update(renderer, camera);
+      for (const group of mainBundleGroups(cells)) {
+        const was = before.get(group);
+        const changed = was === undefined ? group.children.length > 0 : was[0] !== members(group);
+        const rerecorded = was === undefined ? group.version > 0 : group.version > was[1];
+        if (changed && !rerecorded) stale.push(`${label}: ${group.children.length} meshes`);
+      }
+    };
+    for (let index = 0; index < 8; index += 1) check("settle", playerCamera());
+    await flushed(cells, renderer, playerCamera());
+    for (let phase = 0; phase < 5; phase += 1) {
+      const at = cellCentre(phase % 2 === 0 ? 3 : 1, 1);
+      follow.position.x = at.x;
+      follow.position.z = at.z;
+      for (let index = 0; index < 12; index += 1)
+        check(`walk-${phase}`, phase % 2 === 0 ? eastCamera() : playerCamera());
+      await flushed(cells, renderer, playerCamera());
+    }
+    expect(stale).toEqual([]);
+    expect(cells.stats().failures).toBe(0);
+    cells.dispose();
+  });
+
   it("records by default, and the marker says the run asked for nothing else", async () => {
     // Phase 2 box 2: the default follows the measurement. AC-2 measured the walking `draw` span at
     // -5.0 ms against develop over 3 interleaved runs with bundles on, so a world that says nothing
