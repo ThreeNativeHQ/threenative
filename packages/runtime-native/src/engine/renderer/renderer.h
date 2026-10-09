@@ -462,6 +462,10 @@ private:
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
+    // The viewport textures (three's viewportSharedTexture / viewportDepthTexture): the scene colour
+    // and depth copied at the first draw that reads either, created with the scene target.
+    WGPUTexture viewportColor_ = nullptr, viewportDepth_ = nullptr;
+    WGPUTextureView viewportColorView_ = nullptr, viewportDepthView_ = nullptr;
     WGPUSampler linearClampSampler_ = nullptr;
     Handle color_;
     WGPUTexture depth_ = nullptr;
@@ -496,6 +500,7 @@ private:
     uint64_t renderId_ = 0;
     FrameStats lastFrame_;
     WGPURenderBundle mainBundle_ = nullptr;
+    WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
     std::vector<uint64_t> mainBundleKey_;
     FrameStats mainBundleStats_;
     bool timerBeganAtShadow_ = false;

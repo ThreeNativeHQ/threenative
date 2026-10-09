@@ -314,6 +314,22 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     // r185's camera accessors (accessors/Camera.js) for a single camera: render-group uniforms by
     // their upstream names, which the renderer fills per draw (kSlotNames).
+    // r185's viewport textures: the frame's colour and depth as drawn before this draw, read at uv
+    // (screenUV when omitted). The renderer copies them at the first draw that reads one.
+    if (!method && (name == "viewportSharedTexture" || name == "viewportDepthTexture")) {
+        if (args.size() > 1) throw std::runtime_error(name + " takes at most a uv");
+        const auto uv = args.empty() ? g::screenUV() : arg(0);
+        return name == "viewportDepthTexture" ? g::viewportDepth(uv) : g::texture("viewportColor", uv);
+    }
+    // linearDepth(depth): ViewportDepthNode.LINEAR_DEPTH for a perspective camera,
+    // viewZToOrthographicDepth(perspectiveDepthToViewZ(depth, near, far), near, far).
+    // ponytail: perspective cameras only; an orthographic camera's depth is already linear.
+    if (!method && name == "linearDepth") {
+        arity(1);
+        const auto near = g::uniform("cameraNear", Type::f32()), far = g::uniform("cameraFar", Type::f32());
+        const auto viewZ = g::div(g::mul(near, far), g::sub(g::mul(g::sub(far, near), arg(0)), far));
+        return g::div(g::add(viewZ, near), g::sub(near, far));
+    }
     if (name == "cameraNear" || name == "cameraFar") {
         arity(0);
         return g::uniform(name, Type::f32());
@@ -483,6 +499,9 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
     for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar",
                              "positionGeometry", "normalWorld"})
         constants.emplace_back(name, tslCall(name, nullptr, {}, serial));
+    // viewportLinearDepth = linearDepth(viewportDepthTexture()).
+    constants.emplace_back("viewportLinearDepth",
+                           tslCall("linearDepth", nullptr, {TslArg::of(g::viewportDepth(g::screenUV()))}, serial));
     return constants;
 }
 

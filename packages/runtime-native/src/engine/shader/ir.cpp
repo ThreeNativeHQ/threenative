@@ -509,11 +509,14 @@ ExprId Program::textureSize(uint32_t texture, ExprId level, Where where) {
 
 ExprId Program::textureLoad(uint32_t texture, ExprId coordinate, ExprId level, Where where) {
     if (coordinate == kInvalid || level == kInvalid) return kInvalid;
-    if (texture >= textures_.size() || textureKinds_[texture] != TextureKind::Float2d)
-        return fail("textureLoad", "requires a 2D float texture", where);
+    // A 2D float texture loads a vec4; a 2D depth texture (texture_depth_2d) loads its f32 depth.
+    if (texture >= textures_.size() ||
+        (textureKinds_[texture] != TextureKind::Float2d && textureKinds_[texture] != TextureKind::Depth2d))
+        return fail("textureLoad", "requires a 2D float or depth texture", where);
     if (exprs_[coordinate].type != Type::vec(2, Type::Scalar::I32) || exprs_[level].type != Type::i32())
         return fail("textureLoad", "coordinates must be ivec2 and mip i32", where);
-    return pure(Expr{Op::TextureLoad, Type::vec(4), {coordinate, level}, 2, texture});
+    const Type loaded = textureKinds_[texture] == TextureKind::Depth2d ? Type::f32() : Type::vec(4);
+    return pure(Expr{Op::TextureLoad, loaded, {coordinate, level}, 2, texture});
 }
 
 void Program::breakLoop(Where where) {

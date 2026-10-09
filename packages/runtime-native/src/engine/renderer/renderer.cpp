@@ -220,9 +220,22 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
 // A TSL texture(textureObject, uv) binding (tsl_call's "tslTex<id>"): the draw's own texture.
 bool graphTextureBinding(std::string_view name) { return name.rfind("t_tslTex", 0) == 0; }
 
+// A viewport texture binding: the frame's colour or depth as drawn before this draw.
+bool viewportBinding(std::string_view name) {
+    return name == "t_viewportColor" || name == "smp_viewportColor" || name == "t_viewportDepth" ||
+           name == "smp_viewportDepth";
+}
+
+bool readsViewport(const shader::StageModule& stage) {
+    return std::any_of(stage.bindings.begin(), stage.bindings.end(),
+                       [](const shader::Binding& binding) { return viewportBinding(binding.name); });
+}
+
 bool perDrawFragment(const shader::StageModule& stage) {
     for (const shader::Binding& binding : stage.bindings)
-        if (binding.name == "t_map" || binding.name == "t_env" || graphTextureBinding(binding.name)) return true;
+        if (binding.name == "t_map" || binding.name == "t_env" || graphTextureBinding(binding.name) ||
+            viewportBinding(binding.name))
+            return true;
     return false;
 }
 
@@ -496,7 +509,8 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
 
 Renderer::~Renderer() {
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    mainBundle_ = nullptr;
+    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+    mainBundle_ = viewportBundle_ = nullptr;
     if (timestamps_) wgpuQuerySetRelease(timestamps_);
     for (auto& [key, program] : programs_) {
         for (int g = 0; g < 2; ++g) {
@@ -543,8 +557,12 @@ void Renderer::releaseTargets() {
     if (sceneColor_) wgpuTextureRelease(sceneColor_);
     if (normalView_) wgpuTextureViewRelease(normalView_);
     if (normalTexture_) wgpuTextureRelease(normalTexture_);
-    colorView_ = depthView_ = sceneView_ = normalView_ = nullptr;
-    depth_ = sceneColor_ = normalTexture_ = nullptr;
+    if (viewportColorView_) wgpuTextureViewRelease(viewportColorView_);
+    if (viewportColor_) wgpuTextureRelease(viewportColor_);
+    if (viewportDepthView_) wgpuTextureViewRelease(viewportDepthView_);
+    if (viewportDepth_) wgpuTextureRelease(viewportDepth_);
+    colorView_ = depthView_ = sceneView_ = normalView_ = viewportColorView_ = viewportDepthView_ = nullptr;
+    depth_ = sceneColor_ = normalTexture_ = viewportColor_ = viewportDepth_ = nullptr;
     releaseOutputGroup();  // it binds the scene target
 }
 
@@ -674,6 +692,13 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     sceneView_ = view2d(sceneColor_, WGPUTextureFormat_RGBA16Float);
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);
     depthView_ = view2d(depth_, WGPUTextureFormat_Depth32Float);
+    WGPUTextureDescriptor viewportDesc = sceneDesc;
+    viewportDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+    viewportColor_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
+    viewportColorView_ = view2d(viewportColor_, WGPUTextureFormat_RGBA16Float);
+    viewportDesc.format = WGPUTextureFormat_Depth32Float;
+    viewportDepth_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
+    viewportDepthView_ = view2d(viewportDepth_, WGPUTextureFormat_Depth32Float);
     if (traa_) traa_->resize(width, height);
     if (postEffects_) postEffects_->resize(width, height);
 }
@@ -719,6 +744,10 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
             e.buffer = gpu_.buffer(storage.buffer);
             e.size = storage.capacity;
+        } else if (viewportBinding(b.name)) {
+            const bool depthCopy = b.name.find("Depth") != std::string::npos;
+            if (b.kind == shader::BindingKind::Texture) e.textureView = depthCopy ? viewportDepthView_ : viewportColorView_;
+            else e.sampler = depthCopy ? compareSampler_ : outputSampler_;
         } else if (b.volume) {
             const auto& atlas = probeTextures_.at(b.name.substr(b.kind == shader::BindingKind::Texture ? 2 : 4));
             if (b.kind == shader::BindingKind::Texture) e.textureView = atlas.view;
@@ -927,7 +956,8 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
 
 void Renderer::releaseMaterialTextures() {
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    mainBundle_ = nullptr;
+    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+    mainBundle_ = viewportBundle_ = nullptr;
     for (auto& [texture, cube] : backgroundCubes_) {
         if (cube.view) wgpuTextureViewRelease(cube.view);
         if (cube.texture) wgpuTextureRelease(cube.texture);
@@ -950,7 +980,8 @@ void Renderer::dropMapGroups() {
     // A bind group is cached by the address of the views it binds; a view released here can come back
     // at the same address.
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    mainBundle_ = nullptr;
+    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+    mainBundle_ = viewportBundle_ = nullptr;
     for (auto& [key, group] : mapGroups_)
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
@@ -1380,7 +1411,8 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
 
 void Renderer::rebuildGroups() {
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    mainBundle_ = nullptr; // Emdawn may recycle a released bind-group handle immediately
+    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+    mainBundle_ = viewportBundle_ = nullptr; // Emdawn may recycle a released bind-group handle immediately
     for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
@@ -1997,10 +2029,14 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     for (Planned& p : plan) {
         const bool readsPbr = std::any_of(p.item->pbrMaps.begin(), p.item->pbrMaps.end(), [](const Texture* t) { return t; });
         const GraphTextures* graphTextures = p.item->graphTextures.empty() ? nullptr : &p.item->graphTextures;
-        const std::string graphKey = graphKeyOf(*p.item);
+        std::string graphKey = graphKeyOf(*p.item);
         p.vertexGroup = vertexGroupOf(p, graphKey);
+        const bool viewport = readsViewport(p.program->fragment);
         if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
-            !p.item->reflectorView && !graphTextures) continue;
+            !p.item->reflectorView && !graphTextures && !viewport) continue;
+        if (viewport)
+            graphKey += "|viewport," + std::to_string(reinterpret_cast<uintptr_t>(viewportColorView_)) + "," +
+                        std::to_string(reinterpret_cast<uintptr_t>(viewportDepthView_));
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
         std::array<const MaterialTexture*, shader::kPbrMapCount> pbrTextures{};
         for (int k = 0; k < shader::kPbrMapCount; ++k)
@@ -2238,21 +2274,37 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
                 store ? store->byteLength() : 0, store ? static_cast<uintptr_t>(store->scalar()) : 0});
         }
     }
+    // three's viewport textures copy the frame at the first draw that reads one: the main pass splits
+    // there, the scene colour and depth are copied, and the rest draws in a second pass that loads them.
+    const std::size_t viewportSplit = static_cast<std::size_t>(
+        std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
+        plan.begin());
+    bundleKey.push_back(viewportSplit);
     if (!mainBundle_ || bundleKey != mainBundleKey_) {
         if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
+        if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+        mainBundle_ = viewportBundle_ = nullptr;
         WGPURenderBundleEncoderDescriptor descriptor{};
         const WGPUTextureFormat color = WGPUTextureFormat_RGBA16Float;
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = 1;
-        const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
         const auto shadowStats = lastFrame_.shadowSkinned;
         lastFrame_ = FrameStats{};
-        for (const Planned& p : plan) encode(bundle, p, true);
+        const auto record = [&](std::size_t from, std::size_t to) {
+            const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
+            bound = nullptr;
+            boundIndex = nullptr;
+            std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
+            for (std::size_t k = from; k < to; ++k) encode(bundle, plan[k], true);
+            WGPURenderBundleDescriptor finish{};
+            const WGPURenderBundle recorded = wgpuRenderBundleEncoderFinish(bundle, &finish);
+            wgpuRenderBundleEncoderRelease(bundle);
+            return recorded;
+        };
+        mainBundle_ = record(0, viewportSplit);
+        if (viewportSplit < plan.size()) viewportBundle_ = record(viewportSplit, plan.size());
         mainBundleStats_ = lastFrame_;
         lastFrame_.shadowSkinned = shadowStats;
-        WGPURenderBundleDescriptor finish{};
-        mainBundle_ = wgpuRenderBundleEncoderFinish(bundle, &finish);
-        wgpuRenderBundleEncoderRelease(bundle);
         mainBundleKey_ = std::move(bundleKey);
     } else {
         lastFrame_.draws = mainBundleStats_.draws;
@@ -2262,6 +2314,27 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     wgpuRenderPassEncoderExecuteBundles(pass, 1, &mainBundle_);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
+    if (viewportBundle_) {
+        WGPUImageCopyTexture_Compat from = {}, to = {};
+        const WGPUExtent3D extent{width_, height_, 1};
+        from.texture = sceneColor_; to.texture = viewportColor_;
+        wgpuCommandEncoderCopyTextureToTexture(encoder, &from, &to, &extent);
+        from.texture = depth_; to.texture = viewportDepth_;
+        from.aspect = to.aspect = WGPUTextureAspect_DepthOnly;
+        wgpuCommandEncoderCopyTextureToTexture(encoder, &from, &to, &extent);
+        WGPURenderPassColorAttachment loadColor = color;
+        loadColor.loadOp = WGPULoadOp_Load;
+        WGPURenderPassDepthStencilAttachment loadDepth = depth;
+        loadDepth.depthLoadOp = WGPULoadOp_Load;
+        WGPURenderPassDescriptor viewportDesc = {};
+        viewportDesc.colorAttachmentCount = 1;
+        viewportDesc.colorAttachments = &loadColor;
+        viewportDesc.depthStencilAttachment = &loadDepth;
+        WGPURenderPassEncoder rest = wgpuCommandEncoderBeginRenderPass(encoder, &viewportDesc);
+        wgpuRenderPassEncoderExecuteBundles(rest, 1, &viewportBundle_);
+        wgpuRenderPassEncoderEnd(rest);
+        wgpuRenderPassEncoderRelease(rest);
+    }
     if (normalPass) {
         WGPURenderPassColorAttachment normals{};
         normals.view = normalView_; normals.loadOp = WGPULoadOp_Clear; normals.storeOp = WGPUStoreOp_Store;

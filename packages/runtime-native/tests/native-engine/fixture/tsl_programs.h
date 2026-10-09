@@ -286,6 +286,25 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         scene.backgroundRotation.set(0.1, 0.4, 0); scene.environmentRotation.set(0.1, 0.4, 0);
         return "";
     }
+    if (program == "viewport-textures") {
+        if (object.cls != "Scene") return "TN_FIXTURE_VIEWPORT_INVALID: requires scene";
+        auto& scene = *static_cast<engine::Scene*>(object.ptr.get());
+        auto* water = dynamic_cast<engine::Mesh*>(scene.getObjectByName("water"));
+        if (!water || !water->material) return "TN_FIXTURE_VIEWPORT_INVALID: water/material";
+        namespace g = engine::shader::graph;
+        // Through the shared TSL table, as V8 and Wasm build it.
+        uint64_t serial = 0;
+        const auto behind = abi::tslCall("viewportSharedTexture", nullptr,
+            {abi::TslArg::of(g::add(g::screenUV(), g::vec2({g::float_(0.02f), g::float_(0)})))}, serial);
+        g::Node linear;
+        for (auto& [label, node] : abi::tslConstants())
+            if (label == "viewportLinearDepth") linear = node;
+        water->material->nodes.colorNode = g::vec4({g::add(g::mul(g::swizzle(behind, "xyz"),
+            g::vec3({g::float_(0.5f), g::float_(0.8f), g::float_(1)})),
+            g::vec3({g::float_(0), g::float_(0), g::mul(linear, g::float_(0.6f))})), g::float_(1)});
+        water->material->needsUpdate();
+        return "";
+    }
     if (program == "reflector-plane") {
         if (object.cls != "Scene") return "TN_FIXTURE_REFLECTOR_INVALID: requires scene";
         auto& scene = *static_cast<engine::Scene*>(object.ptr.get());

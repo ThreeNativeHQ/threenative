@@ -21,11 +21,14 @@ import {
   cameraNear,
   float,
   positionLocal,
+  screenUV,
   texture,
   uniform,
   uv,
   vec3,
   vec4,
+  viewportLinearDepth,
+  viewportSharedTexture,
 } from "three/tsl";
 import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
 
@@ -149,7 +152,18 @@ try {
   textured.colorNode = vec4(texture(grid, uv()).rgb, 1);
   const slab = new Mesh(new BoxGeometry(0.8, 0.3, 0.8, 4, 1, 4), textured);
   slab.position.set(-1.2, -0.9, 0.4);
-  scene.add(box, tile, ball, slab);
+  // WaterSurface3D's reads on the Wasm engine: a transparent pane over the ball shows the frame
+  // behind it (viewportSharedTexture) tinted by its linear depth (viewportLinearDepth).
+  const glass = new MeshBasicNodeMaterial({ transparent: true });
+  glass.colorNode = vec4(
+    viewportSharedTexture(screenUV)
+      .rgb.mul(vec3(0.6, 0.9, 1))
+      .add(vec3(0, 0, viewportLinearDepth.mul(0.3))),
+    1,
+  );
+  const pane = new Mesh(new BoxGeometry(0.9, 0.6, 0.02), glass);
+  pane.position.set(0.15, -0.75, 1.3);
+  scene.add(box, tile, ball, slab, pane);
   const sun = new DirectionalLight(0xffffff, 3);
   sun.position.set(3, 5, 4);
   scene.add(sun, new AmbientLight(0xffffff, 0.4));

@@ -48,6 +48,8 @@ import {
   vec2,
   vec3,
   vec4,
+  viewportLinearDepth,
+  viewportSharedTexture,
 } from "three/tsl";
 import { FluidParticles3D } from "/core/fluid-particles.js";
 /**
@@ -668,6 +670,16 @@ export const programs = {
       vec3(0, 0, texture(bumps, uv()).level(float(0)).r.mul(0.4)),
     );
     target.colorNode = vec4(texture(ramp, uv()).rgb, 1);
+  },
+  /** WaterSurface3D's reads: the frame behind a transparent surface (viewportSharedTexture, offset)
+   *  and its linear depth (viewportLinearDepth), on a water plane over a lit floor. */
+  async "viewport-textures"({ target }) {
+    const water = target.getObjectByName("water");
+    const behind = viewportSharedTexture(screenUV.add(vec2(0.02, 0))).rgb;
+    water.material.colorNode = vec4(
+      behind.mul(vec3(0.5, 0.8, 1)).add(vec3(0, 0, viewportLinearDepth.mul(0.6))),
+      1,
+    );
   },
   async "pmrem-texture"({ target }) {
     target.colorNode = vec4(

@@ -82,6 +82,9 @@ const FUNCTIONS = [
   "dFdx",
   "dFdy",
   "lengthSq",
+  "viewportSharedTexture",
+  "viewportDepthTexture",
+  "linearDepth",
   "convertToTexture",
   "varying",
   // The live post effects (lane-531's table entries); post-effects.ts publishes them as three's addons.
@@ -97,6 +100,7 @@ const FUNCTIONS = [
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
+  "viewportLinearDepth",
   "cameraPosition",
   "cameraNear",
   "cameraFar",
