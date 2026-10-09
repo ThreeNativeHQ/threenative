@@ -1382,7 +1382,8 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
         if (a.first != b.first) return a.first < b.first;
         return a.second->id < b.second->id;
     });
-    std::sort(transparent.begin(), transparent.end(), [](const auto& a, const auto& b) {
+    // Stable: a transparent DoubleSide material's BackSide pass stays right before its FrontSide pass.
+    std::stable_sort(transparent.begin(), transparent.end(), [](const auto& a, const auto& b) {
         if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
         if (a.first != b.first) return a.first > b.first;
         return a.second->id < b.second->id;
@@ -1662,6 +1663,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
         v.sprite = item.sprite;
         v.backSide = item.side == 1;
+        v.doubleSide = item.side == 2;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
         v.instanceStorage = v.instanced;

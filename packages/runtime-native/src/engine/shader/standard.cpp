@@ -521,6 +521,15 @@ static ExprId materialColor(Program& f, const VertexVariant& variant, ExprId dif
     return variant.instanceColor ? f.mul(f.varying("instanceColor", Type::vec(3)), color) : color;
 }
 
+// negateOnBackSide for DoubleSide: three's normalView is the geometry normal times faceDirection
+// (float(frontFacing) * 2 - 1), so a back face is lit from the side the viewer sees. BackSide is
+// negated in the vertex stage; FrontSide never rasterizes a back face.
+static ExprId facedNormal(Program& f, const VertexVariant& variant, ExprId normal) {
+    if (!variant.doubleSide) return normal;
+    const ExprId front = f.select(f.builtin("frontFacing"), f.constant(1.0f), f.constant(0.0f));
+    return f.mul(normal, f.sub(f.mul(front, f.constant(2.0f)), f.constant(1.0f)));
+}
+
 // The node slots replace upstream's material accessors, not their already-mapped results.
 static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId fallback,
                         ExprId geometryNormal = kInvalid) {
@@ -833,10 +842,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // normalViewGeometry is the varying renormalized (three's .normalize().toVar()); getGeometryRoughness
     // differentiates that, not the raw varying.
     const ExprId normalViewGeometry = f.call("normalize", {f.varying("normalView", Type::vec(3))});
-    ExprId n = nodeValue(f, variant.nodes.normalNode, Type::vec(3), normalViewGeometry, normalViewGeometry);
+    const ExprId normalViewFaced = facedNormal(f, variant, normalViewGeometry);
+    ExprId n = nodeValue(f, variant.nodes.normalNode, Type::vec(3), normalViewFaced, normalViewGeometry);
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
     const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
-    if (variant.normalMap && !variant.nodes.normalNode) n = perturbedNormal(f, variant, normalViewGeometry);
+    if (variant.normalMap && !variant.nodes.normalNode) n = perturbedNormal(f, variant, normalViewFaced);
     // normalWorld = normalView.transformNormalByInverseViewMatrix(cameraViewMatrix), in the fragment:
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
@@ -1104,7 +1114,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
 
     Program& f = out.fragment;
     Tsl t{f};
-    ExprId n = f.call("normalize", {f.varying("normalView", Type::vec(3))});
+    ExprId n = facedNormal(f, variant, f.call("normalize", {f.varying("normalView", Type::vec(3))}));
     const ExprId positionViewDirection = f.call("normalize", {f.neg(f.varying("positionView", Type::vec(3)))});
     const ExprId positionWorld = lights.shadowed() ? f.varying("positionWorld", Type::vec(3)) : kInvalid;
     if (variant.normalMap) n = perturbedNormal(f, variant, n);
