@@ -2868,10 +2868,13 @@ function mergedBytes(merged: readonly Mesh[], kept: ReadonlySet<Mesh>): number {
 
 /**
  * How many groups the main record is split into. A record walks every draw in its group, so a mint
- * on a streaming walk costs its shard's draws: Machinefall's ~200 recorded main draws re-recorded as
- * one group put ~290 traversed draws in a frame, where an eighth is ~26 on top of the settled frame.
+ * on a streaming walk costs the draws of every shard it touches: Machinefall's ~200 recorded main
+ * draws re-recorded as one group put ~290 traversed draws in a frame. Eight shards still read 145,
+ * because one asset mints several keys (levels, parts) at once and they land in two or three shards;
+ * thirty-two keep a frame that touches several to a few dozen draws. A replay is one
+ * `executeBundles` per group, so a shard costs far less than the draws it stops re-walking.
  */
-const MAIN_BUNDLE_SHARDS = 8;
+const MAIN_BUNDLE_SHARDS = 32;
 
 /** The shard a key lands in, from its name (FNV-1a), so a key keeps its group for its whole life. */
 function mainShard(key: string): number {
