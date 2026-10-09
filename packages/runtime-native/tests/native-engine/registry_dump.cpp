@@ -50,7 +50,10 @@ std::string dump(const tn::binding::Registry& registry) {
         out << "      \"getters\": " << keys(binding.getters) << ",\n";
         out << "      \"setters\": " << keys(binding.setters) << ",\n";
         out << "      \"members\": " << keys(binding.members) << ",\n";
-        out << "      \"callbacks\": " << keys(binding.callbacks) << "\n";
+        out << "      \"callbacks\": " << keys(binding.callbacks);
+        // The native event types a language adapter's EventDispatcher listens to (AnimationMixer's).
+        if (!binding.events.empty()) out << ",\n      \"events\": " << keys(binding.events);
+        out << "\n";
         out << "    }";
     }
     out << "\n  }\n}\n";

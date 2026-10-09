@@ -214,7 +214,8 @@
       "getters": ["time", "timeScale"],
       "setters": ["timeScale"],
       "members": [],
-      "callbacks": []
+      "callbacks": [],
+      "events": ["finished", "loop"]
     },
     "Bone": {
       "constructor": true,

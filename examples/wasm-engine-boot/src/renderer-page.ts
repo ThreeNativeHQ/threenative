@@ -5,11 +5,15 @@
 import {
   ACESFilmicToneMapping,
   AmbientLight,
+  AnimationClip,
+  AnimationMixer,
   BoxGeometry,
   DataTexture,
   DirectionalLight,
+  LoopOnce,
   Mesh,
   MeshStandardMaterial,
+  NumberKeyframeTrack,
   PCFShadowMap,
   PerspectiveCamera,
   PropertyBinding,
@@ -48,6 +52,8 @@ const probe = {
   renderUpdates: 0,
   /** core's clip audit on the Wasm engine: track paths bound and refused through PropertyBinding. */
   trackAudit: "",
+  /** AnimationMixer "finished" events on the Wasm engine, as core's AnimationPlayer listens. */
+  finished: 0,
   ticks: 0,
 };
 const started = performance.now();
@@ -180,6 +186,16 @@ try {
   new PropertyBinding(scene, "nobody.quaternion").bind();
   setConsoleFunction(null as never);
   probe.trackAudit = `${parsed.nodeName}/${parsed.propertyName} ${String(refused.length)} refused`;
+  // A one-shot clip: the engine's mixer reports "finished" to a JS listener.
+  const mixer = new AnimationMixer(scene);
+  // Half a second: it finishes inside the scenario, after the warm-up frames.
+  const nudge = new AnimationClip("nudge", 0.5, [
+    new NumberKeyframeTrack("box.position[y]", [0, 0.5], [0, 0]),
+  ]);
+  mixer.clipAction(nudge).setLoop(LoopOnce, 1).play();
+  mixer.addEventListener("finished", () => {
+    probe.finished += 1;
+  });
   const sun = new DirectionalLight(0xffffff, 3);
   sun.position.set(3, 5, 4);
   scene.add(sun, new AmbientLight(0xffffff, 0.4));
@@ -198,6 +214,7 @@ try {
   const frame = () => {
     probe.ticks += 1;
     box.rotation.y += 0.02;
+    mixer.update(1 / 60);
     // Written every frame, as Midway writes its clock: the engine updates the uniform, no recompile.
     tint.value = 0.5 + 0.3 * Math.sin(probe.ticks * 0.05);
     try {

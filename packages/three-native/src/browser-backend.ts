@@ -22,6 +22,8 @@ export interface IRegistryClass {
   readonly members: readonly string[];
   /** Language callbacks the engine calls back (`onBeforeRender`). */
   readonly callbacks: readonly string[];
+  /** Native event types (AnimationMixer's "finished", "loop") an EventDispatcher listens to. */
+  readonly events?: readonly string[];
 }
 
 export interface IRegistryDump {
@@ -251,6 +253,75 @@ export function defineBrowserClasses(
   const callbackFunctions = new WeakMap<object, Map<string, (...args: unknown[]) => unknown>>();
   const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
   const held = new Set<object>();
+  // three's EventDispatcher on a class with native events, as the V8 adapter keeps it: the listener
+  // lists live here, and the engine calls back for a native type only while something listens.
+  type Listener = (this: object, event: Record<string, unknown>) => void;
+  const listenerTables = new WeakMap<object, Map<string, Listener[]>>();
+  const defineListeners = (
+    prototype: Record<string, unknown>,
+    native: ReadonlySet<string>,
+  ): void => {
+    const dispatch = (target: object, type: string, event: Record<string, unknown>): void => {
+      event.target = target;
+      for (const listener of [...(listenerTables.get(target)?.get(type) ?? [])])
+        listener.call(target, event);
+    };
+    prototype.addEventListener = function (this: object, type: unknown, listener: unknown) {
+      if (typeof type !== "string" || typeof listener !== "function")
+        throw new TypeError("addEventListener needs a type and a function");
+      const table = listenerTables.get(this) ?? new Map<string, Listener[]>();
+      listenerTables.set(this, table);
+      let list = table.get(type);
+      if (list?.includes(listener as Listener)) return;
+      if (list === undefined) {
+        list = [];
+        table.set(type, list);
+        if (native.has(type)) {
+          const ref = refOf(this);
+          const self = new WeakRef(this);
+          runtime.setCallback(ref, type, (args) => {
+            const target = self.deref();
+            if (target !== undefined)
+              dispatch(target, type, fromEngine(args[0] ?? {}) as Record<string, unknown>);
+          });
+          callbackNames.set(ref.key, (callbackNames.get(ref.key) ?? new Set()).add(type));
+          held.add(this);
+        }
+      }
+      list.push(listener as Listener);
+    };
+    prototype.removeEventListener = function (this: object, type: unknown, listener: unknown) {
+      const list = typeof type === "string" ? listenerTables.get(this)?.get(type) : undefined;
+      const at = list?.indexOf(listener as Listener) ?? -1;
+      if (list === undefined || at < 0) return;
+      list.splice(at, 1);
+      if (list.length > 0) return;
+      listenerTables.get(this)?.delete(type as string);
+      if (!native.has(type as string)) return;
+      const ref = refOf(this);
+      runtime.setCallback(ref, type as string, null);
+      callbackNames.get(ref.key)?.delete(type as string);
+    };
+    prototype.hasEventListener = function (this: object, type: unknown, listener: unknown) {
+      return (
+        typeof type === "string" &&
+        (listenerTables
+          .get(this)
+          ?.get(type)
+          ?.includes(listener as Listener) ??
+          false)
+      );
+    };
+    prototype.dispatchEvent = function (this: object, event: unknown) {
+      if (
+        typeof event !== "object" ||
+        event === null ||
+        typeof (event as { type?: unknown }).type !== "string"
+      )
+        throw new TypeError("dispatchEvent needs an event object with a type");
+      dispatch(this, (event as { type: string }).type, event as Record<string, unknown>);
+    };
+  };
   // userData is the game's, not the engine's: kept by handle, so a wrapper made again for the same
   // object finds it. ponytail: an entry outlives an attached object's wrapper by design, and goes
   // when a detached one is released.
@@ -493,6 +564,8 @@ export function defineBrowserClasses(
         },
       });
     }
+    if (binding.events !== undefined && binding.events.length > 0)
+      defineListeners(prototype, new Set(binding.events));
     if (binding.members.includes("parent") || binding.getters.includes("parent")) {
       Object.defineProperty(prototype, "userData", {
         configurable: true,

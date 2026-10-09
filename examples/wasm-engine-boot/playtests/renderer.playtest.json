@@ -32,6 +32,7 @@
       },
       { "entity": "wasm-renderer", "component": "probe", "path": "frames", "gte": 30 },
       { "entity": "wasm-renderer", "component": "probe", "path": "renderUpdates", "gte": 30 },
+      { "entity": "wasm-renderer", "component": "probe", "path": "finished", "equals": 1 },
       {
         "entity": "wasm-renderer",
         "component": "probe",
