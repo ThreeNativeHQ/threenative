@@ -275,10 +275,12 @@ export function defineTsl(runtime: ITslRuntime): {
   prototype.toVar = function (this: ITslNode) {
     return wrap(runtime.call("toVar", this[TSL_NODE], []));
   };
-  prototype.assign = function (this: ITslNode, value: unknown) {
-    runtime.release(call("assign", this[TSL_NODE], [value]));
-    return this;
-  };
+  // assign and r185's compound forms (a.addAssign(b) is a.assign(a.add(b))), built by the engine.
+  for (const form of ["assign", "addAssign", "subAssign", "mulAssign", "divAssign"])
+    prototype[form] = function (this: ITslNode, value: unknown) {
+      runtime.release(call(form, this[TSL_NODE], [value]));
+      return this;
+    };
   prototype.Else = function (this: ITslNode, callback: unknown) {
     statement("Else");
     return wrap(runtime.call("Else", this[TSL_NODE], [node(capture("Else", callback))]));

@@ -278,9 +278,9 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(0);
         return result(scoped("toVar", &receiver, {}));
     }
-    if (name == "assign") {
+    if (name == "assign" || name == "addAssign" || name == "subAssign" || name == "mulAssign" || name == "divAssign") {
         arity(1);
-        scoped("assign", &receiver, {abi::TslArg::of(arg(0))});
+        scoped(name.c_str(), &receiver, {abi::TslArg::of(arg(0))});
         info.GetReturnValue().Set(info.This());
         return;
     }
@@ -370,7 +370,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     const auto node = v8::ObjectTemplate::New(isolate_);
     node->SetInternalFieldCount(2);
     for (const char* name : {"add", "sub", "mul", "div", "negate", "lessThan", "greaterThan", "equal", "setName",
-                             "toVar", "assign", "element", "Else", "abs", "sin", "cos", "floor", "fract",
+                             "toVar", "assign", "addAssign", "subAssign", "mulAssign", "divAssign", "element", "Else", "abs", "sin", "cos", "floor", "fract",
                              "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",

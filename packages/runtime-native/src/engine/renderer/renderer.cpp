@@ -1330,8 +1330,17 @@ Renderer::Program& Renderer::program(MaterialKind kind, const shader::VertexVari
     source.vertex.setInvariantPosition(vv.invariantPosition);
     shader::StageModule vertex = shader::buildStage(source.vertex, 0);
     shader::StageModule fragment = shader::buildStage(source.fragment, 1);
-    if (!vertex.wgsl.ok() || !fragment.wgsl.ok())
-        throw std::runtime_error("TN_NATIVE_SHADER_INVALID: material program " + key);
+    if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
+        // The first generator error names what the graph asked for that WGSL cannot express.
+        std::string reason = (!vertex.wgsl.ok() ? vertex.wgsl.errors : fragment.wgsl.errors).front();
+        for (const shader::Program* stage : {&source.vertex, &source.fragment})
+            if (!stage->diagnostics().empty()) {
+                const shader::Diagnostic& d = stage->diagnostics().front();
+                reason = d.code + " " + d.node + ": " + d.reason;
+                break;
+            }
+        throw std::runtime_error("TN_NATIVE_SHADER_INVALID: " + reason + " (material program " + key + ")");
+    }
     return add(key, std::move(vertex), std::move(fragment));
 }
 

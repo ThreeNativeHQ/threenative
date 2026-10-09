@@ -514,6 +514,9 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         auto node = std::make_shared<g::NodeData>();
         node->kind = g::Kind::Body;
         node->body = std::move(closed.statements);
+        // A callback that runs statements and returns a value (Fn(() => { a.addAssign(b); return a; }))
+        // keeps the value: the Body lowers its statements, then yields args[0].
+        if (!args.empty()) node->args = {input(args[0])};
         out = node;
         return true;
     }
@@ -525,14 +528,22 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         statements.push_back(out);
         return true;
     }
-    if (name == "assign") {
+    // assign, and r185's compound forms: a.addAssign(b) is a.assign(a.add(b)) (likewise sub, mul, div).
+    if (name == "assign" || name == "addAssign" || name == "subAssign" || name == "mulAssign" || name == "divAssign") {
         arity(1);
         auto& statements = open().back().statements;
         const auto target = self();
         if (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement)
-            throw std::runtime_error("assign requires a variable or storage element");
+            throw std::runtime_error(name + " requires a variable or storage element");
+        g::Node value = input(args[0]);
+        if (name != "assign") {
+            const g::Node current = input(*receiver);
+            value = name == "addAssign" ? g::add(current, value)
+                    : name == "subAssign" ? g::sub(current, value)
+                    : name == "mulAssign" ? g::mul(current, value) : g::div(current, value);
+        }
         g::Block block;
-        block.assign(target, input(args[0]));
+        block.assign(target, value);
         statements.push_back(block.node()->body[0]);
         out = target;
         return true;

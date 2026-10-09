@@ -15,7 +15,7 @@ import {
   Scene,
   SphereGeometry,
 } from "three";
-import { float, positionLocal, texture, uniform, uv, vec3, vec4 } from "three/tsl";
+import { Fn, float, positionLocal, texture, uniform, uv, vec3, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
 
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
@@ -93,7 +93,14 @@ try {
     probe.renderUpdates += 1;
   });
   const tinted = new MeshBasicNodeMaterial();
-  tinted.colorNode = vec4(tint.mul(0.2), tint, tint.mul(1.6), 1);
+  // The same colour through Fn and r185's compound assigns, as Midway's water effects accumulate.
+  tinted.colorNode = Fn(() => {
+    const green = tint.mul(0.5).toVar();
+    green.addAssign(tint.mul(0.5));
+    const blue = tint.toVar();
+    blue.mulAssign(1.6);
+    return vec4(tint.mul(0.2), green, blue, 1);
+  })();
   const tile = new Mesh(new BoxGeometry(1, 1, 1), tinted);
   tile.position.x = 1.2;
   // A smooth sphere: its shading gradient keeps every capture far from a flat, near-blank frame.
