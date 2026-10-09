@@ -22,7 +22,7 @@ import {
 import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
-import { Material, defineObjectSurface } from "./object-surface.js";
+import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
 import { definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineReflector } from "./reflector.js";
@@ -98,6 +98,7 @@ export async function bindWebEngine(
     runtime,
     catalogJson as unknown as ICatalog,
   );
+  defineTypeFlags(classes);
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
   const entries = (catalogJson as unknown as ICatalog).entries;
   const extending = (base: string) =>

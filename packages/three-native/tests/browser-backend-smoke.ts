@@ -416,6 +416,48 @@ engine.collect();
   check(web.MathUtils.euclideanModulo(-1, 3) === 2, "MathUtils.euclideanModulo");
   check(web.MathUtils.clamp(5, 0, 1) === 1, "MathUtils.clamp");
 }
+// three's type flags on the scene classes (PRD-540): a game, three's own code and the playtest
+// bridge find lights, cameras and bones by `isLight`, `isCamera`, `isBone`, never by class.
+{
+  const flagged = [
+    "DirectionalLight",
+    "PointLight",
+    "SpotLight",
+    "AmbientLight",
+    "HemisphereLight",
+    "PerspectiveCamera",
+    "OrthographicCamera",
+    "Bone",
+    "SkinnedMesh",
+    "InstancedMesh",
+    "Sprite",
+    "LineSegments",
+    "LOD",
+    "Scene",
+    "Group",
+  ];
+  const web = (await bindWebEngine(createTnAbi, flagged)) as Record<string, new () => object>;
+  const flags = (name: string) => {
+    const prototype = web[name]?.prototype as Record<string, unknown>;
+    return (flag: string) => prototype[flag] === true;
+  };
+  for (const light of flagged.slice(0, 5))
+    check(
+      flags(light)("isLight") && flags(light)(`is${light}`) && flags(light)("isObject3D"),
+      `${light} flags`,
+    );
+  for (const camera of ["PerspectiveCamera", "OrthographicCamera"])
+    check(flags(camera)("isCamera") && flags(camera)(`is${camera}`), `${camera} flags`);
+  for (const [name, inherited] of [
+    ["SkinnedMesh", "isMesh"],
+    ["InstancedMesh", "isMesh"],
+    ["LineSegments", "isLine"],
+  ] as const)
+    check(flags(name)(`is${name}`) && flags(name)(inherited), `${name} flags`);
+  for (const name of ["Bone", "Sprite", "LOD", "Scene", "Group"])
+    check(flags(name)(`is${name}`), `${name} flag`);
+  check(!flags("Group")("isLight") && !flags("Bone")("isMesh"), "flags stay on their own classes");
+}
 // three's attribute.array is the attribute's own JS typed array (PRD-540): of its scalar type, one
 // per attribute, kept across Wasm memory growth; an element write is what the engine reads back
 // before its next call, BufferAttribute keeps the array it is handed, and needsUpdate sends a write.
