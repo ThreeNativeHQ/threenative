@@ -37,7 +37,7 @@ export const VELOCITY_PREVIOUS_BONE_MATRICES = Symbol.for(
 );
 
 interface IInstanceMatrixSource {
-  instanceMatrix?: { array: ArrayLike<number> };
+  instanceMatrix?: { array: ArrayLike<number>; version?: number };
 }
 
 interface IBatchedMatrixSource {
@@ -116,6 +116,8 @@ export class VelocityTracker {
   readonly #spareInstances = new Map<Object3D, Float32Array>();
   readonly #spareWorlds = new Map<Object3D, Matrix4>();
   readonly #spareBones = new Map<ITrackedSkeleton, Float32Array>();
+  /** `instanceMatrix.version` at the last commit: an unchanged mesh's history already equals it. */
+  readonly #instanceVersions = new Map<Object3D, number>();
   readonly #ownedBatchedMeshes = new Set<BatchedMesh>();
   readonly #active = new Set<Object3D>();
   #updatedRoot: Object3D | undefined;
@@ -200,6 +202,7 @@ export class VelocityTracker {
     this.#worldSnapshots.clear();
     this.#boneSnapshots.clear();
     this.#spareInstances.clear();
+    this.#instanceVersions.clear();
     this.#spareWorlds.clear();
     this.#spareBones.clear();
     this.#updatedRoot = undefined;
@@ -264,12 +267,22 @@ export class VelocityTracker {
 
   private commitInstance(object: Object3D): void {
     const batch = getBatchedMesh(object);
-    const current =
-      batch === undefined
-        ? (object as Object3D & IInstanceMatrixSource).instanceMatrix?.array
-        : batchedMatrixData(batch);
-    if (current !== undefined)
-      rotate(this.#instanceSnapshots, this.#spareInstances, object, current);
+    const matrices =
+      batch === undefined ? (object as Object3D & IInstanceMatrixSource).instanceMatrix : undefined;
+    const current = batch === undefined ? matrices?.array : batchedMatrixData(batch);
+    if (current === undefined) return;
+    // A static forest is nearly every instance: copying 218,809 unchanged matrices each frame was
+    // the remaining per-frame cost. Same version means the scheduled history is already current.
+    const version = matrices?.version;
+    if (
+      version !== undefined &&
+      this.#instanceVersions.get(object) === version &&
+      this.#instanceSnapshots.get(object)?.length === current.length
+    )
+      return;
+    rotate(this.#instanceSnapshots, this.#spareInstances, object, current);
+    if (version !== undefined) this.#instanceVersions.set(object, version);
+    else this.#instanceVersions.delete(object);
   }
 
   private restore(object: Object3D): void {
@@ -288,6 +301,7 @@ export class VelocityTracker {
     this.#instanceSnapshots.delete(object);
     this.#worldSnapshots.delete(object);
     this.#spareInstances.delete(object);
+    this.#instanceVersions.delete(object);
     this.#spareWorlds.delete(object);
   }
 }
