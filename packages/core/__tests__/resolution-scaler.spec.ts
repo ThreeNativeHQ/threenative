@@ -242,6 +242,21 @@ describe("ResolutionScaler", () => {
       }),
     ).toBeLessThan(1);
 
+    // live12 on the same laptop: the last resolve at window close is 438 frames old, past
+    // `maxGpuAgeFrames`, yet the window holds 25 GPU samples of its own at a 39 ms median. Those
+    // samples are this window's, so they are fresh however late the last one resolved.
+    const lagged = new ResolutionScaler({ targetFps: 120 });
+    lagged.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    expect(
+      lagged.observe({
+        fps: 41,
+        gpu: { p50: 39, samples: 25 },
+        gpuAgeFrames: 438,
+        gpuMs: 38.9,
+        presented: { p50: 10.6, p95: 101, p99: 235, max: 900 },
+      }),
+    ).toBeLessThan(1);
+
     // A game whose ordinary frame meets its target keeps the stall deferral: its hitches are not
     // a frame rate, and fewer pixels would not bring them back.
     const hitchy = new ResolutionScaler({ targetFps: 60 });

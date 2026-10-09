@@ -89,6 +89,8 @@ export const RESOLUTION_SCALER = {
   upWindows: 4,
   /** Eight frames for the sampled GPU reading plus eight for asynchronous query resolution. */
   maxGpuAgeFrames: 16,
+  /** Window GPU samples that make the window's own median fresh evidence; see `IScalerWindow.gpu`. */
+  minWindowGpuSamples: 4,
   /** The resize frame is itself a hitch and must never feed the controller. */
   cooldownWindows: 1,
   /**
@@ -189,6 +191,11 @@ export interface IScalerWindow {
   /** The last resolved GPU duration and its age; absent/old observations may only probe. */
   readonly gpuMs?: number;
   readonly gpuAgeFrames?: number;
+  /**
+   * This window's own GPU samples. When the last resolve is past `maxGpuAgeFrames` but the window
+   * holds `minWindowGpuSamples` of them, their median stands in: they were drawn in this window.
+   */
+  readonly gpu?: { readonly p50: number; readonly samples: number };
   /** Frames per second this window achieved, from the mean presented interval. */
   readonly fps: number;
   /**
@@ -557,15 +564,24 @@ export class ResolutionScaler {
     return window.presented.p50 > this.budgetMs || window.presented.p95 > this.tailMs;
   }
 
-  #freshGpuMs({ gpuMs, gpuAgeFrames }: IScalerWindow): number | undefined {
-    return gpuMs !== undefined &&
+  #freshGpuMs({ gpu, gpuMs, gpuAgeFrames }: IScalerWindow): number | undefined {
+    if (
+      gpuMs !== undefined &&
       Number.isFinite(gpuMs) &&
       gpuMs > 0 &&
       gpuAgeFrames !== undefined &&
       Number.isInteger(gpuAgeFrames) &&
       gpuAgeFrames >= 0 &&
       gpuAgeFrames <= RESOLUTION_SCALER.maxGpuAgeFrames
-      ? gpuMs
+    )
+      return gpuMs;
+    // An integrated GPU resolves timestamps hundreds of frames late (Iris Xe: 233-593, PRD-549),
+    // so the last reading is always old while the window is full of its own samples.
+    return gpu !== undefined &&
+      gpu.samples >= RESOLUTION_SCALER.minWindowGpuSamples &&
+      Number.isFinite(gpu.p50) &&
+      gpu.p50 > 0
+      ? gpu.p50
       : undefined;
   }
 
