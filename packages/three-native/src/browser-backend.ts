@@ -26,8 +26,8 @@ export interface IRegistryClass {
   readonly events?: readonly string[];
   /** Members the owner keeps for life (`position`, `matrixWorld`): the first answer may be kept. */
   readonly fixedMembers?: readonly string[];
-  /** Doubles held in place: [byte offset from the object's `__address`, count]. */
-  readonly fields?: Readonly<Record<string, readonly [number, number]>>;
+  /** Doubles held in place: [byte offset from the object's `__address`, count] (JSON arrays). */
+  readonly fields?: Readonly<Record<string, readonly number[]>>;
 }
 
 export interface IRegistryDump {
@@ -275,7 +275,7 @@ export function defineBrowserClasses(
     const field = binding.fields?.[property];
     const read = runtime.readDoubles;
     if (field !== undefined && read !== undefined) {
-      const [offset, count] = field;
+      const [offset = 0, count = 1] = field;
       return function (this: object) {
         let address = addresses.get(this);
         if (address === undefined) {

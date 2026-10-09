@@ -97,7 +97,7 @@ export async function bindWebEngine(
   const module = await createModule();
   const runtime = createWasmRuntime(module);
   const { classes, wrap } = defineBrowserClasses(
-    registry as unknown as IRegistryDump,
+    registry as IRegistryDump,
     runtime,
     catalogJson as unknown as ICatalog,
   );
