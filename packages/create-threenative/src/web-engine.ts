@@ -12,6 +12,17 @@ const POST_EFFECT_ADDONS: readonly string[] = [
   "SMAANode",
   "BloomNode",
 ].map((node) => `three/addons/tsl/display/${node}.js`);
+/**
+ * Addons the engine binds as its own classes (as the V8 bundler maps them): the addon path becomes a
+ * module re-exporting the engine class, so the upstream addon never extends an engine base it does
+ * not match (upstream RoundedBoxGeometry writes `type` on the engine BoxGeometry).
+ */
+const ENGINE_ADDON_CLASSES: Readonly<Record<string, string>> = {
+  "three/addons/geometries/RoundedBoxGeometry.js": "RoundedBoxGeometry",
+};
+const ENGINE_ADDON_PREFIX = "\0threenative:web-engine-addon:";
+/** three's SkeletonUtils addon over the engine's SkeletonUtils namespace (shared with the V8 player). */
+const SKELETON_UTILS_ID = "\0threenative:web-engine-skeleton-utils";
 /** The product Wasm entry inside the installed `@threenative/runtime-native` (PRD-540 phase 2). */
 export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
 
@@ -95,6 +106,9 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
     resolveId(source) {
       if (!native) return null;
       if ((UPSTREAM as readonly string[]).includes(source)) return WEB_ENGINE_ID;
+      const engineClass = ENGINE_ADDON_CLASSES[source];
+      if (engineClass !== undefined) return ENGINE_ADDON_PREFIX + engineClass;
+      if (source === "three/addons/utils/SkeletonUtils.js") return SKELETON_UTILS_ID;
       // The engine's MeshBVH answers picking with its own raycast; the upstream package extends
       // three's math classes and cannot load over the engine.
       if (source === "three-mesh-bvh")
@@ -123,10 +137,20 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       return null;
     },
     async load(id) {
+      if (native && id.startsWith(ENGINE_ADDON_PREFIX))
+        return `export { ${id.slice(ENGINE_ADDON_PREFIX.length)} } from "three";\n`;
+      if (native && id === SKELETON_UTILS_ID)
+        return 'import { SkeletonUtils } from "three";\nexport const clone = (source) => SkeletonUtils.clone(source);\n';
       if (!native || id !== WEB_ENGINE_ID) return null;
       // `__tnTsl` rides along for the post effects module: the engine TSL functions three does not
       // export by name (ao, bloom, ...).
-      const names = [...(await upstreamNames(projectRoot())), "__tnTsl", "__tnLoadGltf"];
+      const names = [
+        ...(await upstreamNames(projectRoot())),
+        ...Object.values(ENGINE_ADDON_CLASSES),
+        "SkeletonUtils",
+        "__tnTsl",
+        "__tnLoadGltf",
+      ];
       return [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
         `import createModule from ${JSON.stringify(wasmModule(projectRoot()))};`,

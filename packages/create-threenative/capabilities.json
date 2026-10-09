@@ -7581,6 +7581,11 @@
         "source": "three"
       },
       {
+        "symbol": "CanvasTexture",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "CapsuleGeometry",
         "kind": "class",
         "source": "three"
@@ -7936,6 +7941,11 @@
         "source": "three"
       },
       {
+        "symbol": "PropertyBinding",
+        "kind": "class",
+        "source": "three"
+      },
+      {
         "symbol": "Quaternion",
         "kind": "class",
         "source": "three"
@@ -7999,6 +8009,11 @@
         "symbol": "Skeleton",
         "kind": "class",
         "source": "three/webgpu"
+      },
+      {
+        "symbol": "SkeletonUtils",
+        "kind": "class",
+        "source": "three"
       },
       {
         "symbol": "SkinnedMesh",

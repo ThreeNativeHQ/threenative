@@ -67,34 +67,41 @@ export function defineTextureSources(
 ): Record<string, unknown> {
   const BaseTexture = classes.Texture as EngineClass;
   const BaseData = classes.DataTexture as EngineClass;
+  const BaseCanvas = classes.CanvasTexture as EngineClass | undefined;
+  if (BaseCanvas === undefined) throw new TypeError("TN_BROWSER_UNBOUND: CanvasTexture");
   const sources = new WeakMap<object, unknown>();
   const prototype = BaseData.prototype as object;
-  const needsUpdate = Object.getOwnPropertyDescriptor(prototype, "needsUpdate")?.set;
-  if (needsUpdate === undefined) throw new TypeError("TN_BROWSER_UNBOUND: DataTexture.needsUpdate");
-  Object.defineProperties(prototype, {
-    image: {
-      configurable: true,
-      get(this: object) {
-        return sources.get(this);
+  /** `image` is the JS source; `needsUpdate` re-sends its pixels, as three re-reads `texture.image`. */
+  const followSource = (target: object, name: string): void => {
+    const needsUpdate = Object.getOwnPropertyDescriptor(target, "needsUpdate")?.set;
+    if (needsUpdate === undefined) throw new TypeError(`TN_BROWSER_UNBOUND: ${name}.needsUpdate`);
+    Object.defineProperties(target, {
+      image: {
+        configurable: true,
+        get(this: object) {
+          return sources.get(this);
+        },
+        set(this: object, image: unknown) {
+          sources.set(this, image);
+        },
       },
-      set(this: object, image: unknown) {
-        sources.set(this, image);
+      needsUpdate: {
+        configurable: true,
+        set(this: object, value: unknown) {
+          const image = value ? sources.get(this) : undefined;
+          if (image !== undefined)
+            runtime.set(
+              engineRef(this) as IEngineRef,
+              "image.data",
+              Array.from(pixelsOf(image).data),
+            );
+          needsUpdate.call(this, value);
+        },
       },
-    },
-    needsUpdate: {
-      configurable: true,
-      set(this: object, value: unknown) {
-        const image = value ? sources.get(this) : undefined;
-        if (image !== undefined)
-          runtime.set(
-            engineRef(this) as IEngineRef,
-            "image.data",
-            Array.from(pixelsOf(image).data),
-          );
-        needsUpdate.call(this, value);
-      },
-    },
-  });
+    });
+  };
+  followSource(prototype, "DataTexture");
+  followSource(BaseCanvas.prototype as object, "CanvasTexture");
 
   /** An engine DataTexture holding `pixels`, re-read from `image` on every needsUpdate. */
   const fromImage = (image: unknown, target: object): object => {
@@ -123,16 +130,20 @@ export function defineTextureSources(
   }
   DataTexture.prototype = prototype;
 
-  // ponytail: a DataTexture underneath, one mip level; bind a native CanvasTexture for mipmapped art.
-  function CanvasTexture(canvas: unknown) {
-    const texture = fromImage(canvas, CanvasTexture.prototype);
-    (texture as { needsUpdate: boolean }).needsUpdate = true;
+  /** three's CanvasTexture: the engine's own class over the canvas's pixels, with a full mip chain. */
+  function CanvasTexture(this: unknown, canvas: unknown, ...rest: unknown[]) {
+    const pixels = pixelsOf(canvas);
+    const texture = Reflect.construct(
+      BaseCanvas as EngineClass,
+      [pixels.data, pixels.width, pixels.height, ...rest],
+      new.target ?? CanvasTexture,
+    ) as object;
+    sources.set(texture, canvas);
     return texture;
   }
-  CanvasTexture.prototype = Object.create(prototype, {
-    constructor: { value: CanvasTexture, writable: true, configurable: true },
-    isCanvasTexture: { value: true },
-  });
+  CanvasTexture.prototype = BaseCanvas.prototype;
+  if (!Object.hasOwn(BaseCanvas.prototype, "isCanvasTexture"))
+    Object.defineProperty(BaseCanvas.prototype, "isCanvasTexture", { value: true });
 
   /** `new Texture(image)` uploads the image's pixels; with no image it is the engine's Texture. */
   function Texture(this: unknown, image?: unknown, ...rest: unknown[]) {

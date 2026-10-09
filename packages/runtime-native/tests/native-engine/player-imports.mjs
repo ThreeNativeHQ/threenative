@@ -45,6 +45,7 @@ import { ${names.join(", ")} } from "three";
 const THREE = { ${names.join(", ")} };
 import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, NodeUpdateType, WebGPURenderer } from "three/webgpu";
 import { screenCoordinate, positionGeometry, normalGeometry, tangentGeometry, positionViewDirection } from "three/tsl";
+import { atan, mod, fwidth, saturation, mat2, hash, time } from "three/tsl";
 import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
@@ -56,6 +57,8 @@ const camera = new THREE.PerspectiveCamera();
 check(camera instanceof THREE.Camera && camera instanceof THREE.Object3D, "camera inheritance");
 const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshStandardMaterial());
 check(mesh instanceof THREE.Object3D && mesh.isMesh && mesh.isObject3D, "mesh identity");
+const segments = new THREE.LineSegments();
+check(segments instanceof THREE.Line && segments instanceof THREE.Object3D && segments.isLineSegments && segments.isLine, "line inheritance");
 check(new THREE.SkinnedMesh() instanceof THREE.Mesh, "skinned inheritance");
 check(new THREE.CylinderGeometry() instanceof THREE.BufferGeometry, "geometry inheritance");
 const profile = [[0.055, 0], [0.098, 0], [0.103, 0.025], [0.091, 0.18]];
@@ -185,6 +188,22 @@ let visited = 0; scene.traverse(object => { check(object instanceof THREE.Object
 check(visited === 2, "native traversal");
 const binding = new THREE.PropertyBinding(scene, '.position'); binding.bind();
 check(binding.targetObject === scene && THREE.PropertyBinding.findNode(scene, undefined) === scene, "native PropertyBinding");
+{
+  // three's PropertyBinding surface over the engine (three-native/src/property-binding.ts): the statics,
+  // targetObject as a property, and a failed bind reported through setConsoleFunction's function.
+  const rig = new THREE.Object3D(); const hip = new THREE.Object3D(); hip.name = "hip"; rig.add(hip);
+  check(THREE.PropertyBinding.parseTrackName("hip.position[x]").propertyIndex === "x", "track parsing");
+  check(THREE.PropertyBinding.findNode(rig, "hip") === hip, "node search");
+  const previous = THREE.getConsoleFunction(); const messages = [];
+  THREE.setConsoleFunction((type, message) => messages.push([type, message]));
+  const track = new THREE.PropertyBinding(rig, "hip.position"); track.bind();
+  check(track.targetObject === hip && messages.length === 0, "track target");
+  track.unbind(); hip.name = "renamed"; track.bind();
+  check(track.targetObject === null && messages.length === 1 && messages[0][0] === "error" &&
+    messages[0][1].includes("No target node found"), "rebind diagnostic through the console function");
+  THREE.setConsoleFunction(previous);
+  check(THREE.getConsoleFunction() === previous, "console hook restoration");
+}
 const copied = clone(mesh);
 check(copied instanceof THREE.Mesh && copied.geometry === mesh.geometry && copied.material === mesh.material, "clone native resources");
 const ray = new THREE.Raycaster(new THREE.Vector3(0.2, -0.3, 5), new THREE.Vector3(0, 0, -1));
@@ -223,6 +242,7 @@ basic.colorNode = mirror.sample(screenUV.flipX()).rgb.add(mirror.rgb);
 check(cameraViewMatrix !== undefined, "camera view uniform");
 check(NodeUpdateType.FRAME === "frame" && NodeUpdateType.RENDER === "render", "NodeUpdateType");
 basic.colorNode = vec3(screenCoordinate.mul(0.001), positionViewDirection.z);
+check([atan(1), mod(1, 2), fwidth(1), saturation(vec3(1, 0, 0)), hash(1), time].every((node) => node && typeof node.mul === "function") && typeof mat2 === "function", "TSL atan, mod, fwidth, saturation, mat2, hash and time");
 basic.positionNode = positionGeometry.add(normalGeometry.mul(tangentGeometry.w.mul(0)));
 check(basic.colorNode !== null && basic.positionNode !== null, "screen coordinate, geometry attributes, view direction");
 const hex = new THREE.Color(0xff0000);

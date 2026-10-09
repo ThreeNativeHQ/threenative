@@ -22,6 +22,8 @@ export interface IRegistryClass {
   readonly members: readonly string[];
   /** Language callbacks the engine calls back (`onBeforeRender`). */
   readonly callbacks: readonly string[];
+  /** Event types the engine dispatches (AnimationMixer's `finished`, `loop`). */
+  readonly events?: readonly string[];
 }
 
 export interface IRegistryDump {
@@ -523,6 +525,96 @@ export function defineBrowserClasses(
         },
       });
     }
+    // three's EventDispatcher, as the V8 adapter keeps it: listeners live in JS, and the engine
+    // calls back once per native event type something listens to; `target` is set while they run.
+    if (binding.methods.includes("addEventListener")) {
+      const native = new Set(binding.events ?? []);
+      type Listener = (this: object, event: Record<string, unknown>) => void;
+      const listeners = new WeakMap<object, Map<string, Listener[]>>();
+      const dispatch = (target: object, event: Record<string, unknown>): void => {
+        const list = listeners.get(target)?.get(String(event.type));
+        if (list === undefined) return;
+        event.target = target;
+        for (const listener of [...list]) listener.call(target, event);
+        event.target = null;
+      };
+      const listenerArgs = (name: string, type: unknown, listener: unknown): Listener => {
+        if (typeof type !== "string" || typeof listener !== "function")
+          throw new TypeError(`${name} needs a type and a function`);
+        return listener as Listener;
+      };
+      Object.defineProperties(prototype, {
+        addEventListener: {
+          configurable: true,
+          writable: true,
+          value(this: object, type: unknown, fn: unknown): void {
+            const listener = listenerArgs("addEventListener", type, fn);
+            const table = listeners.get(this) ?? new Map<string, Listener[]>();
+            listeners.set(this, table);
+            let list = table.get(type as string);
+            if (list === undefined) {
+              list = [];
+              table.set(type as string, list);
+              if (native.has(type as string)) {
+                const ref = refOf(this);
+                const self = new WeakRef(this);
+                runtime.setCallback(ref, type as string, (args) => {
+                  const target = self.deref();
+                  if (target !== undefined)
+                    dispatch(target, fromEngine(args[0] as EngineValue) as Record<string, unknown>);
+                });
+                callbackNames.set(
+                  ref.key,
+                  (callbackNames.get(ref.key) ?? new Set()).add(type as string),
+                );
+                held.add(this);
+              }
+            }
+            if (!list.includes(listener)) list.push(listener);
+          },
+        },
+        hasEventListener: {
+          configurable: true,
+          writable: true,
+          value(this: object, type: unknown, fn: unknown): boolean {
+            const listener = listenerArgs("hasEventListener", type, fn);
+            return (
+              listeners
+                .get(this)
+                ?.get(type as string)
+                ?.includes(listener) ?? false
+            );
+          },
+        },
+        removeEventListener: {
+          configurable: true,
+          writable: true,
+          value(this: object, type: unknown, fn: unknown): void {
+            const listener = listenerArgs("removeEventListener", type, fn);
+            const table = listeners.get(this);
+            const list = table?.get(type as string);
+            if (table === undefined || list === undefined || !list.includes(listener)) return;
+            list.splice(list.indexOf(listener), 1);
+            if (list.length > 0) return;
+            table.delete(type as string);
+            if (native.has(type as string)) {
+              const ref = refOf(this);
+              runtime.setCallback(ref, type as string, null);
+              callbackNames.get(ref.key)?.delete(type as string);
+            }
+          },
+        },
+        dispatchEvent: {
+          configurable: true,
+          writable: true,
+          value(this: object, event: unknown): void {
+            if (typeof event !== "object" || event === null)
+              throw new TypeError("dispatchEvent needs an event object");
+            dispatch(this, event as Record<string, unknown>);
+          },
+        },
+      });
+    }
     if (binding.members.includes("parent") || binding.getters.includes("parent")) {
       Object.defineProperty(prototype, "userData", {
         configurable: true,
@@ -849,19 +941,34 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     return dataView;
   };
   // Each call frees what it allocated, and only that: a callback can run a nested call.
+  // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
+  // scope rewinds, a stack as nested calls (a callback inside an invoke) need; a scope that outgrows
+  // it falls back to malloc and frees on exit. Every engine call crosses here, many per frame.
+  const arenaSize = 64 * 1024;
+  const arenaBase = abi._malloc(arenaSize);
+  let arenaTop = arenaBase;
   const allocations: number[] = [];
   const alloc = (size: number): number => {
-    const pointer = abi._malloc(size);
+    const aligned = (size + 7) & ~7;
+    let pointer: number;
+    if (arenaTop + aligned <= arenaBase + arenaSize) {
+      pointer = arenaTop;
+      arenaTop += aligned;
+    } else {
+      pointer = abi._malloc(size);
+      allocations.push(pointer);
+    }
     abi.HEAPU8.fill(0, pointer, pointer + size);
-    allocations.push(pointer);
     return pointer;
   };
   const scoped = <T>(work: () => T): T => {
     const mark = allocations.length;
+    const top = arenaTop;
     try {
       return work();
     } finally {
       for (const pointer of allocations.splice(mark)) abi._free(pointer);
+      arenaTop = top;
     }
   };
   const string = (text: string): { pointer: number; bytes: number } => {
@@ -869,6 +976,18 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     const pointer = alloc(bytes + 1);
     abi.stringToUTF8(text, pointer, bytes + 1);
     return { pointer, bytes };
+  };
+  // Member, method and class names: a bounded set, encoded once and kept for the module's life.
+  const names = new Map<string, number>();
+  const name = (text: string): number => {
+    let pointer = names.get(text);
+    if (pointer === undefined) {
+      const bytes = abi.lengthBytesUTF8(text);
+      pointer = abi._malloc(bytes + 1);
+      abi.stringToUTF8(text, pointer, bytes + 1);
+      names.set(text, pointer);
+    }
+    return pointer;
   };
   const diagnostic = () => alloc(8);
   const check = (status: number, diag: number, what: string) => {
@@ -884,13 +1003,15 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     const key = `${type}:${v.getUint16(pointer + 2, true)}:${v.getUint32(pointer + 4, true)}:${v.getUint32(pointer + 8, true)}`;
     return { key, type };
   };
+  // A ref's handle fields, parsed from its key once.
+  const handles = new WeakMap<IEngineRef, readonly [number, number, number, number]>();
   const writeHandle = (pointer: number, ref: IEngineRef) => {
-    const [type, context, index, generation] = ref.key.split(":").map(Number) as [
-      number,
-      number,
-      number,
-      number,
-    ];
+    let fields = handles.get(ref);
+    if (fields === undefined) {
+      fields = ref.key.split(":").map(Number) as [number, number, number, number];
+      handles.set(ref, fields);
+    }
+    const [type, context, index, generation] = fields;
     const v = view();
     v.setUint16(pointer, type, true);
     v.setUint16(pointer + 2, context, true);
@@ -1077,7 +1198,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       view,
     }) ?? {}),
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
-    typeId: (className) => scoped(() => abi._tn_type_id(string(className).pointer)),
+    typeId: (className) => abi._tn_type_id(name(className)),
     construct: (className, args) =>
       scoped(() => {
         const out = alloc(HANDLE);
@@ -1101,14 +1222,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         const out = alloc(VALUE);
         const diag = diagnostic();
         check(
-          abi._tn_invoke(
-            handleOf(self),
-            string(method).pointer,
-            values(args),
-            args.length,
-            out,
-            diag,
-          ),
+          abi._tn_invoke(handleOf(self), name(method), values(args), args.length, out, diag),
           diag,
           `${method}()`,
         );
@@ -1118,18 +1232,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       scoped(() => {
         const out = alloc(VALUE);
         const diag = diagnostic();
-        check(abi._tn_get(handleOf(self), string(path).pointer, out, diag), diag, `get ${path}`);
+        check(abi._tn_get(handleOf(self), name(path), out, diag), diag, `get ${path}`);
         return readValue(out);
       }),
     set: (self, path, value) =>
       scoped(() => {
         const pointer = values([value]);
         const diag = diagnostic();
-        check(
-          abi._tn_set(handleOf(self), string(path).pointer, pointer, diag),
-          diag,
-          `set ${path}`,
-        );
+        check(abi._tn_set(handleOf(self), name(path), pointer, diag), diag, `set ${path}`);
       }),
     release: (self) =>
       scoped(() => {

@@ -406,6 +406,11 @@ readonly projectionMatrix: Matrix4;
 readonly projectionMatrixInverse: Matrix4;
 }
 
+/** Catalog supported: three/CanvasTexture. */
+export declare class CanvasTexture extends Texture {
+constructor();
+}
+
 /** Catalog supported: three/CapsuleGeometry. */
 export declare class CapsuleGeometry extends BufferGeometry {
 constructor();
@@ -1019,8 +1024,12 @@ readonly type: string;
 visible: boolean;
 color: Color;
 map: Texture | null;
+vertexColors: boolean;
+forceSinglePass: boolean;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/LineSegments. */
@@ -1379,6 +1388,8 @@ readonly type: string;
   setValues(values?: MeshBasicMaterialParameters): void;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (shader-parameters): three/MeshBasicMaterialParameters. */
@@ -1409,8 +1420,13 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+vertexColors: boolean;
+forceSinglePass: boolean;
+vertexNode: Node | null;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/MeshStandardMaterial. */
@@ -1492,6 +1508,8 @@ readonly type: string;
   setValues(values?: MeshStandardMaterialParameters): void;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (shader-parameters): three/MeshStandardMaterialParameters. */
@@ -1535,8 +1553,13 @@ normalScale: Vector2;
 aoMapIntensity: number;
 aoMap: Texture | null;
 emissiveMap: Texture | null;
+vertexColors: boolean;
+forceSinglePass: boolean;
+vertexNode: Node | null;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (native-not-implemented): three/MinEquation. */
@@ -2402,8 +2425,12 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+vertexColors: boolean;
+forceSinglePass: boolean;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/webgpu/SpriteNodeMaterial. */
@@ -2433,8 +2460,13 @@ color: Color;
 map: Texture | null;
 fog: boolean;
 blending: Blending;
+vertexColors: boolean;
+forceSinglePass: boolean;
+vertexNode: Node | null;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog partial (native-not-implemented): three/SrcAlphaFactor. */
@@ -3084,8 +3116,12 @@ fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
+vertexColors: boolean;
+forceSinglePass: boolean;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/MeshPhongMaterial. */
@@ -3112,8 +3148,12 @@ fog: boolean;
 blending: Blending;
 normalMap: Texture | null;
 normalScale: Vector2;
+vertexColors: boolean;
+forceSinglePass: boolean;
 
   clone(): this;
+
+  copy(source: Material): this;
 }
 
 /** Catalog supported: three/MeshPhysicalMaterial. */
@@ -3308,4 +3348,27 @@ normalBias: number;
 radius: number;
 readonly camera: PerspectiveCamera;
 readonly mapSize: Vector2;
+}
+
+/** Catalog supported: three/PropertyBinding. */
+export declare class PropertyBinding {
+constructor();
+readonly path: string;
+
+  bind(): void;
+
+  findNode(root: Object3D, nodeName?: string): Object3D | null;
+
+  parseTrackName(trackName: string): { nodeName: string; objectName: string; objectIndex: string; propertyName: string; propertyIndex: string };
+
+  targetObject(): Object3D | Material | null;
+
+  unbind(): void;
+}
+
+/** Catalog supported: three/SkeletonUtils. */
+export declare class SkeletonUtils {
+constructor();
+
+  clone(source: Object3D): Object3D;
 }

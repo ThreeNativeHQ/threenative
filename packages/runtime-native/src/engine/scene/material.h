@@ -33,8 +33,8 @@ public:
     explicit Material(MaterialType type, bool nodeMaterial = false);
     [[nodiscard]] std::string_view typeName() const;  // "MeshStandardMaterial", ...
 
-    const MaterialType type;
-    const bool nodeMaterial;
+    MaterialType type;  // fixed at construction; copy() keeps the target's
+    bool nodeMaterial;
     shader::MaterialNodes nodes;
     uint32_t id;  // three's material id counter; a clone takes the next one
     std::string name;
@@ -45,6 +45,7 @@ public:
     double rotation = 0;
     bool sizeAttenuation = true;
     bool transparent = false;
+    bool forceSinglePass = false;  // three's: a transparent DoubleSide material draws in one pass
     double opacity = 1;
     double alphaTest = 0;
     bool depthTest = true;
@@ -84,6 +85,8 @@ public:
 
     /** three's Material.clone: every value copied, textures and nodes shared, with its own id and version. */
     [[nodiscard]] std::shared_ptr<Material> clone() const;
+    /** three's Material.copy(source): every value taken from source; this keeps its class, id and version. */
+    Material& copy(const Material& source);
     /** three's `material.needsUpdate = true`: the renderer rebuilds what depends on the material. */
     void needsUpdate() { ++version_; }
     [[nodiscard]] uint32_t version() const { return version_; }

@@ -142,7 +142,16 @@ PostEffects::~PostEffects() {
     }
     wgpuSamplerRelease(linear_);
 }
+void PostEffects::releaseGroups() {
+    for (auto& pass : passes_) {
+        if (pass.group)
+            wgpuBindGroupRelease(pass.group);
+        pass.group = nullptr;
+        pass.groupEntries.clear();
+    }
+}
 void PostEffects::clearTargets() {
+    releaseGroups();
     for (auto& [name, target] : targets_) {
         wgpuTextureViewRelease(target.view);
         wgpuTextureRelease(target.texture);
@@ -292,11 +301,22 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
             }
             entries.push_back(entry);
         }
-        WGPUBindGroupDescriptor groupDesc{};
-        groupDesc.layout = pass.layout;
-        groupDesc.entryCount = entries.size();
-        groupDesc.entries = entries.data();
-        const auto group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
+        const auto same = [](const WGPUBindGroupEntry& a, const WGPUBindGroupEntry& b) {
+            return a.binding == b.binding && a.buffer == b.buffer && a.offset == b.offset && a.size == b.size &&
+                   a.sampler == b.sampler && a.textureView == b.textureView;
+        };
+        if (!pass.group || !std::equal(entries.begin(), entries.end(), pass.groupEntries.begin(),
+                                       pass.groupEntries.end(), same)) {
+            if (pass.group)
+                wgpuBindGroupRelease(pass.group);
+            WGPUBindGroupDescriptor groupDesc{};
+            groupDesc.layout = pass.layout;
+            groupDesc.entryCount = entries.size();
+            groupDesc.entries = entries.data();
+            pass.group = wgpuDeviceCreateBindGroup(device_, &groupDesc);
+            pass.groupEntries = entries;
+        }
+        const auto group = pass.group;
         WGPURenderPassColorAttachment color{};
         color.view = target.view;
         color.loadOp = WGPULoadOp_Clear;
@@ -315,7 +335,6 @@ void PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPU
         wgpuRenderPassEncoderDraw(render, 3, 1, 0, 0);
         wgpuRenderPassEncoderEnd(render);
         wgpuRenderPassEncoderRelease(render);
-        wgpuBindGroupRelease(group);
         pass.rendered = true;
     }
 }

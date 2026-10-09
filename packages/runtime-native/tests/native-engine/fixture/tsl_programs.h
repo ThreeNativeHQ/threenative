@@ -469,6 +469,20 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         const std::vector<abi::TslArg> args = {abi::TslArg::objectOf("DataTexture", tsl_detail::equirectSky()),
             abi::TslArg::of(g::normalize(positionWorld)), abi::TslArg::of(g::mul(x, g::float_(0.9)))};
         material->nodes.colorNode = g::vec4({abi::tslCall("pmremTexture", nullptr, args, serial), g::float_(1)});
+    } else if (program == "vertex-node-screen" || program == "vertex-node-world") {
+        uint64_t serial = 0;
+        const auto geometry = abi::tslCall("positionGeometry", nullptr, {}, serial);
+        if (program == "vertex-node-screen") {
+            material->nodes.vertexNode = g::vec4({g::add(g::mul(g::swizzle(geometry, "xy"), g::float_(0.4)),
+                                                         g::vec2({g::float_(-0.5), g::float_(0.45)})),
+                                                  g::float_(0), g::float_(1)});
+        } else {
+            const auto bent = g::add(geometry, g::vec3({g::float_(0), g::mul(g::sin(g::mul(g::swizzle(geometry, "x"),
+                                                         g::float_(3))), g::float_(0.3)), g::float_(0)}));
+            const auto projection = abi::tslCall("cameraProjectionMatrix", nullptr, {}, serial);
+            material->nodes.vertexNode = g::mul(projection, g::mul(g::uniform("viewMatrix", Type::mat(4, 4)),
+                                                                   g::vec4({bent, g::float_(1)})));
+        }
     } else if (program == "nodemat-standard-nodes") {
         material->nodes.roughnessNode = g::add(g::mul(x, g::float_(0.7)), g::float_(0.2));
         material->nodes.metalnessNode = g::mul(y, g::float_(0.8));

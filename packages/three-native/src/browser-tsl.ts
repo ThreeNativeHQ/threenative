@@ -63,6 +63,12 @@ const FUNCTIONS = [
   "log2",
   "normalize",
   "length",
+  "atan",
+  "mod",
+  "fwidth",
+  "saturation",
+  "mat2",
+  "hash",
   "min",
   "max",
   "pow",
@@ -91,6 +97,7 @@ const FUNCTIONS = [
   "mx_worley_noise_vec2",
   "pmremTexture",
   "reflector",
+  "transformDirection",
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
@@ -109,6 +116,12 @@ const CONSTANTS = [
   "materialEmissive",
   "materialMetalness",
   "materialRoughness",
+  "time",
+  "normalView",
+  "positionViewDirection",
+  "screenCoordinate",
+  "normalGeometry",
+  "tangentGeometry",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
@@ -135,6 +148,9 @@ const METHODS = [
   "dFdy",
   "sign",
   "cbrt",
+  "atan",
+  "mod",
+  "fwidth",
   "min",
   "max",
   "pow",
@@ -154,6 +170,7 @@ const METHODS = [
   "flipY",
   "flipZ",
   "flipW",
+  "transformDirection",
 ] as const;
 /** three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, as xyzw lanes. */
 const SWIZZLES: Readonly<Record<string, string>> = (() => {
@@ -201,8 +218,11 @@ export function defineTsl(runtime: ITslRuntime): {
   };
   const argument = (name: string, index: number, value: unknown): TslArgValue => {
     if (isTslNode(value)) return { kind: "node", node: value[TSL_NODE] };
-    // An omitted optional input (denoise's normal node) has no TSL meaning of its own.
+    // An omitted optional input (denoise's normal node) has no TSL meaning of its own, and ao's and
+    // denoise's camera is the render camera, whose matrices the engine's effect reads each frame.
     if (value === null || value === undefined) return { kind: "other" };
+    if ((name === "ao" && index === 2) || (name === "denoise" && index === 3))
+      return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
     // texture(engineTexture, uv) samples that texture itself; a plain object names a material map,

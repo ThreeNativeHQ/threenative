@@ -14,19 +14,20 @@ class Program;
 /** NodeMaterial slots; null nodes use the non-node material path. */
 struct MaterialNodes {
     graph::Node colorNode, positionNode, normalNode, emissiveNode, roughnessNode, metalnessNode, opacityNode;
+    /** NodeMaterial.vertexNode: the clip-space position itself, replacing model-view-projection. */
+    graph::Node vertexNode;
     bool operator==(const MaterialNodes&) const = default;
     auto pointers() const { return std::array{colorNode.get(), positionNode.get(), normalNode.get(), emissiveNode.get(),
-                                           roughnessNode.get(), metalnessNode.get(), opacityNode.get()}; }
+                                           roughnessNode.get(), metalnessNode.get(), opacityNode.get(), vertexNode.get()}; }
     auto graphs() const { return std::array{colorNode, positionNode, normalNode, emissiveNode,
-                                         roughnessNode, metalnessNode, opacityNode}; }
+                                         roughnessNode, metalnessNode, opacityNode, vertexNode}; }
     std::string key() const {
         std::string out;
         for (const auto& node : graphs()) {
             // An empty slot is most slots on most frames: graph::key(null) is "null;", without its
             // hash map, std::function and string.
             if (!node) { out += "5:null;"; continue; }
-            const auto k = graph::key(node);
-            out += std::to_string(k.size()) + ":" + k;
+            out += "#" + std::to_string(graph::keyId(node)) + ";";  // the structure, interned
         }
         return out;
     }

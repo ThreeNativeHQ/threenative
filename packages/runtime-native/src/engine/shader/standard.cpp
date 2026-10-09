@@ -390,12 +390,29 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         tsl::Build build(v);
         position = nodeType(v, graph::lower(variant.nodes.positionNode, v, {{"positionLocal", position}}), Type::vec(3));
     }
-    const ExprId instanceColor = !variant.instanceColor ? kInvalid : variant.instanceStorage
+    ExprId instanceColor = !variant.instanceColor ? kInvalid : variant.instanceStorage
         ? v.swizzle(v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(4)}))), "xyz")
         : v.attribute("instanceColor", Type::vec(3));
+    // setupDiffuseColor: colorNode.mul(vertexColor()), a vec4 whose alpha is 1 for an rgb attribute. The
+    // instance colour is constant over a triangle, so their product interpolates as three's two factors.
+    if (variant.vertexColors) {
+        ExprId vertexColor = v.attribute("color", Type::vec(variant.vertexColors));
+        if (variant.vertexColors == 3) vertexColor = v.construct(Type::vec(4), {vertexColor, v.constant(1.0f)});
+        instanceColor = instanceColor == kInvalid ? vertexColor
+            : v.mul(v.construct(Type::vec(4), {instanceColor, v.constant(1.0f)}), vertexColor);
+    }
     // Read last: a map's uv joins the varying set after instanceColor, so the fragment reads it there.
     const ExprId uv = (variant.map || variant.normalMap || variant.pbrMaps) && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
+}
+
+// NodeMaterial.setupVertex: a vertexNode is the clip-space position itself; positionLocal (after
+// morph, skinning, instancing and positionNode) is what it reads.
+static ExprId clipPosition(Program& v, const VertexVariant& variant, const LocalVertex& local, ExprId clip) {
+    if (!variant.nodes.vertexNode) return clip;
+    tsl::Build build(v);
+    return nodeType(v, graph::lower(variant.nodes.vertexNode, v, {{"positionLocal", v.swizzle(local.position, "xyz")}}),
+                    Type::vec(4));
 }
 
 static void outputInstanceColor(Program& v, const LocalVertex& local) {
@@ -443,9 +460,12 @@ static ExprId srgbDecode(Program& f, ExprId channel) {
 // back face. Called after the fragment's other varyings exist, so `uv` takes the vertex stage's slot.
 static ExprId perturbNormal2Arb(Program& f, ExprId eye, ExprId uv, ExprId surfaceNormal, ExprId mapN);
 
+// The tint varying: the instance colour (vec3), or a vec4 once a vertex colour multiplies it.
+static Type tintType(const VertexVariant& variant) { return Type::vec(variant.vertexColors ? 4 : 3); }
+
 static ExprId perturbedNormal(Program& f, const VertexVariant& variant, ExprId surfaceNormal) {
     const ExprId eye = f.varying("positionView", Type::vec(3));
-    if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
+    if (variant.tinted()) f.varying("instanceColor", tintType(variant));
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform("normalUvTransform", Type::mat(3, 3));
     const ExprId at = f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy");
@@ -479,7 +499,7 @@ static ExprId perturbNormal2Arb(Program& f, ExprId eye, ExprId uv, ExprId surfac
 // instanceColor before uv so the fragment's varyings keep the vertex stage's order.
 static ExprId pbrTexel(Program& f, const VertexVariant& variant, PbrMap map) {
     const std::string name = kPbrMapNames[map];
-    if (variant.instanceColor) f.varying("instanceColor", Type::vec(3));
+    if (variant.tinted()) f.varying("instanceColor", tintType(variant));
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId transform = f.uniform(name + "UvTransform", Type::mat(3, 3));
     return f.sample(f.texture2d(name), f.swizzle(f.mul(transform, f.construct(Type::vec(3), {uv, f.constant(1.0f)})), "xy"));
@@ -518,7 +538,9 @@ static ExprId mapTexel(Program& f, const VertexVariant& variant) {
 // setupDiffuseColor: an instanced mesh with instanceColor multiplies the material colour by it.
 static ExprId materialColor(Program& f, const VertexVariant& variant, ExprId diffuse) {
     const ExprId color = f.swizzle(diffuse, "xyz");
-    return variant.instanceColor ? f.mul(f.varying("instanceColor", Type::vec(3)), color) : color;
+    if (!variant.tinted()) return color;
+    const ExprId tint = f.varying("instanceColor", tintType(variant));
+    return f.mul(variant.vertexColors ? f.swizzle(tint, "xyz") : tint, color);
 }
 
 // negateOnBackSide for DoubleSide: three's normalView is the geometry normal times faceDirection
@@ -543,6 +565,7 @@ static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId f
 
 static ExprId diffuseAlpha(Program& f, const VertexVariant& variant, ExprId diffuse, ExprId texel) {
     ExprId alpha = f.swizzle(diffuse, "w");
+    if (variant.vertexColors) alpha = f.mul(alpha, f.swizzle(f.varying("instanceColor", tintType(variant)), "w"));
     if (variant.nodes.colorNode) {
         alpha = f.mul(alpha, nodeValue(f, variant.nodes.opacityNode, Type::f32(),
                                        f.swizzle(f.uniform("diffuse", Type::vec(4)), "w")));
@@ -579,7 +602,7 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     for (const auto& node : variant.nodes.graphs()) collect(node);
     for (const auto& [name, type] : out.fragment.varyings()) {
         if (name == "normalView" || name == "positionView" ||
-            (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
+            (name == "instanceColor" && variant.tinted()) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
@@ -827,7 +850,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const LocalVertex local = localVertex(v, variant, true);
     const ExprId position = local.position, normal = local.normal;
     const ExprId positionView = v.mul(view, v.mul(model, position));
-    v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
+    v.output("position", clipPosition(v, variant, local, v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView)));
     // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
     v.output("normalView", v.call("normalize", {v.mul(normalMatrix, variant.backSide ? v.neg(normal) : normal)}));
@@ -1102,7 +1125,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const LocalVertex local = localVertex(v, variant, true);
     const ExprId position = local.position, normal = local.normal;
     const ExprId positionView = v.mul(view, v.mul(model, position));
-    v.output("position", v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView));
+    v.output("position", clipPosition(v, variant, local, v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), positionView)));
     // transformNormalToView: normalize(view * vec4(modelNormalMatrix * normal, 0)), normalized per
     // vertex before it is interpolated (v_normalViewGeometry); normalMatrix is that product.
     v.output("normalView", v.call("normalize", {v.mul(normalMatrix, variant.backSide ? v.neg(normal) : normal)}));
@@ -1192,7 +1215,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
         // Model translation cancels camera translation; force z=w, and no depth test/write.
         clip = v.construct(Type::vec(4), {v.swizzle(clip, "xy"), v.swizzle(clip, "w"), v.swizzle(clip, "w")});
     }
-    v.output("position", clip);
+    v.output("position", clipPosition(v, variant, local, clip));
     if (needsNormal)
         v.output("normalView", v.call("normalize", {v.mul(v.uniform("normalMatrix", Type::mat(3, 3)),
                                                          variant.backSide ? v.neg(local.normal) : local.normal)}));

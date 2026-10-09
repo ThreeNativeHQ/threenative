@@ -45,6 +45,16 @@ void compute(const char* name, const std::function<void(Storage)>& body) {
 Node u() { return uniform("u", Type::f32()); }
 Node tint() { return uniform("tint", Type::vec(3)); }
 Node time() { return uniform("time", Type::f32()); }
+/** A scalar widened by one constructor part, as MathNode.generate splats it; vec3() would expand a constant. */
+Node splat3(Node scalar) { return Node(program().construct(Type::vec(3), {scalar.id}, Where::current())); }
+Node matrix2(Node a, Node b) { return Node(program().construct(Type::mat(2, 2), {a.id, b.id}, Where::current())); }
+/** three's hash(seed) (math/Hash.js), spelled with the builder's integer operations. */
+Node hashOf(Node seed) {
+    const Node state = uint_(seed).mul(uint_(747796405u)).add(uint_(2891336453u));
+    const Node shifted = shiftRight(state, shiftRight(state, uint_(28u)).add(uint_(4u)));
+    const Node word = bitXor(shifted, state).mul(uint_(277803737u));
+    return float_(bitXor(shiftRight(word, uint_(22u)), word)).mul(float_(1.0 / 4294967296.0));
+}
 
 }  // namespace
 
@@ -92,6 +102,17 @@ int main() {
     });
     graph("varying-fragment", "color", [] { return vec4({program().varying("scaled", Type::vec(3)), 1}); });
     graph("varying-vertex", "position", [] { return vec4({attribute("position", Type::vec(3)).mul(u()), 1}); });
+    graph("atan", "color", [] { return vec4({atan(u()), atan2(time(), u()), 0, 1}); });
+    graph("mod", "color", [] { return vec4({mod(positionLocal(), tint()), mod(u(), time())}); });
+    graph("fwidth", "color", [] { return vec4({fwidth(uv()), fwidth(u()), 1}); });
+    graph("saturation", "color", [] {
+        const Node rgb = tint().swizzle("xyz");
+        const Node luminance = dot(rgb, vec3({0.2126, 0.7152, 0.0722}));
+        return vec4({max(mix(splat3(luminance), rgb, u()), splat3(float_(0))), 1});
+    });
+    graph("mat2", "color", [] { return vec4({matrix2(vec2({1, 0}), vec2({0, 1})).mul(vec2({u(), time()})), 0, 1}); });
+    graph("hash", "color", [] { return vec4({hashOf(u()), 0, 0, 1}); });
+    graph("time", "color", [] { return vec4({time(), 0, 0, 1}); });
 
     compute("fn-if-store", [](Storage positions) {
         const Var acc = toVar(float_(0));

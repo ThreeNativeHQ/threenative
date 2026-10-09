@@ -39,8 +39,8 @@ const rows = runInNewContext(source, { tsl: defineTsl(runtime.tsl).exports }) as
   string,
   Record<symbol, number>,
 ][];
-if (!Array.isArray(rows) || rows.length !== 32)
-  throw new Error("TN_TSL_CORPUS: corpus must return 32 graphs");
+if (!Array.isArray(rows) || rows.length !== 39)
+  throw new Error("TN_TSL_CORPUS: corpus must return 39 graphs");
 const { _tnw_tsl_dump: dump } = abi as unknown as {
   _tnw_tsl_dump(context: number, node: bigint, stage: number): number;
 };

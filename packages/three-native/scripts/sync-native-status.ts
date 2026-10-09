@@ -94,6 +94,30 @@ const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns
   "AnimationMixer.dispatchEvent": [
     { parameters: [{ name: "event", type: "BaseEvent", optional: false }], returns: "void" },
   ],
+  // three sets `targetObject` when it binds and @types/three does not declare it; the engine answers
+  // it as a call, which the shared facade (src/property-binding.ts) publishes as three's property.
+  "PropertyBinding.targetObject": [{ parameters: [], returns: "Object3D | Material | null" }],
+  // three's statics, answered by a root-less engine helper the shared facade calls.
+  "PropertyBinding.parseTrackName": [
+    {
+      parameters: [{ name: "trackName", type: "string", optional: false }],
+      returns:
+        "{ nodeName: string; objectName: string; objectIndex: string; propertyName: string; propertyIndex: string }",
+    },
+  ],
+  // three's addon namespace utils/SkeletonUtils (not in @types/three's class chain).
+  "SkeletonUtils.clone": [
+    { parameters: [{ name: "source", type: "Object3D", optional: false }], returns: "Object3D" },
+  ],
+  "PropertyBinding.findNode": [
+    {
+      parameters: [
+        { name: "root", type: "Object3D", optional: false },
+        { name: "nodeName", type: "string", optional: true },
+      ],
+      returns: "Object3D | null",
+    },
+  ],
   // The native port intersects Object3D geometry, independent of @types/three's generic overloads.
   "Raycaster.intersectObject": [
     {

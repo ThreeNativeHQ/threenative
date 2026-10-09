@@ -105,8 +105,9 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 // Authored uniform data accompanies the graph, not the cached program. Both colour and shadow
 // draws bind it, so a graph positionNode has exactly the same deformation in the two passes.
 void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
-              const shader::MaterialNodes& nodes) {
+              const shader::MaterialNodes& nodes, float time) {
     std::map<std::string, std::vector<float>> values;
+    values.emplace("time", std::vector<float>{time});  // three's `time`: the frame's elapsed seconds
     for (const auto& node : nodes.graphs()) for (const auto& [name, value] : shader::graph::uniforms(node)) {
         const auto [it, fresh] = values.emplace(name, value);
         if (!fresh && it->second != value) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + name);
@@ -1366,10 +1367,12 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
     shader::VertexVariant kind = variant;
     kind.instanceColor = false;
+    kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
+    kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
     kind.map = false;           // ...nor a diffuse map: no uv passes through the depth program
     const std::string key = "depth|" + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
@@ -1456,6 +1459,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     geometry_.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
     diagnostics_.clear();
+    frameTime_ = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
 
     WGPUCommandEncoderDescriptor encoderDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
@@ -1532,7 +1536,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             std::string signature = std::to_string(item.positions->version());
             if (item.instanceMatrices) signature += ":instances:" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
             if (item.nodes.positionNode) {
-                signature += shader::graph::key(item.nodes.positionNode);
+                signature += "#" + std::to_string(shader::graph::keyId(item.nodes.positionNode));
                 for (const auto& [name, values] : shader::graph::uniforms(item.nodes.positionNode)) {
                     signature += name;
                     signature.append(reinterpret_cast<const char*>(values.data()), values.size() * sizeof(float));
@@ -1717,6 +1721,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.doubleSide = item.side == 2;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
+        v.vertexColors = item.colorSize;
         v.instanceStorage = v.instanced;
         v.skinned = item.boneMatrices != nullptr;
         v.skinnedPalette = item.boneStride != 0;
@@ -1878,8 +1883,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             if (field.name == "spriteNoAttenuation") put(frameUniforms_, v, &field,
                 std::array<double, 1>{!item.spriteSizeAttenuation && camera.projectionMatrix[11] == -1 ? 1.0 : 0.0});
         }
-        putNodes(frameUniforms_, v, program.vertex, item.nodes);
-        putNodes(frameUniforms_, f, program.fragment, item.nodes);
+        putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_);
+        putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
     }
 
@@ -1929,7 +1934,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
             put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
-            putNodes(frameUniforms_, v, program.vertex, item.nodes);
+            putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_);
             pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
         }
         }
@@ -1950,7 +1955,8 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             // Previous deformed vertex data is not yet retained by these variants. Refuse it;
             // ordinary rigid object/camera motion goes through the real VelocityNode equations.
             if (item.instanceMatrices || item.skinIndices || item.morphGeometry || item.sprite ||
-                item.positionNode || item.nodes.positionNode || item.transparent || item.material->alphaTest > 0)
+                item.positionNode || item.nodes.positionNode || item.nodes.vertexNode || item.transparent ||
+                item.material->alphaTest > 0)
                 throw std::runtime_error("TN_TRAA_VELOCITY_UNSUPPORTED: deformed/instanced/sprite/alpha-tested/transparent draw");
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
@@ -2114,6 +2120,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             BufferStore* source = a.name == "position"        ? item.positions
                                   : a.name == "normal"        ? item.normals
                                   : a.name == "uv"            ? item.uvs
+                                  : a.name == "color"         ? item.colors
                                   : a.name == "instanceColor" ? item.instanceColors
                                   : a.name == "skinIndex"     ? item.skinIndices
                                   : a.name == "skinWeight"    ? item.skinWeights
@@ -2331,6 +2338,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureVie
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
     if (post_)
         for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
+    postUniforms_["time"] = {frameTime_};
     for (const auto& field : outputFragment_.uniforms) {
         const auto value = postUniforms_.find(field.name);
         if (value == postUniforms_.end()) continue;

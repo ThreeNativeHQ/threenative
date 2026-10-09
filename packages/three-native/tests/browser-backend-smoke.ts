@@ -308,6 +308,197 @@ engine.collect();
   lit.onBeforeCompile = () => {};
   check(lit.onBeforeCompile !== base.onBeforeCompile, "a game's onBeforeCompile is its own");
 }
+// three's CanvasTexture is the engine's own class (PRD-546): three's Texture defaults (flipped, linear,
+// mipmapped) on the canvas's pixels, and a needsUpdate re-reads the canvas.
+{
+  const web = (await bindWebEngine(createTnAbi, ["CanvasTexture", "Texture"])) as Record<
+    string,
+    new (
+      ...args: unknown[]
+    ) => Record<string, unknown>
+  >;
+  let reads = 0;
+  const canvas = {
+    width: 2,
+    height: 1,
+    getContext: () => ({
+      getImageData: () => {
+        reads++;
+        return { data: new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]), width: 2, height: 1 };
+      },
+    }),
+  };
+  const texture = new (web.CanvasTexture as new (...args: unknown[]) => Record<string, unknown>)(
+    canvas,
+  );
+  check(
+    texture.isCanvasTexture === true &&
+      texture instanceof (web.Texture as new () => object) &&
+      texture.generateMipmaps === true &&
+      texture.flipY === true &&
+      texture.magFilter === 1006 &&
+      texture.minFilter === 1008 &&
+      texture.image === canvas,
+    "CanvasTexture carries three's Texture defaults",
+  );
+  texture.needsUpdate = true;
+  check(reads === 2, "CanvasTexture re-reads its canvas on needsUpdate");
+}
+// The mixer's EventDispatcher on the Wasm engine, as on V8: listeners live in JS and the engine calls
+// back for `finished` and `loop` while something listens (the minimal template's AnimationPlayer).
+{
+  type Fn = (...args: unknown[]) => unknown;
+  type Ctor = new (
+    ...args: unknown[]
+  ) => {
+    clipAction: Fn;
+    update: Fn;
+    addEventListener: Fn;
+    removeEventListener: Fn;
+    hasEventListener: Fn;
+  };
+  const web = (await bindWebEngine(createTnAbi, [
+    "AnimationMixer",
+    "AnimationClip",
+    "VectorKeyframeTrack",
+    "Object3D",
+    "LoopOnce",
+    "LoopRepeat",
+  ])) as Record<string, unknown>;
+  const root = new (web.Object3D as Ctor)();
+  const track = new (web.VectorKeyframeTrack as Ctor)(".position", [0, 1], [0, 0, 0, 1, 2, 3]);
+  const clip = new (web.AnimationClip as Ctor)("move", 1, [track]);
+  const mixer = new (web.AnimationMixer as Ctor)(root);
+  const action = mixer.clipAction(clip) as {
+    setLoop(mode: unknown, repetitions: number): unknown;
+    play(): unknown;
+    reset(): unknown;
+    clampWhenFinished: boolean;
+  };
+  action.setLoop(web.LoopOnce, 1);
+  action.clampWhenFinished = true;
+  action.play();
+  const events: Record<string, unknown>[] = [];
+  const onFinished = (event: Record<string, unknown>) => events.push({ ...event });
+  mixer.addEventListener("finished", onFinished);
+  check(mixer.hasEventListener("finished", onFinished) === true, "mixer listener registered");
+  mixer.update(0.5);
+  check(events.length === 0, "no finished event mid-clip");
+  mixer.update(1);
+  check(
+    events.length === 1 &&
+      events[0]?.type === "finished" &&
+      events[0]?.action === action &&
+      events[0]?.direction === 1 &&
+      events[0]?.target === mixer,
+    "finished event reaches its listener with its action and target",
+  );
+  mixer.removeEventListener("finished", onFinished);
+  check(mixer.hasEventListener("finished", onFinished) === false, "mixer listener removed");
+  const loops: unknown[] = [];
+  mixer.addEventListener("loop", (event: Record<string, unknown>) => loops.push(event.loopDelta));
+  action.reset();
+  action.setLoop(web.LoopRepeat, Number.POSITIVE_INFINITY);
+  action.play();
+  mixer.update(1.25);
+  check(loops.length === 1 && loops[0] === 1, "loop event");
+}
+// three's MathUtils is a namespace object, not a constructor: its functions are called on the export
+// itself (the minimal template's Player wraps its heading with MathUtils.euclideanModulo).
+{
+  const web = (await bindWebEngine(createTnAbi, ["MathUtils"])) as {
+    MathUtils: {
+      euclideanModulo(n: number, m: number): number;
+      clamp(v: number, a: number, b: number): number;
+    };
+  };
+  check(typeof web.MathUtils === "object", "MathUtils is a namespace object");
+  check(web.MathUtils.euclideanModulo(-1, 3) === 2, "MathUtils.euclideanModulo");
+  check(web.MathUtils.clamp(5, 0, 1) === 1, "MathUtils.clamp");
+}
+// three's SkeletonUtils.clone through the engine's namespace (the minimal template's mannequin): a
+// cloned skin is bound to the cloned bones, never to its source's.
+{
+  // biome-ignore lint/suspicious/noExplicitAny: engine objects typed as three's at runtime only
+  type Obj = Record<string, any>;
+  const web = (await bindWebEngine(createTnAbi, [
+    "SkeletonUtils",
+    "Group",
+    "Bone",
+    "SkinnedMesh",
+    "Skeleton",
+    "BoxGeometry",
+    "MeshStandardMaterial",
+  ])) as Record<
+    "Group" | "Bone" | "SkinnedMesh" | "Skeleton" | "BoxGeometry" | "MeshStandardMaterial",
+    new (
+      ...args: unknown[]
+    ) => Obj
+  > & { SkeletonUtils: Obj };
+  const root: Obj = new web.Group();
+  const hip: Obj = new web.Bone();
+  hip.name = "hip";
+  root.add(hip);
+  const mesh: Obj = new web.SkinnedMesh(new web.BoxGeometry(), new web.MeshStandardMaterial());
+  mesh.name = "skin";
+  root.add(mesh);
+  root.updateMatrixWorld(true);
+  mesh.bind(new web.Skeleton([hip]));
+  check(typeof web.SkeletonUtils === "object", "SkeletonUtils is a namespace object");
+  const copy: Obj = web.SkeletonUtils.clone(root);
+  const copyHip = copy.getObjectByName("hip");
+  const copyMesh = copy.getObjectByName("skin");
+  check(
+    copy !== root && copyHip !== hip && copyMesh !== mesh,
+    "SkeletonUtils.clone copies the hierarchy",
+  );
+  check(
+    copyMesh.skeleton.bones[0] === copyHip && mesh.skeleton.bones[0] === hip,
+    "SkeletonUtils.clone remaps the skin",
+  );
+}
+// three's type flags on the scene classes (PRD-540): a game, three's own code and the playtest
+// bridge find lights, cameras and bones by `isLight`, `isCamera`, `isBone`, never by class.
+{
+  const flagged = [
+    "DirectionalLight",
+    "PointLight",
+    "SpotLight",
+    "AmbientLight",
+    "HemisphereLight",
+    "PerspectiveCamera",
+    "OrthographicCamera",
+    "Bone",
+    "SkinnedMesh",
+    "InstancedMesh",
+    "Sprite",
+    "LineSegments",
+    "LOD",
+    "Scene",
+    "Group",
+  ];
+  const web = (await bindWebEngine(createTnAbi, flagged)) as Record<string, new () => object>;
+  const flags = (name: string) => {
+    const prototype = web[name]?.prototype as Record<string, unknown>;
+    return (flag: string) => prototype[flag] === true;
+  };
+  for (const light of flagged.slice(0, 5))
+    check(
+      flags(light)("isLight") && flags(light)(`is${light}`) && flags(light)("isObject3D"),
+      `${light} flags`,
+    );
+  for (const camera of ["PerspectiveCamera", "OrthographicCamera"])
+    check(flags(camera)("isCamera") && flags(camera)(`is${camera}`), `${camera} flags`);
+  for (const [name, inherited] of [
+    ["SkinnedMesh", "isMesh"],
+    ["InstancedMesh", "isMesh"],
+    ["LineSegments", "isLine"],
+  ] as const)
+    check(flags(name)(`is${name}`) && flags(name)(inherited), `${name} flags`);
+  for (const name of ["Bone", "Sprite", "LOD", "Scene", "Group"])
+    check(flags(name)(`is${name}`), `${name} flag`);
+  check(!flags("Group")("isLight") && !flags("Bone")("isMesh"), "flags stay on their own classes");
+}
 // three's attribute.array is the attribute's own JS typed array (PRD-540): of its scalar type, one
 // per attribute, kept across Wasm memory growth; an element write is what the engine reads back
 // before its next call, BufferAttribute keeps the array it is handed, and needsUpdate sends a write.

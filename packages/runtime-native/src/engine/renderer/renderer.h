@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <array>
 #include <map>
 #include <cstdint>
@@ -47,6 +48,8 @@ struct DrawItem {
     BufferStore* positions = nullptr;    // vec3 float
     BufferStore* normals = nullptr;      // vec3 float; unused by Basic
     BufferStore* uvs = nullptr;          // vec2 float; only a mapped material's program reads it
+    BufferStore* colors = nullptr;       // material.vertexColors: the `color` attribute as float32
+    uint8_t colorSize = 0;               // its item size, 3 or 4; 0 without vertex colours
     BufferStore* indices = nullptr;      // u16 or u32; null draws non-indexed
     Matrix matrixWorld{};
     // A merged draw retains its first member's render-list origin when its model becomes identity.
@@ -81,6 +84,7 @@ struct DrawItem {
     uint64_t id = 0;           // Object3D.id: the sort's last tiebreak
     int renderOrder = 0;       // Object3D.renderOrder
     bool transparent = false;  // material.transparent: drawn after opaques, back to front, blended
+    bool forceSinglePass = false;  // material.forceSinglePass: a transparent DoubleSide draws once
     bool depthWrite = true;    // material.depthWrite
     bool polygonOffset = false;       // material.polygonOffset: the pipeline's depth bias
     double polygonOffsetFactor = 0;   // depthBiasSlopeScale
@@ -483,6 +487,9 @@ private:
     std::unique_ptr<TraaPass> traa_;
     std::unique_ptr<PostEffects> postEffects_;
     std::map<std::string, std::vector<float>> postUniforms_;
+    /** three's `time` (its NodeFrame clock): seconds since this renderer was made, read once a frame. */
+    std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
+    float frameTime_ = 0;
     shader::StageModule blitVertex_, blitFragment_;  // blitTo's pass-through copy
     shader::StageModule outputVertex_;
     shader::StageModule outputFragment_;

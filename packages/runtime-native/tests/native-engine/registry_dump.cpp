@@ -51,7 +51,8 @@ std::string dump(const tn::binding::Registry& registry) {
         out << "      \"getters\": " << keys(binding.getters) << ",\n";
         out << "      \"setters\": " << keys(binding.setters) << ",\n";
         out << "      \"members\": " << keys(binding.members) << ",\n";
-        out << "      \"callbacks\": " << keys(binding.callbacks) << "\n";
+        out << "      \"callbacks\": " << keys(binding.callbacks) << ",\n";
+        out << "      \"events\": " << keys(binding.events) << "\n";
         out << "    }";
     }
     out << "\n  },\n  \"constants\": [";

@@ -82,6 +82,11 @@ struct VertexVariant {
     bool doubleSide = false;
     bool instanced = false;
     bool instanceColor = false;
+    /** three's material.vertexColors on a geometry with a `color` attribute: its item size (3 or 4), else 0.
+     *  The colour multiplies the diffuse colour as a vec4 (a 3-component colour reads alpha 1). */
+    uint8_t vertexColors = 0;
+    /** The vertex stage passes one tint varying, `instanceColor`: the instance colour times the vertex colour. */
+    [[nodiscard]] bool tinted() const { return instanceColor || vertexColors != 0; }
     bool instanceStorage = false; // packed matrix columns and colour in one frame storage buffer
     /**
      * three's skinning(): `skinIndex` (vec4<u32>) and `skinWeight` attributes, the frame's bone
@@ -140,7 +145,7 @@ struct VertexVariant {
     MaterialNodes nodes;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + std::to_string(skinned) +
+        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();

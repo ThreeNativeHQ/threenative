@@ -22,7 +22,9 @@ import {
 import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
-import { Material, defineObjectSurface } from "./object-surface.js";
+import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
+import { definePass } from "./pass-node.js";
+import { definePropertyBinding } from "./property-binding.js";
 import { defineReflector } from "./reflector.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -52,6 +54,8 @@ function constantValue(entry: CatalogEntry): unknown {
   return typeof entry.value === "string" ? JSON.parse(entry.value) : entry.value;
 }
 
+const NAMESPACES = new Set(["MathUtils", "SkeletonUtils"]);
+
 /** Binds each upstream export name to an engine class, a catalog constant, or a refusal. */
 export function bindUpstreamExports(
   names: readonly string[],
@@ -66,7 +70,12 @@ export function bindUpstreamExports(
   const bound: Record<string, unknown> = {};
   for (const name of names) {
     const entry = entries.get(name);
-    if (Object.hasOwn(classes, name)) bound[name] = classes[name];
+    // three's MathUtils and SkeletonUtils are namespace objects: the engine binds each as a class,
+    // exported as its one instance (as the V8 player's core-three.mjs does).
+    if (Object.hasOwn(classes, name))
+      bound[name] = NAMESPACES.has(name)
+        ? new (classes[name] as new () => object)()
+        : classes[name];
     else if (entry !== undefined && constantValue(entry) !== undefined)
       bound[name] = constantValue(entry);
     else
@@ -92,6 +101,7 @@ export async function bindWebEngine(
     runtime,
     catalogJson as unknown as ICatalog,
   );
+  defineTypeFlags(classes);
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
   const entries = (catalogJson as unknown as ICatalog).entries;
   const extending = (base: string) =>
@@ -120,6 +130,9 @@ export async function bindWebEngine(
     ...tsl?.exports,
   };
   bound.Material = Material;
+  // three's PropertyBinding statics and console function over the engine class (shared with V8).
+  if (classes.PropertyBinding !== undefined)
+    Object.assign(bound, definePropertyBinding(classes.PropertyBinding as never));
   // three's audio classes over the engine Object3D and the page's WebAudio; the renderer pushes
   // world poses to WebAudio each frame, where three's own render calls updateMatrixWorld.
   const audio = defineAudioClasses({
@@ -153,6 +166,9 @@ export async function bindWebEngine(
     // effects (addons/post-effects-web.ts), and three's RenderPipeline over the web host.
     bound.__tnTsl = tsl.exports;
     bound.RenderPipeline = defineRenderPipeline(runtime.tsl);
+    // three's pass() and mrt() over the engine's scene pass, as on the V8 player; RenderPipeline draws
+    // the renderer's last scene, so the pass's own scene and camera are not followed here.
+    Object.assign(bound, definePass(tsl.exports as never));
   }
   return bindUpstreamExports(names, catalogJson as unknown as ICatalog, bound);
 }

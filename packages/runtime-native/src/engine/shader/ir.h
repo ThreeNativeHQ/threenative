@@ -45,6 +45,8 @@ enum class Op : uint8_t {
     Swizzle, Construct, Call,
     // Ordered reads: pinned as statements where created, so they observe prior writes.
     LoadVar, LoadStorage, Sample, SampleLevel, AtomicAdd, TextureSize, TextureLoad,
+    // Integer bit operations: r185's `>>` and `^` on one integer type.
+    ShiftRight, BitXor,
 };
 
 struct Expr {
@@ -103,6 +105,8 @@ public:
     ExprId neg(ExprId a, Where where = Where::current());
     ExprId less(ExprId a, ExprId b, Where where = Where::current());
     ExprId equal(ExprId a, ExprId b, Where where = Where::current());
+    ExprId shiftRight(ExprId a, ExprId b, Where where = Where::current());
+    ExprId bitXor(ExprId a, ExprId b, Where where = Where::current());
     ExprId select(ExprId condition, ExprId whenTrue, ExprId whenFalse, Where where = Where::current());
     ExprId swizzle(ExprId value, std::string_view lanes, Where where = Where::current());
     ExprId construct(Type type, const std::vector<ExprId>& parts, Where where = Where::current());
