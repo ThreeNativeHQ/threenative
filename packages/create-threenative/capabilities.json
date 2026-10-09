@@ -6783,6 +6783,26 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "returns candidates only; the caller applies its own exact distance and level test"
+      ],
+      "example": "const rivers = createSegmentIndex(segments, 32); const wet = rivers.nearby(x, z).some(isWet);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i @threenative/terrain"],
+      "signature": "export function createSegmentIndex<T>( segments: readonly IWaterSegment<T>[], cellSize: number, ): ISegmentIndex<T> { … }",
+      "situations": [
+        "test scatter candidates or terrain vertices against rivers and lakes without scanning every segment",
+        "find which river stations can reach a heightfield vertex when baking a wet margin"
+      ],
+      "summary": "Build the index once per world; ask `nearby` per scatter candidate or heightfield vertex.",
+      "supersedes": [],
+      "symbol": "createSegmentIndex"
+    },
+    {
+      "aliases": [],
       "constraints": ["authoring data only; the game owns appearance, physics and rendering"],
       "example": "const png = await encodeHeightPNG(new Terrain({ resolution: 17 }).evaluate()); const heights = await decodeHeightPNG(png);",
       "importPath": "@threenative/terrain",

@@ -23,12 +23,19 @@ The generator should expose the mechanism once; the density rules and looks stay
 
 ### Phase 1 — Water distance query in `@threenative/terrain`
 
-- [ ] A baked world exposes one indexed water query (distance to the nearest river segment or lake
+- [x] A baked world exposes one indexed water query (distance to the nearest river segment or lake
   shore, with that water's level), built once per world. proof: `packages/terrain/__tests__/`
-  spec against a brute-force scan over every shipped world fixture (identical answers)
-- [ ] The preview's scatter `wet` test and curvature wet margin call it, deleting their local
+  spec against a brute-force scan over every shipped world fixture (identical answers) — PASS as
+  `createSegmentIndex` (candidates; callers keep their exact test): `water.spec.ts` 3/3, completeness
+  against a brute-force scan over 400 seeded segments × 3,000 points × 4 cell sizes; red when the
+  reach growth is removed. Terrain suite 153/153 (`forest-runtime.spec.ts` fails to load here and on
+  the PRD-466 branch alike).
+- [x] The preview's scatter `wet` test and curvature wet margin call it, deleting their local
   buckets. proof: placement and curvature-pixel hashes identical to PRD-466's (`59002b165fe4d94d`
-  tundra placements; curvature `130803d9b4c9` forest, `2a15707623b8` tundra)
+  tundra placements; curvature `130803d9b4c9` forest, `2a15707623b8` tundra) — PASS, HEAD vs edited
+  identical: placements forest `c28dcd7b709f7de2`, coastal `172e610299240db8`, tundra
+  `64de36d111a3bba3` (the PRD-466 tundra hash predates `f149d0853`'s outcrops); curvature forest
+  `130803d9b4c959eb`, coastal `dd8cc32a7b3eb69f`, tundra `2a15707623b82a71`.
 
 ### Phase 2 — Terrain-relative slope thresholds
 

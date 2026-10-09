@@ -1,5 +1,6 @@
 import type { IAssetLoader } from "@threenative/core";
 import { Heightfield } from "@threenative/core/world";
+import { createSegmentIndex } from "@threenative/terrain";
 import {
   type BufferGeometry,
   ClampToEdgeWrapping,
@@ -1038,16 +1039,18 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
       level: levels[index] as number,
     }));
   });
-  // River stations bucketed at their 13 m wet reach, so a vertex tests only the 3x3 cells around it.
-  // Testing every station for every vertex cost 2.3 s of the tundra's synchronous scene entry.
+  // River stations indexed at their 13 m wet reach (`@threenative/terrain`), so a vertex tests only
+  // the stations that can reach it rather than every station of every river.
   const RIVER_REACH = 13;
-  const stationCells = new Map<string, typeof rivers>();
-  for (const station of rivers) {
-    const key = `${Math.floor(station.x / RIVER_REACH)}:${Math.floor(station.z / RIVER_REACH)}`;
-    const list = stationCells.get(key) ?? [];
-    list.push(station);
-    stationCells.set(key, list);
-  }
+  const stations = createSegmentIndex(
+    rivers.map((station) => ({
+      a: [station.x, station.z] as const,
+      b: [station.x, station.z] as const,
+      reach: RIVER_REACH,
+      data: station,
+    })),
+    RIVER_REACH,
+  );
   // Both channels share one sampler: measured concavity and the water's actual wet margin.
   const transport = data.erosion;
   if (transport) {
@@ -1089,14 +1092,10 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
         const distance = Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0));
         if (distance <= lake.reach + 3) wet = Math.max(wet, margin(lake.level));
       }
-      const cellX = Math.floor(x / RIVER_REACH);
-      const cellZ = Math.floor(z / RIVER_REACH);
-      for (let dz = -1; dz <= 1; dz++)
-        for (let dx = -1; dx <= 1; dx++)
-          for (const station of stationCells.get(`${cellX + dx}:${cellZ + dz}`) ?? []) {
-            if (Math.hypot(x - station.x, z - station.z) <= RIVER_REACH)
-              wet = Math.max(wet, margin(station.level));
-          }
+      for (const station of stations.nearby(x, z)) {
+        if (Math.hypot(x - station.x, z - station.z) <= RIVER_REACH)
+          wet = Math.max(wet, margin(station.level));
+      }
       pixels[index + 1] = DataUtils.toHalfFloat(wet);
       pixels[index + 2] = DataUtils.toHalfFloat(
         Math.max(

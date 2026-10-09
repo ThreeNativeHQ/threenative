@@ -5557,6 +5557,22 @@ export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPacka
 const { manifest, files } = bakeWorldPackage(state, { assets });
 ```
 
+### `createSegmentIndex`
+
+`function` — Build the index once per world; ask `nearby` per scatter candidate or heightfield vertex.
+
+```ts
+export function createSegmentIndex<T>( segments: readonly IWaterSegment<T>[], cellSize: number, ): ISegmentIndex<T> { … }
+```
+
+- **Use when:** test scatter candidates or terrain vertices against rivers and lakes without scanning every segment · find which river stations can reach a heightfield vertex when baking a wet margin
+- **Constraints:** returns candidates only; the caller applies its own exact distance and level test
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const rivers = createSegmentIndex(segments, 32); const wet = rivers.nearby(x, z).some(isWet);
+```
+
 ### `decodeHeightPNG`
 
 `function` — CRC-checked bounded non-interlaced grayscale PNG height decoder.
