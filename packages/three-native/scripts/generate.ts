@@ -405,6 +405,11 @@ TN_EXPORT uint16_t tn_type_id(const char *name);
 TN_EXPORT tn_status_t tn_object_create(tn_context_t *context, uint16_t type, tn_handle_t *out_object,
                                        tn_diagnostic_t *diagnostic);
 TN_EXPORT tn_status_t tn_object_release(tn_handle_t object, tn_diagnostic_t *diagnostic);
+/* For each of the count handles, how many references other engine objects hold to its object (a
+ * parent, a material slot, a skeleton), 0 for an unknown handle: a language keeps its wrapper, and
+ * the state on it, while the count is above zero. One call for a batch, so a safe point costs one
+ * crossing. */
+TN_EXPORT void tn_object_engine_references(const tn_handle_t *objects, uint32_t count, uint32_t *out_counts);
 
 /* A value crossing the generic binding calls. One flat struct, no union: only the fields its
  * kind names are read. Strings and number arrays a call returns are owned by the context and stay

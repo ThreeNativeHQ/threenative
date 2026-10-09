@@ -58,6 +58,8 @@ export interface IBrowserRuntime {
   get(self: IEngineRef, path: string): EngineValue;
   set(self: IEngineRef, path: string, value: EngineValue): void;
   release(self: IEngineRef): void;
+  /** For each ref, how many references other engine objects hold to its object; one call a batch. */
+  engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
   /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
   readDoubles?(address: number, count: number): number | number[];
   /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
@@ -83,9 +85,10 @@ export const TSL_NODE = Symbol("tn.tslNode");
 export interface IBrowserEngine {
   readonly classes: Record<string, new (...args: unknown[]) => object>;
   /**
-   * A wrapper whose object carries a callback is held while the object is attached (the engine may
-   * call it) and let go once detached, so a detached object, its closure and the wrapper the closure
-   * captured are a cycle the collector reclaims.
+   * The safe point (the renderer runs one before every frame). A wrapper the engine references (a
+   * parent, a material slot) is held, so its JS state (userData, expandos, a subclass, callbacks)
+   * survives while JS keeps no reference; once nothing in the engine references it, it is let go,
+   * so a detached subtree, its closures and its wrappers are collected.
    */
   collect(): void;
   /** The wrapper for an engine object the engine handed over (a loaded model's scene). */
@@ -304,10 +307,8 @@ export function defineBrowserClasses(
   const callbackFunctions = new WeakMap<object, Map<string, (...args: unknown[]) => unknown>>();
   const callbackNames = new Map<string, Set<string>>(); // by handle key, to clear on collection
   const held = new Set<object>();
-  // userData is the game's, not the engine's: kept by handle, so a wrapper made again for the same
-  // object finds it. ponytail: an entry outlives an attached object's wrapper by design, and goes
-  // when a detached one is released.
-  const userData = new Map<string, unknown>();
+  // userData is the game's: it lives with the wrapper, which `held` keeps while the engine references it.
+  const userData = new WeakMap<object, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
   // three's `attribute.array` is the attribute's own JS typed array (PRD-540): the array the
   // constructor was handed, or a copy of the engine's data on first read. A view of Wasm memory
@@ -330,7 +331,6 @@ export function defineBrowserClasses(
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
       wrappers.delete(ref.key);
-      if (userData.has(ref.key) && runtime.get(ref, "parent") === null) userData.delete(ref.key);
       shaderNodes.delete(ref.key); // the engine material keeps its graph; the JS nodes may go
       for (const name of callbackNames.get(ref.key) ?? []) runtime.setCallback(ref, name, null);
       callbackNames.delete(ref.key);
@@ -350,7 +350,10 @@ export function defineBrowserClasses(
     const cls = byType.get(ref.type);
     if (cls === undefined)
       throw new TypeError(`TN_BROWSER_TYPE_UNKNOWN: no class for engine type ${ref.type}`);
-    return adopt(Object.create(cls.prototype) as object, ref);
+    // Held until the next safe point decides: the engine may reference what it just handed out.
+    const wrapper = adopt(Object.create(cls.prototype) as object, ref);
+    held.add(wrapper);
+    return wrapper;
   };
   const refOf = (self: unknown): IEngineRef => {
     const ref = (self as Partial<IWrapped> | null)?.[REF];
@@ -371,8 +374,8 @@ export function defineBrowserClasses(
     }
     if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
     if (typeof value === "object" && REF in value) {
-      // An object with callbacks passed into the engine is held until the next safe point.
-      if (callbackNames.has((value as IWrapped)[REF].key)) held.add(value);
+      // A wrapper passed into the engine is held until the next safe point decides (collect()).
+      held.add(value);
       return (value as IWrapped)[REF];
     }
     // An options object (`new ExtrudeGeometry(shape, { depth })`) crosses as a record of scalars and
@@ -673,12 +676,11 @@ export function defineBrowserClasses(
       Object.defineProperty(prototype, "userData", {
         configurable: true,
         get(this: object) {
-          const key = refOf(this).key;
-          if (!userData.has(key)) userData.set(key, {});
-          return userData.get(key);
+          if (!userData.has(this)) userData.set(this, {});
+          return userData.get(this);
         },
         set(this: object, value: unknown) {
-          userData.set(refOf(this).key, value);
+          userData.set(this, value);
         },
       });
       defineTraversal(
@@ -750,12 +752,18 @@ export function defineBrowserClasses(
     classes,
     wrap,
     collect() {
-      for (const [key, names] of callbackNames) {
-        const wrapper = wrappers.get(key)?.deref();
-        if (wrapper === undefined || names.size === 0) continue;
-        if (runtime.get(refOf(wrapper), "parent") !== null) held.add(wrapper);
-        else held.delete(wrapper);
-      }
+      const candidates = [...held];
+      const counts = runtime.engineReferences?.(candidates.map(refOf));
+      // ponytail: every held wrapper is asked each safe point, in one call; keep a dirty set if a
+      // scene's held count shows in a profile.
+      candidates.forEach((wrapper, i) => {
+        const referenced =
+          counts !== undefined
+            ? (counts[i] as number) > 0
+            : callbackNames.has(refOf(wrapper).key) &&
+              runtime.get(refOf(wrapper), "parent") !== null;
+        if (!referenced) held.delete(wrapper);
+      });
     },
   };
 }
@@ -771,6 +779,7 @@ type AbiCall =
   | "_tn_context_create"
   | "_tn_type_id"
   | "_tn_object_release"
+  | "_tn_object_engine_references"
   | "_tn_construct"
   | "_tn_invoke"
   | "_tn_get"
@@ -1296,6 +1305,15 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
           `${method}()`,
         );
         return readValue(out);
+      }),
+    engineReferences: (refs) =>
+      scoped(() => {
+        const handles = alloc(Math.max(1, refs.length) * HANDLE);
+        refs.forEach((ref, i) => writeHandle(handles + i * HANDLE, ref));
+        const out = alloc(Math.max(1, refs.length) * 4);
+        abi._tn_object_engine_references(handles, refs.length, out);
+        const v = view();
+        return refs.map((_, i) => v.getUint32(out + i * 4, true));
       }),
     readDoubles: (address, count) => {
       const at = address / 8;

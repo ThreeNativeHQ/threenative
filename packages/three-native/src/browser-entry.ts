@@ -96,7 +96,7 @@ export async function bindWebEngine(
 ): Promise<Record<string, unknown>> {
   const module = await createModule();
   const runtime = createWasmRuntime(module);
-  const { classes, wrap } = defineBrowserClasses(
+  const { classes, wrap, collect } = defineBrowserClasses(
     registry as IRegistryDump,
     runtime,
     catalogJson as unknown as ICatalog,
@@ -146,9 +146,11 @@ export async function bindWebEngine(
   const { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader } = audio;
   Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
-  // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio.
+  // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
+  // and the wrapper safe point runs (collect: held while the engine references them).
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(module, classes.Color as never, () => {
+      collect();
       tsl?.sync();
       audio.updateAudio();
     });
