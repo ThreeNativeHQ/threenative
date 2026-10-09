@@ -1,4 +1,6 @@
 #pragma once
+
+#include <vector>
 #include "engine/shader/graph/post_effects.h"
 #include "engine/renderer/pipeline_cache.h"
 #include <webgpu/webgpu.h>
@@ -42,7 +44,12 @@ class PostEffects {
         WGPUBindGroupLayout layout = nullptr;
         WGPUPipelineLayout pipelineLayout = nullptr;
         bool rendered = false;
+        // The bind group of the last frame and what it binds: reused while every entry is the same,
+        // dropped with the targets (a released view's handle can come back for a new one).
+        WGPUBindGroup group = nullptr;
+        std::vector<WGPUBindGroupEntry> groupEntries;
     };
+    void releaseGroups();
     void clearTargets();
     WGPUDevice device_;
     WGPUQueue queue_;
