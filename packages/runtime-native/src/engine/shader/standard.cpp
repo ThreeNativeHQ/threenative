@@ -578,7 +578,7 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
     };
     for (const auto& node : variant.nodes.graphs()) collect(node);
     for (const auto& [name, type] : out.fragment.varyings()) {
-        if (name == "normalView" || name == "positionView" ||
+        if (name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
             (name == "instanceColor" && variant.instanceColor) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
@@ -587,6 +587,10 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
         } else if (name == "positionWorld")
             value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position), "xyz");
         else if (name == "positionLocal") value = v.swizzle(local.position, "xyz");
+        // positionView for a program that does not light (linearDepth() of the fragment): view * model * position.
+        else if (name == "positionView")
+            value = v.swizzle(v.mul(v.uniform("viewMatrix", Type::mat(4, 4)),
+                                    v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position)), "xyz");
         else if (name == "positionGeometry") value = v.attribute("position", type);
         else value = v.attribute(name, type);
         v.output(name, value);

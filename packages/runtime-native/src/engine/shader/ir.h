@@ -173,6 +173,8 @@ public:
      */
     std::string dump(bool typed = false) const;
     std::vector<std::pair<std::string, Type>> varyings() const;
+    /** True when this stage already writes the output `name`. */
+    [[nodiscard]] bool hasOutput(std::string_view name) const;
     /** Match vertex output locations to the fragment's first-use varying order. */
     void linkVaryings(const Program& fragment);
 

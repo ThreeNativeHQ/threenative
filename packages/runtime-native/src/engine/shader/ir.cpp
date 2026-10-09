@@ -723,6 +723,10 @@ std::vector<std::pair<std::string, Type>> Program::varyings() const {
     return result;
 }
 
+bool Program::hasOutput(std::string_view name) const {
+    return std::any_of(outputs_.begin(), outputs_.end(), [&](const OutputSlot& o) { return names_[o.name] == name; });
+}
+
 void Program::linkVaryings(const Program& fragment) {
     const auto inputs = fragment.varyings();
     const auto previous = outputs_;

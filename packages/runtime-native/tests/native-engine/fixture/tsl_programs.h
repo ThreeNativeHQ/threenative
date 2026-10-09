@@ -299,9 +299,10 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         g::Node linear;
         for (auto& [label, node] : abi::tslConstants())
             if (label == "viewportLinearDepth") linear = node;
+        const auto own = abi::tslCall("linearDepth", nullptr, {}, serial);
         water->material->nodes.colorNode = g::vec4({g::add(g::mul(g::swizzle(behind, "xyz"),
             g::vec3({g::float_(0.5f), g::float_(0.8f), g::float_(1)})),
-            g::vec3({g::float_(0), g::float_(0), g::mul(linear, g::float_(0.6f))})), g::float_(1)});
+            g::vec3({g::float_(0), g::float_(0), g::mul(g::sub(linear, own), g::float_(8))})), g::float_(1)});
         water->material->needsUpdate();
         return "";
     }

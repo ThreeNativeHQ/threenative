@@ -22,6 +22,7 @@ import {
   instanceIndex,
   instancedArray,
   length,
+  linearDepth,
   max,
   metalness,
   mrt,
@@ -672,12 +673,13 @@ export const programs = {
     target.colorNode = vec4(texture(ramp, uv()).rgb, 1);
   },
   /** WaterSurface3D's reads: the frame behind a transparent surface (viewportSharedTexture, offset)
-   *  and its linear depth (viewportLinearDepth), on a water plane over a lit floor. */
+   *  and the depth between it and the surface (viewportLinearDepth - linearDepth()), on a water
+   *  plane over a lit floor. */
   async "viewport-textures"({ target }) {
     const water = target.getObjectByName("water");
     const behind = viewportSharedTexture(screenUV.add(vec2(0.02, 0))).rgb;
     water.material.colorNode = vec4(
-      behind.mul(vec3(0.5, 0.8, 1)).add(vec3(0, 0, viewportLinearDepth.mul(0.6))),
+      behind.mul(vec3(0.5, 0.8, 1)).add(vec3(0, 0, viewportLinearDepth.sub(linearDepth()).mul(8))),
       1,
     );
   },

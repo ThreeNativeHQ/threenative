@@ -324,10 +324,12 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // linearDepth(depth): ViewportDepthNode.LINEAR_DEPTH for a perspective camera,
     // viewZToOrthographicDepth(perspectiveDepthToViewZ(depth, near, far), near, far).
     // ponytail: perspective cameras only; an orthographic camera's depth is already linear.
+    // linearDepth() with no depth is this fragment's own: viewZToOrthographicDepth(positionView.z, ...).
     if (!method && name == "linearDepth") {
-        arity(1);
+        if (args.size() > 1) throw std::runtime_error("linearDepth takes at most a depth");
         const auto near = g::uniform("cameraNear", Type::f32()), far = g::uniform("cameraFar", Type::f32());
-        const auto viewZ = g::div(g::mul(near, far), g::sub(g::mul(g::sub(far, near), arg(0)), far));
+        const auto viewZ = args.empty() ? g::swizzle(g::varying("positionView", Type::vec(3)), "z")
+                                        : g::div(g::mul(near, far), g::sub(g::mul(g::sub(far, near), arg(0)), far));
         return g::div(g::add(viewZ, near), g::sub(near, far));
     }
     if (name == "cameraNear" || name == "cameraFar") {
