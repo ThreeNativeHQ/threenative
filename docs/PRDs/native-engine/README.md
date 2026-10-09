@@ -30,7 +30,7 @@ file.
 
 | # | PRD | Status | Label | Depends on | Next box |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [PRD-545 — Corpus gaps in math, the object model and geometry (N22a)](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | IN PROGRESS | `prd:0%` | PRD-501, PRD-508 (done) | Midway's update loop reports no "argument is not a Vector3" error |
+| 1 | [PRD-545 — Corpus gaps in math, the object model and geometry (N22a)](N22-three-surface-coverage/PRD-545-n22a-math-object-model-and-geometry.md) | IN PROGRESS | `prd:75%` | PRD-501, PRD-508 (done) | Midway's update loop reports no "argument is not a Vector3" error |
 | 2 | [PRD-546 — Corpus gaps in materials, textures and render state (N22b)](N22-three-surface-coverage/PRD-546-n22b-materials-and-render-state.md) | IN PROGRESS | `prd:0%` | PRD-545; PRD-509, PRD-514 (done) | `Material.prototype.onBeforeCompile` and `customProgramCacheKey` read as r185's defaults |
 | 3 | [PRD-547 — Corpus gaps in TSL and shader nodes (N22c)](N22-three-surface-coverage/PRD-547-n22c-tsl-and-shader-nodes.md) | NOT STARTED | `prd:0%` | PRD-546; PRD-510 to PRD-512 (done) | The TSL names that corpus games import and the shared table lacks |
 | 4 | [PRD-548 — Corpus gaps in renderer passes, loaders, animation and addons (N22d)](N22-three-surface-coverage/PRD-548-n22d-renderer-loaders-animation-and-addons.md) | NOT STARTED | `prd:0%` | PRD-547; PRD-515, PRD-518, PRD-523 to PRD-526 (done) | Post-node parameters set after the first render take effect |
