@@ -220,6 +220,11 @@ uint64_t keyBuilds();
 uint64_t keyId(const Graph& graph);
 /** Named uniform data reachable from the graph. Conflicting values fail rather than pick one. */
 std::map<std::string, std::vector<float>> uniforms(const Graph& graph);
+/** How many maps uniforms() has built in this process; a steady frame builds none. */
+uint64_t uniformMapBuilds();
+/** Every uniform node reachable from the graph, in first-visit order, found once per graph; a node
+ *  may hold no value (a renderer-fed uniform such as `viewMatrix`). */
+const std::vector<Node>& uniformList(const Graph& graph);
 /** The graph's authored uniform nodes (each with a value), so a pass reads `uniform.value` every frame. */
 std::vector<Node> uniformNodes(const Graph& graph);
 

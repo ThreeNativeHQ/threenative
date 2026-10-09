@@ -700,7 +700,11 @@ uint64_t keyId(const Graph& graph) {
 }
 
 namespace {
-/** Every uniform node reachable from the graph, in first-visit order, found once per node. */
+uint64_t uniformMaps = 0;
+}  // namespace
+
+uint64_t uniformMapBuilds() { return uniformMaps; }
+
 const std::vector<Node>& uniformList(const Graph& graph) {
     if (!graph->memo.uniforms) {
         auto list = std::make_shared<std::vector<Node>>();
@@ -716,7 +720,6 @@ const std::vector<Node>& uniformList(const Graph& graph) {
     }
     return *graph->memo.uniforms;
 }
-}  // namespace
 
 std::vector<Node> uniformNodes(const Graph& graph) {
     std::vector<Node> result;
@@ -729,6 +732,7 @@ std::vector<Node> uniformNodes(const Graph& graph) {
 std::map<std::string, std::vector<float>> uniforms(const Graph& graph) {
     std::map<std::string, std::vector<float>> result;
     if (!graph) return result;
+    ++uniformMaps;
     for (const Node& n : uniformList(graph)) {
         if (n->values.empty()) continue;
         const auto [it, fresh] = result.emplace(n->name, n->values);

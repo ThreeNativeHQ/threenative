@@ -1036,21 +1036,22 @@ void steadyState() {
     for (int i = 0; i < 5; ++i) frame();
     CHECK(database.diagnostics().empty() && renderer.diagnostics().empty());
     const auto compiles = renderer.pipelines().compiles(), texts = renderer.pipelines().textLookups();
-    const auto groups = bindGroupsCreated(), keys = g::keyBuilds();
+    const auto groups = bindGroupsCreated(), keys = g::keyBuilds(), uniformMaps = g::uniformMapBuilds();
     const auto programs = renderer.programCount();
     for (int i = 0; i < 60; ++i) {
         if (i % 2) s.mesh.position.x = 0.01 * i;  // a moving object is still a steady frame
         frame();
     }
-    std::fprintf(stderr, "steady state over 60 frames: compiles +%llu, text keys +%llu, bind groups +%llu, graph keys +%llu, programs +%zu\n",
+    std::fprintf(stderr, "steady state over 60 frames: compiles +%llu, text keys +%llu, bind groups +%llu, graph keys +%llu, uniform maps +%llu, programs +%zu\n",
                  (unsigned long long)(renderer.pipelines().compiles() - compiles),
                  (unsigned long long)(renderer.pipelines().textLookups() - texts),
                  (unsigned long long)(bindGroupsCreated() - groups), (unsigned long long)(g::keyBuilds() - keys),
-                 renderer.programCount() - programs);
+                 (unsigned long long)(g::uniformMapBuilds() - uniformMaps), renderer.programCount() - programs);
     CHECK(renderer.pipelines().compiles() == compiles);
     CHECK(renderer.pipelines().textLookups() == texts);
     CHECK(bindGroupsCreated() == groups);
     CHECK(g::keyBuilds() == keys);
+    CHECK(g::uniformMapBuilds() == uniformMaps);  // per-draw uniform packing reads the nodes in place
     CHECK(renderer.programCount() == programs);
     CHECK(database.diagnostics().empty() && renderer.diagnostics().empty());
 }

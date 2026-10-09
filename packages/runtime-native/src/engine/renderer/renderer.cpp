@@ -3,6 +3,7 @@
 #include "engine/renderer/render_target_pass.h"
 
 #include <algorithm>
+#include <span>
 #include <cctype>
 #include <cmath>
 #include <unordered_map>
@@ -106,16 +107,26 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 
 // Authored uniform data accompanies the graph, not the cached program. Both colour and shadow
 // draws bind it, so a graph positionNode has exactly the same deformation in the two passes.
+// A draw's material uniforms for one stage, read in place from its graphs' uniform nodes every frame
+// (no map built per draw): three's `time` (the frame's elapsed seconds), then each named value. A name
+// bound to two different values across the material's graphs fails rather than pick one.
 void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
               const shader::MaterialNodes& nodes, float time) {
-    std::map<std::string, std::vector<float>> values;
-    values.emplace("time", std::vector<float>{time});  // three's `time`: the frame's elapsed seconds
-    for (const auto& node : nodes.graphs()) for (const auto& [name, value] : shader::graph::uniforms(node)) {
-        const auto [it, fresh] = values.emplace(name, value);
-        if (!fresh && it->second != value) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + name);
+    using Named = std::pair<std::string_view, std::span<const float>>;
+    thread_local std::vector<Named> values;
+    values.clear();
+    values.emplace_back("time", std::span<const float>(&time, 1));
+    for (const auto& graph : nodes.graphs()) {
+        if (!graph) continue;
+        for (const auto& node : shader::graph::uniformList(graph)) {
+            if (node->values.empty()) continue;
+            const auto found = std::ranges::find(values, std::string_view(node->name), &Named::first);
+            if (found == values.end()) values.emplace_back(node->name, node->values);
+            else if (!std::ranges::equal(found->second, node->values)) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + node->name);
+        }
     }
     for (const auto& field : stage.uniforms) {
-        const auto found = values.find(field.name);
+        const auto found = std::ranges::find(values, std::string_view(field.name), &Named::first);
         if (found == values.end()) continue;
         if (field.type.isMatrix() || field.type.scalar != shader::Type::Scalar::F32 || found->second.size() != field.type.rows)
             throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
@@ -1643,9 +1654,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             if (item.instanceMatrices) signature += ":instances:" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
             if (item.nodes.positionNode) {
                 signature += "#" + std::to_string(shader::graph::keyId(item.nodes.positionNode));
-                for (const auto& [name, values] : shader::graph::uniforms(item.nodes.positionNode)) {
-                    signature += name;
-                    signature.append(reinterpret_cast<const char*>(values.data()), values.size() * sizeof(float));
+                for (const auto& node : shader::graph::uniformList(item.nodes.positionNode)) {
+                    signature += node->name;
+                    signature.append(reinterpret_cast<const char*>(node->values.data()), node->values.size() * sizeof(float));
                 }
             }
             if (item.positionNode || item.boneMatrices || item.morphGeometry ||

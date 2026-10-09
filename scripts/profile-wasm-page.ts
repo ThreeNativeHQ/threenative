@@ -459,6 +459,18 @@ async function gpuCalls(page: Page) {
   );
 }
 
+/**
+ * The main thread's busy time per frame from the profile: the mean frame period times the share not
+ * spent idle or blocked in getCurrentTexture/submit (present and GPU backpressure). Finer than
+ * `--cpu-work`, whose clock steps 0.1 ms, and it needs no instrumented page.
+ */
+function busyMs(fps: number, groups: { name: string; percent: number }[]): number {
+  const waiting = groups
+    .filter((group) => ["getCurrentTexture", "submit", "(idle)"].includes(group.name))
+    .reduce((sum, group) => sum + group.percent, 0);
+  return (1000 / fps) * (1 - waiting / 100);
+}
+
 /** The opt-in measurements, each present only when its flag asked for it. */
 async function optional(page: Page, o: IOptions) {
   const census = o.calls ? await calls(page) : undefined;
@@ -512,7 +524,7 @@ async function measure(url: string, o: IOptions) {
     const profile = await cpu(page, o.seconds, o.saveProfile);
     const extra = await optional(page, o);
     if (errors.length > 0) throw new Error(`TN_PROFILE_PAGE_ERROR: ${errors[0]}`);
-    return { url, adapter, frame, profile, ...extra };
+    return { url, adapter, frame, profile, busyMs: busyMs(frame.fps, profile.groups), ...extra };
   } finally {
     await browser.close();
   }
@@ -525,6 +537,9 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   );
   console.log(
     `cpu (${r.profile.samples} samples): ${r.profile.groups.map((g) => `${g.name} ${g.percent}%`).join(", ")}`,
+  );
+  console.log(
+    `cpu busy per frame ${r.busyMs.toFixed(3)} ms (not idle, not in getCurrentTexture/submit)`,
   );
   for (const row of r.profile.inclusive)
     console.log(`  ${String(row.percent).padStart(5)}%  ${row.name}`);
@@ -589,5 +604,6 @@ else {
     console.log(
       `\nsubject/control frame p50: ${ratio.toFixed(2)}x (${ratio > 1 ? "subject slower" : "subject faster"})`,
     );
+    console.log(`control/subject cpu busy: ${(control.busyMs / subject.busyMs).toFixed(2)}x`);
   }
 }
