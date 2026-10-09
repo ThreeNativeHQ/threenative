@@ -228,6 +228,20 @@ describe("ResolutionScaler", () => {
     };
     expect(weak.observe(stalledSlow)).toBeLessThan(1);
 
+    // The laptop's measured window (live11, Iris Xe): the presented median reads 7 ms because the
+    // GPU-bound frame does not show in the present interval, while the main pass is 30 ms and the
+    // window runs at 35 fps. The GPU is the evidence, not the present median.
+    const igpu = new ResolutionScaler({ targetFps: 120 });
+    igpu.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    expect(
+      igpu.observe({
+        fps: 35,
+        gpuAgeFrames: 0,
+        gpuMs: 30,
+        presented: { p50: 7, p95: 40, p99: 230, max: 900 },
+      }),
+    ).toBeLessThan(1);
+
     // A game whose ordinary frame meets its target keeps the stall deferral: its hitches are not
     // a frame rate, and fewer pixels would not bring them back.
     const hitchy = new ResolutionScaler({ targetFps: 60 });

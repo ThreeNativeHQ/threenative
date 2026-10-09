@@ -538,9 +538,9 @@ export class ResolutionScaler {
    * bought back with pixels, and spending a rung on it is how the picture walks to the floor.
    */
   /**
-   * Whether a stalled window's ordinary frame misses the budget on its own: the median present is
-   * over it and fresh GPU timing alone exceeds it, so setting the stalls aside still leaves a slow
-   * frame that fewer pixels can speed up. A game whose median meets the target keeps the stall
+   * Whether a stalled window's ordinary frame misses the budget on its own: the window is under
+   * target and fresh GPU timing alone exceeds the budget, so setting the stalls aside still leaves
+   * a slow frame that fewer pixels can speed up. A game whose GPU meets the budget keeps the stall
    * deferral; a weak GPU does not stay at full resolution forever because its hitches recur. On an
    * Intel Iris Xe, Machinefall's shadow redraws (120-350 ms) put presented p99 at 15-63x p50 in
    * all but one judged window, p50 sat at 9-12 ms against 8.33, and the scale held 1.0 for the
@@ -548,7 +548,9 @@ export class ResolutionScaler {
    */
   #slowUnderStalls(window: IScalerWindow): boolean {
     const gpuMs = this.#freshGpuMs(window);
-    return window.presented.p50 > this.budgetMs && gpuMs !== undefined && gpuMs > this.budgetMs;
+    // Fresh GPU over budget in a window under target. Not the present median: on the Iris Xe it
+    // read 7 ms while the main pass took 30 ms and the window ran at 35 fps (PRD-549, live11).
+    return window.fps < this.targetFps && gpuMs !== undefined && gpuMs > this.budgetMs;
   }
 
   #overBudget(window: IScalerWindow): boolean {
