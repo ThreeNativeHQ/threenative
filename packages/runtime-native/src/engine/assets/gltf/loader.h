@@ -14,6 +14,7 @@
 // Engine code never throws: a refusal is the result's `error`, a TN_NATIVE_GLTF_* code and detail.
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -33,7 +34,15 @@ struct LoadResult {
     std::string error;                            // empty on success
 };
 
+struct LoadOptions {
+    /**
+     * A host that decodes images itself (the web host, with the browser's decoders off the main
+     * thread) answers by glTF image index; null leaves that image to this loader's decoders.
+     */
+    std::function<std::shared_ptr<const ExternalImage>(std::size_t image)> externalImage;
+};
+
 /** Loads a GLB (or glTF JSON with embedded buffers) from memory. */
-LoadResult load(std::span<const uint8_t> bytes);
+LoadResult load(std::span<const uint8_t> bytes, const LoadOptions& options = {});
 
 } // namespace tn::engine::gltf

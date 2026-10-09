@@ -70,7 +70,8 @@ const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_p
 
 class Builder {
   public:
-    Builder(const cgltf_data& data, const Value& json) : data_(data), json_(json) {}
+    Builder(const cgltf_data& data, const Value& json, const LoadOptions& options)
+        : data_(data), json_(json), options_(options) {}
 
     LoadResult run() {
         LoadResult result;
@@ -684,6 +685,14 @@ class Builder {
     // model by name; a PNG or JPEG that will not decode is a damaged file and fails the load.
     void decodeImage(Texture& texture) {
         if (texture.source < 0 || static_cast<std::size_t>(texture.source) >= data_.images_count) return;
+        if (options_.externalImage) {
+            if (auto image = options_.externalImage(static_cast<std::size_t>(texture.source))) {
+                texture.width = image->width;
+                texture.height = image->height;
+                texture.external = std::move(image);
+                return;
+            }
+        }
         const cgltf_image& image = data_.images[texture.source];
         void* freeAfter = nullptr;  // a base64 image's decoded copy, read in place
         const uint8_t* bytes = nullptr;
@@ -846,6 +855,7 @@ class Builder {
 
     const cgltf_data& data_;
     const Value& json_;
+    const LoadOptions& options_;
     std::string error_;
     std::vector<bool> bones_, skinnedMesh_;
     std::map<std::string, int> namesUsed_;
@@ -881,7 +891,7 @@ bool aligned(const cgltf_data& data) {
 }
 } // namespace
 
-LoadResult load(std::span<const uint8_t> bytes) {
+LoadResult load(std::span<const uint8_t> bytes, const LoadOptions& hostOptions) {
     LoadResult result;
     cgltf_options options{};
     cgltf_data* data = nullptr;
@@ -915,7 +925,7 @@ LoadResult load(std::span<const uint8_t> bytes) {
         result.error = "TN_NATIVE_GLTF_PARSE_FAILED json";
         return result;
     }
-    result = Builder(*data, json).run();
+    result = Builder(*data, json, hostOptions).run();
     cgltf_free(data);
     return result;
 }

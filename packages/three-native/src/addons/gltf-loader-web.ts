@@ -25,7 +25,81 @@ export interface IGltfResult {
   readonly userData: Record<string, unknown>;
 }
 
-const load = __tnLoadGltf as ((bytes: Uint8Array) => IEngineModel) | undefined;
+type PageImage = { readonly width: number; readonly height: number };
+const load = __tnLoadGltf as
+  | ((bytes: Uint8Array, images: readonly (PageImage | undefined)[], clips: number) => IEngineModel)
+  | undefined;
+
+/** GLTFTextureWebPExtension: a texture draws its WebP source when the browser decodes WebP. */
+const WEBP = "EXT_texture_webp";
+
+interface IGltfJson {
+  readonly images?: readonly {
+    readonly bufferView?: number;
+    readonly uri?: string;
+    readonly mimeType?: string;
+  }[];
+  readonly bufferViews?: readonly { readonly byteOffset?: number; readonly byteLength: number }[];
+  readonly textures?: readonly {
+    readonly source?: number;
+    readonly extensions?: Readonly<Record<string, { readonly source?: number } | undefined>>;
+  }[];
+  readonly animations?: readonly unknown[];
+}
+
+/** A GLB's JSON and binary chunks, or a glTF JSON file's text with no binary chunk. */
+function chunks(bytes: Uint8Array): { json: IGltfJson; bin?: Uint8Array } {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67)
+    return { json: JSON.parse(new TextDecoder().decode(bytes)) as IGltfJson };
+  const jsonLength = view.getUint32(12, true);
+  const json = JSON.parse(
+    new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength)),
+  ) as IGltfJson;
+  const at = 20 + jsonLength;
+  if (at + 8 > bytes.byteLength) return { json };
+  return { json, bin: bytes.subarray(at + 8, at + 8 + view.getUint32(at, true)) };
+}
+
+/**
+ * The images the model's textures draw, decoded by the browser as three's GLTFLoader decodes them
+ * (ImageBitmapLoader: no premultiply, no colour conversion): off the main thread and in parallel,
+ * where the engine would decode them one by one in Wasm. An image the page cannot read stays
+ * undefined, and the engine decodes or refuses it as it would without the page.
+ */
+async function decodeImages(
+  json: IGltfJson,
+  bin: Uint8Array | undefined,
+): Promise<(PageImage | undefined)[]> {
+  const images = json.images ?? [];
+  if (typeof createImageBitmap === "undefined") return [];
+  const used = new Set<number>();
+  for (const texture of json.textures ?? []) {
+    const source = texture.extensions?.[WEBP]?.source ?? texture.source;
+    if (source !== undefined) used.add(source);
+  }
+  return Promise.all(
+    images.map(async (image, index) => {
+      if (!used.has(index)) return undefined;
+      let blob: Blob | undefined;
+      const view =
+        image.bufferView === undefined ? undefined : json.bufferViews?.[image.bufferView];
+      if (view !== undefined && bin !== undefined) {
+        const offset = view.byteOffset ?? 0;
+        blob = new Blob([bin.slice(offset, offset + view.byteLength)], {
+          type: image.mimeType ?? "",
+        });
+      } else if (image.uri?.startsWith("data:")) {
+        blob = await (await fetch(image.uri)).blob();
+      }
+      if (blob === undefined) return undefined;
+      return createImageBitmap(blob, {
+        premultiplyAlpha: "none",
+        colorSpaceConversion: "none",
+      }).catch(() => undefined);
+    }),
+  );
+}
 
 function refuse(what: string): never {
   throw new Error(`TN_NATIVE_GLTF_${what}_UNSUPPORTED: the engine glTF loader does not take this`);
@@ -67,39 +141,41 @@ export class GLTFLoader {
     return refuse("PLUGIN");
   }
 
-  /** The engine loader parses synchronously; `onLoad` or `onError` runs once, as three's does. */
+  /** `onLoad` or `onError` runs once, after the images decode, as three's parse settles later too. */
   parse(
     data: ArrayBuffer | string,
-    _path: string,
+    path: string,
     onLoad: (gltf: IGltfResult) => void,
     onError?: (error: unknown) => void,
   ): void {
-    let result: IGltfResult;
-    try {
-      if (load === undefined)
-        throw new Error("TN_WASM_GLTF_UNAVAILABLE: this web engine has no glTF loader");
-      const bytes =
-        typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
-      const model = load(bytes);
-      result = {
-        scene: model.scene,
-        scenes: [model.scene],
-        animations: [...model.animations],
-        cameras: [],
-        asset: { version: "2.0" },
-        parser: undefined,
-        userData: {},
-      };
-    } catch (error) {
+    this.parseAsync(data, path).then(onLoad, (error: unknown) => {
       if (onError === undefined) throw error;
       onError(error);
-      return;
-    }
-    onLoad(result);
+    });
   }
 
-  parseAsync(data: ArrayBuffer | string, path: string): Promise<IGltfResult> {
-    return new Promise((resolve, reject) => this.parse(data, path, resolve, reject));
+  async parseAsync(data: ArrayBuffer | string, _path: string): Promise<IGltfResult> {
+    if (load === undefined)
+      throw new Error("TN_WASM_GLTF_UNAVAILABLE: this web engine has no glTF loader");
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
+    let json: IGltfJson | undefined;
+    let bin: Uint8Array | undefined;
+    try {
+      ({ json, bin } = chunks(bytes));
+    } catch {
+      json = undefined; // not a file the page can read: the engine loader refuses it by name
+    }
+    const images = json === undefined ? [] : await decodeImages(json, bin);
+    const model = load(bytes, images, json?.animations?.length ?? 63);
+    return {
+      scene: model.scene,
+      scenes: [model.scene],
+      animations: [...model.animations],
+      cameras: [],
+      asset: { version: "2.0" },
+      parser: undefined,
+      userData: {},
+    };
   }
 
   async loadAsync(url: string): Promise<IGltfResult> {

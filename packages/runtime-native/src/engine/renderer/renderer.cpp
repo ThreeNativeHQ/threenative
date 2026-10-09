@@ -838,10 +838,13 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         uint32_t levels = 1;
         for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++levels;
         const uint64_t expected = uint64_t(texture.width) * texture.height * texture.bytesPerTexel();
-        if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
+        if (!texture.external && texture.data.size() != expected)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
+        if (texture.external && (!textures_->copyExternal || texture.bytesPerTexel() != 4))
+            throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a host image needs the host's copy and RGBA8");
         std::vector<uint8_t> flipped;
         const uint8_t* pixels = texture.data.data();
-        if (texture.flipY) {
+        if (texture.flipY && !texture.external) {
             const size_t row = size_t(texture.width) * texture.bytesPerTexel();
             flipped.resize(texture.data.size());
             for (uint32_t y = 0; y < texture.height; ++y)
@@ -852,8 +855,9 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         desc.dimension = WGPUTextureDimension_2D;
         desc.size = {texture.width, texture.height, 1};
         desc.format = format;
+        // copyExternalImageToTexture writes through a render pass, as the mip chain does.
         desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst |
-                     (levels > 1 ? WGPUTextureUsage_RenderAttachment : WGPUTextureUsage_None);
+                     (levels > 1 || texture.external ? WGPUTextureUsage_RenderAttachment : WGPUTextureUsage_None);
         desc.mipLevelCount = levels;
         desc.sampleCount = 1;
         record.texture = wgpuDeviceCreateTexture(device_, &desc);
@@ -864,8 +868,13 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         layout.bytesPerRow = texture.width * texture.bytesPerTexel();
         layout.rowsPerImage = texture.height;
         const WGPUExtent3D extent = {texture.width, texture.height, 1};
-        wgpuQueueWriteTexture(queue_, &destination, pixels, texture.data.size(), &layout, &extent);
-        textures_->uploadBytes += texture.data.size();
+        if (texture.external) {
+            if (!textures_->copyExternal(texture.external->id, record.texture, texture.flipY))
+                throw std::runtime_error("TN_NATIVE_TEXTURE_UPLOAD_FAILED: the host could not copy its image");
+        } else {
+            wgpuQueueWriteTexture(queue_, &destination, pixels, texture.data.size(), &layout, &extent);
+            textures_->uploadBytes += texture.data.size();
+        }
         if (levels > 1) generateMipmaps(record.texture, format, levels);
         WGPUTextureViewDescriptor view = {};
         view.dimension = WGPUTextureViewDimension_2D;

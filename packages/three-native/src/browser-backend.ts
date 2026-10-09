@@ -40,6 +40,12 @@ export interface IEngineRef {
   readonly type: number;
 }
 
+/** A decoded page image the web host copies with copyExternalImageToTexture: an ImageBitmap. */
+export interface IPageImage {
+  readonly width: number;
+  readonly height: number;
+}
+
 export type EngineValue =
   | null
   | undefined
@@ -76,7 +82,15 @@ export interface IBrowserRuntime {
   /** TSL by name (PRD-540), when the module carries `tn_tsl_call`. */
   readonly tsl?: ITslRuntime;
   /** A GLB through the engine's own glTF loader (PRD-540), when the module carries the web host. */
-  loadGltf?(bytes: Uint8Array): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
+  /**
+   * `images[i]` is glTF image i already decoded by the page (an ImageBitmap), which the engine
+   * copies to the GPU instead of decoding it in Wasm; `clips` is the model's animation count.
+   */
+  loadGltf?(
+    bytes: Uint8Array,
+    images?: readonly (IPageImage | undefined)[],
+    clips?: number,
+  ): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
 }
 
 /** The engine node id a TSL wrapper (`browser-tsl.ts`) carries. */
@@ -869,6 +883,8 @@ interface IAbiHelpers {
   view(): DataView;
 }
 
+let nextImage = 1;
+
 /** The engine glTF loader over the product web host's `tnw_web_load_gltf`, when the module has it. */
 function gltfOf(
   abi: TnAbiModule,
@@ -882,15 +898,38 @@ function gltfOf(
   const { _tnw_web_load_gltf: load, _tnw_web_load_error: error } = host;
   if (load === undefined || error === undefined) return {};
   return {
-    loadGltf: (bytes) =>
+    loadGltf: (bytes, images = [], clips = 63) =>
       h.scoped(() => {
         const data = h.alloc(Math.max(1, bytes.byteLength));
         abi.HEAPU8.set(bytes, data);
         const count = h.alloc(4);
-        // Retried once with the exact size when the model has more clips than the first guess.
-        for (let capacity = 64; ; ) {
+        // The page's images by id in the host's table (web_host.cpp tnw_js_copy_image); the host
+        // closes each with the last texture that holds it, or at once when no texture took it.
+        // quality-allow: the web host module carries its image table as a property it reads by name.
+        const table = ((abi as unknown as { tnImages?: Map<number, IPageImage> }).tnImages ??=
+          new Map());
+        const triples = h.alloc(Math.max(4, images.length * 12));
+        images.forEach((image, i) => {
+          const id = image === undefined ? 0 : nextImage++;
+          if (image !== undefined) table.set(id, image);
+          const v = new DataView(abi.HEAPU8.buffer);
+          v.setUint32(triples + i * 12, id, true);
+          v.setUint32(triples + i * 12 + 4, image?.width ?? 0, true);
+          v.setUint32(triples + i * 12 + 8, image?.height ?? 0, true);
+        });
+        // The clip count sizes the handles once: a retry would load the images a second time.
+        for (let capacity = clips + 1; ; ) {
           const out = h.alloc(HANDLE * capacity);
-          const status = load(context, data, bytes.byteLength, out, capacity, count);
+          const status = load(
+            context,
+            data,
+            bytes.byteLength,
+            out,
+            capacity,
+            count,
+            triples,
+            images.length,
+          );
           const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
           if (status === 0) {
             const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));

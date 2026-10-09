@@ -13,6 +13,7 @@
 #include "engine/player/skinned_crowd.h"
 #include "engine/scene/geometries.h"
 #include "mystral/webgpu/context.h"
+#include "mystral/webgpu_compat.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1636,6 +1637,44 @@ void gpuMipmaps() {
     std::fprintf(stderr, "gpu mipmaps: %llu texture bytes after a render target\n",
                  static_cast<unsigned long long>(renderer.textureUploadBytes()));
     CHECK(renderer.textureUploadBytes() == 16 * 16 * 4);
+    // A host image (the web host's ImageBitmap) reaches level 0 through the host's copy, never as
+    // bytes from here, and gets the same GPU chain. Without the host's copy it is refused by name.
+    auto hosted = std::make_shared<Texture>();
+    hosted->width = hosted->height = 16;
+    hosted->colorSpace = TextureColorSpace::SRGB;
+    hosted->flipY = false;  // as GLTFLoader sets it
+    hosted->external = std::make_shared<const ExternalImage>(3, 16, 16, nullptr);
+    hosted->needsUpdate();
+    std::vector<uint32_t> copied;
+    renderer.setExternalImageCopy([&](uint32_t image, WGPUTexture gpu, bool flipY) {
+        copied.push_back(image);
+        WGPUImageCopyTexture_Compat destination = {};
+        destination.texture = gpu;
+        destination.aspect = WGPUTextureAspect_All;
+        WGPUTextureDataLayout_Compat layout = {};
+        layout.bytesPerRow = 16 * 4;
+        layout.rowsPerImage = 16;
+        const WGPUExtent3D extent = {16, 16, 1};
+        wgpuQueueWriteTexture(context.getQueue(), &destination, map->data.data(), map->data.size(), &layout, &extent);
+        return !flipY;
+    });
+    material->maps["map"] = hosted;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    CHECK(database.diagnostics().empty());
+    const auto fromHost = read(renderer, events);
+    CHECK(copied == std::vector<uint32_t>{3});
+    for (size_t i = 0; i < fromHost.size(); i += 4) CHECK(std::abs(int(fromHost[i]) - 71) <= 2);
+    CHECK(renderer.textureUploadBytes() == 16 * 16 * 4);  // nothing more crossed from the CPU
+    Renderer bare(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    bare.setSize(4, 4);
+    RenderDatabase bareDatabase;
+    bool named = false;
+    try {
+        bareDatabase.render(bare, scene, camera, {0, 0, 0, 1});
+    } catch (const std::runtime_error& error) {
+        named = std::string(error.what()).rfind("TN_NATIVE_TEXTURE_UNSUPPORTED", 0) == 0;
+    }
+    CHECK(named);
 }
 
 // PRD-526 review: a decoded map the standard program does not read is refused by name, never drawn without it.

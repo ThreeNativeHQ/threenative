@@ -13,6 +13,7 @@ import { DataUtils } from "./addons/data-utils.js";
 import { type IAudioEngine, defineAudioClasses } from "./audio.js";
 import {
   type IBrowserRuntime,
+  type IPageImage,
   type IRegistryDump,
   TSL_NODE,
   type TnAbiModule,
@@ -145,8 +146,12 @@ export async function bindWebEngine(
   // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
   const { loadGltf } = runtime;
   if (loadGltf !== undefined)
-    bound.__tnLoadGltf = (bytes: Uint8Array) => {
-      const loaded = loadGltf.call(runtime, bytes);
+    bound.__tnLoadGltf = (
+      bytes: Uint8Array,
+      images?: readonly (IPageImage | undefined)[],
+      clips?: number,
+    ) => {
+      const loaded = loadGltf.call(runtime, bytes, images, clips);
       return { scene: wrap(loaded.scene), animations: loaded.animations.map(wrap) };
     };
   if (tsl !== undefined && runtime.tsl !== undefined) {

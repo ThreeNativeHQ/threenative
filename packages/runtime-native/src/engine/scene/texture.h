@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -68,6 +69,21 @@ class TextureId {
 /** three's ColorSpace: NoColorSpace (empty string) or an sRGB-encoded texture. */
 enum class TextureColorSpace : uint8_t { None, SRGB };
 
+/**
+ * An image the host decoded and keeps, such as a browser ImageBitmap on the web host: the renderer
+ * copies it to the GPU through the host (Renderer::setExternalImageCopy), so the texture holds no
+ * bytes. The host's image is released with the last texture that shares it.
+ */
+struct ExternalImage {
+    ExternalImage(uint32_t id, uint32_t width, uint32_t height, std::function<void(uint32_t)> release)
+        : id(id), width(width), height(height), release(std::move(release)) {}
+    ExternalImage(const ExternalImage&) = delete;
+    ExternalImage& operator=(const ExternalImage&) = delete;
+    ~ExternalImage() { if (release) release(id); }
+    uint32_t id, width, height;
+    std::function<void(uint32_t)> release;
+};
+
 class Texture {
 public:
     virtual ~Texture() = default;
@@ -105,6 +121,8 @@ public:
      * `data`. Type-erased, so this layer does not depend on the target.
      */
     std::weak_ptr<void> renderTarget;
+    /** The host's decoded image, uploaded in place of `data` (empty then); width and height are its size. */
+    std::shared_ptr<const ExternalImage> external;
 
     /** three.js `texture.needsUpdate`: a GPU record rebuilds when its counter moves. */
     void needsUpdate() { ++version_; }
@@ -115,7 +133,7 @@ public:
     /** Bytes per RGBA texel as stored in `data` and uploaded: RGBA8, RGBA16Float or RGBA32Float. */
     [[nodiscard]] uint32_t bytesPerTexel() const { return isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
-    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && !data.empty(); }
+    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || external); }
     /** A material can sample it: an uploaded image, or a render target's last render. */
     [[nodiscard]] bool sampleable() const { return hasImage() || !renderTarget.expired(); }
 

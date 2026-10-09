@@ -73,11 +73,30 @@ void configureWebSurface() {
     renderer->setSize(width, height);
 }
 
+// The page's decoded images (ImageBitmaps) by id, which three-native's glTF loader registers in
+// Module.tnImages. three's WebGPUTextureUtils copies an image the same way: no premultiply, its flipY.
+EM_JS(int, tnw_js_copy_image, (uint32_t image, uintptr_t texture, uintptr_t gpuQueue, int flipY), {
+    const source = Module.tnImages && Module.tnImages.get(image);
+    if (!source) return 0;
+    WebGPU.getJsObject(gpuQueue).copyExternalImageToTexture(
+        { source, flipY: flipY !== 0 }, { texture: WebGPU.getJsObject(texture), premultipliedAlpha: false },
+        [source.width, source.height]);
+    return 1;
+});
+EM_JS(void, tnw_js_release_image, (uint32_t image), {
+    const source = Module.tnImages && Module.tnImages.get(image);
+    if (source && source.close) source.close();
+    if (Module.tnImages) Module.tnImages.delete(image);
+});
+
 void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView message, void*, void*) {
     if (status != WGPURequestDeviceStatus_Success) return static_cast<void>(fail("TN_WASM_DEVICE: " + text(message)));
     device = result;
     queue = wgpuDeviceGetQueue(device);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
+    renderer->setExternalImageCopy([](uint32_t image, WGPUTexture texture, bool flipY) {
+        return tnw_js_copy_image(image, reinterpret_cast<uintptr_t>(texture), reinterpret_cast<uintptr_t>(queue), flipY) != 0;
+    });
     configureWebSurface();
     if (pendingPost) renderer->setPostGraph(pendingPost);
     state = Ready;
@@ -342,14 +361,30 @@ extern "C" const char* tnw_web_load_error() { return loadFailure.c_str(); }
  * the default scene, then each animation clip, as handles in `context`. `out` holds `capacity`
  * handles; `count` answers how many there are (scene + clips), so a short buffer can be retried.
  * Returns 0, or 1 with tnw_web_load_error set. A model whose images did not decode is refused by
- * name, as on V8, rather than drawn without its textures.
+ * name, as on V8, rather than drawn without its textures. `images` holds `imageCount` (id, width,
+ * height) triples by glTF image index: an image the page already decoded (id 0: none), which a
+ * texture then keeps instead of decoding it here; one no texture took is released at once.
  */
 extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, uint32_t size, tn_handle_t* out,
-                                 uint32_t capacity, uint32_t* count) {
+                                 uint32_t capacity, uint32_t* count, const uint32_t* images, uint32_t imageCount) {
     loadFailure.clear();
 #if TN_WEB_GLTF
-    if (!context || !bytes || !size || !count) return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
-    auto loaded = gltf::load(std::span<const uint8_t>(bytes, size));
+    if (!context || !bytes || !size || !count || (imageCount && !images))
+        return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
+    // One handle per image, however many textures sample it: the page's image closes with the last.
+    std::vector<std::shared_ptr<const ExternalImage>> taken(imageCount);
+    gltf::LoadOptions options;
+    options.externalImage = [&](std::size_t image) -> std::shared_ptr<const ExternalImage> {
+        if (image >= imageCount || images[image * 3] == 0) return nullptr;
+        if (!taken[image])
+            taken[image] = std::make_shared<const ExternalImage>(images[image * 3], images[image * 3 + 1],
+                                                                 images[image * 3 + 2],
+                                                                 [](uint32_t id) { tnw_js_release_image(id); });
+        return taken[image];
+    };
+    auto loaded = gltf::load(std::span<const uint8_t>(bytes, size), options);
+    for (uint32_t i = 0; i < imageCount; ++i)
+        if (images[i * 3] != 0 && !taken[i]) tnw_js_release_image(images[i * 3]);
     if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
     if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
     bool undecoded = false;
@@ -367,7 +402,7 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
         out[1 + i] = tn::abi::shareObject(context, "AnimationClip", loaded.animations[i]);
     return 0;
 #else
-    (void)context; (void)bytes; (void)size; (void)out; (void)capacity; (void)count;
+    (void)context; (void)bytes; (void)size; (void)out; (void)capacity; (void)count; (void)images; (void)imageCount;
     loadFailure = "TN_WASM_GLTF_UNAVAILABLE: this web engine was built without cgltf";
     return 1;
 #endif

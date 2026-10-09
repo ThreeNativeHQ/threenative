@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <array>
 #include <map>
 #include <cstdint>
@@ -301,6 +302,12 @@ public:
     /** Bytes of map pixels written from the CPU by this renderer and its siblings: level 0 only, the GPU builds the mips. */
     uint64_t textureUploadBytes() const { return textures_->uploadBytes; }
     /**
+     * How the host copies its decoded image (Texture::external) into level 0 of `texture`, flipped
+     * when `flipY`: the web host's copyExternalImageToTexture. Returns false when it cannot.
+     */
+    using ExternalImageCopy = std::function<bool(uint32_t image, WGPUTexture texture, bool flipY)>;
+    void setExternalImageCopy(ExternalImageCopy copy) { textures_->copyExternal = std::move(copy); }
+    /**
      * The next render() draws its output pass straight into `target`, a view of `format`, in place
      * of the intermediate RGBA8 frame and the blitTo that copies it: a presented frame costs one
      * pass, one encoder and one submission fewer. The pixels are the same bytes. That frame is not
@@ -532,6 +539,7 @@ private:
         std::unordered_map<uint64_t, MaterialTexture> records;  // by Texture::ident, never an address
         uint64_t generation = 0;  // moves when a record's view is replaced or released
         uint64_t uploadBytes = 0;
+        ExternalImageCopy copyExternal;
         ~MaterialTextureStore();
     };
     std::shared_ptr<MaterialTextureStore> textures_ = std::make_shared<MaterialTextureStore>();

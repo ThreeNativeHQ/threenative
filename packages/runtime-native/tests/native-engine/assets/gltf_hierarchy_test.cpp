@@ -295,6 +295,29 @@ int main() {
         emissive->magFilter != 1006 || emissive->minFilter != 1008) {
         std::printf("image textures: PNG/JPEG not decoded or sampler not applied: %s\n", images.error.c_str()); ++differ;
     }
+    // A host that decodes images itself (the web host's ImageBitmaps) supplies them by glTF image
+    // index: the texture keeps the host's image and no bytes, an image it declines still decodes
+    // here, and the host's image is released with the last texture that holds it.
+    std::vector<uint32_t> released;
+    {
+        gltf::LoadOptions options;
+        options.externalImage = [&](std::size_t image) -> std::shared_ptr<const ExternalImage> {
+            if (image != 0) return nullptr;
+            return std::make_shared<const ExternalImage>(7, 2, 2, [&](uint32_t id) { released.push_back(id); });
+        };
+        auto hosted = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(imageBytes.data()), imageBytes.size()),
+                                 options);
+        auto* mesh = hosted.scene ? dynamic_cast<Mesh*>(hosted.scene->children.empty() ? nullptr : hosted.scene->children[0]) : nullptr;
+        const Texture* map = mesh && mesh->material ? mesh->material->maps.at("map").get() : nullptr;
+        const Texture* glow = mesh && mesh->material ? mesh->material->maps.at("emissiveMap").get() : nullptr;
+        if (!hosted.error.empty() || !map || !glow || !map->external || map->external->id != 7 || !map->data.empty() ||
+            !map->hasImage() || map->width != 2 || map->height != 2 || glow->external || glow->data.size() != 12 || !released.empty()) {
+            std::printf("image textures: a host image was not taken by index (%s)\n", hosted.error.c_str()); ++differ;
+        }
+    }
+    if (released != std::vector<uint32_t>{7}) {
+        std::printf("image textures: the host image was released %zu times\n", released.size()); ++differ;
+    }
     // A damaged PNG is refused, not left as an image-less texture.
     std::string damaged = imageBytes;
     damaged.replace(damaged.find("R4nGP4z8Dw"), 10, "R4nGP4zzzz"); // the PNG signature stays, its pixel stream breaks
