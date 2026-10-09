@@ -637,6 +637,16 @@ export function scatterProps(
   if (temperate) {
     // Separate seed: dressing the rock/shore never reshuffles the established stands.
     const dressing = createRandom(SCATTER.seed + 12);
+    // Rock outcrops take this terrain's own steepest ground: its steepest 2%, but never ground gentler
+    // than 30 degrees would allow. A fixed 30 left the rebaked forest (98th percentile 22 degrees,
+    // 282 cells over 30 of 66,000) with no outcrop at all.
+    const spacing = data.size / Math.max(1, data.resolution - 1);
+    const slopes: number[] = [];
+    for (let z = -half + spacing; z < half - spacing; z += spacing)
+      for (let x = -half + spacing; x < half - spacing; x += spacing)
+        slopes.push(slopeDegrees(data, x, z));
+    slopes.sort((a, b) => a - b);
+    const outcropSlope = Math.min(30, slopes[Math.floor(slopes.length * 0.98)] ?? 30);
     for (let z = -half + 12; z < half - 12; z += 12)
       for (let x = -half + 12; x < half - 12; x += 12) {
         const sx = x + (dressing() - 0.5) * 10;
@@ -650,7 +660,7 @@ export function scatterProps(
         if (nearEye(sx, sz) || wet(sx, sz)) continue;
         if (shore && slope > 12 && dressing() < 0.65)
           put("mountain", sx, sz, (5 + dressing() * 10) / 24, ":outcrop");
-        else if (slope > 30 && slope < 64 && dressing() < 0.6)
+        else if (slope > outcropSlope && slope < 64 && dressing() < 0.6)
           put("mountain", sx, sz, (10 + dressing() * 10) / 24, ":outcrop");
       }
   }
