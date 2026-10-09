@@ -48,8 +48,11 @@ import {
   positionGeometry,
   positionLocal,
   positionPrevious,
+  positionViewDirection,
   pow,
   saturation,
+  screenCoordinate,
+  screenSize,
   select,
   setCurrentStack,
   sin,
@@ -170,6 +173,7 @@ const accessorBuilder = {
 const RENAMES: Record<string, string> = {
   cameraViewMatrix: "viewMatrix",
   v_normalViewGeometry: "normalView",
+  v_positionViewDirection: "positionViewDirection",
 };
 const renamed = (name: string) => RENAMES[name] ?? name;
 /** Upstream builtins that are unnamed uniforms the renderer fills each frame, bound by these names. */
@@ -210,6 +214,10 @@ function canon(node: TslNode, fragment: boolean): string {
       return child("node");
     case "StorageArrayElementNode":
       return `load:${storageName(node)}[${canon(node.indexNode as TslNode, fragment)}]`;
+    case "ScreenNode":
+      if (node.scope === "coordinate") return "builtin:position:vec4<f32>.xy:vec2<f32>";
+      if (node.scope === "size") return "uniform:screenSize:vec2<f32>";
+      return `UNMAPPED_SCREEN:${node.scope}`;
     case "ConstNode": {
       const type = typeOf(node);
       const value = node.value as number | { toArray(): number[] };
@@ -347,6 +355,9 @@ export const CORPUS: [string, string, unknown][] = [
   ["tangent-local", "position", vec4(positionLocal.add(tangentLocal.mul(u)), 1)],
   ["position-previous", "color", vec4(positionPrevious, 1)],
   ["storage-attribute", "position", vec4(positionLocal.add(palette.element(instanceIndex).xyz), 1)],
+  ["screen-coordinate", "color", vec4(screenCoordinate, 0, 1)],
+  ["position-view-direction", "color", vec4(positionViewDirection, 1)],
+  ["screen-size", "color", vec4(screenSize, 0, 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

@@ -164,6 +164,11 @@ int main() {
         return vec4({add(positionLocal(), swizzle(storage("palette", Type::vec(4)).element(instanceIndex()), "xyz")),
                      float_(1)});
     });
+    shaderGraph("screen-coordinate", "color",
+          [] { return vec4({swizzle(builtin("position"), "xy"), float_(0), float_(1)}); });
+    shaderGraph("position-view-direction", "color",
+          [] { return vec4({normalize(varying("positionViewDirection", Type::vec(3))), float_(1)}); });
+    shaderGraph("screen-size", "color", [] { return vec4({uniform("screenSize", Type::vec(2)), float_(0), float_(1)}); });
 
     compute("fn-if-store", [](Block& b, Storage positions) {
         const Var acc = b.var(float_(0));

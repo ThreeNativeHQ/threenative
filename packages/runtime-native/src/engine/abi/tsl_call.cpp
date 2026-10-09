@@ -366,6 +366,10 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return g::uniform(name, Type::f32());
     }
+    if (name == "screenSize") {
+        arity(0);
+        return g::uniform("screenSize", Type::vec(2));
+    }
     if (name == "cameraPosition" || name == "cameraProjectionMatrix" || name == "cameraWorldMatrix") {
         arity(0);
         return g::uniform(name, name == "cameraPosition" ? Type::vec(3) : Type::mat(4, 4));
@@ -409,7 +413,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // positionViewDirection = positionView.negate().toVarying().normalize().
     if (name == "positionViewDirection") {
         arity(0);
-        return g::normalize(g::negate(g::varying("positionView", Type::vec(3))));
+        return g::normalize(g::varying("positionViewDirection", Type::vec(3)));
     }
     // ScreenNode's coordinate (the fragment's pixel position) and the geometry's own attributes.
     if (name == "screenCoordinate") {
@@ -628,7 +632,7 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"time", g::uniform("time", Type::f32())}};
     // The node constants tslCall also answers by name; neither takes a serial.
     uint64_t serial = 0;
-    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar",
+    for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar", "screenSize",
                              "positionGeometry", "normalWorld", "normalView", "positionViewDirection", "screenCoordinate",
                              "normalGeometry", "tangentGeometry", "normalLocal", "tangentLocal", "positionPrevious"})
         constants.emplace_back(name, tslCall(name, nullptr, {}, serial));

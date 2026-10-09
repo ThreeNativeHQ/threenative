@@ -25,7 +25,7 @@ export const {
   mx_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
-  cameraNear, cameraFar, viewportSharedTexture, viewportDepthTexture, linearDepth, viewportLinearDepth,
+  cameraNear, cameraFar, screenSize, viewportSharedTexture, viewportDepthTexture, linearDepth, viewportLinearDepth,
 } = globalThis.tsl;
 export const {
   oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection, dFdx, dFdy, lengthSq,

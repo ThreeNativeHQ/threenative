@@ -112,6 +112,7 @@ const CONSTANTS = [
   "cameraPosition",
   "cameraNear",
   "cameraFar",
+  "screenSize",
   "cameraProjectionMatrix",
   "cameraWorldMatrix",
   "positionGeometry",

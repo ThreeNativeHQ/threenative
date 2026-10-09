@@ -120,6 +120,11 @@ int main() {
     graph("storage-attribute", "position", [] {
         return vec4({positionLocal().add(Node(storage("palette", Type::vec(4)).element(instanceIndex())).xyz()), 1});
     });
+    graph("screen-coordinate", "color",
+          [] { return vec4({Node(program().builtin("position")).xy(), 0, 1}); });
+    graph("position-view-direction", "color",
+          [] { return vec4({normalize(Node(program().varying("positionViewDirection", Type::vec(3)))), 1}); });
+    graph("screen-size", "color", [] { return vec4({uniform("screenSize", Type::vec(2)), 0, 1}); });
 
     compute("fn-if-store", [](Storage positions) {
         const Var acc = toVar(float_(0));

@@ -32,11 +32,14 @@ const {
   normalLocal,
   normalWorld,
   normalize,
+  positionViewDirection,
   positionGeometry,
   positionLocal,
   positionPrevious,
   pow,
   saturation,
+  screenCoordinate,
+  screenSize,
   select,
   sin,
   smoothstep,
@@ -107,6 +110,9 @@ const CORPUS = [
   ["tangent-local", "position", vec4(positionLocal.add(tangentLocal.mul(u)), 1)],
   ["position-previous", "color", vec4(positionPrevious, 1)],
   ["storage-attribute", "position", vec4(positionLocal.add(palette.element(instanceIndex).xyz), 1)],
+  ["screen-coordinate", "color", vec4(screenCoordinate, 0, 1)],
+  ["position-view-direction", "color", vec4(positionViewDirection, 1)],
+  ["screen-size", "color", vec4(screenSize, 0, 1)],
 ];
 
 const positions = instancedArray(16, "vec4").setName("positions");
