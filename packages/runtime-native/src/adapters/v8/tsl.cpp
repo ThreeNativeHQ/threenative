@@ -375,7 +375,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
                              "flipX", "flipY", "flipZ", "flipW", "addAssign", "subAssign", "mulAssign",
-                             "divAssign", "dFdx", "dFdy", "sign", "cbrt", "atan", "mod", "fwidth"})
+                             "divAssign", "dFdx", "dFdy", "sign", "cbrt", "atan", "mod", "fwidth", "transformDirection"})
         node->Set(str(isolate_, name), function(context, name, true));
     // three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, read as xyzw lanes.
     const std::function<void(const char*, const std::string&, const std::string&)> swizzles =
@@ -401,18 +401,11 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "textureLoad", "reflect", "convertToTexture",
                              "ao", "denoise", "smaa", "bloom", "oneMinus", "varying", "setUniform",
-                             "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector"})
+                             "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())
         module->Set(context, str(isolate_, name), wrap(std::move(node))).Check();
-    // three's ScreenNode coordinate (the fragment's pixel position) and its geometry attributes.
-    module->Set(context, str(isolate_, "screenCoordinate"), wrap(g::swizzle(g::builtin("position"), "xy"))).Check();
-    module->Set(context, str(isolate_, "normalGeometry"), wrap(g::attribute("normal", Type::vec(3)))).Check();
-    module->Set(context, str(isolate_, "tangentGeometry"), wrap(g::attribute("tangent", Type::vec(4)))).Check();
-    // positionViewDirection: normalize(-positionView), the standard programs' view-space varying.
-    module->Set(context, str(isolate_, "positionViewDirection"),
-                wrap(g::normalize(g::negate(g::varying("positionView", Type::vec(3)))))).Check();
     // The existing V8 hosts execute bundled scripts with globals; they have no ES module resolver.
     target->Set(context, str(isolate_, "tsl"), module).Check();
 }

@@ -97,6 +97,7 @@ const FUNCTIONS = [
   "mx_worley_noise_vec2",
   "pmremTexture",
   "reflector",
+  "transformDirection",
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
@@ -116,6 +117,11 @@ const CONSTANTS = [
   "materialMetalness",
   "materialRoughness",
   "time",
+  "normalView",
+  "positionViewDirection",
+  "screenCoordinate",
+  "normalGeometry",
+  "tangentGeometry",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
@@ -164,6 +170,7 @@ const METHODS = [
   "flipY",
   "flipZ",
   "flipW",
+  "transformDirection",
 ] as const;
 /** three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, as xyzw lanes. */
 const SWIZZLES: Readonly<Record<string, string>> = (() => {

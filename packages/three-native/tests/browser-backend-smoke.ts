@@ -347,9 +347,16 @@ engine.collect();
 // The mixer's EventDispatcher on the Wasm engine, as on V8: listeners live in JS and the engine calls
 // back for `finished` and `loop` while something listens (the minimal template's AnimationPlayer).
 {
+  type Fn = (...args: unknown[]) => unknown;
   type Ctor = new (
     ...args: unknown[]
-  ) => Record<string, (...args: unknown[]) => unknown> & Record<string, unknown>;
+  ) => {
+    clipAction: Fn;
+    update: Fn;
+    addEventListener: Fn;
+    removeEventListener: Fn;
+    hasEventListener: Fn;
+  };
   const web = (await bindWebEngine(createTnAbi, [
     "AnimationMixer",
     "AnimationClip",
@@ -362,8 +369,12 @@ engine.collect();
   const track = new (web.VectorKeyframeTrack as Ctor)(".position", [0, 1], [0, 0, 0, 1, 2, 3]);
   const clip = new (web.AnimationClip as Ctor)("move", 1, [track]);
   const mixer = new (web.AnimationMixer as Ctor)(root);
-  const action = mixer.clipAction(clip) as Record<string, (...args: unknown[]) => unknown> &
-    Record<string, unknown>;
+  const action = mixer.clipAction(clip) as {
+    setLoop(mode: unknown, repetitions: number): unknown;
+    play(): unknown;
+    reset(): unknown;
+    clampWhenFinished: boolean;
+  };
   action.setLoop(web.LoopOnce, 1);
   action.clampWhenFinished = true;
   action.play();

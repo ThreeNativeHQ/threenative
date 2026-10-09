@@ -2,12 +2,14 @@
  * three's `pass(scene, camera)`, `mrt()` and the MRT slots over the engine's own scene pass, for both
  * back ends (the V8 player and the Wasm engine). The engine draws one scene pass whose targets are
  * the renderer's colour ("output"), depth and, with an MRT that asks for it, view normals; a pass's
- * texture nodes name those targets, and nothing reads the slots as nodes.
+ * texture nodes name those targets. `normalView` is the engine's TSL node, as in three, so a graph
+ * reads it and `mrt({ normal: normalView })` names the normal target by that node's identity.
  */
 
 interface IPassTsl {
   texture(target: { readonly name: string }, uv: unknown): unknown;
   uv(): unknown;
+  readonly normalView: unknown;
 }
 
 interface IMRTSlot {
@@ -17,7 +19,7 @@ interface IMRTSlot {
 
 interface IMRTNode {
   readonly isMRTNode: true;
-  readonly outputs: Readonly<Record<string, IMRTSlot>>;
+  readonly outputs: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -27,15 +29,15 @@ interface IMRTNode {
 export function definePass(tsl: IPassTsl, onTarget?: (scene: unknown, camera: unknown) => void) {
   const slot = (name: string): IMRTSlot => Object.freeze({ isMRTSlot: true, name });
   const output = slot("output");
-  const normalView = slot("normalView");
+  const normalView = tsl.normalView;
   const metalness = slot("metalness");
   const roughness = slot("roughness");
 
-  function mrt(outputs: Record<string, IMRTSlot>): IMRTNode {
+  function mrt(outputs: Record<string, unknown>): IMRTNode {
     for (const [name, value] of Object.entries(outputs))
       if (
-        value?.isMRTSlot !== true ||
-        (name !== value.name && !(name === "normal" && value === normalView))
+        !(name === "normal" && value === normalView) &&
+        ((value as IMRTSlot | null)?.isMRTSlot !== true || name !== (value as IMRTSlot).name)
       )
         throw new Error(
           `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView, metalness, roughness`,

@@ -699,6 +699,31 @@ void tslApi() {
             std::fprintf(stderr, "TSL basic vertex:\n%s\n", vertex.c_str());
     } else CHECK(false);
 
+    // The templates' rim light (render/backlightMaterial.ts): normalView and positionViewDirection are
+    // nodes, and cameraViewMatrix.transformDirection(direction) is three's normalize((M * vec4(d, 0)).xyz).
+    v8::Local<v8::Value> rim;
+    const bool rimRan = v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(rt.isolate, R"JS((() => {
+        const m = new MeshStandardNodeMaterial();
+        const N = tsl.normalView.normalize(), V = tsl.positionViewDirection.normalize();
+        const L = tsl.cameraViewMatrix.transformDirection(tsl.uniform(new Vector3(0, 1, 0)));
+        const T = tsl.transformDirection(tsl.vec3(1, 0, 0), tsl.cameraViewMatrix);
+        m.emissiveNode = tsl.vec3(tsl.dot(N, V)).mul(tsl.dot(L, N)).add(T);
+        return m;
+    })())JS")).ToLocalChecked()->Run(ctx).ToLocal(&rim);
+    CHECK(rimRan);
+    tn_handle_t rimMaterial{};
+    if (rimRan && adapter.unwrap(rim, rimMaterial)) {
+        namespace s = tn::engine::shader;
+        s::VertexVariant variant;
+        variant.nodes.emissiveNode = tn::abi::shaderNode(rimMaterial, "emissiveNode");
+        const auto programs = s::buildStandard(s::StandardMaterial{}, variant);
+        CHECK(programs.diagnostics.empty() && programs.vertex.ok() && programs.fragment.ok());
+        const std::string fragment = programs.fragment.dump(true);
+        CHECK(fragment.find("varying:normalView") != std::string::npos);
+        CHECK(fragment.find("varying:positionView") != std::string::npos);
+        CHECK(s::WgslEmitter::emit(programs.vertex).ok() && s::WgslEmitter::emit(programs.fragment, 1).ok());
+    } else CHECK(false);
+
     // Two different nodes under one explicit varying name are refused, not silently merged.
     v8::Local<v8::Value> clash;
     CHECK(v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(rt.isolate, R"JS((() => {
