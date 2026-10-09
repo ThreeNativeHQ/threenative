@@ -127,7 +127,8 @@ constexpr const char* kSlotNames[] = {
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
     "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "cameraPosition", "cameraProjectionMatrix",
     "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform", "specularColorMapUvTransform",
-    "specularIntensityMapUvTransform", "aoMapIntensity",
+    "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
+    "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale",
     "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
@@ -1381,7 +1382,8 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
         if (a.first != b.first) return a.first < b.first;
         return a.second->id < b.second->id;
     });
-    std::sort(transparent.begin(), transparent.end(), [](const auto& a, const auto& b) {
+    // Stable: a transparent DoubleSide material's BackSide pass stays right before its FrontSide pass.
+    std::stable_sort(transparent.begin(), transparent.end(), [](const auto& a, const auto& b) {
         if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
         if (a.first != b.first) return a.first > b.first;
         return a.second->id < b.second->id;
@@ -1661,6 +1663,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
         v.sprite = item.sprite;
         v.backSide = item.side == 1;
+        v.doubleSide = item.side == 2;
         v.instanced = item.instanceMatrices != nullptr;
         v.instanceColor = item.instanceColors != nullptr;
         v.instanceStorage = v.instanced;
@@ -1676,7 +1679,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         v.map = item.map != nullptr;
         v.normalMap = item.normalMap != nullptr;
         for (int k = 0; k < shader::kPbrMapCount; ++k)
-            if (item.pbrMaps[k]) v.pbrMaps |= static_cast<uint8_t>(1u << k);
+            if (item.pbrMaps[k]) v.pbrMaps |= static_cast<uint16_t>(1u << k);
+        // three's useClearcoat: a physical material with clearcoat > 0 builds the clearcoat layer.
+        v.clearcoat = item.kind == MaterialKind::Physical && item.material && item.material->clearcoat > 0;
         v.mapSRGB = false;  // WGSLNodeBuilder uses GPU sRGB formats; no shader colour conversion.
         return v;
     };
@@ -1748,6 +1753,9 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         put(frameUniforms_, f, fs[kIor], std::array<double, 1>{m.ior});
         put(frameUniforms_, f, fs[kSpecularIntensity], std::array<double, 1>{m.specularIntensity});
         put(frameUniforms_, f, fs[kSpecularColor], std::array<double, 3>{m.specularColor[0], m.specularColor[1], m.specularColor[2]});
+        put(frameUniforms_, f, fs[kClearcoat], std::array<double, 1>{m.clearcoat});
+        put(frameUniforms_, f, fs[kClearcoatRoughness], std::array<double, 1>{m.clearcoatRoughness});
+        put(frameUniforms_, f, fs[kClearcoatNormalScale], std::array<double, 2>{m.clearcoatNormalScale[0], m.clearcoatNormalScale[1]});
         if (item.background) put(frameUniforms_, f, fs[kBackgroundRotation], item.backgroundRotation);
         if (item.fog) {
             const auto& fog = *item.fog;

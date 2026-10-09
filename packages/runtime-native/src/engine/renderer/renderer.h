@@ -58,7 +58,7 @@ struct DrawItem {
     const Texture* normalMap = nullptr;
     double normalScaleX = 1, normalScaleY = 1;
     /** MeshStandardMaterial's roughnessMap, metalnessMap, aoMap and emissiveMap, and MeshPhysicalMaterial's
-     *  specularColorMap and specularIntensityMap, by shader::PbrMap (decoded image, uv present). */
+     *  specularColorMap, specularIntensityMap and clearcoat maps, by shader::PbrMap (decoded image, uv present). */
     std::array<const Texture*, shader::kPbrMapCount> pbrMaps{};
     double aoMapIntensity = 1;
     /** The environment (scene.environment or material.envMap): its PMREM is sampled for IBL. */
@@ -335,7 +335,8 @@ private:
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
         kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kCameraPosition, kCameraProjectionMatrix,
         kRoughnessMapUvTransform, kMetalnessMapUvTransform, kAoMapUvTransform, kEmissiveMapUvTransform, kSpecularColorMapUvTransform,
-        kSpecularIntensityMapUvTransform, kAoMapIntensity,
+        kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
+        kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale,
         kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).

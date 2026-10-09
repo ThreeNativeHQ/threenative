@@ -120,6 +120,8 @@ std::array<double, 3> normalized(std::array<double, 3> v) {
 }
 
 constexpr double kRadToDeg = 180 / 3.141592653589793; // MathUtils.RAD2DEG
+// A transparent DoubleSide draw's BackSide pass keys its GPU record apart from its FrontSide pass.
+constexpr uint64_t kBackSidePassKey = uint64_t(1) << 62;
 
 // LightShadow.updateMatrices in three's WebGPU coordinate system: the shadow camera stands at the
 // light, looks at the target, and `matrix` is the uv/depth bias matrix times its projection-view.
@@ -182,7 +184,7 @@ DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 
     return out;
 }
 
-/** How many PbrMaps a material reads: Standard its four, Physical also the specular two, others none. */
+/** How many PbrMaps a material reads: Standard its four, Physical also its specular and clearcoat maps, others none. */
 int pbrMapsRead(const Material& material) {
     return material.type == MaterialType::Physical ? shader::kPbrMapCount
            : material.type == MaterialType::Standard ? shader::kStandardPbrMapCount : 0;
@@ -229,6 +231,8 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.specularIntensity = float(m.specularIntensity);
     p.specularColor = {float(m.specularColor.r), float(m.specularColor.g), float(m.specularColor.b)};
     p.clearcoat = float(m.clearcoat);
+    p.clearcoatRoughness = float(m.clearcoatRoughness);
+    p.clearcoatNormalScale = {float(m.clearcoatNormalScale.x), float(m.clearcoatNormalScale.y)};
     p.sheen = float(m.sheen);
     p.transmission = float(m.transmission);
     p.iridescence = float(m.iridescence);
@@ -1050,6 +1054,23 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
         if (!env && world) rotation.makeRotationFromEuler(world->environmentRotation).transpose();
         item.envRotation = toArray(rotation);
         if (item.envMap && !item.envMap->hasImage()) item.envMap = nullptr;
+    }
+    // three's Renderer.renderObject: a transparent DoubleSide material (forceSinglePass false) draws
+    // twice, its BackSide pass and then its FrontSide pass, so the far half composites under the near.
+    if (std::any_of(items.begin(), items.end(), [](const DrawItem& d) { return d.transparent && d.side == 2; })) {
+        std::vector<DrawItem> passes;
+        passes.reserve(items.size() + 8);
+        for (DrawItem& item : items) {
+            if (item.transparent && item.side == 2) {
+                DrawItem& back = passes.emplace_back(item);
+                back.side = 1;
+                back.key ^= kBackSidePassKey;  // its own GPU record beside the front pass's
+                back.castShadow = false;
+                item.side = 0;
+            }
+            passes.push_back(std::move(item));
+        }
+        items = std::move(passes);
     }
     if (world && world->backgroundTexture) {
         if (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0)
