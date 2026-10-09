@@ -560,6 +560,7 @@ Renderer::~Renderer() {
     releaseTargets();
     releaseOutputGroup();
     if (overlayView_) wgpuTextureViewRelease(overlayView_);
+    if (presentedView_) wgpuTextureViewRelease(presentedView_);
     wgpuSamplerRelease(outputSampler_);
     if (outputPipelineLayout_) wgpuPipelineLayoutRelease(outputPipelineLayout_);
     if (outputLayout_) wgpuBindGroupLayoutRelease(outputLayout_);
@@ -2625,6 +2626,23 @@ GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done) {
 }
 
 GpuStatus Renderer::readPixels(ReadbackCallback done) { return gpu_.readTexture(color_, std::move(done)); }
+
+GpuStatus Renderer::readPresented(ReadbackCallback done) {
+    if (!colorView_) return GpuStatus::InvalidHandle;
+    if (!presentedView_ || presentedWidth_ != width_ || presentedHeight_ != height_) {
+        if (presentedView_) {
+            wgpuTextureViewRelease(presentedView_);
+            gpu_.destroy(presented_);
+        }
+        presented_ = gpu_.createTexture(width_, height_, WGPUTextureFormat_RGBA8Unorm,
+                                        WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+        presentedView_ = view2d(gpu_.texture(presented_), WGPUTextureFormat_RGBA8Unorm);
+        presentedWidth_ = width_;
+        presentedHeight_ = height_;
+    }
+    if (!blitTo(nullptr, presentedView_, WGPUTextureFormat_RGBA8Unorm)) return GpuStatus::InvalidHandle;
+    return gpu_.readTexture(presented_, std::move(done));
+}
 
 // The output triangle again, this time sampling the finished RGBA8 frame into a window surface. The
 // program's own variant is chosen by the target format, so a BGRA swapchain gets a BGRA pipeline.

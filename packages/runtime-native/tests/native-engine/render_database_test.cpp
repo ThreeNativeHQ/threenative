@@ -1730,6 +1730,19 @@ void overlayOverFrame() {
     renderer.setOverlay(padded.data(), 4, 4, 7, 24, true);
     CHECK(frame() == over);
     renderer.setOverlay(page.data(), 4, 4, 1);
+    // A screenshot reads the presented frame, the page over the world.
+    std::vector<uint8_t> presented;
+    bool read = false;
+    CHECK(renderer.readPresented([&](GpuStatus status, std::vector<uint8_t> pixels) {
+        if (status == GpuStatus::Ok) presented = std::move(pixels);
+        read = true;
+    }) == GpuStatus::Ok);
+    for (int i = 0; i < 4000 && !read; ++i) {
+        renderer.poll();
+        events.drain();
+    }
+    const size_t centre = (8 * 16 + 8) * 4;
+    CHECK(presented.size() == 16 * 16 * 4 && presented[centre] == over[0] && presented[centre + 1] == over[1]);
     const uint64_t uploads = renderer.overlayUploads();
     renderer.setOverlay(page.data(), 4, 4, 1);
     frame();

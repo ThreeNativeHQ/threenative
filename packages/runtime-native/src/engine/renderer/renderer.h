@@ -324,6 +324,8 @@ public:
     };
     /** The last frame's pixels, RGBA8 rows tightly packed, delivered from poll(). */
     GpuStatus readPixels(ReadbackCallback done);
+    /** The last frame as presented, the UI overlay drawn over it (PRD-554), read back: what a player sees. */
+    GpuStatus readPresented(ReadbackCallback done);
     void poll() { gpu_.poll(); }
     EventQueue& events() { return events_; }
 
@@ -517,6 +519,9 @@ private:
     uint64_t overlayVersion_ = 0, overlayUploads_ = 0;
     bool overlayBgra_ = false;
     std::vector<uint8_t> overlayRows_;  // a padded frame's rows, packed for the upload
+    Handle presented_;  // readPresented's RGBA8 copy of the presented frame
+    WGPUTextureView presentedView_ = nullptr;
+    uint32_t presentedWidth_ = 0, presentedHeight_ = 0;
     WGPUTexture depth_ = nullptr;
     WGPUTextureView colorView_ = nullptr;
     WGPUTextureView depthView_ = nullptr;

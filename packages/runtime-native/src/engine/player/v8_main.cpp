@@ -47,6 +47,7 @@
 #include "engine/inspect/endpoint.h"
 #include "engine/player/run.h"
 #include "mystral/platform/ui_overlay.h"
+#include <SDL3/SDL.h>
 #include "engine/scene/camera.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/material.h"
@@ -87,6 +88,18 @@ globalThis.tn = {
 };
 )JS";
 
+// `__tnHeldCodes()`: every held key by code, so the host shim raises keydown/keyup for any key a game
+// binds (Midway's KeyW throttle), not only the arrows.
+void heldCodesCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto* codes = static_cast<std::set<std::string>*>(info.Data().As<v8::External>()->Value());
+    v8::Isolate* isolate = info.GetIsolate();
+    v8::Local<v8::Array> list = v8::Array::New(isolate, int(codes->size()));
+    uint32_t index = 0;
+    for (const std::string& code : *codes)
+        list->Set(isolate->GetCurrentContext(), index++, v8str(isolate, code)).Check();
+    info.GetReturnValue().Set(list);
+}
+
 void isDownCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto* held = static_cast<std::set<std::string>*>(info.Data().As<v8::External>()->Value());
     v8::String::Utf8Value key(info.GetIsolate(), info[0]);
@@ -104,6 +117,21 @@ void uiPostCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
 void uiAttachedCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
     info.GetReturnValue().Set(mystral::platform::uiOverlayAttached());
+}
+
+// `__tnPointerCapture(on)`: pointer lock as the legacy host gives it (runtime.cpp requestPointerLock),
+// SDL relative mouse mode on the player's window; a refusal throws by name, as a browser's would.
+void pointerCaptureCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    const bool on = info.Length() > 0 && info[0]->BooleanValue(info.GetIsolate());
+    int count = 0;
+    SDL_Window** windows = SDL_GetWindows(&count);
+    SDL_Window* window = windows != nullptr && count > 0 ? windows[0] : nullptr;
+    SDL_free(windows);
+    if (window == nullptr || !SDL_SetWindowRelativeMouseMode(window, on)) {
+        const std::string message = std::string(on ? "Pointer capture failed" : "Pointer capture release failed") +
+                                    (window == nullptr ? ": the player has no window" : std::string(": ") + SDL_GetError());
+        info.GetIsolate()->ThrowException(v8::Exception::Error(v8str(info.GetIsolate(), message)));
+    }
 }
 
 // The UI composite's cost for the frame budget's `ui` phase; 0 until the player composites (PRD-554 phase 2).
@@ -158,7 +186,8 @@ class V8Game {
     // The host co-owns the world: the JS `tn.scene`/`tn.camera` is garbage after start(), and a
     // collected wrapper releases its handle, which must not free the scene under the frame loop.
     std::shared_ptr<void> sceneHold_, cameraHold_;
-    std::set<std::string> held_;  // keys the game sees as held, filled from the endpoint each tick
+    std::set<std::string> held_;  // keys the game sees as held, by DOM key and by code, filled each tick
+    std::set<std::string> heldCodes_;  // the same keys by code alone (`KeyW`), for the keydown events core reads
     inspect::Endpoint* endpoint_ = nullptr;
     std::string assetPath_;
     std::vector<uint8_t> assetBytes_;
@@ -639,11 +668,16 @@ bool V8Game::start(const std::string& path, std::string& error) {
 
     v8::Local<v8::External> held = v8::External::New(isolate_, &held_);
     ctx->Global()
+        ->Set(ctx, v8str(isolate_, "__tnHeldCodes"),
+              v8::Function::New(ctx, &heldCodesCallback, v8::External::New(isolate_, &heldCodes_)).ToLocalChecked())
+        .Check();
+    ctx->Global()
         ->Set(ctx, v8str(isolate_, "__tnIsDown"), v8::Function::New(ctx, &isDownCallback, held).ToLocalChecked())
         .Check();
     for (const auto& [name, callback] : {std::pair{"__tnUiPost", &uiPostCallback},
                                          std::pair{"__tnUiOverlayAttached", &uiAttachedCallback},
-                                         std::pair{"__tnUiCompositeMs", &uiCompositeMsCallback}})
+                                         std::pair{"__tnUiCompositeMs", &uiCompositeMsCallback},
+                                         std::pair{"__tnPointerCapture", &pointerCaptureCallback}})
         ctx->Global()->Set(ctx, v8str(isolate_, name), v8::Function::New(ctx, callback).ToLocalChecked()).Check();
 
     std::ifstream file(path);
@@ -784,10 +818,23 @@ void V8Game::tick(double dt) {
         // The tick boundary: input queued since the last tick is applied to the key set before the
         // game's update reads it, so input injected for tick N is seen by tick N.
         for (const inspect::InputEvent& event : endpoint_->takeInput()) {
-            if (event.type == "keydown")
+            if (event.type == "keydown") {
                 held_.insert(event.key);
-            else if (event.type == "keyup")
+                held_.insert(event.code);
+                heldCodes_.insert(event.code);
+            } else if (event.type == "keyup") {
                 held_.erase(event.key);
+                held_.erase(event.code);
+                heldCodes_.erase(event.code);
+            }
+            // A pointer goes to the UI first, through the legacy host's hit test and gesture latch
+            // (PRD-554): a press on a published UI island is the page's, any other is the game's.
+            // The runner sends viewport pixels, which are the drawing buffer's; the hit test takes 0..1.
+            else if (event.type.rfind("pointer", 0) == 0 && mystral::platform::uiOverlayAttached() && renderer_ &&
+                     renderer_->width() > 0 && renderer_->height() > 0)
+                mystral::platform::uiOverlayRoutePointer(event.type.c_str(), float(event.x / renderer_->width()),
+                                                         float(event.y / renderer_->height()), int(event.buttons),
+                                                         event.pointerId);
         }
     }
     // Finished decodes settle and ended sources fire `onended` before the game's update reads them.
@@ -1012,6 +1059,14 @@ int main(int argc, char** argv) {
             const char* renderer = std::getenv("TN_UI_RENDERER");
             configured.cssUi = renderer != nullptr && std::string(renderer) == "native-css";
             configured.uiFrame = [&game] { game.uiFrame(); };
+#if defined(__linux__) && !defined(__ANDROID__)
+            if (!configured.cssUi) {
+                // As the legacy host does (cli/main.cpp): the web view attaches to an X11 surface, so
+                // GTK and SDL both take X11 before either starts, even inside a Wayland session.
+                SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "x11", SDL_HINT_OVERRIDE);
+                setenv("GDK_BACKEND", "x11", 1);
+            }
+#endif
         }
     }
     configured.observe = [&game](const std::string& method, const json::Value* argument,

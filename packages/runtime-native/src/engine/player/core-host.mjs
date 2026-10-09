@@ -8,7 +8,6 @@ const frames = new Map();
 const timers = new Map();
 const listeners = new Map();
 const held = new Set();
-const keys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 
 export const canvas = {
   width: 1280, height: 720, clientWidth: 1280, clientHeight: 720, parentElement: null,
@@ -18,6 +17,14 @@ export const canvas = {
   },
   removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
 };
+// Pointer lock on the canvas core reads input from, as the legacy host gives it (SDL relative mouse
+// mode, __tnPointerCapture): core's captureMouse/releaseMouse, with the pointerlockchange they await.
+const pointerLock = (on) => {
+  globalThis.__tnPointerCapture(on);
+  for (const callback of [...(listeners.get("pointerlockchange") ?? [])]) callback({ type: "pointerlockchange" });
+};
+canvas.requestPointerLock = () => pointerLock(true);
+canvas.exitPointerLock = () => pointerLock(false);
 globalThis.performance = { now: () => time };
 globalThis.console = Object.fromEntries(["log", "info", "warn", "error"].map((name) => [name, (...args) => globalThis.tn.log(...args)]));
 globalThis.requestAnimationFrame = (callback) => {
@@ -49,12 +56,14 @@ globalThis.tn.onFrame((frameMs) => {
 
 globalThis.tn.onUpdate((dt) => {
   time += dt * 1000;
-  for (const key of keys) {
-    const down = globalThis.tn.input.isDown(key);
-    if (down === held.has(key)) continue;
-    if (down) held.add(key); else held.delete(key);
-    for (const callback of listeners.get(down ? "keydown" : "keyup") ?? []) callback({ code: key });
-  }
+  // Every held key by code (KeyW, ArrowUp), as keydown/keyup events with the DOM key beside the code.
+  const now = new Set(globalThis.__tnHeldCodes());
+  const send = (type, code) => {
+    const key = /^Key[A-Z]$/.test(code) ? code[3].toLowerCase() : code;
+    for (const callback of listeners.get(type) ?? []) callback({ code, key });
+  };
+  for (const code of now) if (!held.has(code)) { held.add(code); send("keydown", code); }
+  for (const code of [...held]) if (!now.has(code)) { held.delete(code); send("keyup", code); }
   for (const [id, timer] of timers) {
     if (timer.due > time) continue;
     if (timer.interval === undefined) timers.delete(id);

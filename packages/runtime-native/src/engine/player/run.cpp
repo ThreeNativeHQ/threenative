@@ -146,6 +146,19 @@ bool pumpEvents(Window& window) {
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             return false;
+        // The mouse reaches an attached UI first, as on the legacy host (PRD-554), in window-normalized
+        // coordinates.
+        if (mystral::platform::uiOverlayAttached() && window.width > 0 && window.height > 0 &&
+            (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+             event.type == SDL_EVENT_MOUSE_MOTION)) {
+            const bool motion = event.type == SDL_EVENT_MOUSE_MOTION;
+            const float x = motion ? event.motion.x : event.button.x, y = motion ? event.motion.y : event.button.y;
+            const SDL_MouseButtonFlags held = SDL_GetMouseState(nullptr, nullptr);
+            int buttons = (held & SDL_BUTTON_LMASK ? 1 : 0) | (held & SDL_BUTTON_RMASK ? 2 : 0) | (held & SDL_BUTTON_MMASK ? 4 : 0);
+            const char* type = motion ? "pointermove" : event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "pointerdown" : "pointerup";
+            mystral::platform::uiOverlayRoutePointer(type, x / float(window.width), y / float(window.height), buttons, 1);
+            continue;
+        }
         if (event.type != SDL_EVENT_WINDOW_RESIZED && event.type != SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
             continue;
         int width = 0, height = 0;
@@ -349,7 +362,11 @@ int run(const Game& game) {
         // A screenshot answer is a real frame of this loop, so it is read back from the renderer the
         // moment the mailbox asks for one. The readback lands a few frames later.
         if (mailbox.screenshotRequested() && !readbackInFlight) {
-            readbackInFlight = renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> pixels) {
+            // With a UI the answer is the presented frame, the page drawn over it, as a player sees it.
+            const auto read = [&](ReadbackCallback done) {
+                return game.uiRoot.empty() ? renderer.readPixels(std::move(done)) : renderer.readPresented(std::move(done));
+            };
+            readbackInFlight = read([&](GpuStatus status, std::vector<uint8_t> pixels) {
                 readbackInFlight = false;
                 if (status == GpuStatus::Ok) {
                     mailbox.answerScreenshot(pixels, renderer.width(), renderer.height());

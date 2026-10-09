@@ -228,6 +228,11 @@ if(TARGET v8::v8 AND MYSTRAL_USE_V8 AND NOT MYSTRAL_PLATFORM STREQUAL "ios")
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-ui-bridge.mjs
                     $<TARGET_FILE:tn-native-engine-player-v8>)
             set_tests_properties(native_engine_player_ui_bridge PROPERTIES LABELS "native-engine")
+            add_test(NAME native_engine_player_ui_input
+                COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/../../scripts/xvfb.sh ${TN_NODE_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-ui-input.mjs
+                    $<TARGET_FILE:tn-native-engine-player-v8>)
+            set_tests_properties(native_engine_player_ui_input PROPERTIES LABELS "native-engine")
         endif()
         # PRD-551: QuadMesh into RenderTargets and readRenderTargetPixelsAsync on the real player (headless GPU).
         add_test(NAME native_engine_player_render_target
