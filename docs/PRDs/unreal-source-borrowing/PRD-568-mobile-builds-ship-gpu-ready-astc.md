@@ -4,7 +4,7 @@
 **Priority:** P2 — Mobile ASTC cook, decoder-free admission and the emulator proof are all unbuilt.
 **Complexity:** 4 (MEDIUM) — 1–5 implementation files (`packages/assets` texture pass, `create-threenative` build gate, the asset loader route) (+1); the cook output crosses into the native package (+2); one new output variant (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-VQ-01](../assets/PRD-VQ-01-native-asset-capabilities.md) (owns runtime-aware decoder admission; this PRD adds a format that needs no decoder)
+**Depends on:** [PRD-VQ-01](../done/PRD-VQ-01-native-asset-capabilities.md) (owns runtime-aware decoder admission; this PRD adds a format that needs no decoder)
 
 ## Context
 
