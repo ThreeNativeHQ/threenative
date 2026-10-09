@@ -52,6 +52,11 @@ The generator should expose the mechanism once; the density rules and looks stay
   (released at once) → green; startup and game specs 99/99; core tsc clean.
 - [ ] The preview's spawn gate uses it and drops its `beforeRender` duplicate. proof:
   `pnpm --filter strata-terrain-preview test:terrain:web` reaches its assertions
+  Open: the change is in (`game.ts` passes a predicate to `ctx.startup.hold`). The 2026-10-09 run
+  (host load 24) settled the spawn gate (no `TN_STRATA_SPAWN_FAILURE`, about 430 s into the scenario
+  past a world transition) but ended at exit 2 on a 15 s bridge `sample` timeout amid 14 main-thread
+  stalls of 2.5–11.6 s. The PRD-466 branch shows the same stalls without this change, so they are a
+  separate defect; the box stays open until a run reaches its assertions.
 
 ### Acceptance
 
