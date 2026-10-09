@@ -72,6 +72,8 @@ struct DrawItem {
     const Texture* pmremMap = nullptr;
     /** A node graph's texture(object) samples, by binding name (`t_<name>`); null when it has none. */
     const std::vector<std::pair<std::string, const Texture*>>* nodeTextures = nullptr;
+    /** A node graph's storage(attribute) reads, by storage buffer name; null when it has none. */
+    const std::vector<std::pair<std::string, const BufferAttribute*>>* nodeStorages = nullptr;
     Matrix pmremRotation{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};  // three's materialEnvRotation
     /** A node graph's reflector (an engine::Reflector) and the view of its mirrored pass, sampled as "reflector". */
     const void* reflector = nullptr;

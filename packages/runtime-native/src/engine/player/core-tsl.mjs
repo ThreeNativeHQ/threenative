@@ -23,7 +23,7 @@ export const {
 } = globalThis.tsl;
 export const {
   oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection, normalLocal, tangentLocal,
-  positionPrevious,
+  positionPrevious, storage,
   atan, mod, fwidth, saturation, mat2, hash, time, transformDirection,
 } = globalThis.tsl;
 

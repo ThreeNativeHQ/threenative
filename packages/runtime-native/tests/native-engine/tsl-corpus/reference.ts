@@ -56,6 +56,7 @@ import {
   smoothstep,
   sqrt,
   step,
+  storage,
   tangentLocal,
   texture,
   uint,
@@ -66,7 +67,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { NodeBuilder, StackNode } from "three/webgpu";
+import { NodeBuilder, StackNode, StorageBufferAttribute } from "three/webgpu";
 
 type TslNode = {
   isNode?: boolean;
@@ -296,6 +297,10 @@ albedo.name = "albedo";
 const u = uniform(0.5).setName("u");
 const tint = uniform(vec3(1, 0.5, 0.25)).setName("tint");
 const time = uniform(0).setName("time");
+// core's projection-skinned palette: storage() over a StorageBufferAttribute, read per instance.
+const palette = storage(new StorageBufferAttribute(16, 4), "vec4", 16)
+  .setName("palette")
+  .toReadOnly();
 
 /** name -> the output it writes and the expression; the C++ twin builds the same, in order. */
 export const CORPUS: [string, string, unknown][] = [
@@ -341,6 +346,7 @@ export const CORPUS: [string, string, unknown][] = [
   ["normal-local", "position", vec4(positionLocal.add(normalLocal.mul(u)), 1)],
   ["tangent-local", "position", vec4(positionLocal.add(tangentLocal.mul(u)), 1)],
   ["position-previous", "color", vec4(positionPrevious, 1)],
+  ["storage-attribute", "position", vec4(positionLocal.add(palette.element(instanceIndex).xyz), 1)],
 ];
 
 /** Run a deferred TSL body (an If/Else branch, a Loop body, an Fn) into a stack of its own. */

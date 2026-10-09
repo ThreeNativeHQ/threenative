@@ -200,7 +200,10 @@ export function isTslNode(value: unknown): value is ITslNode {
  * the material names), and reflector takes its target and virtual camera.
  */
 function takesEngineObject(name: string, index: number): boolean {
-  return (index === 0 && name === "pmremTexture") || (index < 2 && name === "reflector");
+  return (
+    (index === 0 && (name === "pmremTexture" || name === "storage:object")) ||
+    (index < 2 && name === "reflector")
+  );
 }
 
 /**
@@ -356,6 +359,22 @@ export function defineTsl(runtime: ITslRuntime): {
         return buffer;
       },
       element: (index: unknown) => wrap(call("storage:element", null, [label, type, index])),
+    };
+    return buffer;
+  };
+  // storage(attribute, type, count): a storage buffer over an engine BufferAttribute's data; setName
+  // labels it, element(index) reads one element (StorageBufferNode r185).
+  exports.storage = (attribute: unknown, type: unknown) => {
+    let label = "";
+    const buffer = {
+      setName(name: unknown) {
+        label = String(name);
+        return buffer;
+      },
+      toReadOnly: () => buffer,
+      toReadWrite: () => buffer,
+      element: (index: unknown) =>
+        wrap(call("storage:object", null, [attribute, type, label, index])),
     };
     return buffer;
   };

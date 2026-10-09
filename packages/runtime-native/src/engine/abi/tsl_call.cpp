@@ -36,6 +36,8 @@ Type type(const std::string& name) {
     if (name == "vec2") return Type::vec(2);
     if (name == "vec3") return Type::vec(3);
     if (name == "vec4") return Type::vec(4);
+    if (name == "mat3") return Type::mat(3, 3);
+    if (name == "mat4") return Type::mat(4, 4);
     throw std::runtime_error("unsupported TSL type: " + name);
 }
 
@@ -74,6 +76,19 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         for (auto& [label, node] : tslConstants())
             if (label == name.substr(9)) return node;
         return {};
+    }
+    // TSL storage(attribute, type, count).element(index): the attribute's own data, bound under the
+    // label setName gave it or, unnamed, one derived from the attribute (StorageBufferNode r185).
+    if (!method && name == "storage:object") {
+        arity(4);
+        if (args[0].kind != TslArg::Kind::Object || args[0].cls.find("BufferAttribute") == std::string::npos ||
+            !args[0].object)
+            throw std::runtime_error("storage needs an engine BufferAttribute");
+        std::string label = text(args[2]);
+        if (label.empty()) label = "nodeStorage" + std::to_string(reinterpret_cast<uintptr_t>(args[0].object.get()));
+        g::Storage buffer = g::storage(label, type(text(args[1])));
+        buffer.object = args[0].object;
+        return buffer.element(arg(3));
     }
     if (!method && name == "storage:element") {  // instancedArray(n, type).setName(name).element(index)
         arity(3);

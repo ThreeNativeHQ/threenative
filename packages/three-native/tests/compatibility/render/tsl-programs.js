@@ -17,6 +17,7 @@ import {
   RenderTarget,
   SRGBColorSpace,
   Scene,
+  StorageBufferAttribute,
   Vector3,
 } from "three";
 import {
@@ -49,6 +50,7 @@ import {
   screenUV,
   sin,
   smoothstep,
+  storage,
   texture,
   uint,
   uniform,
@@ -710,6 +712,20 @@ export const programs = {
     target.geometry = geometry;
     target.material.positionNode = positionLocal.add(attribute("offset", "vec3"));
     target.material.colorNode = vec4(varying(attribute("tint", "vec3")), 1);
+  },
+  async "storage-attribute"({ target }) {
+    const base = new PlaneGeometry(0.5, 0.5);
+    const geometry = new InstancedBufferGeometry();
+    geometry.setIndex(base.index);
+    geometry.setAttribute("position", base.getAttribute("position"));
+    geometry.instanceCount = 5;
+    const offsets = [-1, 0.5, 0, 0, 0, 0.5, 0, 0, 1, 0.5, 0, 0, -1, -0.5, 0, 0, 0, -0.5, 0, 0];
+    const palette = storage(new StorageBufferAttribute(new Float32Array(offsets), 4), "vec4", 5);
+    target.geometry = geometry;
+    target.material.positionNode = positionLocal.add(
+      palette.toReadOnly().element(instanceIndex).xyz,
+    );
+    target.material.colorNode = vec4(1, 0.6, 0.2, 1);
   },
   async "texture-object"({ target }) {
     const bands = equirectSky();

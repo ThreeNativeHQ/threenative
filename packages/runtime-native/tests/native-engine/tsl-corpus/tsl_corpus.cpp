@@ -117,6 +117,9 @@ int main() {
     graph("tangent-local", "position",
           [] { return vec4({positionLocal().add(attribute("tangent", Type::vec(4)).xyz().mul(u())), 1}); });
     graph("position-previous", "color", [] { return vec4({program().varying("positionPrevious", Type::vec(3)), 1}); });
+    graph("storage-attribute", "position", [] {
+        return vec4({positionLocal().add(Node(storage("palette", Type::vec(4)).element(instanceIndex())).xyz()), 1});
+    });
 
     compute("fn-if-store", [](Storage positions) {
         const Var acc = toVar(float_(0));

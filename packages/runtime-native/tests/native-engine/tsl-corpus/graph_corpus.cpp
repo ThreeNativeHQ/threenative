@@ -160,6 +160,10 @@ int main() {
     });
     shaderGraph("position-previous", "color",
           [] { return vec4({varying(attribute("position", Type::vec(3)), "positionPrevious"), float_(1)}); });
+    shaderGraph("storage-attribute", "position", [] {
+        return vec4({add(positionLocal(), swizzle(storage("palette", Type::vec(4)).element(instanceIndex()), "xyz")),
+                     float_(1)});
+    });
 
     compute("fn-if-store", [](Block& b, Storage positions) {
         const Var acc = b.var(float_(0));

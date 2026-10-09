@@ -16,6 +16,8 @@ struct Tsl::Wrapper {
     Tsl* owner;
     g::Node node;
     g::Storage storage;
+    abi::TslArg attribute;  // storage(attribute, ...): the engine BufferAttribute it reads
+    std::string elementType;  // and the element type it was declared with
     v8::Global<v8::Object> object;
 };
 struct Tsl::Call {
@@ -60,6 +62,10 @@ Type type(const std::string& name) {
         return Type::vec(3);
     if (name == "vec4")
         return Type::vec(4);
+    if (name == "mat3")
+        return Type::mat(3, 3);
+    if (name == "mat4")
+        return Type::mat(4, 4);
     throw std::runtime_error("unsupported TSL type: " + name);
 }
 v8::Local<v8::Function> callback(v8::Local<v8::Value> value) {
@@ -120,7 +126,7 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
     // pmremTexture prefilters the texture object itself, not a map the material names; reflector
     // takes its target and virtual camera.
-    if ((index == 0 && name == "pmremTexture") || (index < 2 && name == "reflector")) {
+    if ((index == 0 && (name == "pmremTexture" || name == "storage")) || (index < 2 && name == "reflector")) {
         tn_handle_t handle{};
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object == nullptr) throw std::runtime_error(name + " needs an engine object as argument " + std::to_string(index));
@@ -259,9 +265,22 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(1);
         if (self->node)
             throw std::runtime_error("element requires a storage buffer");
+        if (self->attribute.kind == abi::TslArg::Kind::Object) {
+            return result(abi::tslCall("storage:object", nullptr,
+                {self->attribute, abi::TslArg::of(self->elementType), abi::TslArg::of(self->storage.name),
+                 abi::TslArg::of(arg(0))}, serial_));
+        }
         if (self->storage.name.empty())
             throw std::runtime_error("storage buffer needs setName");
         return result(self->storage.element(arg(0)));
+    }
+    // r185's toReadOnly()/toReadWrite() pick the buffer's access; the engine reads what a stage reads.
+    if (name == "toReadOnly" || name == "toReadWrite") {
+        arity(0);
+        if (self->node)
+            throw std::runtime_error(name + " requires a storage buffer");
+        info.GetReturnValue().Set(info.This());
+        return;
     }
     // The statement forms run against the shared open bodies (abi::TslScopes).
     const auto scoped = [&](const char* form, const abi::TslArg* receiver, std::vector<abi::TslArg> args) {
@@ -319,6 +338,22 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         inputs->Set(ctx, str(isolate_, "i"), wrap(index)).Check();
         return result(scoped("Loop", nullptr, {n, abi::TslArg::of(index), abi::TslArg::of(capture(body, inputs))}));
     }
+    // TSL storage(attribute, type, count): a storage buffer over the engine BufferAttribute's data.
+    if (name == "storage") {
+        if (info.Length() < 2 || info.Length() > 3)
+            throw std::runtime_error("expected an attribute, a type and an optional count");
+        abi::TslArg attribute = argument(name, 0, info.Length(), info[0]);
+        if (attribute.kind != abi::TslArg::Kind::Object)
+            throw std::runtime_error("storage needs an engine BufferAttribute");
+        const std::string elementType = text(isolate_, info[1]);
+        const auto object = wrap({});
+        Wrapper* buffer = wrapper(object);
+        buffer->storage = g::storage("", type(elementType));
+        buffer->attribute = std::move(attribute);
+        buffer->elementType = elementType;
+        info.GetReturnValue().Set(object);
+        return;
+    }
     if (name == "instancedArray") {
         arity(2);
         if (count(info[0]) == 0)
@@ -370,7 +405,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     const auto node = v8::ObjectTemplate::New(isolate_);
     node->SetInternalFieldCount(2);
     for (const char* name : {"add", "sub", "mul", "div", "negate", "lessThan", "greaterThan", "equal", "setName",
-                             "toVar", "assign", "element", "Else", "abs", "sin", "cos", "floor", "fract",
+                             "toVar", "assign", "element", "toReadOnly", "toReadWrite", "Else", "abs", "sin", "cos", "floor", "fract",
                              "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
                              "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
@@ -393,7 +428,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     nodeTemplate_.Reset(isolate_, node);
     const auto module = v8::Object::New(isolate_);
     for (const char* name : {"float",      "int",   "uint",    "vec2",      "vec3",   "vec4",     "uniform",
-                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",     "instancedArray",
+                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",     "instancedArray", "storage",
                              "add",        "sub",   "mul",     "div",       "negate", "lessThan", "greaterThan",
                              "equal",      "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",

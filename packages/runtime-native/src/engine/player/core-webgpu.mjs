@@ -1,5 +1,5 @@
 export * from "./core-three.mjs";
-import { unsupported } from "./core-three.mjs";
+import { BufferAttribute, unsupported } from "./core-three.mjs";
 import { syncUniforms } from "./core-tsl.mjs";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 
@@ -72,7 +72,13 @@ export class RenderPipeline {
 }
 // three's NodeUpdateType, the constants a node's update schedule names.
 export const NodeUpdateType = Object.freeze({ NONE: "none", FRAME: "frame", RENDER: "render", OBJECT: "object" });
-export const StorageBufferAttribute = unsupported;
+// three's StorageBufferAttribute: a BufferAttribute that TSL storage() binds as a storage buffer.
+export class StorageBufferAttribute extends BufferAttribute {
+  constructor(count, itemSize, typeClass = Float32Array) {
+    super(ArrayBuffer.isView(count) ? count : new typeClass(count * itemSize), itemSize);
+  }
+}
+StorageBufferAttribute.prototype.isStorageBufferAttribute = true;
 export const MeshLambertNodeMaterial = unsupported;
 export const MeshMatcapNodeMaterial = unsupported;
 export const MeshNormalNodeMaterial = unsupported;

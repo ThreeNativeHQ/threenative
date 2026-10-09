@@ -43,14 +43,14 @@ await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
 const THREE = { ${names.join(", ")} };
-import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, NodeUpdateType, WebGPURenderer } from "three/webgpu";
+import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, NodeUpdateType, WebGPURenderer, StorageBufferAttribute } from "three/webgpu";
 import { screenCoordinate, positionGeometry, normalGeometry, tangentGeometry, positionViewDirection } from "three/tsl";
 import { atan, mod, fwidth, saturation, mat2, hash, time } from "three/tsl";
 import { AudioBus } from "@threenative/core";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { Material } from "three";
-import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV } from "three/tsl";
+import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
 const camera = new THREE.PerspectiveCamera();
@@ -301,6 +301,14 @@ check(summed && typeof summed.addAssign === "function" && typeof summed.cbrt ===
 // Every swizzle three answers, as Midway's ocean reads positionWorld.xz.
 const lanes = vec3(1, 2, 3);
 check(lanes.xz && lanes.zxy && lanes.st && lanes.bgr && lanes.xxxx && lanes.xyzwx === undefined, "swizzles");
+// core's projection-skinned: a bone palette read with storage(); a write to normalLocal is refused by name.
+const bones = new StorageBufferAttribute(8, 16);
+check(bones instanceof THREE.BufferAttribute && bones.isStorageBufferAttribute && bones.count === 8, "StorageBufferAttribute");
+const bone = storage(bones, "mat4", 8).toReadOnly().element(instanceIndex);
+check(bone && typeof bone.mul === "function", "storage element");
+let refusedWrite = false;
+try { Fn(() => { normalLocal.assign(vec3(0, 1, 0)); })(); } catch (error) { refusedWrite = /normalLocal/.test(error.message); }
+check(refusedWrite, "normalLocal write refused by name");
 basic.alphaTestNode = summed.clamp();
 basic.alphaTestNode = clamp(summed, 0.1);
 for (const [name, expected] of Object.entries(${JSON.stringify(Object.fromEntries(constants.map((name) => [name, three[name]])))}))

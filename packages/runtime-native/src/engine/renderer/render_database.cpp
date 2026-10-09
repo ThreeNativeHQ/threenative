@@ -28,6 +28,7 @@ struct GraphFind {
     std::shared_ptr<const void> reflector;
     std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples, by binding
     bool customAttributes = false;  // an attribute() other than the ones a compact batch carries
+    std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads, by binding
 };
 
 GraphFind findGraphSources(const Material& material) {
@@ -45,6 +46,10 @@ GraphFind findGraphSources(const Material& material) {
             if (std::none_of(found.textures.begin(), found.textures.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
                 found.textures.emplace_back(node->name, texture);
+        } else if (node->kind == shader::graph::Kind::StorageElement && node->object) {
+            if (std::none_of(found.storages.begin(), found.storages.end(),
+                             [&](const auto& entry) { return entry.first == node->name; }))
+                found.storages.emplace_back(node->name, static_cast<const BufferAttribute*>(node->object.get()));
         } else if (node->kind == shader::graph::Kind::Attribute && node->name != "position" &&
                    node->name != "normal" && node->name != "uv") {
             found.customAttributes = true;
@@ -441,7 +446,7 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
     if (cached.roots != roots || cached.version != material.version()) {
         GraphFind found = findGraphSources(material);
         cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
-                              std::move(found.textures), found.customAttributes};
+                              std::move(found.textures), found.customAttributes, std::move(found.storages)};
     }
     return cached;
 }
@@ -1078,6 +1083,7 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
         item.pmremMap = sources.texture;
         item.reflector = sources.reflector.get();
         item.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
+        item.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
         if (item.pmremMap) {
             Matrix4 rotation;
             if (world && world->environment && source.maps.find("envMap") == source.maps.end())
