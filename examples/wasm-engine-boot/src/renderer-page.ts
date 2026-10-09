@@ -13,11 +13,14 @@ import {
   HalfFloatType,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
+  InstancedMesh,
   LoopOnce,
   MathUtils,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   NumberKeyframeTrack,
+  OrthographicCamera,
   PCFShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
@@ -79,6 +82,10 @@ const probe = {
   /** PRD-551: a QuadMesh's flat colour read back from a HalfFloat target (half bits) and a byte target. */
   targetHalf: "",
   targetBytes: "",
+  /** PRD-545: an InstancedBufferGeometry's 4x1 strip, RGBA bytes per column. */
+  instancedStrip: "",
+  /** PRD-545: an InstancedMesh strip before and after instanceColor is assigned. */
+  instanceColorSet: "",
 };
 const started = performance.now();
 
@@ -277,6 +284,57 @@ try {
   ]);
   probe.targetHalf = `${halfPixels.constructor.name}:${Array.from(halfPixels).join(",")}`;
   probe.targetBytes = `${bytePixels.constructor.name}:${Array.from(bytePixels).join(",")}`;
+  // PRD-545: one unit-wide quad per pixel column of a 4x1 target, through an orthographic camera.
+  const columns = new OrthographicCamera(0, 4, 1, 0, -1, 1);
+  const unit = new PlaneGeometry(1, 1);
+  const drawStrip = async (root: Scene): Promise<string> => {
+    const strip = new RenderTarget(4, 1, { type: UnsignedByteType });
+    renderer.setRenderTarget(strip);
+    renderer.render(root, columns);
+    renderer.setRenderTarget(null);
+    return Array.from(await renderer.readRenderTargetPixelsAsync(strip, 0, 0, 4, 1)).join(",");
+  };
+  // InstancedBufferGeometry draws instanceCount (3) of its 4 instances; TSL attribute() reads each
+  // instance's offset and tint. The fourth (white) instance must not draw.
+  const strip = new InstancedBufferGeometry();
+  const unitIndex = unit.getIndex();
+  if (unitIndex === null) throw new Error("PlaneGeometry has an index");
+  strip.setIndex(unitIndex.clone());
+  strip.setAttribute("position", unit.getAttribute("position").clone());
+  strip.setAttribute(
+    "aOffset",
+    new InstancedBufferAttribute(
+      new Float32Array([0.5, 0.5, 0, 1.5, 0.5, 0, 2.5, 0.5, 0, 3.5, 0.5, 0]),
+      3,
+    ),
+  );
+  strip.setAttribute(
+    "aTint",
+    new InstancedBufferAttribute(new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1]), 3),
+  );
+  strip.instanceCount = 3;
+  const stripMaterial = new MeshBasicNodeMaterial();
+  stripMaterial.vertexNode = cameraProjectionMatrix.mul(
+    cameraViewMatrix.mul(vec4(positionLocal.add(attribute("aOffset", "vec3")), 1)),
+  );
+  stripMaterial.colorNode = vec4(attribute("aTint", "vec3"), 1);
+  const stripScene = new Scene();
+  stripScene.add(new Mesh(strip, stripMaterial));
+  probe.instancedStrip = await drawStrip(stripScene);
+  // InstancedMesh.instanceColor assigned as a new InstancedBufferAttribute after a drawn frame
+  // (Midway's tracers): the next frame shows the colours.
+  const colored = new InstancedMesh(unit, new MeshBasicNodeMaterial(), 4);
+  for (let i = 0; i < 4; i++) {
+    colored.setMatrixAt(i, new Matrix4().makeTranslation(i + 0.5, 0.5, 0));
+  }
+  const coloredScene = new Scene();
+  coloredScene.add(colored);
+  const uncolored = await drawStrip(coloredScene);
+  colored.instanceColor = new InstancedBufferAttribute(
+    new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]),
+    3,
+  );
+  probe.instanceColorSet = `${uncolored}|${await drawStrip(coloredScene)}`;
   // Midway's renderer settings: they reach the engine before each frame, as on the V8 player.
   renderer.toneMapping = 5;
   try {

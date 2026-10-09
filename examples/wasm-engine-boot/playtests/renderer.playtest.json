@@ -64,6 +64,20 @@
       {
         "entity": "wasm-renderer",
         "component": "probe",
+        "path": "instancedStrip",
+        "equals": "255,0,0,255,0,255,0,255,0,0,255,255,1,4,8,255",
+        "allowTrivial": "PRD-545: an InstancedBufferGeometry draws instanceCount 3 of 4 instances, each tinted by its own TSL attribute(); the fourth (white) column keeps the clear colour 0x102030 in linear bytes."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "instanceColorSet",
+        "equals": "255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255|255,0,0,255,0,255,0,255,0,0,255,255,0,0,0,255",
+        "allowTrivial": "PRD-545: InstancedMesh draws white, then a new instanceColor attribute assigned after that frame colours the next one red, green, blue, black."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
         "path": "steadyCompiles",
         "equals": 0,
         "allowTrivial": "A steady frame compiles no pipeline; -1 means frame 10 never drew."
