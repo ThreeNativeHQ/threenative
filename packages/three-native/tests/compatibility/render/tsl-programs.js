@@ -738,6 +738,17 @@ export const programs = {
     );
     target.colorNode = vec4(texture(ramp, uv()).rgb, 1);
   },
+  /** A positionNode reads one texture with no level (the vertex stage samples its level 0, as r185's
+   *  TextureNode does there) and another through .level(0). */
+  async "tsl-stage-vertex-texture-level"({ target }) {
+    const ramp = dataTexture(8, 4, (x, y) => [x * 36, y * 80, 200 - x * 20]);
+    const bumps = dataTexture(8, 8, (x, y) => [((x + y) % 4) * 80, 0, 0]);
+    const waves = dataTexture(8, 1, (x) => [0, (x % 2) * 255, 0]);
+    target.positionNode = positionLocal.add(
+      vec3(0, texture(waves, uv()).level(float(0)).g.mul(0.3), texture(bumps, uv()).r.mul(0.4)),
+    );
+    target.colorNode = vec4(texture(ramp, uv()).rgb, 1);
+  },
   /** WaterSurface3D's reads: the frame behind a transparent surface (viewportSharedTexture, offset)
    *  and the depth between it and the surface (viewportLinearDepth - linearDepth()), on a water
    *  plane over a lit floor. */

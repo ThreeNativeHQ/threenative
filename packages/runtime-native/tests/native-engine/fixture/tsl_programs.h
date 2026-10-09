@@ -531,6 +531,24 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         material->nodes.positionNode = g::add(g::positionLocal(),
             g::vec3({g::float_(0), g::float_(0), g::mul(g::swizzle(level, "x"), g::float_(0.4))}));
         material->nodes.colorNode = g::vec4({g::swizzle(sample(ramp), "xyz"), g::float_(1)});
+    } else if (program == "tsl-stage-vertex-texture-level") {
+        // A positionNode reads texture(object, uv) with no level and texture(object, uv).level(0).
+        uint64_t serial = 0;
+        using Rgb = std::array<uint8_t, 3>;
+        const auto ramp = tsl_detail::dataTexture(8, 4, [](uint32_t tx, uint32_t ty) {
+            return Rgb{uint8_t(tx * 36), uint8_t(ty * 80), uint8_t(200 - tx * 20)}; });
+        const auto bumps = tsl_detail::dataTexture(8, 8, [](uint32_t tx, uint32_t ty) {
+            return Rgb{uint8_t(((tx + ty) % 4) * 80), 0, 0}; });
+        const auto waves = tsl_detail::dataTexture(8, 1, [](uint32_t tx, uint32_t) {
+            return Rgb{0, uint8_t((tx % 2) * 255), 0}; });
+        const auto sample = [&serial](std::shared_ptr<engine::DataTexture> map) {
+            return abi::tslCall("texture", nullptr, {abi::TslArg::objectOf("DataTexture", std::move(map)), abi::TslArg::of(g::uv())}, serial);
+        };
+        const abi::TslArg wave = abi::TslArg::of(sample(waves));
+        const auto level = abi::tslCall("level", &wave, {abi::TslArg::of(0.0)}, serial);
+        material->nodes.positionNode = g::add(g::positionLocal(),
+            g::vec3({g::float_(0), g::mul(g::swizzle(level, "y"), g::float_(0.3)), g::mul(g::swizzle(sample(bumps), "x"), g::float_(0.4))}));
+        material->nodes.colorNode = g::vec4({g::swizzle(sample(ramp), "xyz"), g::float_(1)});
     } else if (program == "texture-data-3d") {
         // texture3D(volume, uvw) and texture3D(volume).sample(q) through the shared TSL table, as the
         // rain template's clouds sample their noise volume; q runs past 1 along W, which repeats.
