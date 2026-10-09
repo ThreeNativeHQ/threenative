@@ -1078,12 +1078,12 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f66df9fa477cde742fd0e603801f7b54
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
@@ -2272,12 +2272,12 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..52f558f588758379634df3ec5559e63b
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
@@ -3997,12 +3997,12 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..5c999c162840d266c676c83affdd2788
  		}
  
 -		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat ) {
-+		// Compute-only 3D storage has no attachment or render-pass mipmap consumer.
-+		// Requesting the unused attachment usage rejects the texture on wgpu-native.
-+		const computeOnlyStorage3D = dimension === GPUTextureDimension.ThreeD && texture.isStorageTexture === true &&
++		// WebGPU has no 3D render attachment, so wgpu-native rejects a 3D texture that asks for
++		// one: a compute volume, or a `.cube` grade table. Only a rendered-into 3D texture keeps it.
++		const notAnAttachment3D = dimension === GPUTextureDimension.ThreeD &&
 +			texture.isRenderTargetTexture !== true && options.renderTarget === undefined && options.needsMipmaps !== true;
 +
-+		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! computeOnlyStorage3D ) {
++		if ( texture.isCompressedTexture !== true && texture.isCompressedArrayTexture !== true && format !== GPUTextureFormat.RGB9E5UFloat && ! notAnAttachment3D ) {
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  

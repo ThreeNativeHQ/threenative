@@ -40,9 +40,15 @@ it("does not request render attachments for compute-only 3D storage textures", (
   expect(descriptor(new Storage3DTexture(4, 4, 4))?.usage).toBe(15);
 });
 
-it("preserves 2D storage and ordinary 3D texture render usage", () => {
+it("preserves 2D storage render usage", () => {
   expect(descriptor(new StorageTexture(4, 4))?.usage).toBe(31);
-  expect(descriptor(new Data3DTexture(new Uint8Array(64), 4, 4, 4))?.usage).toBe(23);
+});
+
+it("does not request render attachments for a sampled 3D texture", () => {
+  // The `.cube` grade table: a Data3DTexture no render pass ever writes. WebGPU forbids a 3D
+  // texture as an attachment, so the usage makes wgpu-native reject the texture and every view,
+  // bind group and pass that names it.
+  expect(descriptor(new Data3DTexture(new Uint8Array(64), 4, 4, 4))?.usage).toBe(7);
 });
 
 it("preserves explicitly requested render-target and mipmap usage", () => {
