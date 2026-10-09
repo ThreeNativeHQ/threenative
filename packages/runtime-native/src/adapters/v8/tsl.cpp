@@ -130,6 +130,12 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (value->IsString()) return abi::TslArg::of(text(isolate_, value));
     if (!value->IsObject()) return abi::TslArg::other();
     const auto object = value.As<v8::Object>();
+    // texture(engineTexture, uv) samples that texture itself; a plain object names a material map.
+    if (texture) {
+        tn_handle_t handle{};
+        const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
+        if (object != nullptr) return abi::TslArg::objectOf(object->cls, object->ptr);
+    }
     if (texture || textureLoad) {
         v8::Local<v8::Value> label;
         if (!object->Get(ctx, str(isolate_, "name")).ToLocal(&label)) throw JsFailure{};

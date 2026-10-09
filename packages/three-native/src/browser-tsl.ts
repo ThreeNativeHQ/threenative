@@ -205,7 +205,10 @@ export function defineTsl(runtime: ITslRuntime): {
     if (value === null || value === undefined) return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
     if (typeof value === "string") return { kind: "string", text: value };
-    // A texture names its map by the object's `name`; textureLoad also takes a texture node.
+    // texture(engineTexture, uv) samples that texture itself; a plain object names a material map,
+    // and textureLoad also takes a texture node.
+    if (index === 0 && name === "texture" && typeof value === "object" && engineRef(value) !== undefined)
+      return { kind: "handle", ref: engineRef(value) as IEngineRef };
     if (index === 0 && (name === "texture" || name === "textureLoad") && typeof value === "object")
       return { kind: "named", text: String((value as { name?: unknown } | null)?.name ?? "") };
     if (typeof value === "object" && value !== null && engineRef(value) !== undefined) {

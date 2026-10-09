@@ -53,6 +53,20 @@ inline std::shared_ptr<engine::DataTexture> equirectSky() {
     return sky;
 }
 
+/** The JS programs' checker(): 8 x 8, nearest-filtered, texels 255 and 64 alternating in r, g, b. */
+inline std::shared_ptr<engine::DataTexture> checker() {
+    auto map = std::make_shared<engine::DataTexture>();
+    map->width = 8; map->height = 8; map->data.resize(8 * 8 * 4);
+    for (uint32_t i = 0; i < 64; ++i) {
+        const uint8_t value = ((i % 8) + i / 8) % 2 ? 255 : 64;
+        map->data[i * 4] = map->data[i * 4 + 1] = map->data[i * 4 + 2] = value;
+        map->data[i * 4 + 3] = 255;
+    }
+    map->magFilter = map->minFilter = static_cast<uint16_t>(engine::TextureFilter::Nearest);
+    map->needsUpdate();
+    return map;
+}
+
 /** PRD-513: a compute pass writes the grid; the positionNode places instance i at entry i. */
 inline std::string storageInstances(engine::Material& material, engine::Renderer& renderer, WGPUDevice device) {
     using namespace engine::shader;
@@ -400,6 +414,16 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
         const abi::TslArg receiver = abi::TslArg::of(screen);
         const auto flipped = abi::tslCall("flipX", &receiver, {}, serial);
         material->nodes.colorNode = g::vec4({flipped, g::mul(g::swizzle(screen, "x"), g::swizzle(screen, "y")), g::float_(1)});
+    } else if (program == "texture-object") {
+        // texture(object, uv) through the shared TSL table, as V8 and Wasm pass an engine Texture.
+        uint64_t serial = 0;
+        const auto sample = [&serial](std::shared_ptr<void> map) {
+            return abi::tslCall("texture", nullptr, {abi::TslArg::objectOf("DataTexture", std::move(map)),
+                                                     abi::TslArg::of(g::uv())}, serial);
+        };
+        const auto bands = sample(tsl_detail::equirectSky()), squares = sample(tsl_detail::checker());
+        material->nodes.colorNode = g::vec4({g::mul(g::swizzle(bands, "xyz"),
+            g::add(g::mul(g::swizzle(squares, "x"), g::float_(0.6)), g::float_(0.4))), g::float_(1)});
     } else if (program == "pmrem-texture") {
         uint64_t serial = 0;
         const auto positionWorld = g::varying("positionWorld", Type::vec(3));

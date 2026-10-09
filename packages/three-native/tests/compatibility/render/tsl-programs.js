@@ -8,6 +8,7 @@ import {
   LinearMipmapLinearFilter,
   Mesh,
   MeshLambertNodeMaterial,
+  NearestFilter,
   PointLight,
   RenderPipeline,
   RenderTarget,
@@ -41,6 +42,7 @@ import {
   screenUV,
   sin,
   smoothstep,
+  texture,
   uint,
   uniform,
   uv,
@@ -497,6 +499,16 @@ async function temporalFixture({ renderer, scene, camera, traaDump }, firstCutFr
 }
 
 /** Asymmetric bands reveal handedness, horizon, rotation, sRGB decode and intensity. */
+/** An 8 x 8 checker, nearest-filtered: texels 255 and 64 alternate in r, g and b. */
+function checker() {
+  const pixels = new Uint8Array(8 * 8 * 4);
+  for (let i = 0; i < 64; ++i) pixels.fill(((i % 8) + Math.floor(i / 8)) % 2 ? 255 : 64, i * 4, i * 4 + 3), (pixels[i * 4 + 3] = 255);
+  const map = new DataTexture(pixels, 8, 8);
+  map.magFilter = map.minFilter = NearestFilter;
+  map.needsUpdate = true;
+  return map;
+}
+
 function equirectSky() {
   const width = 128;
   const height = 64;
@@ -645,6 +657,10 @@ export const programs = {
   },
   async "screen-uv"({ target }) {
     target.colorNode = vec4(screenUV.flipX(), screenUV.x.mul(screenUV.y), 1);
+  },
+  async "texture-object"({ target }) {
+    const bands = equirectSky();
+    target.colorNode = vec4(texture(bands, uv()).rgb.mul(texture(checker(), uv()).r.mul(0.6).add(0.4)), 1);
   },
   async "pmrem-texture"({ target }) {
     target.colorNode = vec4(

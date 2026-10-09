@@ -111,10 +111,14 @@ describe("TSL on the browser back end", () => {
     const sample = (tsl.texture as Fn)(sea, (tsl.uv as Fn)());
     expect(calls.map(({ name }) => name)).toEqual(["vec3", "uv", "texture"]);
     expect(calls[0]?.args).toEqual([{ kind: "vector", numbers: [1, 2, 3] }]);
+    // An engine Texture crosses as itself: the engine samples its texels, or names its map when it
+    // has none. A plain object (a pass node's { name: "scene" }) still names a map.
     expect(calls[2]?.args).toEqual([
-      { kind: "named", text: "sea" },
+      { kind: "handle", ref: expect.objectContaining({ key: expect.stringMatching(/^Texture:/) }) },
       { kind: "node", node: 2 },
     ]);
+    (tsl.texture as Fn)({ name: "scene" }, (tsl.uv as Fn)());
+    expect(calls[4]?.args[0]).toEqual({ kind: "named", text: "scene" });
 
     const material = new (classes.MeshBasicNodeMaterial as Constructor)();
     material.colorNode = sample;

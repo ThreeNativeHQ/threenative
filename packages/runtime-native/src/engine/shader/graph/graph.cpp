@@ -425,6 +425,15 @@ Node texture(std::string_view map, Node uvs) {
     return data;
 }
 
+Node objectTexture(std::shared_ptr<const void> texture, std::string name, Node uvs) {
+    auto data = std::make_shared<NodeData>();
+    data->kind = Kind::Texture;
+    data->name = std::move(name);
+    data->object = std::move(texture);
+    data->args = {std::move(uvs)};
+    return data;
+}
+
 Node pmremTexture(std::shared_ptr<const void> texture, Node direction, Node level) {
     auto data = makeNode(Kind::Pmrem, Type::vec(3));
     data->object = std::move(texture);
