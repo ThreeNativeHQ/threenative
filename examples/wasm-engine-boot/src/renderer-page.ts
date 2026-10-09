@@ -121,14 +121,15 @@ try {
   );
   ball.position.set(0.15, -0.9, 0.6);
   // texture(textureObject, uv) on an unnamed DataTexture, as Midway's ocean: a level-0 vertex read
-  // displaces the slab and a fragment read colours it.
+  // at the local xz (Midway's positionWorld.xz swizzle) displaces the slab and a fragment read
+  // colours it.
   const pixels = new Uint8Array(4 * 4 * 4);
   for (let i = 0; i < 16; ++i) pixels.set([(i % 4) * 80, Math.floor(i / 4) * 80, 160, 255], i * 4);
   const grid = new DataTexture(pixels, 4, 4);
   grid.needsUpdate = true;
   const textured = new MeshBasicNodeMaterial();
   textured.positionNode = positionLocal.add(
-    vec3(0, texture(grid, uv()).level(float(0)).r.mul(0.2), 0),
+    vec3(0, texture(grid, positionLocal.xz.add(0.5)).level(float(0)).r.mul(0.2), 0),
   );
   textured.colorNode = vec4(texture(grid, uv()).rgb, 1);
   const slab = new Mesh(new BoxGeometry(0.8, 0.3, 0.8, 4, 1, 4), textured);

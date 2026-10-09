@@ -152,24 +152,22 @@ const METHODS = [
   "flipW",
   "level",
 ] as const;
-const SWIZZLES: Readonly<Record<string, string>> = {
-  x: "x",
-  y: "y",
-  z: "z",
-  w: "w",
-  xy: "xy",
-  xyz: "xyz",
-  zyx: "zyx",
-  yx: "yx",
-  r: "x",
-  g: "y",
-  b: "z",
-  a: "w",
-  rg: "xy",
-  rgb: "xyz",
-  rgba: "xyzw",
-  ba: "zw",
-};
+/**
+ * TSL's swizzles: every one- to four-lane pattern over xyzw, and the same over rgba (three's
+ * SwizzleNode accepts any of them), each as its xyzw lanes.
+ */
+const SWIZZLES: Readonly<Record<string, string>> = (() => {
+  const out: Record<string, string> = {};
+  const grow = (lanes: string): void => {
+    if (lanes.length > 0) {
+      out[lanes] = lanes;
+      out[lanes.replace(/[xyzw]/gu, (lane) => "rgba"["xyzw".indexOf(lane)] ?? lane)] = lanes;
+    }
+    if (lanes.length < 4) for (const lane of "xyzw") grow(lanes + lane);
+  };
+  grow("");
+  return out;
+})();
 interface ITslNode {
   readonly [TSL_NODE]: number;
 }

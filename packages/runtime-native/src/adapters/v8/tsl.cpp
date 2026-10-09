@@ -2,6 +2,7 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/abi/tsl_call.h"
 
+#include <functional>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -376,20 +377,22 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
                              "flipX", "flipY", "flipZ", "flipW", "level"})
         node->Set(str(isolate_, name), function(context, name, true));
-    for (const char* lanes : {"x", "y", "z", "w", "xy", "xyz", "zyx", "yx"}) {
-        auto data = std::make_unique<Call>(Call{this, std::string("swizzle:") + lanes, true});
-        node->SetAccessorProperty(
-            str(isolate_, lanes),
-            v8::FunctionTemplate::New(isolate_, dispatch, v8::External::New(isolate_, data.get())));
-        calls_.push_back(std::move(data));
-    }
-    for (const auto& [alias, lanes] : std::vector<std::pair<const char*, const char*>>{
-        {"r", "x"}, {"g", "y"}, {"b", "z"}, {"a", "w"}, {"rg", "xy"}, {"rgb", "xyz"}, {"rgba", "xyzw"}, {"ba", "zw"}}) {
-        auto data = std::make_unique<Call>(Call{this, std::string("swizzle:") + lanes, true});
-        node->SetAccessorProperty(str(isolate_, alias),
-            v8::FunctionTemplate::New(isolate_, dispatch, v8::External::New(isolate_, data.get())));
-        calls_.push_back(std::move(data));
-    }
+    // TSL's swizzles: every one- to four-lane pattern over xyzw, and the same over rgba (three's
+    // SwizzleNode accepts any of them), each as its xyzw lanes.
+    const std::function<void(const std::string&)> swizzles = [&](const std::string& lanes) {
+        if (!lanes.empty()) {
+            std::string colour = lanes;
+            for (char& lane : colour) lane = "rgba"[std::string("xyzw").find(lane)];
+            for (const std::string& alias : {lanes, colour}) {
+                auto data = std::make_unique<Call>(Call{this, "swizzle:" + lanes, true});
+                node->SetAccessorProperty(str(isolate_, alias),
+                    v8::FunctionTemplate::New(isolate_, dispatch, v8::External::New(isolate_, data.get())));
+                calls_.push_back(std::move(data));
+            }
+        }
+        if (lanes.size() < 4) for (const char lane : std::string("xyzw")) swizzles(lanes + lane);
+    };
+    swizzles("");
     nodeTemplate_.Reset(isolate_, node);
     const auto module = v8::Object::New(isolate_);
     for (const char* name : {"float",      "int",   "uint",    "vec2",      "vec3",   "vec4",     "uniform",
