@@ -57,7 +57,11 @@ Generated from the PRD files' boxes; a PRD is done when every box is ticked.
 | [PRD-533](PRD-533-n20-platform-qualification-performance-default-promotion.md) | Platform qualification, performance and default promotion (N20) | 2/9 | in progress |
 | [PRD-534](PRD-534-cp1-the-native-engine-earns-the-port.md) | The native engine earns the port (CP1) | 2/5 | in progress |
 | [PRD-535](PRD-535-n21-the-js-engine-is-deleted.md) | The JS engine is deleted (N21) | 0/7 | not started |
-| [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md) | Web games boot on the Wasm engine (N20 support) | 4/8 | in progress |
+| [PRD-540](PRD-540-web-games-boot-on-the-wasm-engine.md) | Web games boot on the Wasm engine (N20 support) | 4/10 | in progress |
+| [PRD-541](N22-three-surface-coverage/PRD-541-n22a-instancing-and-primitives.md) | Corpus games construct the instancing and primitive classes they import (N22a) | 0/6 | in progress |
+| [PRD-542](N22-three-surface-coverage/PRD-542-n22b-materials-and-textures.md) | Corpus materials and textures match three r185 (N22b) | 0/8 | in progress |
+| [PRD-543](N22-three-surface-coverage/PRD-543-n22c-screen-reads-vertex-stage-and-tsl-names.md) | Corpus TSL reaches the screen, the vertex stage and the shared name table (N22c) | 0/7 | not started |
+| [PRD-544](N22-three-surface-coverage/PRD-544-n22d-uniforms-post-parameters-and-loaders.md) | Corpus uniforms, post parameters and loaders behave as three r185 (N22d) | 0/9 | not started |
 
 **CP1 (PRD-534), historical functional reading (2026-10-05), not the verdict:** `pnpm bench:engines --arms current,native-v8,native-cpp --workload heterogeneous` at 4,096 cubes (Xvfb and headless Dawn) measured hot path p50 10.26 ms for current ThreeNative, 23.60 ms through V8 and 13.28 ms from C++. That prototype preceded N12 native batching. The physical-desktop and Pixel 8 verdict runs remain open; these early timings do not describe the current engine.
 
@@ -132,6 +136,11 @@ Full text and rationale: [PRD-497 § Decisions](../done/native-engine/PRD-497-n0
 | N19 | [PRD-532 — WebAssembly native-core browser port](../done/native-engine/PRD-532-n19-webassembly-native-core-browser-port.md) (mandatory) | N03, N07–N09, N18 |
 | N20 | [PRD-533 — Platform qualification, performance and default promotion](PRD-533-n20-platform-qualification-performance-default-promotion.md) | CP1, N00–N16, N18, N19 |
 | N21 | [PRD-535 — The JS engine is deleted](PRD-535-n21-the-js-engine-is-deleted.md) | N20 + one release, N19 |
+| N22 | [three.js surface coverage, ranked by real-game use](N22-three-surface-coverage/README.md) (N20 support) | N18, N19 |
+| N22a | ↳ [PRD-541 — Corpus games construct the instancing and primitive classes they import](N22-three-surface-coverage/PRD-541-n22a-instancing-and-primitives.md) | N06, N09 |
+| N22b | ↳ [PRD-542 — Corpus materials and textures match three r185](N22-three-surface-coverage/PRD-542-n22b-materials-and-textures.md) | N07, N09 |
+| N22c | ↳ [PRD-543 — Corpus TSL reaches the screen, the vertex stage and the shared name table](N22-three-surface-coverage/PRD-543-n22c-screen-reads-vertex-stage-and-tsl-names.md) | N08, N14a |
+| N22d | ↳ [PRD-544 — Corpus uniforms, post parameters and loaders behave as three r185](N22-three-surface-coverage/PRD-544-n22d-uniforms-post-parameters-and-loaders.md) | N08, N10, N11c, N14d |
 
 ```mermaid
 flowchart LR
