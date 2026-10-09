@@ -3213,6 +3213,7 @@ export class Area3D { … }
 
 - **Use when:** detect when an enemy enters a trigger area · react to a player entering a zone
 - **Constraints:** add the area to the physics context before stepping the world
+- **Requires:** npm i @threenative/physics
 - **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Area3D itself is not deprecated.
 
 ```ts
@@ -3247,6 +3248,7 @@ export function boxFootprint(halfWidth: number, halfDepth: number): ISnowFootpri
 
 - **Use when:** let a crate, platform or plank press a rectangular pit into snow · imprint a box's own footprint rather than a circle around it
 - **Constraints:** halfWidth and halfDepth are metres; rotation comes from the contact, not the footprint
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const footprint = boxFootprint(0.4, 0.25);
@@ -3262,6 +3264,7 @@ export function buildStaticColliders( context: IStaticColliderContext, root: Obj
 
 - **Use when:** make the level I built stop the player · turn a cathedral or map scene into static collision
 - **Constraints:** supply the game-owned predicate for decorative meshes; the helper throws when it selects nothing · generated bodies use trimesh geometry and world-space instance transforms
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const colliders = buildStaticColliders(ctx, level, { predicate: (object) => object.name.startsWith("wall") });
@@ -3277,6 +3280,7 @@ export class Buoyancy3D { … }
 
 - **Use when:** float a boat on waves · keep a hull above a moving water surface
 - **Constraints:** supply hull points, density, drag, and the height source
+- **Requires:** npm i @threenative/physics
 - **Overrides:** buoyancy disables force application while submergedFraction remains measured
 
 ```ts
@@ -3293,6 +3297,7 @@ export function capsuleFootprint(halfHeight: number, radius: number): ISnowFootp
 
 - **Use when:** let a fallen capsule, limb or barrel leave a linear imprint in snow · give a capsule a shape-appropriate snow contact instead of a sphere's dot
 - **Constraints:** radius and halfHeight are metres and never grow with load
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const footprint = capsuleFootprint(0.5, 0.2);
@@ -3308,6 +3313,7 @@ export class CharacterBody3D { … }
 
 - **Use when:** move an enemy or player through a level · keep a character from walking through walls
 - **Constraints:** use moveAndSlide inside the physics update
+- **Requires:** npm i @threenative/physics
 - **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated.
 
 ```ts
@@ -3324,6 +3330,7 @@ export class CollisionShape3D { … }
 
 - **Use when:** add a capsule or box collider to a character · configure the shape used by a rigid body
 - **Constraints:** create shapes through the owning physics context
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const shape = CollisionShape3D.capsule(0.5, 0.35);
@@ -3338,6 +3345,7 @@ export function interactionGroups(layer: number, mask: number): number { … }
 ```
 
 - **Use when:** make an enemy collide with the world but not pickups · configure which physics layers interact
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const groups = interactionGroups(1, 3);
@@ -3353,6 +3361,7 @@ export class Joint3D { … }
 
 - **Use when:** constrain a rigid body to another body · build a hinge or pin mechanism · swing a pendulum, wrecking ball, or hinged door on a joint
 - **Constraints:** both bodies must belong to the same physics context
+- **Requires:** npm i @threenative/physics
 - **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Joint3D itself is not deprecated.
 
 ```ts
@@ -3369,6 +3378,7 @@ export class PhysicsDirectSpaceState3D { … }
 
 - **Use when:** raycast for visibility or aiming · find bodies inside a shape or point query
 - **Constraints:** query results are bounded by the configured result limit
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const space = new PhysicsDirectSpaceState3D(context);
@@ -3384,6 +3394,7 @@ export function rapier(options: IPhysicsOptions = { … }
 
 - **Use when:** add physics to a portable game · provide the context used by character and rigid bodies
 - **Constraints:** place rapier() before recast() in the plugin list
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const game = defineGame({ plugins: [rapier()] });
@@ -3399,6 +3410,7 @@ export class RigidBody3D { … }
 
 - **Use when:** give a crate or prop physical motion · create a body that collides with a character · fire physical cannonballs that collide with ships or scenery · fire a cannonball projectile with cannon smoke particles · a bullet passes through a wall
 - **Constraints:** register rapier() in the game plugin list before using bodies
+- **Requires:** npm i @threenative/physics
 - **Overrides:** continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
 - **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. RigidBody3D itself is not deprecated.
 
@@ -3416,6 +3428,7 @@ export function softBodyCollision(...bodies: readonly RigidBody3D[]): ISoftBodyC
 
 - **Use when:** stop a cloth flag, cape, or curtain at an existing physics wall · collide SoftBody3D with fixed box bodies
 - **Constraints:** every body must use CollisionShape3D.box and retain its Three.js object transform · rotated boxes become conservative cloth-local axis-aligned bounds
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wall) });
@@ -3431,6 +3444,7 @@ export class VehicleBody3D extends RigidBody3D { … }
 
 - **Use when:** drive a car, truck or bike around a track · make a vehicle roll over kerbs, brake into a corner or stop at a wall
 - **Constraints:** write engineForce, brake and steering every physics update; a car with no input does not move · suspensionStiffness is a frequency squared, not newtons per metre; 100 is a road car and 20 bottoms out
+- **Requires:** npm i @threenative/physics
 - **Overrides:** a wheel ray never hits the chassis it hangs from, and it honours the chassis collision mask · continuousCollision is on for the chassis, so a fast car cannot tunnel through a wall
 
 ```ts
@@ -3449,6 +3463,7 @@ export class NavigationAgent3D { … }
 
 - **Use when:** enemy walks around a wall · enemy patrols a level and chases the player · enemy walks around a patrol path and chases the player when it sees them · enemy patrols and chases while avoiding obstacles · enemy chases the player with line of sight and obstacle avoidance · NPC walks to a destination · move crew around a ship deck
 - **Constraints:** import NavigationAgent3D from exactly `@threenative/physics/navigation`; `@threenative/physics` is not a valid import for this symbol; use this capability instead of hand-written A*; requires recast() after rapier(), plus a baked NavigationRegion3D
+- **Requires:** npm i @threenative/physics
 
 ```ts
 import { NavigationAgent3D } from "@threenative/physics/navigation";
@@ -3469,6 +3484,7 @@ export class NavigationObstacle3D { … }
 
 - **Use when:** keep navigation agents away from a blocking prop · make a stationary character affect crowd avoidance
 - **Constraints:** create it after recast() and dispose it with the scene
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const obstacle = new NavigationObstacle3D({ navigation, object });
@@ -3484,6 +3500,7 @@ export class NavigationRegion3D { … }
 
 - **Use when:** let enemies walk around level geometry · create the baked navmesh required by NavigationAgent3D
 - **Constraints:** bake before creating agents or obstacles
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const region = new NavigationRegion3D({ navigation, meshes: [floor] });
@@ -3499,6 +3516,7 @@ export function recast(): NavigationPlugin { … }
 
 - **Use when:** enemy walks around a wall · NPC patrols a level and chases a player
 - **Constraints:** requires rapier() earlier in the plugins array
+- **Requires:** npm i @threenative/physics
 
 ```ts
 const game = defineGame({ plugins: [rapier(), recast()] });
@@ -5681,6 +5699,7 @@ export function DebugOverlay() { … }
 
 - **Use when:** display runtime and playtest diagnostics in a React HUD · inspect a game without changing its scene · find out which scene object is submitting the frame's triangles · tell a cheap foreground character from an expensive distant prop
 - **Constraints:** the Geometry tab captures only on an explicit press; nothing is collected while idle · per-object numbers are measured submissions reconciled against the frame's own pass totals, and the remainder is reported rather than hidden
+- **Requires:** npm i @threenative/ui
 
 ```ts
 <DebugOverlay />
@@ -5696,6 +5715,7 @@ export function GameCanvas<TState extends Record<string, unknown>, TPhysics>( { 
 
 - **Use when:** add a game viewport to a React application · connect a game canvas to the web UI shell
 - **Constraints:** keep the portable game entry free of React DOM code
+- **Requires:** npm i @threenative/ui
 
 ```ts
 <GameCanvas game={game} />
@@ -5711,6 +5731,7 @@ export function UiLayer( { … }
 
 - **Use when:** write one HUD that looks the same on the web build and on a phone · mount a React UI over the game surface on Android or iOS
 - **Constraints:** mark every control the player touches with data-tn-interactive
+- **Requires:** npm i @threenative/ui
 
 ```ts
 <UiLayer><Hud /></UiLayer>
@@ -5726,6 +5747,7 @@ export function useGameState<TState extends Record<string, unknown>, TPhysics, T
 
 - **Use when:** bind a HUD component to game state · select a slice of state for a React panel
 - **Constraints:** use this hook only from the web UI entry
+- **Requires:** npm i @threenative/ui
 
 ```ts
 const score = useGameState(game, (state) => state.score);
@@ -5741,6 +5763,7 @@ export function useUiIntent(): (intent: string, payload?: unknown) => void { …
 
 - **Use when:** wire a Restart button in a HUD to the running game · pause a game from a menu rendered over its surface
 - **Constraints:** the game decides what each intent name means; it may ignore one
+- **Requires:** npm i @threenative/ui
 
 ```ts
 const send = useUiIntent(); send("restart");
@@ -5756,6 +5779,7 @@ export function useUiState<TState extends object>(): TState | undefined;
 
 - **Use when:** bind a HUD to game state on web and native alike · show score or health in a UI rendered over the game surface
 - **Constraints:** returns undefined until the game publishes its first state
+- **Requires:** npm i @threenative/ui
 
 ```ts
 const score = useUiState<GameState, number>((state) => state.score);
