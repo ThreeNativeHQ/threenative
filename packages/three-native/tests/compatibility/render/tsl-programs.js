@@ -778,7 +778,8 @@ export const programs = {
       1,
     );
     const geometryShade = normalWorldGeometry.mul(0.5).add(0.5);
-    target.getObjectByName("box").material.colorNode = vec4(geometryShade, 1);
+    for (const name of ["box", "stretched"])
+      target.getObjectByName(name).material.colorNode = vec4(geometryShade, 1);
     const mapped = target.getObjectByName("mapped").material;
     mapped.normalMap = dataTexture(4, 4, () => [200, 128, 230]);
     mapped.emissiveNode = geometryShade;

@@ -160,9 +160,6 @@ ProjectedCull& projectedCullOf(Object3D& root) {
 struct ObjectListeners {
     Store* store = nullptr;
     std::map<std::string, EventCallback, std::less<>> byType;
-    // The first listener failure during a graph call; the call throws it once the graph is consistent.
-    static inline std::string error;
-
     static void dispatch(const tn::engine::Event& event, void* context) {
         auto& self = *static_cast<ObjectListeners*>(context);
         const auto found = self.byType.find(event.type);
@@ -176,7 +173,7 @@ struct ObjectListeners {
         } catch (const Unsupported& refused) {
             failure = refused.reason;
         }
-        if (!failure.empty() && error.empty()) error = std::move(failure);
+        if (auto& pending = pendingListenerError(); !failure.empty() && pending.empty()) pending = std::move(failure);
     }
 };
 
@@ -205,14 +202,6 @@ void registerObject3DEvents(ClassBinding& b) {
     for (const char* name : {"addEventListener", "removeEventListener", "hasEventListener", "dispatchEvent"}) {
         b.methods[name] = [](void*, const Args&, Store&) -> Value {
             throw Unsupported{"TN_NATIVE_EVENT_LISTENER: the language adapter keeps EventDispatcher listeners"};
-        };
-    }
-    // A listener that threw during a graph call throws from that call, as three's would.
-    for (const char* name : {"add", "remove", "attach", "clear", "removeFromParent", "copy"}) {
-        b.methods[name] = [inner = b.methods.at(name)](void* self, const Args& a, Store& store) {
-            Value result = inner(self, a, store);
-            if (!ObjectListeners::error.empty()) throw Unsupported{std::exchange(ObjectListeners::error, {})};
-            return result;
         };
     }
 }
@@ -1544,6 +1533,11 @@ void registerBatchedMesh(ClassBinding& b) {
 }
 
 }  // namespace
+
+std::string& pendingListenerError() {
+    thread_local std::string error;
+    return error;
+}
 
 /**
  * An Object3D argument of any scene class. `Store::ref` matches one class name, and a Mesh is a

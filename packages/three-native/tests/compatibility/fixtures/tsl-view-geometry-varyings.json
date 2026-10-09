@@ -1,6 +1,6 @@
 {
   "name": "tsl-view-geometry-varyings",
-  "adaptedFrom": "original \u2014 the fragment varyings three r185 builds for positionViewDirection (positionView.negate().toVarying()), normalWorldGeometry (normalLocal.transformDirection(modelWorldMatrix).toVarying()) and depth (viewZToPerspectiveDepth(positionView.z)): a sphere coloured by the view direction, a rotated box by its world geometry normal, a normal-mapped standard plane whose emissive is normalWorldGeometry (the map does not reach it), and a tilted plane shaded by depth",
+  "adaptedFrom": "original \u2014 the fragment varyings three r185 builds for positionViewDirection (positionView.negate().toVarying()), normalWorldGeometry (normalViewGeometry back through the view matrix, i.e. modelNormalMatrix * normalLocal, as a varying) and depth (viewZToPerspectiveDepth(positionView.z)): a sphere coloured by the view direction, a rotated box and a non-uniformly scaled sphere (where only the inverse transpose keeps normals perpendicular) by their world geometry normals, a normal-mapped standard plane whose emissive is normalWorldGeometry (the map does not reach it), and a tilted plane shaded by depth",
   "tolerance": {
     "abs": 0
   },
@@ -325,6 +325,77 @@
       "args": [
         {
           "ref": "depth"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "stretchedMaterial",
+      "class": "MeshBasicNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "stretched",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "sphereGeometry"
+        },
+        {
+          "ref": "stretchedMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "stretched",
+      "path": "name",
+      "value": "stretched"
+    },
+    {
+      "op": "set",
+      "id": "stretched",
+      "path": "position.x",
+      "value": 1.25
+    },
+    {
+      "op": "set",
+      "id": "stretched",
+      "path": "position.y",
+      "value": -0.75
+    },
+    {
+      "op": "set",
+      "id": "stretched",
+      "path": "rotation.y",
+      "value": 0.7
+    },
+    {
+      "op": "set",
+      "id": "stretched",
+      "path": "rotation.z",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "stretched",
+      "path": "scale.x",
+      "value": 1.8
+    },
+    {
+      "op": "set",
+      "id": "stretched",
+      "path": "scale.y",
+      "value": 0.5
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "stretched"
         }
       ]
     },

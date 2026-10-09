@@ -166,6 +166,10 @@ struct ClassBinding {
     std::map<std::string, std::function<void(void* self, EventCallback, Store&)>> events;
 };
 
+/** A language listener's failure inside an engine call (Object3D's graph events): the ABI call that
+ *  set it off reports it once it returns, whichever method moved the graph (add, LOD.addLevel, ...). */
+std::string& pendingListenerError();
+
 /** Registers a member that names a field of the object itself (see ClassBinding::fixedMembers). */
 inline void fixedMember(ClassBinding& b, const std::string& name, Method member) {
     b.members[name] = std::move(member);

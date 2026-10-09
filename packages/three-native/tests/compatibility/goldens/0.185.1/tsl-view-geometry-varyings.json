@@ -1,7 +1,7 @@
 {
   "name": "tsl-view-geometry-varyings",
   "threeVersion": "0.185.1",
-  "adaptedFrom": "original — the fragment varyings three r185 builds for positionViewDirection (positionView.negate().toVarying()), normalWorldGeometry (normalLocal.transformDirection(modelWorldMatrix).toVarying()) and depth (viewZToPerspectiveDepth(positionView.z)): a sphere coloured by the view direction, a rotated box by its world geometry normal, a normal-mapped standard plane whose emissive is normalWorldGeometry (the map does not reach it), and a tilted plane shaded by depth",
+  "adaptedFrom": "original — the fragment varyings three r185 builds for positionViewDirection (positionView.negate().toVarying()), normalWorldGeometry (normalViewGeometry back through the view matrix, i.e. modelNormalMatrix * normalLocal, as a varying) and depth (viewZToPerspectiveDepth(positionView.z)): a sphere coloured by the view direction, a rotated box and a non-uniformly scaled sphere (where only the inverse transpose keeps normals perpendicular) by their world geometry normals, a normal-mapped standard plane whose emissive is normalWorldGeometry (the map does not reach it), and a tilted plane shaded by depth",
   "blocked": null,
   "observations": [
     {
@@ -16,13 +16,13 @@
       "index": 1,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:52fa0331fa7d5d53e0ee68dc9fae9a2e3f78d638206f995c56d0a3cd9fc99442",
-      "decimal": "52fa0331fa7d5d53e0ee68dc9fae9a2e3f78d638206f995c56d0a3cd9fc99442"
+      "value": "s:971a3c07384665ac938baeb93d165c79d7cf6dbe9d321883e83ef20c1603d879",
+      "decimal": "971a3c07384665ac938baeb93d165c79d7cf6dbe9d321883e83ef20c1603d879"
     }
   ],
   "render": {
     "png": "tsl-view-geometry-varyings.png",
-    "pngSha256": "52fa0331fa7d5d53e0ee68dc9fae9a2e3f78d638206f995c56d0a3cd9fc99442",
+    "pngSha256": "971a3c07384665ac938baeb93d165c79d7cf6dbe9d321883e83ef20c1603d879",
     "width": 320,
     "height": 240,
     "adapter": {

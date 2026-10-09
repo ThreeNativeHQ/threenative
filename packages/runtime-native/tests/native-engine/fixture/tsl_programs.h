@@ -389,17 +389,18 @@ inline std::string applyTslProgram(const std::string& program, binding::Object& 
             auto* mesh = dynamic_cast<engine::Mesh*>(scene.getObjectByName(name));
             return mesh ? mesh->material.get() : nullptr;
         };
-        auto *sphere = material("sphere"), *box = material("box"), *mapped = material("mapped"), *depth = material("depth");
-        if (!sphere || !box || !mapped || !depth) return "TN_FIXTURE_VARYINGS_INVALID: meshes";
+        auto *sphere = material("sphere"), *box = material("box"), *stretched = material("stretched"),
+             *mapped = material("mapped"), *depth = material("depth");
+        if (!sphere || !box || !stretched || !mapped || !depth) return "TN_FIXTURE_VARYINGS_INVALID: meshes";
         sphere->nodes.colorNode = g::vec4({half(tsl("positionViewDirection")), g::float_(1)});
         const auto geometryShade = half(tsl("normalWorldGeometry"));
-        box->nodes.colorNode = g::vec4({geometryShade, g::float_(1)});
+        box->nodes.colorNode = stretched->nodes.colorNode = g::vec4({geometryShade, g::float_(1)});
         mapped->nodes.emissiveNode = geometryShade;
         using Rgb = std::array<uint8_t, 3>;
         mapped->maps["normalMap"] = tsl_detail::dataTexture(4, 4, [](uint32_t, uint32_t) { return Rgb{200, 128, 230}; });
         const auto shade = g::mul(g::sub(g::float_(1), tsl("depth")), g::float_(25));
         depth->nodes.colorNode = g::vec4({g::vec3({shade, shade, shade}), g::float_(1)});
-        for (auto* m : {sphere, box, mapped, depth}) m->needsUpdate();
+        for (auto* m : {sphere, box, stretched, mapped, depth}) m->needsUpdate();
         return "";
     }
     if (program == "instanced-geometry") {

@@ -471,11 +471,18 @@ void fromBinding(tn_context* context, tn_handle_t self, const tn::binding::Value
 // anything else (a missing argument) TN_ERROR_INVALID_ARGUMENT. Nothing unwinds into C.
 template <typename Call>
 tn_status_t guarded(tn_diagnostic_t* diagnostic, Call call) {
+    // A graph listener that threw during this call fails this call, as three's would, and no later one.
+    std::string& listener = tn::binding::pendingListenerError();
+    listener.clear();
     try {
-        return call();
+        const tn_status_t status = call();
+        if (listener.empty()) return status;
+        return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + std::exchange(listener, {})).c_str());
     } catch (const tn::binding::Unsupported& u) {
+        listener.clear();
         return report(diagnostic, TN_ERROR_UNSUPPORTED, 0, ("TN_NATIVE_UNSUPPORTED " + u.reason).c_str());
     } catch (const std::exception& e) {
+        listener.clear();
         return report(diagnostic, TN_ERROR_INVALID_ARGUMENT, 0, (std::string("TN_ABI_ARGUMENT ") + e.what()).c_str());
     }
 }

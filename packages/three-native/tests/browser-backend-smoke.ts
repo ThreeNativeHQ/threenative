@@ -428,7 +428,7 @@ engine.collect();
     addEventListener: Fn;
     removeEventListener: Fn;
   };
-  const web = (await bindWebEngine(createTnAbi, ["Object3D", "Group", "Scene"])) as Record<
+  const web = (await bindWebEngine(createTnAbi, ["Object3D", "Group", "Scene", "LOD"])) as Record<
     string,
     new () => Node
   >;
@@ -480,6 +480,26 @@ engine.collect();
     thrown.includes("listener boom"),
     `a throwing listener throws from the graph call: ${thrown}`,
   );
+  // Any call that moves the graph reports its listener's throw, and only that call does.
+  const lod = new (web.LOD as new () => Node & { addLevel: Fn })();
+  lod.addEventListener("childadded", boom);
+  let levelThrown = "";
+  try {
+    lod.addLevel(new (web.Object3D as new () => Node)(), 0);
+  } catch (error) {
+    levelThrown = String(error);
+  }
+  check(
+    levelThrown.includes("listener boom"),
+    `LOD.addLevel reports its listener's throw: ${levelThrown}`,
+  );
+  let unrelated = "";
+  try {
+    new (web.Group as new () => Node)().add(new (web.Object3D as new () => Node)());
+  } catch (error) {
+    unrelated = String(error);
+  }
+  check(unrelated === "", `a later unrelated add does not throw: ${unrelated}`);
 }
 // three's MathUtils is a namespace object, not a constructor: its functions are called on the export
 // itself (the minimal template's Player wraps its heading with MathUtils.euclideanModulo).

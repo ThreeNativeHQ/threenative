@@ -649,10 +649,11 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
         else if (name == "positionViewDirection")
             value = v.neg(v.swizzle(v.mul(v.uniform("viewMatrix", Type::mat(4, 4)),
                                           v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position)), "xyz"));
-        // r185's normalWorldGeometry: normalLocal.transformDirection(modelWorldMatrix), so neither a
-        // normalNode nor a normal map reaches it.
+        // r185's normalWorldGeometry: normalViewGeometry (transformNormalToView(normalLocal)) back through
+        // the view matrix, which is modelNormalMatrix * normalLocal, the inverse transpose, so a
+        // non-uniform scale keeps it perpendicular. Neither a normalNode nor a normal map reaches it.
         else if (name == "normalWorldGeometry" && local.normal != kInvalid)
-            value = transformDirection(v, v.uniform("modelMatrix", Type::mat(4, 4)), local.normal);
+            value = v.mul(v.uniform("modelNormalMatrix", Type::mat(3, 3)), local.normal);
         else if (name == "positionGeometry") value = v.attribute("position", type);
         else value = v.attribute(name, type);
         v.output(name, value);
