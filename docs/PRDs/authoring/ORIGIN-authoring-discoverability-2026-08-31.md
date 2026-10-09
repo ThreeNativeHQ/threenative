@@ -72,7 +72,7 @@ self-improvement loop, not just the phase.
 
 | # | PRD | State | Why here |
 | --- | --- | --- | --- |
-| 1 | [PRD-297 — recall is a number this repository reports](./PRD-297-capability-recall-is-a-measured-number.md) | OPEN | The instrument. Nothing below can paste a red without it, and 24% is invisible until it exists. Half a day. |
+| 1 | [PRD-297 — recall is a number this repository reports](../done/PRD-297-capability-recall-is-a-measured-number.md) | DONE | The instrument. Nothing below can paste a red without it, and 24% is invisible until it exists. Half a day. |
 | 2 | [PRD-298 — search that fails closed and can say "not ours"](./PRD-298-capability-search-fails-closed.md) | OPEN | The cheapest correction, and the only one that removes harm rather than adding reach. Eight wrong answers is a defect today. |
 | 3 | [PRD-300 — one capability, many phrasings](./PRD-300-capability-vocabulary-expansion.md) | OPEN | Widens recall inside the existing mechanism. Runs after 298 so the new hits are thresholded, not added to the noise. |
 | 4 | [PRD-301 — every shipped package is in the manifest](./PRD-301-manifest-covers-every-shipped-package.md) | OPEN | Closes the holes 297 exposes. Independent of 299; can run in parallel with 300. |
