@@ -63,6 +63,15 @@ const KITS = {
     captures: ["boulders", "edge", "ground", "overview"],
     views: ["boulders", "edge", "ground", "overview"],
   },
+  desert: {
+    scene: "Desert.ts",
+    playtest: "desert.playtest.json",
+    generatedStand: false,
+    water: false,
+    cooked: "cookedDesertBytes",
+    captures: ["boulders", "edge", "ground", "overview"],
+    views: ["boulders", "edge", "ground", "overview"],
+  },
 };
 /** The kit this run proves: `forest` by default, or `KIT=alpine`. Any other name fails closed. */
 const KIT = process.env.KIT ?? "forest";
