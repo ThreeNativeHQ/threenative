@@ -292,7 +292,12 @@ void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& 
         if (attribute->perInstance) held = std::min(held, attribute->count());
     }
     if (!geometry.instanced) return;
-    const double count = std::min(geometry.instanceCount, held == std::numeric_limits<uint64_t>::max() ? 0.0 : double(held));
+    // three draws geometry.instanceCount instances. Per-instance attributes cap it (WebGPU refuses a
+    // draw past a vertex buffer); a geometry with none (core's projection-skinned reads a storage
+    // palette by instanceIndex) draws instanceCount as set. ponytail: Infinity with none draws once.
+    double count = geometry.instanceCount;
+    if (held != std::numeric_limits<uint64_t>::max()) count = std::min(count, double(held));
+    else if (!std::isfinite(count)) count = 1;
     d.instanceCount = static_cast<uint32_t>(std::min(count, double(std::numeric_limits<uint32_t>::max())));
 }
 
