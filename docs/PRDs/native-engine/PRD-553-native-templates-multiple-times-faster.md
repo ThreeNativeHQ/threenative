@@ -42,6 +42,16 @@ is hardened with a counter (engine calls per frame), never a timing gate.
 - [ ] The native page's CPU work per frame is at most half the control's. proof: `pnpm profile:wasm-page --cpu-work`, subject/control work p50
   2026-10-09: 0.6 ms vs 1.1 ms (1.8x; `performance.now()` steps 0.1 ms here); 0.5 ms after the graph events (2.2x, inside the timer's step, so not ticked). After the uniform-packing change, five runs of `profile:wasm-page` with the profile-derived CPU busy time, desktop load 4-12: control/subject busy 1.26x, 2.88x, 2.84x, 1.99x, 1.60x (median 1.99x); frame p50 ratio median 1.6x. Too noisy to tick; needs a quiet machine. GPU work per frame is 1.03 ms vs 2.41 ms (2.3x, `--gpu-passes`).
 
+#### Phase 3: Midway on the web never loses to three.js
+**Status:** PARTIAL
+
+- [ ] Midway's native page spends no more CPU per frame than the three.js control. proof: `pnpm profile:wasm-page --url <native Midway> --control <three.js Midway> --gpu-calls`, profile-derived CPU busy per frame
+  2026-10-09 (d87c61bed, frustum cull on the main pass, on the rebuilt `tn-native-engine-web` Wasm): 12.9 ms vs 15.7 ms (was 22.1 ms), 78 vs 63 fps, WebGPU calls 1160 vs 2204 per frame. Main-pass draws 163 vs 158 (was 577), half-res pass 49 vs 49 (was 282), shadow pass 146 vs 97. One run; not ticked until it repeats after the shadow-caster cull.
+- [ ] Midway's native frame p50 is at most the control's. proof: the same command, subject/control frame p50
+  2026-10-09: 9.3 ms vs 7.2 ms. Top native self time: `RenderDatabase::render` 27.8% (inlined prepare), `Renderer::render` 13.5%, `AnimationMixer` 7%.
+- [ ] Midway's native page reaches `enter` no later than the control. proof: `pnpm profile:wasm-page --load`, the game's `LOAD_STEP` markers on both pages
+  2026-10-09: scene-load-total 3.0 s vs 2.8 s, enter 6.0 s vs 4.27 s, ready 15.2 s vs 15.1 s. The gap is scene-load to enter (3.0 s vs 1.45 s); the top native self time there is the engine's JS glue, then `RenderDatabase::render` 1.8 s, `BufferAttribute::setRaw` 0.36 s and `ProjectedCull` 0.32 s.
+
 ## Known gaps
 
 - The engine's cull reads an InstancedMesh's own bound and every other object's geometry bound. Core's walk reads `object.boundingSphere` whenever three has set one, which it does for a SkinnedMesh (posed) and a BatchedMesh, so those two can cull differently; the parity test covers plain meshes only. (Fresh-eyes review, 2026-10-09.)

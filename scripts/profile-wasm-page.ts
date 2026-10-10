@@ -1,5 +1,5 @@
 /**
- * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--gpu-calls] [--gpu-time] [--json]`
+ * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--gpu-calls] [--gpu-time] [--load] [--json]`
  *
  * Profiles a running game page the way a Wasm-engine performance question needs: frame time from
  * requestAnimationFrame, a Chrome CPU profile grouped into engine Wasm, JavaScript and WebGPU calls
@@ -9,7 +9,9 @@
  * time of every render and compute pass on both pages, by target size and format (timestamp-query
  * writes added to passes that carry none), and with `--cpu-work` the main thread's time per frame in
  * requestAnimationFrame callbacks, less the time blocked in `getCurrentTexture` and `submit` (the
- * present and GPU backpressure waits): the CPU cost a faster display would still pay. `--control` runs a second page, the same game on
+ * present and GPU backpressure waits): the CPU cost a faster display would still pay. `--load` collects the
+ * page's `TN_LOAD_STEP:{"label","ms"}` console markers (the game emits them; `--warmup-ms` must outlast
+ * the last one) and prints each step on both pages. `--control` runs a second page, the same game on
  * three.js, through the same measurement, so the verdict is a ratio on one lane, never an absolute.
  *
  * It refuses a software WebGPU adapter (`--allow-software` overrides) and needs a display: run it as
@@ -36,6 +38,7 @@ interface IOptions {
   gpuTime: boolean;
   gpuPasses: boolean;
   cpuWork: boolean;
+  load: boolean;
   json: boolean;
   allowSoftware: boolean;
 }
@@ -67,6 +70,7 @@ function options(argv: readonly string[]): IOptions {
     gpuTime: argv.includes("--gpu-time"),
     gpuPasses: argv.includes("--gpu-passes"),
     cpuWork: argv.includes("--cpu-work"),
+    load: argv.includes("--load"),
     json: argv.includes("--json"),
     allowSoftware: argv.includes("--allow-software"),
   };
@@ -496,6 +500,12 @@ async function measure(url: string, o: IOptions) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    const load: { label: string; ms: number }[] = [];
+    if (o.load)
+      page.on("console", (message) => {
+        const text = message.text();
+        if (text.startsWith("TN_LOAD_STEP:")) load.push(JSON.parse(text.slice(13)));
+      });
     // tsx keeps function names with an `__name` helper that the evaluated page functions call.
     await page.addInitScript("globalThis.__name = (fn) => fn;");
     if (o.gpuCalls) await page.addInitScript(GPU_CENSUS);
@@ -524,7 +534,17 @@ async function measure(url: string, o: IOptions) {
     const profile = await cpu(page, o.seconds, o.saveProfile);
     const extra = await optional(page, o);
     if (errors.length > 0) throw new Error(`TN_PROFILE_PAGE_ERROR: ${errors[0]}`);
-    return { url, adapter, frame, profile, busyMs: busyMs(frame.fps, profile.groups), ...extra };
+    if (o.load && load.length === 0)
+      throw new Error(`TN_PROFILE_NO_LOAD_STEPS: ${url} logged no TN_LOAD_STEP marker`);
+    return {
+      url,
+      adapter,
+      frame,
+      profile,
+      busyMs: busyMs(frame.fps, profile.groups),
+      ...(o.load ? { load } : {}),
+      ...extra,
+    };
   } finally {
     await browser.close();
   }
@@ -547,6 +567,8 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   for (const row of r.profile.self)
     console.log(`  ${String(row.percent).padStart(5)}%  ${row.name}`);
   printGpu(r);
+  if (r.load)
+    console.log(`load steps: ${r.load.map((s) => `${s.label} ${s.ms.toFixed(0)} ms`).join(", ")}`);
   if (r.calls) {
     console.log(`engine calls per frame: ${r.calls.perFrame.toFixed(1)}`);
     for (const row of r.calls.top)
@@ -605,5 +627,11 @@ else {
       `\nsubject/control frame p50: ${ratio.toFixed(2)}x (${ratio > 1 ? "subject slower" : "subject faster"})`,
     );
     console.log(`control/subject cpu busy: ${(control.busyMs / subject.busyMs).toFixed(2)}x`);
+    for (const step of subject.load ?? []) {
+      const other = control.load?.find((row) => row.label === step.label);
+      console.log(
+        `load ${step.label}: ${(step.ms / 1000).toFixed(2)} s vs ${other ? `${(other.ms / 1000).toFixed(2)} s` : "absent"}`,
+      );
+    }
   }
 }
