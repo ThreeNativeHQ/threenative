@@ -604,7 +604,11 @@ export function defineBrowserClasses(
     // A typed array crosses as it is: the ABI copies it once and names its type, so the engine keeps
     // three's storage type. Copying it to a list first cost Midway seconds of texels at load.
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) return value as TypedArray;
-    if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
+    if (Array.isArray(value)) {
+      // A number list (a matrix, positions) crosses as it is; only a mixed list is walked.
+      for (const item of value) if (typeof item !== "number") return Array.from(value, toEngine);
+      return value as number[];
+    }
     // A wrapper, the common argument, first: a JS value class has no REF until it is promoted.
     if (typeof value === "object" && REF in value) {
       // A wrapper passed into the engine is held until the next safe point decides (collect()).
@@ -1823,31 +1827,39 @@ function countCall(kind: string, self: IEngineRef, name: string): void {
 }
 
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
-  let dataView = new DataView(abi.HEAPU8.buffer);
+  // Growth replaces HEAPU8; comparing it is one load, where comparing buffers is two getter calls.
+  let heap = abi.HEAPU8;
+  let dataView = new DataView(heap.buffer);
   const view = () => {
-    if (dataView.buffer !== abi.HEAPU8.buffer) dataView = new DataView(abi.HEAPU8.buffer);
+    if (heap !== abi.HEAPU8) {
+      heap = abi.HEAPU8;
+      dataView = new DataView(heap.buffer);
+    }
     return dataView;
   };
   // Each call frees what it allocated, and only that: a callback can run a nested call.
   // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
   // scope rewinds, a stack as nested calls (a callback inside an invoke) need; a scope that outgrows
   // it falls back to malloc and frees on exit. Every engine call crosses here, many per frame.
+  // The arena above its top is always zero: a scope clears what it used once, on exit, where
+  // clearing each block cost a fill call per handle, value, result and diagnostic.
   const arenaSize = 64 * 1024;
   const arenaBase = abi._malloc(arenaSize) >>> 0;
+  abi.HEAPU8.fill(0, arenaBase, arenaBase + arenaSize);
   let arenaTop = arenaBase;
   const allocations: number[] = [];
-  const alloc = (size: number): number => {
+  // `clear: false` for a block the caller overwrites whole (a number list, a string).
+  const alloc = (size: number, clear = true): number => {
     const aligned = (size + 7) & ~7;
-    let pointer: number;
     if (arenaTop + aligned <= arenaBase + arenaSize) {
-      pointer = arenaTop;
+      const pointer = arenaTop;
       arenaTop += aligned;
-    } else {
-      // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
-      pointer = abi._malloc(size) >>> 0;
-      allocations.push(pointer);
+      return pointer;
     }
-    abi.HEAPU8.fill(0, pointer, pointer + size);
+    // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
+    const pointer = abi._malloc(size) >>> 0;
+    allocations.push(pointer);
+    if (clear) abi.HEAPU8.fill(0, pointer, pointer + size);
     return pointer;
   };
   const scoped = <T>(work: () => T): T => {
@@ -1856,13 +1868,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     try {
       return work();
     } finally {
-      for (const pointer of allocations.splice(mark)) abi._free(pointer);
+      while (allocations.length > mark) abi._free(allocations.pop() as number);
+      if (arenaTop > top) abi.HEAPU8.fill(0, top, arenaTop);
       arenaTop = top;
     }
   };
   const string = (text: string): { pointer: number; bytes: number } => {
     const bytes = abi.lengthBytesUTF8(text);
-    const pointer = alloc(bytes + 1);
+    const pointer = alloc(bytes + 1, false);
     abi.stringToUTF8(text, pointer, bytes + 1);
     return { pointer, bytes };
   };
@@ -1914,7 +1927,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   };
   // A number list: f64 values, with the typed array's name (0 for a plain array).
   const writeNumbers = (pointer: number, list: ArrayLike<number>, name: number) => {
-    const numbers = alloc(Math.max(8, list.length * 8));
+    const numbers = alloc(Math.max(8, list.length * 8), false);
     abi.HEAPF64.set(list, numbers / 8);
     const w = view();
     w.setUint32(pointer, KIND.numbers, true);
@@ -1971,6 +1984,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     args.forEach((arg, i) => writeValue(pointer + i * VALUE, arg));
     return pointer;
   };
+  // A plain array of f64s; an indexed loop, where Array.from walks the typed array's iterator.
+  const doubles = (address: number, count: number): number[] => {
+    const heap = abi.HEAPF64;
+    const at = address / 8;
+    const list = new Array<number>(count);
+    for (let i = 0; i < count; i++) list[i] = heap[at + i] as number;
+    return list;
+  };
   const readValue = (pointer: number): EngineValue => {
     const v = view();
     switch (v.getUint32(pointer, true)) {
@@ -2003,12 +2024,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
           }),
         );
       }
-      case KIND.numbers: {
-        const at = v.getUint32(pointer + 48, true) / 8;
-        return Array.from(
-          abi.HEAPF64.subarray(at, at + Number(v.getBigUint64(pointer + 40, true))),
-        );
-      }
+      case KIND.numbers:
+        return doubles(v.getUint32(pointer + 48, true), Number(v.getBigUint64(pointer + 40, true)));
       default:
         return null;
     }
@@ -2139,12 +2156,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       abi.HEAPF64[address / 8] = value;
     },
     readByte: (address) => abi.HEAPU8[address] as number,
-    readDoubles: (address, count) => {
-      const at = address / 8;
-      return count === 1
-        ? (abi.HEAPF64[at] as number)
-        : Array.from(abi.HEAPF64.subarray(at, at + count));
-    },
+    readDoubles: (address, count) =>
+      count === 1 ? (abi.HEAPF64[address / 8] as number) : doubles(address, count),
     get: (self, path) =>
       scoped(() => {
         countCall("get", self, path);
