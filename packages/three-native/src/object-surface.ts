@@ -104,10 +104,9 @@ function defineGeometrySurface(
       const view = new Proxy(
         {},
         {
+          // getAttribute answers null for a missing name: one engine call, not two.
           get: (_, name) =>
-            typeof name === "string" && this.hasAttribute(name)
-              ? this.getAttribute(name)
-              : undefined,
+            typeof name === "string" ? (this.getAttribute(name) ?? undefined) : undefined,
           has: (_, name) => typeof name === "string" && this.hasAttribute(name),
           set: (_, name, attribute) => {
             this.setAttribute(String(name), attribute);
@@ -118,15 +117,12 @@ function defineGeometrySurface(
             return true;
           },
           ownKeys: () => names(),
-          getOwnPropertyDescriptor: (_, name) =>
-            typeof name === "string" && this.hasAttribute(name)
-              ? {
-                  value: this.getAttribute(name),
-                  writable: true,
-                  enumerable: true,
-                  configurable: true,
-                }
-              : undefined,
+          getOwnPropertyDescriptor: (_, name) => {
+            const value = typeof name === "string" ? this.getAttribute(name) : undefined;
+            return value === null || value === undefined
+              ? undefined
+              : { value, writable: true, enumerable: true, configurable: true };
+          },
         },
       );
       attributeViews.set(this, view);

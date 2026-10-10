@@ -42,6 +42,26 @@ describe("defineObjectSurface", () => {
     ).toBe(true);
   });
 
+  it("reads geometry.attributes.position with one engine call", () => {
+    class CountedGeometry extends BufferGeometry {
+      calls = 0;
+      override hasAttribute(name: string) {
+        this.calls++;
+        return super.hasAttribute(name);
+      }
+      override getAttribute(name: string) {
+        this.calls++;
+        return super.getAttribute(name);
+      }
+    }
+    defineObjectSurface({ bufferGeometry: CountedGeometry, geometries: [], materials: [] });
+    const geometry = new CountedGeometry().setAttribute("position", "p") as CountedGeometry;
+    const { attributes } = geometry as unknown as { attributes: Record<string, unknown> };
+    expect(attributes.position).toBe("p");
+    expect(attributes.normal).toBeUndefined();
+    expect(geometry.calls).toBe(2);
+  });
+
   it("keeps a material flag the back end already defined read-only", () => {
     class MeshBasicMaterial {}
     Object.defineProperty(MeshBasicMaterial.prototype, "isMeshBasicMaterial", {
