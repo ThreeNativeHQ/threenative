@@ -42,6 +42,7 @@ function memoryRuntime() {
   const typeId = (name: string) =>
     types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0;
   const addresses = new Map<string, number>();
+  const members = new Map<string, [string, number | undefined][]>();
   const calls: string[] = [];
   let next = 0;
   const construct = (name: string, args: readonly unknown[]): IEngineRef => {
@@ -75,7 +76,16 @@ function memoryRuntime() {
     get(self, property) {
       calls.push(`get ${property}`);
       if (property === "__address") return addresses.get(self.key) as number;
-      if (property === "position") return construct("Vector3", [7, 8, 9]);
+      // An object's members, and the one record that answers all their addresses.
+      if (property === "__addresses") return Object.fromEntries(members.get(self.key) ?? []);
+      if (property === "position" || property === "layers") {
+        const member = construct(property === "layers" ? "Layers" : "Vector3", [7, 8, 9]);
+        members.set(self.key, [
+          ...(members.get(self.key) ?? []),
+          [property, addresses.get(member.key)],
+        ]);
+        return member;
+      }
       throw new Error(`unexpected get ${property}`);
     },
     set(_self, property) {
@@ -106,19 +116,21 @@ describe("three's math values on the browser back end", () => {
     expect(calls).toEqual([]);
   });
 
-  it("reads and writes an engine vector's lanes in the engine's memory, one address read", () => {
+  it("reads and writes an object's members in the engine's memory, one address call", () => {
     const { runtime, calls, heap } = memoryRuntime();
     const { classes } = defineBrowserClasses(registry, runtime);
-    const Object3D = classes.Object3D as new () => { position: IVec };
+    const Object3D = classes.Object3D as new () => { position: IVec; layers: { mask: number } };
     const Vector3 = classes.Vector3 as new (x?: number, y?: number, z?: number) => IVec;
     const object = new Object3D();
-    const position = object.position;
+    const { position, layers } = object;
     expect(position).toBeInstanceOf(Vector3);
     position.add(new Vector3(1, 1, 1));
     expect([position.x, position.y, position.z]).toEqual([8, 9, 10]);
     expect([...heap.subarray(8, 11)]).toEqual([8, 9, 10]);
     expect(calls.filter((call) => call.startsWith("invoke") || call.startsWith("set"))).toEqual([]);
-    expect(calls.filter((call) => call === "get __address")).toHaveLength(1);
+    expect(layers.mask).toBe(7);
+    // The object answers both members' addresses in one call; neither member asks its own.
+    expect(calls.filter((call) => call.startsWith("get __address"))).toEqual(["get __addresses"]);
   });
 
   it("lends an engine call a vector and copies its lanes back, answering the JS value", () => {
@@ -361,6 +373,10 @@ describe("three's math values on the browser back end", () => {
         return self;
       },
       get(self, property) {
+        if (property === "__addresses") {
+          calls.push("get __addresses");
+          return { rotation: 64, quaternion: 128 };
+        }
         if (property === "rotation") return runtime.construct("Euler", []);
         if (property === "quaternion") return runtime.construct("Quaternion", [0, 0, 0, 1]);
         return runtime.get(self, property);
@@ -380,17 +396,20 @@ describe("three's math values on the browser back end", () => {
     )();
     const [orderOffset = -1] = registry.classes.Euler?.fields?.__order ?? [];
     const orders = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"] as const;
-    const rotation = group.rotation;
+    const { rotation, quaternion } = group; // at 64 and 128
     orders.forEach((order, i) => {
       bytes[64 + orderOffset] = i; // the Euler is the second object
       rotation.y = 0.5 + i;
       rotation.z = -1;
       expect(rotation.set(0.25, rotation.y, 2 - i, i % 2 ? order : undefined)).toBe(rotation);
-      const { x, y, z, w } = group.quaternion;
+      const { x, y, z, w } = quaternion;
       const expected = new Quaternion().setFromEuler(new Euler(0.25, 0.5 + i, 2 - i, order));
       expect([x, y, z, w]).toEqual([expected.x, expected.y, expected.z, expected.w]);
     });
-    expect(calls.filter((call) => /^(set|invoke) /u.test(call))).toEqual([]);
+    // One call answers both members' addresses; nothing else crosses.
+    expect(calls.filter((call) => /^(set|invoke) |__address/u.test(call))).toEqual([
+      "get __addresses",
+    ]);
     rotation.set(0, 0, 0, "XYZ"); // a new order: the engine reorders and syncs
     expect(calls.at(-1)).toBe("invoke set");
     // An Euler no object owns still crosses, so its own callback (if any) runs in the engine.

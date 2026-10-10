@@ -10,6 +10,7 @@
 #include "engine/scene/nodes.h"
 
 #include <cstring>
+#include <map>
 
 #include <cstdio>
 #include <cstring>
@@ -982,8 +983,28 @@ void euler_order_field() {
     CHECK(reinterpret_cast<const unsigned char*>(&object.rotation)[offset] == 5);
 }
 
+// One `__addresses` call answers each kept member's `__address`, as the member alias answers it.
+void object_addresses() {
+    tn::binding::Registry classes;
+    tn::binding::registerAll(classes);
+    for (const char* name : {"Object3D", "Group", "Mesh"}) {
+        const tn::binding::ClassBinding& binding = classes.at(name);
+        CHECK(binding.getters.count("__addresses") == 1);
+        if (binding.getters.count("__addresses") == 0) return;
+        tn::engine::Object3D object;
+        const auto at = [](const void* member) { return double(reinterpret_cast<uintptr_t>(member)); };
+        const std::map<std::string, double> expected = {{"position", at(&object.position)},
+            {"rotation", at(&object.rotation)}, {"quaternion", at(&object.quaternion)}, {"scale", at(&object.scale)},
+            {"up", at(&object.up)}, {"matrix", at(&object.matrix)}, {"matrixWorld", at(&object.matrixWorld)},
+            {"layers", at(&object.layers())}};
+        std::map<std::string, double> got;
+        for (const auto& [member, address] : binding.getters.at("__addresses")(&object).fields) got[member] = address.number;
+        CHECK(got == expected);
+    }
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses})

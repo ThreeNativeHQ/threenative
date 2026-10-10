@@ -47,6 +47,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "color.b",
@@ -306,6 +307,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "frustumCulled",
@@ -589,6 +591,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "frustumCulled",
@@ -971,6 +974,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "frustumCulled",
@@ -1642,6 +1646,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "color.b",
@@ -2134,6 +2139,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "frustumCulled",
@@ -2278,6 +2284,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "color.b",
@@ -2649,6 +2656,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "count",
@@ -2938,6 +2946,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "autoUpdate",
         "castShadow",
@@ -3181,6 +3190,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "frustumCulled",
@@ -3515,6 +3525,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "frustumCulled",
@@ -3890,6 +3901,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "frustumCulled",
@@ -4788,6 +4800,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "frustumCulled",
@@ -5010,6 +5023,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "bottom",
         "castShadow",
@@ -5211,6 +5225,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "aspect",
         "castShadow",
@@ -5483,6 +5498,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "color.b",
@@ -5939,6 +5955,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "backgroundBlurriness",
         "backgroundIntensity",
@@ -6236,6 +6253,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "bindMatrix.elements",
         "bindMatrixInverse.elements",
@@ -6639,6 +6657,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "angle",
         "castShadow",
@@ -6840,6 +6859,7 @@
       ],
       "getters": [
         "__address",
+        "__addresses",
         "__alwaysRender",
         "castShadow",
         "center.x",

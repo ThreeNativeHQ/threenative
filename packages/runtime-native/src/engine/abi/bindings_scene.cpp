@@ -290,6 +290,15 @@ void registerObject3D(ClassBinding& b) {
     b.fields["castShadow"] = {flags.castShadow, 0};
     b.fields["receiveShadow"] = {flags.receiveShadow, 0};
     b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
+    // Every kept member's `__address` in one call: the Wasm back end asks once per object, not per member.
+    b.getters["__addresses"] = [](void* self) {
+        auto* o = as<Object3D>(self);
+        const auto at = [](const void* member) { return Value::of(double(reinterpret_cast<uintptr_t>(member))); };
+        return Value::record({{"position", at(&o->positionValue())}, {"rotation", at(&o->rotationValue())},
+            {"quaternion", at(&o->quaternionValue())}, {"scale", at(&o->scaleValue())},
+            {"up", at(&o->up)}, {"matrix", at(&o->matrixValue())}, {"matrixWorld", at(&o->matrixWorldValue())},
+            {"layers", at(&o->layers())}});
+    };
     b.getters["castShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->castShadow()); };
     b.setters["castShadow"] = [](void* self, const Value& v) { as<Object3D>(self)->setCastShadow(flag(v)); };
     b.getters["receiveShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->receiveShadow()); };

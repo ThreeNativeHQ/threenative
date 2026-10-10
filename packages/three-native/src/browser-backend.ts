@@ -336,8 +336,18 @@ export function defineBrowserClasses(
   // ponytail: an engine call that reparents under any other name is missed; none does today.
   let parents = new WeakMap<object, unknown>();
   const moves = new Set(["add", "remove", "attach", "removeFromParent", "clear"]);
-  // Each object's kept `rotation` Euler -> the object, whose quaternion a rotation write syncs.
-  const rotations = new WeakMap<object, object>();
+  // A kept member -> [its owner, its name]: the owner's one `__addresses` call answers every member's
+  // address, and an owned `rotation` write syncs the owner's quaternion.
+  const within = new WeakMap<object, [object, string]>();
+  const records = new WeakMap<object, Record<string, number>>();
+  const recordOf = (owner: object) => {
+    let record = records.get(owner);
+    if (record === undefined) {
+      record = runtime.get(refOf(owner), "__addresses") as Record<string, number>;
+      records.set(owner, record);
+    }
+    return record;
+  };
   // An attribute's shape, in the order its `__shape` getter answers it: one call fills all four.
   const shapeKeys = ["count", "itemSize", "normalized", "gpuType"];
   const fastGetter = (binding: IRegistryClass, property: string) => {
@@ -366,7 +376,8 @@ export function defineBrowserClasses(
         if (!members.has(property)) {
           const member = fromEngine(runtime.get(refOf(this), property));
           members.set(property, member);
-          if (property === "rotation") rotations.set(member as object, this);
+          if (binding.getters.includes("__addresses"))
+            within.set(member as object, [this, property]);
         }
         return members.get(property);
       };
@@ -375,7 +386,10 @@ export function defineBrowserClasses(
   const addressOf = (self: object): number => {
     let address = addresses.get(self);
     if (address === undefined) {
-      address = runtime.get(refOf(self), "__address") as number;
+      const home = within.get(self);
+      address = home
+        ? (recordOf(home[0])[home[1]] ?? (runtime.get(refOf(self), "__address") as number))
+        : (runtime.get(refOf(self), "__address") as number);
       addresses.set(self, address);
     }
     return address;
@@ -801,6 +815,10 @@ export function defineBrowserClasses(
         [1, 1, -1, -1],
         [-1, -1, 1, 1],
       ];
+      const ownerOf = (euler: object) => {
+        const home = within.get(euler);
+        return home?.[1] === "rotation" ? home[0] : undefined;
+      };
       const sync = (euler: object, owner: object) => {
         const at = addressOf(euler);
         const [x = 0, y = 0, z = 0] = angles.map((offset) => read(at + offset, 1) as number);
@@ -811,7 +829,8 @@ export function defineBrowserClasses(
         const s1 = Math.sin(x / 2);
         const s2 = Math.sin(y / 2);
         const s3 = Math.sin(z / 2);
-        const q = addressOf((owner as { quaternion: object }).quaternion);
+        const q = recordOf(owner).quaternion;
+        if (q === undefined) throw new Error("an Object3D's __addresses names no quaternion");
         const [qx = 0, qy = 0, qz = 0, qw = 0] = targets;
         write(q + qx, s1 * c2 * c3 + sx * c1 * s2 * s3);
         write(q + qy, c1 * s2 * c3 + sy * s1 * c2 * s3);
@@ -824,7 +843,7 @@ export function defineBrowserClasses(
         Object.defineProperty(prototype, lane, {
           ...crossing,
           set(this: object, value: number) {
-            const owner = rotations.get(this);
+            const owner = ownerOf(this);
             if (owner === undefined) return crossing?.set?.call(this, value);
             write(addressOf(this) + offset, value);
             sync(this, owner);
@@ -836,7 +855,7 @@ export function defineBrowserClasses(
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
-          const owner = rotations.get(this);
+          const owner = ownerOf(this);
           if (owner === undefined) return set.apply(this, args);
           const at = addressOf(this);
           // Games pass their one order on every set; only a new order goes to the engine.
