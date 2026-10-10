@@ -428,6 +428,22 @@ function treeOf(root, sha) {
   return result.status === 0 && /^[0-9a-f]{40}$/u.test(tree) ? tree : null;
 }
 
+/** A pull-request candidate must be the exact base/head merge, so a changed input needs fresh verification. */
+export function assertMergeParentCandidate(root, candidateSha, base, head) {
+  const commit = git(root, ["cat-file", "-p", candidateSha]);
+  const headers = commit.stdout?.split("\n\n", 1)[0] ?? "";
+  const parents = [...headers.matchAll(/^parent ([0-9a-f]{40})$/gmu)].map((match) => match[1]);
+  if (
+    commit.status !== 0 ||
+    !/^[0-9a-f]{40}$/u.test(base ?? "") ||
+    !/^[0-9a-f]{40}$/u.test(head ?? "") ||
+    JSON.stringify(parents) !== JSON.stringify([base, head])
+  )
+    throw new Error(
+      "CI_REQUIRED_PR_CANDIDATE_MISMATCH: expected the exact proposed base/head merge; changed inputs require fresh verification",
+    );
+}
+
 function ghApi(pathname) {
   const repository = process.env.GITHUB_REPOSITORY;
   if (repository === undefined || !/^[^/\s]+\/[^/\s]+$/u.test(repository)) {
@@ -1019,10 +1035,19 @@ function output(result, format) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const options = parseArgs(process.argv.slice(2));
-    output(
-      options.plan !== undefined ? validatePlan(JSON.parse(options.plan)) : classify(options),
-      options.format,
-    );
+    if (options.plan !== undefined) {
+      output(validatePlan(JSON.parse(options.plan)), options.format);
+    } else {
+      // Only the live GitHub projection owes the parent assertion; local and offline keep classify().
+      if (options.format === "github" && options.eventName === "pull_request" && !options.local)
+        assertMergeParentCandidate(
+          options.root,
+          options.candidateSha ?? git(options.root, ["rev-parse", "HEAD"]).stdout.trim(),
+          options.base,
+          options.head,
+        );
+      output(classify(options), options.format);
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 2;
