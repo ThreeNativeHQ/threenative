@@ -2210,6 +2210,7 @@ void shadowCameraLayers() {
     batchCam.lookAt(0, 0, 0);
     batchCam.updateProjectionMatrix();
     auto batchLight = std::make_shared<DirectionalLight>(Color(1, 1, 1), 1.0);
+    batchLight->position.set(0, 10, 0); // frame the light above the y=2 layer-2 meshes so they sit inside the shadow frustum
     batchLight->setCastShadow(true);
     batchLight->shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
     batchScene.add(*batchLight);
@@ -2317,6 +2318,12 @@ void frustumCulling() {
     unculled->frustumCulled = false;
     const auto caster = add(std::make_shared<Mesh>(geometry, material), -200, 0);
     caster->setCastShadow(true);
+    // Frame the shadow caster so the test's caster reaches the shadow pass.
+    auto sun = std::make_shared<DirectionalLight>(Color(1, 1, 1), 1.0);
+    sun->setCastShadow(true);
+    auto& sc = static_cast<OrthographicCamera&>(*sun->shadow.camera);
+    sc.left = -300; sc.right = 300; sc.top = 300; sc.bottom = -300; sc.near = 0.1; sc.far = 1000;
+    scene.add(*sun);
     // Its geometry sits behind the camera; its one instance is moved in front of it.
     const auto instanced = std::make_shared<InstancedMesh>(geometry, material, 1);
     instanced->setMatrixAt(0, Matrix4().makeTranslation(0, 0, -25));
@@ -2333,10 +2340,58 @@ void frustumCulling() {
     (void)inside; (void)behind; (void)aside;
 }
 
+// three.js projectObject frustum-culls shadow casters against each shadow camera frustum.
+void shadowCasterFrustumCulling() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.batching = false;
+    camera.position.set(0, 0, 100);
+    camera.lookAt(0, 0, 200);
+    camera.near = 1; camera.far = 50;
+    camera.updateProjectionMatrix();
+
+    auto light = std::make_shared<DirectionalLight>(Color(1, 1, 1), 1.0);
+    light->setCastShadow(true);
+    light->position.set(0, 10, 0);
+    light->target->position.set(0, 0, 0);
+    light->shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+    auto& shadowCam = static_cast<OrthographicCamera&>(*light->shadow.camera);
+    shadowCam.left = -2; shadowCam.right = 2;
+    shadowCam.top = 2; shadowCam.bottom = -2;
+    shadowCam.near = 1; shadowCam.far = 20;
+    shadowCam.updateProjectionMatrix();
+    scene.add(*light);
+
+    const auto geometry = makeBoxGeometry();
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    const auto addCaster = [&](double x, double y, double z) {
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(x, y, z);
+        mesh->setCastShadow(true);
+        mesh->setLayer(2);
+        scene.add(*mesh);
+        return mesh;
+    };
+
+    const auto inside = addCaster(0, 0, 0);
+    const auto farOutside = addCaster(200, 0, 0);
+    const auto unculledOutside = addCaster(-200, 0, 0);
+    unculledOutside->frustumCulled = false;
+
+    const auto& items = database.prepare(scene, camera, lights);
+    std::size_t main = 0, shadowOnly = 0;
+    for (const auto& item : items) (item.mainPass ? main : shadowOnly) += 1;
+    std::printf("shadow caster frustum culling: %zu main, %zu shadow-only of %zu items\n", main, shadowOnly, items.size());
+    CHECK(main == 0);
+    CHECK(shadowOnly == 2);
+    (void)inside; (void)farOutside; (void)unculledOutside;
+}
+
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling})
 
 
 

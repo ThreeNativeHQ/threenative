@@ -138,7 +138,7 @@ constexpr uint64_t kBackSidePassKey = uint64_t(1) << 62;
 // LightShadow.updateMatrices in three's WebGPU coordinate system: the shadow camera stands at the
 // light, looks at the target, and `matrix` is the uv/depth bias matrix times its projection-view.
 DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& from, const std::array<double, 3>& to,
-                             uint32_t layersMask) {
+                             uint32_t layersMask, Frustum* frustum = nullptr) {
     Camera& camera = *shadow.camera;
     if (camera.coordinateSystem != CoordinateSystem::WebGPU) camera.coordinateSystem = CoordinateSystem::WebGPU;
     if (auto* o = dynamic_cast<OrthographicCamera*>(&camera)) o->updateProjectionMatrix();
@@ -148,6 +148,7 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     camera.updateMatrixWorld();
     Matrix4 projScreen;
     projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    if (frustum) frustum->setFromProjectionMatrix(projScreen, CoordinateSystem::WebGPU, false);
     Matrix4 matrix;
     matrix.set(0.5, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
     matrix.multiply(projScreen);
@@ -504,14 +505,13 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
 // three's Frustum.intersectsObject / intersectsSprite: the object's world bounding sphere against
 // this prepare's camera frustum. InstancedMesh uses its instance-aware sphere, computed once when
 // null, as three does.
-bool RenderDatabase::inFrustum(Object3D& object, std::string_view type) {
-    Sphere sphere;
+bool RenderDatabase::boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere) {
     if (type == "Sprite") {
         sphere.set(Vector3(0, 0, 0), 0.7071067811865476);
     } else if (type == "InstancedMesh") {
         auto& instanced = static_cast<InstancedMesh&>(object);
         if (instanced.boundingSphere == nullptr) instanced.computeBoundingSphere();
-        if (instanced.boundingSphere == nullptr) return true;
+        if (instanced.boundingSphere == nullptr) return false;
         sphere.copy(*instanced.boundingSphere);
     } else {
         auto& mesh = static_cast<Mesh&>(object);
@@ -519,13 +519,79 @@ bool RenderDatabase::inFrustum(Object3D& object, std::string_view type) {
         // targets, which three's include. Add bone- and morph-aware spheres when they draw off screen.
         if (type == "SkinnedMesh" || mesh.geometry == nullptr ||
             (!mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty()))
-            return true;
+            return false;
         if (mesh.geometry->boundingSphere == nullptr) mesh.geometry->computeBoundingSphere();
-        if (mesh.geometry->boundingSphere == nullptr) return true;
+        if (mesh.geometry->boundingSphere == nullptr) return false;
         sphere.copy(*mesh.geometry->boundingSphere);
     }
     sphere.applyMatrix4(object.matrixWorld);
+    return true;
+}
+
+bool RenderDatabase::inFrustum(Object3D& object, std::string_view type) {
+    Sphere sphere;
+    if (!boundingSphereOf(object, type, sphere)) return true;
     return frustum_.intersectsSphere(sphere);
+}
+
+bool RenderDatabase::inShadowFrustum(Object3D& object, std::string_view type) {
+    // ponytail: point light shadow culling across 6 faces omitted; keep casters unculled when a point shadow is present
+    if (shadowPointLightActive_) return true;
+    if (shadowFrustums_.empty()) return false;
+    Sphere sphere;
+    if (!boundingSphereOf(object, type, sphere)) return true;
+    const uint32_t mask = Layers::bits(object.layers().mask);
+    for (const auto& sf : shadowFrustums_) {
+        if ((mask & sf.layersMask) != 0 && sf.frustum.intersectsSphere(sphere)) return true;
+    }
+    return false;
+}
+
+void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCamera) {
+    shadowFrustums_.clear();
+    shadowByLight_.clear();
+    shadowPointLightActive_ = false;
+    if (!shadowMapEnabled) return;
+
+    auto collect = [&](auto& self, Object3D& obj) -> void {
+        if (!obj.visible()) return;
+        const std::string_view type = obj.type();
+        if (type == "DirectionalLight") {
+            auto& l = static_cast<DirectionalLight&>(obj);
+            if (l.castShadow()) {
+                l.target->updateWorldMatrix(true, false);
+                const auto from = worldPosition(l), to = worldPosition(*l.target);
+                Frustum f;
+                const uint32_t mask = effectiveShadowLayersMask(*l.shadow.camera, mainCamera);
+                shadowByLight_[&l] = shadowOf(l.shadow, from, to, mask, &f);
+                shadowFrustums_.push_back({f, mask});
+            }
+        } else if (type == "SpotLight") {
+            auto& l = static_cast<SpotLight&>(obj);
+            if (l.castShadow()) {
+                l.target->updateWorldMatrix(true, false);
+                constexpr double kRadToDeg = 180.0 / 3.14159265358979323846;
+                auto& shadowCamera = static_cast<PerspectiveCamera&>(*l.shadow.camera);
+                shadowCamera.fov = kRadToDeg * 2 * l.angle * l.shadow.focus;
+                shadowCamera.aspect = (l.shadow.mapSize.x / l.shadow.mapSize.y) * l.shadow.aspect;
+                shadowCamera.far = l.distance != 0 ? l.distance : shadowCamera.far;
+                const auto from = worldPosition(l), to = worldPosition(*l.target);
+                Frustum f;
+                const uint32_t mask = effectiveShadowLayersMask(shadowCamera, mainCamera);
+                shadowByLight_[&l] = shadowOf(l.shadow, from, to, mask, &f);
+                shadowFrustums_.push_back({f, mask});
+            }
+        } else if (type == "PointLight") {
+            auto& l = static_cast<PointLight&>(obj);
+            if (l.castShadow()) {
+                // ponytail: point light shadow culling across 6 faces omitted; keep casters unculled when a point light casts shadows
+                shadowPointLightActive_ = true;
+            }
+        }
+        for (Object3D* child : obj.children)
+            if (child) self(self, *child);
+    };
+    collect(collect, root);
 }
 
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
@@ -537,7 +603,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         return;
     }
     bool mainPass = object.layers().test(camera.layers());
-    const bool shadowCaster = shadowMapEnabled && object.castShadow();
+    bool shadowCaster = shadowMapEnabled && object.castShadow();
     if (mainPass || shadowCaster) {
         const std::string_view type = plainMesh ? "Mesh" : object.type();
         if (type == "LOD") {
@@ -550,6 +616,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             type == "LineSegments") {
             const auto& mesh = static_cast<const Mesh&>(object);
             if (mainPass && mesh.frustumCulled && !cullExempt_ && !inFrustum(object, type)) mainPass = false;
+            if (shadowCaster && mesh.frustumCulled && !cullExempt_ && !inShadowFrustum(object, type)) shadowCaster = false;
             const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                  !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                  !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
@@ -560,11 +627,12 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             r.seen = frame_;
             if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
                 if (compact) {
-                    addBatchMesh(mesh, r, mainPass);
+                    addBatchMesh(mesh, r, mainPass, shadowCaster);
                 } else {
                     DrawItem& d = refresh(mesh, r);
                     d.batchable = false;
                     d.mainPass = mainPass;
+                    d.castShadow = shadowCaster;
                     d.layers = Layers::bits(mesh.layers().mask);
                     const bool morphed = !mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty();
                     d.morphGeometry = morphed ? mesh.geometry.get() : nullptr;
@@ -636,8 +704,10 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             const auto from = worldPosition(l), to = worldPosition(*l.target);
             direct_.emplace_back(object.id(), DirectLight::directional(normalized({from[0] - to[0], from[1] - to[1], from[2] - to[2]}),
                                                                       scaled(l.color, l.intensity)));
-            if (shadowMapEnabled && l.castShadow())
-                direct_.back().second.shadow = shadowOf(l.shadow, from, to, effectiveShadowLayersMask(*l.shadow.camera, camera));
+            if (shadowMapEnabled && l.castShadow()) {
+                const auto it = shadowByLight_.find(&l);
+                direct_.back().second.shadow = it != shadowByLight_.end() ? it->second : shadowOf(l.shadow, from, to, effectiveShadowLayersMask(*l.shadow.camera, camera));
+            }
         } else if (mainPass && type == "PointLight") {
             auto& l = static_cast<PointLight&>(object); // its shadow camera moves, as three's does
             DirectLight d;
@@ -664,13 +734,18 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             d.coneCos = std::cos(l.angle);
             d.penumbraCos = std::cos(l.angle * (1 - l.penumbra));
             if (shadowMapEnabled && l.castShadow()) {
-                // SpotLightShadow.updateMatrices: the camera's fov covers the cone (times focus), its
-                // aspect is the map's, and its far is the light's distance when it has one.
-                auto& shadowCamera = static_cast<PerspectiveCamera&>(*l.shadow.camera);
-                shadowCamera.fov = kRadToDeg * 2 * l.angle * l.shadow.focus;
-                shadowCamera.aspect = (l.shadow.mapSize.x / l.shadow.mapSize.y) * l.shadow.aspect;
-                shadowCamera.far = l.distance != 0 ? l.distance : shadowCamera.far;
-                d.shadow = shadowOf(l.shadow, d.position, to, effectiveShadowLayersMask(*l.shadow.camera, camera));
+                const auto it = shadowByLight_.find(&l);
+                if (it != shadowByLight_.end()) {
+                    d.shadow = it->second;
+                } else {
+                    // SpotLightShadow.updateMatrices: the camera's fov covers the cone (times focus), its
+                    // aspect is the map's, and its far is the light's distance when it has one.
+                    auto& shadowCamera = static_cast<PerspectiveCamera&>(*l.shadow.camera);
+                    shadowCamera.fov = kRadToDeg * 2 * l.angle * l.shadow.focus;
+                    shadowCamera.aspect = (l.shadow.mapSize.x / l.shadow.mapSize.y) * l.shadow.aspect;
+                    shadowCamera.far = l.distance != 0 ? l.distance : shadowCamera.far;
+                    d.shadow = shadowOf(l.shadow, d.position, to, effectiveShadowLayersMask(*l.shadow.camera, camera));
+                }
             }
             direct_.emplace_back(object.id(), d);
         } else if (mainPass && type == "HemisphereLight") {
@@ -859,7 +934,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
 
 // Capture members while their scene/material cache lines are hot. DrawItems are made only for
 // submitted draws; sorting and packing touch compact arrays rather than the authored object graph.
-void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPass) {
+void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPass, bool shadowCaster) {
     const auto& geometry = record.buffers;
     const uint32_t layers = Layers::bits(mesh.layers().mask);
     const auto same = [&](std::size_t index) {
@@ -868,7 +943,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
         const Mesh& first = *member.mesh;
         return ((record.geometry == member.record->geometry && record.geometryRevision == member.record->geometryRevision) ||
                 group.geometry == geometry) && first.renderOrder() == mesh.renderOrder() &&
-               first.castShadow() == mesh.castShadow() && first.receiveShadow() == mesh.receiveShadow() &&
+               member.shadowCaster == shadowCaster && first.receiveShadow() == mesh.receiveShadow() &&
                member.mainPass == mainPass && member.layers == layers &&
                first.material->type == mesh.material->type &&
                (first.material == mesh.material ||
@@ -884,7 +959,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
         for (const auto* buffer : geometry)
             mix(std::hash<const void*>{}(buffer));
         mix(static_cast<std::size_t>(mesh.renderOrder()));
-        mix(mesh.castShadow());
+        mix(static_cast<std::size_t>(shadowCaster));
         mix(mesh.receiveShadow());
         mix(static_cast<std::size_t>(mainPass));
         mix(static_cast<std::size_t>(layers));
@@ -913,7 +988,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
     batchMeshes_.push_back(
         {&mesh, mesh.material.get(),
          (p[2] * m[12] + p[6] * m[13] + p[10] * m[14] + p[14]) / (p[3] * m[12] + p[7] * m[13] + p[11] * m[14] + p[15]),
-         mesh.id(), mesh.renderOrder(), &record, mainPass, layers});
+         mesh.id(), mesh.renderOrder(), &record, mainPass, layers, shadowCaster});
     BatchTransform packed;
     for (int i = 0; i < 16; ++i)
         packed.matrix[i] = static_cast<float>(m[i]);
@@ -993,6 +1068,7 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
                 const Mesh& mesh = *member.mesh;
                 DrawItem item = refresh(mesh, record(mesh, *member.record));
                 item.mainPass = member.mainPass;
+                item.castShadow = member.shadowCaster;
                 item.layers = member.layers;
                 items.push_back(std::move(item));
             }
@@ -1002,6 +1078,7 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         const Mesh& first = *firstMember.mesh;
         DrawItem d = refresh(first, record(first, *firstMember.record));
         d.mainPass = firstMember.mainPass;
+        d.castShadow = firstMember.shadowCaster;
         d.layers = firstMember.layers;
         const auto slot = batchGroups_++;
         if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
@@ -1126,6 +1203,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     projectionView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     batchProjView_ = toArray(projectionView);
     frustum_.setFromProjectionMatrix(projectionView, camera.coordinateSystem, camera.reversedDepth());
+    collectShadowFrustums(scene, camera);
     if (flat) flatRecords_.resize(scene.children.size());
     else flatRecords_.clear();
     project(scene, camera, items, lights, flat, force);
@@ -1140,6 +1218,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
             auto& item = refresh(*member.mesh, record(*member.mesh, *member.record));
             item.batchable = true;
             item.mainPass = member.mainPass;
+            item.castShadow = member.shadowCaster;
             item.layers = member.layers;
             items.push_back(item);
         }

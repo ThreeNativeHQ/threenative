@@ -131,7 +131,17 @@ class RenderDatabase {
     std::deque<DrawCache> batchCaches_;
     Frustum frustum_;          // this prepare's camera frustum, as three's _frustum
     bool cullExempt_ = false;  // inside a BatchedMesh, which three culls per instance
+    struct ShadowFrustum {
+        Frustum frustum;
+        uint32_t layersMask = 1;
+    };
+    std::vector<ShadowFrustum> shadowFrustums_;
+    std::unordered_map<const Light*, DirectLight::Shadow> shadowByLight_;
+    bool shadowPointLightActive_ = false;
+    void collectShadowFrustums(Object3D& root, const Camera& mainCamera);
+    bool boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere);
     bool inFrustum(Object3D& object, std::string_view type);  // a deque: a draw keeps its slot's address while later slots grow
+    bool inShadowFrustum(Object3D& object, std::string_view type);
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
 
@@ -149,7 +159,7 @@ class RenderDatabase {
     Record& record(const Mesh& mesh, Record& cached, bool materialize = true);
     DrawItem& refresh(const Mesh& mesh, Record& record);
     void batchMeshes(std::vector<DrawItem>& items);
-    void addBatchMesh(const Mesh& mesh, Record& record, bool mainPass);
+    void addBatchMesh(const Mesh& mesh, Record& record, bool mainPass, bool shadowCaster);
     struct BatchMember {
         const Mesh* mesh;
         const Material* material;
@@ -159,6 +169,7 @@ class RenderDatabase {
         Record* record;
         bool mainPass = true;
         uint32_t layers = 1;
+        bool shadowCaster = false;
     };
     struct MeshGroup {
         GeometryKey geometry;
