@@ -501,6 +501,33 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
     return cached;
 }
 
+// three's Frustum.intersectsObject / intersectsSprite: the object's world bounding sphere against
+// this prepare's camera frustum. InstancedMesh uses its instance-aware sphere, computed once when
+// null, as three does.
+bool RenderDatabase::inFrustum(Object3D& object, std::string_view type) {
+    Sphere sphere;
+    if (type == "Sprite") {
+        sphere.set(Vector3(0, 0, 0), 0.7071067811865476);
+    } else if (type == "InstancedMesh") {
+        auto& instanced = static_cast<InstancedMesh&>(object);
+        if (instanced.boundingSphere == nullptr) instanced.computeBoundingSphere();
+        if (instanced.boundingSphere == nullptr) return true;
+        sphere.copy(*instanced.boundingSphere);
+    } else {
+        auto& mesh = static_cast<Mesh&>(object);
+        // ponytail: skinned and morphed meshes always draw; native bounds ignore bones and morph
+        // targets, which three's include. Add bone- and morph-aware spheres when they draw off screen.
+        if (type == "SkinnedMesh" || mesh.geometry == nullptr ||
+            (!mesh.geometry->morphPositions.empty() && !mesh.morphTargetInfluences.empty()))
+            return true;
+        if (mesh.geometry->boundingSphere == nullptr) mesh.geometry->computeBoundingSphere();
+        if (mesh.geometry->boundingSphere == nullptr) return true;
+        sphere.copy(*mesh.geometry->boundingSphere);
+    }
+    sphere.applyMatrix4(object.matrixWorld);
+    return frustum_.intersectsSphere(sphere);
+}
+
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                              bool updateChildren, bool force, Record* cached, bool plainMesh) {
     if (!object.visible()) {
@@ -509,7 +536,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 child->updateMatrixWorld(force);
         return;
     }
-    const bool mainPass = object.layers().test(camera.layers());
+    bool mainPass = object.layers().test(camera.layers());
     const bool shadowCaster = shadowMapEnabled && object.castShadow();
     if (mainPass || shadowCaster) {
         const std::string_view type = plainMesh ? "Mesh" : object.type();
@@ -522,6 +549,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
             type == "LineSegments") {
             const auto& mesh = static_cast<const Mesh&>(object);
+            if (mainPass && mesh.frustumCulled && !cullExempt_ && !inFrustum(object, type)) mainPass = false;
             const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                  !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                  !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
@@ -530,7 +558,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                                  mesh.matrixWorld.determinant() > 0;
             Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
             r.seen = frame_;
-            if (r.drawable && r.material->visible) {
+            if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
                 if (compact) {
                     addBatchMesh(mesh, r, mainPass);
                 } else {
@@ -592,8 +620,12 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             }
         } else if (type == "BatchedMesh") {
             // three's BatchedMesh: each geometry's visible instances, drawn as one instanced mesh.
+            // ponytail: never culled; three culls the whole batch and then each instance. Add when a
+            // BatchedMesh scene draws mostly off screen.
+            cullExempt_ = true;
             for (const auto& batch : static_cast<BatchedMesh&>(object).drawBatches())
                 project(*batch, camera, items, lights, false, false, nullptr, false);
+            cullExempt_ = false;
         } else if (mainPass && type == "AmbientLight") {
             const auto& l = static_cast<const AmbientLight&>(object);
             for (int c = 0; c < 3; ++c)
@@ -1093,6 +1125,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     Matrix4 projectionView;
     projectionView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     batchProjView_ = toArray(projectionView);
+    frustum_.setFromProjectionMatrix(projectionView, camera.coordinateSystem, camera.reversedDepth());
     if (flat) flatRecords_.resize(scene.children.size());
     else flatRecords_.clear();
     project(scene, camera, items, lights, flat, force);

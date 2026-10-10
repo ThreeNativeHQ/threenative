@@ -32,8 +32,9 @@ namespace tn::engine {
  * against the camera's — into meshes and lights.
  *
  * Lights: every directional, point and spot light, summed in three's id order; one hemisphere light
- * (more are refused by name). Not yet: frustum culling (PRD-519; it changes cost, not pixels),
- * shadows, groups and multi-material meshes.
+ * (more are refused by name). Frustum culling follows projectObject: a frustumCulled mesh, line,
+ * sprite or instanced mesh outside the camera frustum skips the main pass. Not yet: groups and
+ * multi-material meshes.
  */
 class RenderDatabase {
   public:
@@ -127,7 +128,10 @@ class RenderDatabase {
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
     std::vector<std::shared_ptr<BufferStore>> batchColors_;
     std::vector<shader::StandardMaterial> batchParams_;
-    std::deque<DrawCache> batchCaches_;  // a deque: a draw keeps its slot's address while later slots grow
+    std::deque<DrawCache> batchCaches_;
+    Frustum frustum_;          // this prepare's camera frustum, as three's _frustum
+    bool cullExempt_ = false;  // inside a BatchedMesh, which three culls per instance
+    bool inFrustum(Object3D& object, std::string_view type);  // a deque: a draw keeps its slot's address while later slots grow
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
 

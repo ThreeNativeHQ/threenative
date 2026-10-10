@@ -68,8 +68,8 @@ void uniformBatchPreparation() {
         *left[i] = beforeA; *right[i] = beforeB;
     }
     Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
-    camera.position.set(0, 10, 100);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(32, 80, 200); // the whole 64 x 64 grid inside the frustum
+    camera.lookAt(32, 0, 32);
     const auto geometry = makeBoxGeometry();
     std::vector<std::shared_ptr<Mesh>> meshes;
     for (int i = 0; i < 4096; ++i) {
@@ -107,6 +107,8 @@ void uniformBatchPreparation() {
     // Exercise signs/zero ties, nonfinite fallback, and groups with different active radix digits.
     Camera depthCamera;
     depthCamera.coordinateSystem = CoordinateSystem::WebGPU;
+    // The depth keys under test lie far outside this identity projection's clip volume.
+    for (auto& mesh : meshes) mesh->frustumCulled = false;
     for (int pattern = 0; pattern < 5; ++pattern) {
         const bool infinite = pattern == 1, multiple = pattern >= 2;
         depthCamera.projectionMatrix.identity();
@@ -281,7 +283,8 @@ void uniformBatchPreparation() {
         Mesh& mesh = mode == 0 || mode == 4 ? hookMesh : plainMesh;
         DirectionalLight& light = mode == 1 || mode == 4 ? hookLight : plainLight;
         PerspectiveCamera& view = mode == 3 || mode == 4 ? hookCamera : plainCamera;
-        hookCamera.watched = &mesh; mesh.position.x = 1; world.add(mesh).add(light);
+        // The default camera sits inside this mesh; the test is about update order, not culling.
+        hookCamera.watched = &mesh; mesh.position.x = 1; mesh.frustumCulled = false; world.add(mesh).add(light);
         RenderDatabase db;
         CHECK(db.prepare(world, view, lights).size() == 1);
         CHECK(trace == (mode == 0 ? "M" : mode == 1 ? "L" : mode == 2 ? "S" : mode == 3 ? "C" : "SMLC"));
@@ -304,7 +307,7 @@ void uniformBatchPreparation() {
     // Queries from a light target, camera child or shadow camera must follow scene updates.
     for (int mode = 0; mode < 4; ++mode) {
         Scene world; PerspectiveCamera view; DirectionalLight light;
-        Mesh mesh(geometry, meshes[2]->material); mesh.position.x = 1;
+        Mesh mesh(geometry, meshes[2]->material); mesh.position.x = 1; mesh.frustumCulled = false;
         auto hook = std::make_shared<MoveOnUpdate>(); hook->watched = &mesh;
         if (mode == 0) light.target = hook;
         if (mode == 1) hook->add(*light.target);
@@ -2270,8 +2273,8 @@ void mapSampleabilityChanges() {
 // draw's cache pointer must stay where the next frame finds it, never in a reallocated-away block.
 void batchCachesStayPut() {
     Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
-    camera.position.set(0, 10, 100);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(32, 80, 200); // every geometry inside the frustum
+    camera.lookAt(32, 0, 32);
     std::vector<std::shared_ptr<Mesh>> meshes;
     for (int g = 0; g < 64; ++g) {
         const auto geometry = makeBoxGeometry();
@@ -2292,10 +2295,48 @@ void batchCachesStayPut() {
     CHECK(moved == 0);
 }
 
+// three's projectObject frustum-culls each Mesh, Line, Sprite and InstancedMesh (its instance-aware
+// sphere) unless `frustumCulled` is false; a culled shadow caster still reaches the shadow pass.
+void frustumCulling() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.batching = false; // one item per mesh
+    camera.position.set(0, 0, 10);
+    camera.lookAt(0, 0, 0);
+    const auto geometry = makeBoxGeometry();
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    const auto add = [&](std::shared_ptr<Mesh> mesh, double x, double z) {
+        mesh->position.set(x, 0, z);
+        scene.add(*mesh);
+        return mesh;
+    };
+    const auto inside = add(std::make_shared<Mesh>(geometry, material), 0, 0);
+    const auto behind = add(std::make_shared<Mesh>(geometry, material), 0, 20);
+    const auto aside = add(std::make_shared<Mesh>(geometry, material), 200, 0);
+    const auto unculled = add(std::make_shared<Mesh>(geometry, material), 0, 30);
+    unculled->frustumCulled = false;
+    const auto caster = add(std::make_shared<Mesh>(geometry, material), -200, 0);
+    caster->setCastShadow(true);
+    // Its geometry sits behind the camera; its one instance is moved in front of it.
+    const auto instanced = std::make_shared<InstancedMesh>(geometry, material, 1);
+    instanced->setMatrixAt(0, Matrix4().makeTranslation(0, 0, -25));
+    add(instanced, 0, 25);
+    const auto sprite = std::make_shared<Sprite>();
+    sprite->position.set(0, 0, 40);
+    scene.add(*sprite);
+    const auto& items = database.prepare(scene, camera, lights);
+    std::size_t main = 0, shadowOnly = 0;
+    for (const auto& item : items) (item.mainPass ? main : shadowOnly) += 1;
+    std::printf("frustum: %zu main, %zu shadow-only of %zu items\n", main, shadowOnly, items.size());
+    CHECK(main == 3);       // inside, unculled, instanced
+    CHECK(shadowOnly == 1); // the caster off to the side
+    (void)inside; (void)behind; (void)aside;
+}
+
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling})
 
 
 
