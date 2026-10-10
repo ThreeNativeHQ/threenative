@@ -23,14 +23,22 @@ const RENDER_EXTENSIONS = new Set([".css", ".js", ".jsx", ".ts", ".tsx"]);
 // footing as Rapier owning its solver, and it is the reason the test below says "the appearance"
 // and not "every parameter".
 //
+// `contactShadow` is the second shape (PRD-561): a compute pass that turns the scene's depth into a
+// shadow-term texture and draws nothing. The length, thickness, contrast, which light it traces
+// toward and where the term is multiplied in are all the game's, in its own stage file.
+//
 // Adding a name here needs the same proof: the game must be able to change the appearance
 // without editing package code. A symbol that picks a material, a colour or a timing curve
 // belongs in `src/render/` as generated source instead.
 const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
+  "ContactShadowNode",
+  "IContactShadowDepth",
+  "IContactShadowOptions",
   "ISpectralOceanCascade",
   "ISpectralOceanHeight",
   "ISpectralOceanOptions",
   "SpectralOcean",
+  "contactShadow",
 ]);
 
 const FRAMEWORK_IMPORT =

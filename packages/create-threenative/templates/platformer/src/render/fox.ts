@@ -8,25 +8,21 @@ import {
   BoxGeometry,
   type BufferGeometry,
   CapsuleGeometry,
-  CircleGeometry,
   ConeGeometry,
   CylinderGeometry,
   Group,
   type Material,
   MathUtils,
   Mesh,
-  type MeshBasicMaterial,
   SphereGeometry,
   TorusGeometry,
 } from "three";
-import { flat, toon } from "./materials.js";
+import { toon } from "./materials.js";
 import { C } from "./palette.js";
 
 export interface IFoxPose {
   readonly dashing: boolean;
   readonly dt: number;
-  /** Metres between the fox's feet and the surface under it, for the contact shadow. */
-  readonly drop: number;
   readonly grounded: boolean;
   readonly speed: number;
   readonly vy: number;
@@ -144,16 +140,6 @@ export function createFox(): IFox {
     previous = segment;
   }
 
-  // The contact shadow: a blob that shrinks with the drop, which is what keeps the fox planted on
-  // a bright grass cap where the shadow map's own shadow is easy to lose.
-  const blob = new Mesh(
-    new CircleGeometry(0.42, 16),
-    flat(0x0a2436, { depthWrite: false, opacity: 0.3 }),
-  );
-  blob.rotation.x = -Math.PI / 2;
-  blob.renderOrder = 2;
-  root.add(blob);
-
   let time = 0;
   return {
     group: root,
@@ -186,11 +172,6 @@ export function createFox(): IFox {
         segment.rotation.z = Math.sin(time * (5 + run * 4) - index * 0.7) * (0.1 + run * 0.14);
         segment.rotation.y = Math.sin(time * 2.4 - index * 0.5) * 0.1;
       }
-      blob.position.y = -pose.drop + 0.02;
-      blob.visible = pose.drop < 7;
-      const k = MathUtils.clamp(1 - pose.drop / 7, 0.25, 1);
-      blob.scale.setScalar(k);
-      (blob.material as MeshBasicMaterial).opacity = 0.3 * k;
     },
   };
 }

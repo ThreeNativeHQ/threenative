@@ -362,10 +362,10 @@ export class ContactShadowNode extends Node {
       store(0);
       const skip = sampling[0].greaterThanEqual(boundsMax).or(sampling[0].lessThanEqual(boundsMin));
       If(skip.not(), () => {
-        flag.element(0).assign(uint(1));
+        flag.element(int(0)).assign(uint(1));
       });
       workgroupBarrier();
-      const groupActive = flag.element(0).equal(uint(1));
+      const groupActive = flag.element(int(0)).equal(uint(1));
       If(groupActive, () => {
         for (let i = 1; i < reads; i += 1) {
           readSample(i);

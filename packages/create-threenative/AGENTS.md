@@ -19,7 +19,7 @@ or a platform's status changes. `pnpm sync:agents` mirrors them like every other
 user's repo. They are a floor the model can rewrite or delete, not a ceiling it must reach
 through config. Two hard constraints, both asserted in CI:
 
-- No `@threenative/` import may appear in `templates/*/src/render/`.
+- No `@threenative/` import may appear in `templates/*/src/render/`. The one exception is the `contactShadow` import in `contactShadowStage.ts`: a compute pass that draws nothing, listed in `RENDER_PORTABLE_CORE_SYMBOLS` (`scripts/check-core-boundary.ts`).
 - The generated `package.json` must contain no `catalog:` protocol — templates carry real
   versions, kept in sync by hand with `pnpm-workspace.yaml`.
 

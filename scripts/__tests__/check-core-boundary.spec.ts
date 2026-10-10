@@ -102,6 +102,11 @@ describe("core boundary gate", () => {
       'import { SpectralOcean as Sea } from "@threenative/core";\n',
       "allow",
     ],
+    [
+      "the contact-shadow mechanism and its option types",
+      'import { type IContactShadowOptions, contactShadow } from "@threenative/core";\n',
+      "allow",
+    ],
     ["a look-owning symbol", 'import { defineGame } from "@threenative/core";\n', "reject"],
     [
       "a look-owning symbol smuggled beside an allowed one",

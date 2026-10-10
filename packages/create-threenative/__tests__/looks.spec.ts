@@ -21,6 +21,9 @@ const requiredBootErrorDeclarations = [
 ] as const;
 const bootErrorColour = /^(?:#[\da-f]{6}|var\(--[\w-]+\))$/iu;
 
+const CONTACT_SHADOW_IMPORT =
+  'import { type IContactShadowOptions, contactShadow } from "@threenative/core";\n';
+
 describe("starter visual floor", () => {
   it("should provide readable dynamic-range defaults without framework imports", async () => {
     const files = await Promise.all(
@@ -161,7 +164,10 @@ describe("starter visual floor", () => {
     );
     for (const entries of files) {
       for (const [name, source] of entries) {
-        expect(source, name).not.toContain("@threenative/");
+        // The one core import a floor template's render folder makes: a mechanism the look drives
+        // (it draws nothing), admitted by `RENDER_PORTABLE_CORE_SYMBOLS` in
+        // `scripts/check-core-boundary.ts`. Any other change to that line trips the check.
+        expect(source.replace(CONTACT_SHADOW_IMPORT, ""), name).not.toContain("@threenative/");
         // Loading is the one generated surface that carries real startup behavior: safe-area
         // layout, texture crops, truthful progress and disposal. Its source stays game-owned; the
         // old 200-line smell cap must not reject that behavior.
