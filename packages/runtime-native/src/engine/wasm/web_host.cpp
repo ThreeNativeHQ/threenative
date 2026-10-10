@@ -312,8 +312,12 @@ extern "C" int tnw_web_compile_poll(uint32_t id) {
 /** three's initTexture: the same upload and mip submission as a draw, without a frame. */
 extern "C" int tnw_web_init_texture(const tn_handle_t* textureHandle) {
     if (state != Ready) { failure = "TN_WASM_TEXTURE: device not ready"; return 1; }
-    auto* texture = objectAs<Texture>(textureHandle, "Texture");
-    if (!texture) { failure = "TN_WASM_TEXTURE: texture handle invalid"; return 1; }
+    // Any engine texture class: a game hands its DataTexture and CanvasTexture maps here too.
+    auto* object = textureHandle == nullptr ? nullptr : tn::abi::objectOf(*textureHandle);
+    if (object == nullptr || !(tn::binding::isTextureClass(object->cls) || object->cls == "Data3DTexture")) {
+        failure = "TN_WASM_TEXTURE: texture handle invalid"; return 1;
+    }
+    auto* texture = static_cast<Texture*>(object->ptr.get());
     try {
         renderer->initTexture(*texture);
         return 0;
