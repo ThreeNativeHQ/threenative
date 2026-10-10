@@ -155,6 +155,12 @@ void registerBufferAttribute(ClassBinding& b, const char* cls) {
     b.getters["count"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->count())); };
     b.getters["itemSize"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->itemSize)); };
     b.getters["normalized"] = [](void* self) { return Value::of(as<BufferAttribute>(self)->normalized); };
+    // count, itemSize, normalized (0 or 1) and gpuType: the web surface reads the shape with one call.
+    b.getters["__shape"] = [](void* self) {
+        const auto* attribute = as<BufferAttribute>(self);
+        return numbers({double(attribute->count()), double(attribute->itemSize), attribute->normalized ? 1.0 : 0.0,
+                        double(attribute->gpuType)});
+    };
     b.getters["usage"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->usage)); };
     // three's usage is a hint the WebGPU backend keeps and the engine uploads on needsUpdate either
     // way; a value that is none of three's nine *Usage constants is refused.

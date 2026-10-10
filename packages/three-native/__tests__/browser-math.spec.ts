@@ -198,29 +198,60 @@ describe("three's math values on the browser back end", () => {
     expect(engineReads).toBe(3);
   });
 
-  it("keeps a mesh's geometry and an attribute's shape until they are set", () => {
+  it("reads an attribute's shape with one engine call", () => {
+    const { runtime } = memoryRuntime();
+    const reads: string[] = [];
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      construct: (name) => ({ key: name, type: runtime.typeId(name) }),
+      get(_self, property) {
+        reads.push(property);
+        return property === "__shape"
+          ? [4, 3, 1, 1015]
+          : (
+              { count: 4, itemSize: 3, normalized: true, gpuType: 1015 } as Record<
+                string,
+                number | boolean
+              >
+            )[property];
+      },
+    });
+    const attribute = new (
+      classes.BufferAttribute as new (
+        array: Float32Array,
+        itemSize: number,
+      ) => { count: number; itemSize: number; normalized: boolean; gpuType: number }
+    )(new Float32Array(12), 3);
+    const shape = () => [
+      attribute.count,
+      attribute.itemSize,
+      attribute.normalized,
+      attribute.gpuType,
+    ];
+    expect([shape(), shape()]).toEqual([
+      [4, 3, true, 1015],
+      [4, 3, true, 1015],
+    ]);
+    expect(reads).toEqual(["__shape"]);
+  });
+
+  it("keeps a mesh's geometry until it is set", () => {
     const { runtime } = memoryRuntime();
     const reads: string[] = [];
     const { classes } = defineBrowserClasses(registry, {
       ...runtime,
       get(self, property) {
         reads.push(property);
-        return property === "itemSize" ? 3 : property === "normalized" ? false : self;
+        return self;
       },
       set: () => undefined,
     });
     const mesh = new (classes.Mesh as new () => { geometry: unknown })();
-    const attribute = new (
-      classes.BufferAttribute as new () => {
-        itemSize: number;
-        normalized: boolean;
-      }
-    )();
-    for (let i = 0; i < 3; i++) [mesh.geometry, attribute.itemSize, attribute.normalized];
-    expect(reads).toEqual(["geometry", "itemSize", "normalized"]);
+    for (let i = 0; i < 3; i++) mesh.geometry;
+    expect(reads).toEqual(["geometry"]);
     mesh.geometry = {};
     mesh.geometry;
-    expect(reads).toEqual(["geometry", "itemSize", "normalized", "geometry"]);
+    expect(reads).toEqual(["geometry", "geometry"]);
   });
 
   it("keeps a geometry's attribute lookups until a method changes it", () => {

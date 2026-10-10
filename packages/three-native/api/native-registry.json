@@ -826,6 +826,7 @@
         "transformDirection"
       ],
       "getters": [
+        "__shape",
         "array",
         "array.length",
         "count",
@@ -1988,6 +1989,7 @@
         "transformDirection"
       ],
       "getters": [
+        "__shape",
         "array",
         "array.length",
         "count",
@@ -2488,6 +2490,7 @@
         "transformDirection"
       ],
       "getters": [
+        "__shape",
         "array",
         "array.length",
         "count",

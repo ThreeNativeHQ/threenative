@@ -317,6 +317,8 @@ export function defineBrowserClasses(
     "__attributeNames",
   ]);
   const labels = new WeakMap<object, Map<string, unknown>>();
+  // An attribute's shape, in the order its `__shape` getter answers it: one call fills all four.
+  const SHAPE = ["count", "itemSize", "normalized", "gpuType"];
   const fastGetter = (binding: IRegistryClass, property: string) => {
     const field = binding.fields?.[property];
     const read = runtime.readDoubles;
@@ -645,6 +647,7 @@ export function defineBrowserClasses(
       });
     }
     const write = runtime.writeDouble;
+    const shaped = binding.getters.includes("__shape");
     for (const property of [...binding.getters, ...binding.members]) {
       if (
         property.includes(".") ||
@@ -658,15 +661,21 @@ export function defineBrowserClasses(
         configurable: true,
         get:
           fastGetter(binding, property) ??
-          (labelled.has(property)
+          (labelled.has(property) || (shaped && SHAPE.includes(property))
             ? function (this: object) {
                 let known = labels.get(this);
                 if (known === undefined) {
                   known = new Map();
                   labels.set(this, known);
                 }
-                if (!known.has(property))
-                  known.set(property, fromEngine(runtime.get(refOf(this), property)));
+                if (!known.has(property)) {
+                  if (shaped && SHAPE.includes(property)) {
+                    const shape = runtime.get(refOf(this), "__shape") as number[];
+                    SHAPE.forEach((key, i) =>
+                      known?.set(key, key === "normalized" ? shape[i] === 1 : shape[i]),
+                    );
+                  } else known.set(property, fromEngine(runtime.get(refOf(this), property)));
+                }
                 return known.get(property);
               }
             : function (this: object) {
