@@ -1,6 +1,8 @@
 # PRD-567 — Terrain layers blend by their own height, and the game owns the curve
 
-**Status:** PARTIAL — phases 1 to 3 built and proven; AC-3 (frame-cost delta) still open
+**Closed:** 2026-10-10 at `5990ceb27`, archived to `done/`.
+
+**Status:** DONE — 2026-10-10. Every phase and acceptance box verified.
 **Priority:** P2 — Height set, weight seam and the game-side height blend are all unbuilt.
 **Complexity:** 3 (LOW) — 1–5 implementation files (`world-terrain-splat.ts`, the two `export_world.py` copies, the example's render source) (+1); a game-supplied weight seam on an existing material (+0); native rows reuse PRD-493's conformance case (+0); risk override: none
 **Owner:** João
