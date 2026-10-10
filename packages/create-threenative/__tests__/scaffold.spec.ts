@@ -225,6 +225,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
   // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
   // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
+  // PRD-560: the eleven FogExp2 kits carry height fog (heightFog.ts, sky.ts, AGENTS.md).
   // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
   // merged Three patch changes every kit; starter also carries the merged render source.
   // Recomputed 2026-10-09 on the merge of develop (31 commits, PRD-494 sharded bundles) into the

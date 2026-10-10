@@ -14,6 +14,7 @@ import {
   PointLight,
   RenderTarget,
   Scene,
+  Texture,
   Vector3,
 } from "three";
 import { pass } from "three/tsl";
@@ -23,6 +24,7 @@ import {
   type IVolumetricFogOptions,
   createVolumetricFog,
 } from "../templates/starter/src/render/volumetricFog.js";
+import { setupSky } from "../templates/starter/src/render/sky.js";
 
 import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
 
@@ -151,6 +153,29 @@ describe("opt-in generated volumetric fog", () => {
     expect(() => fog.compose(pass(scene, camera))).not.toThrow();
     fog.dispose();
     expect(scene.fog).toBe(authored);
+  });
+  it("clears the height-fog node with the distance fog and restores both (one fog owner)", () => {
+    const scene = new Scene();
+    setupSky(scene, new Texture());
+    const { fog: distance, fogNode: node } = scene;
+    expect(distance).not.toBeNull();
+    expect(node).toBeTruthy();
+    const camera = new PerspectiveCamera();
+    const medium = required(createVolumetricFog(scene, camera, settings()));
+    expect(scene.fog).toBeNull();
+    expect(scene.fogNode).toBeNull();
+    expect(() => medium.compose(pass(scene, camera))).not.toThrow();
+    medium.dispose();
+    expect(scene.fog).toBe(distance);
+    expect(scene.fogNode).toBe(node);
+  });
+  it("rejects a compose while a height-fog node is still the scene's fog", () => {
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
+    const medium = required(createVolumetricFog(scene, camera, settings()));
+    setupSky(scene, new Texture());
+    scene.fog = null;
+    expect(() => medium.compose(pass(scene, camera))).toThrow(/duplicates the same medium/);
   });
   it("leaves a fog the game authored while the medium lived", () => {
     const scene = new Scene();
