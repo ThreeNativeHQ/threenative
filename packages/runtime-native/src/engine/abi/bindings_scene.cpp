@@ -1216,13 +1216,21 @@ void registerPropertyBinding(ClassBinding& b) {
         return Value{};
     };
     b.getters["path"] = [binding](void* self) { return textValue(binding(self).path); };
-    b.methods["targetObject"] = [binding, node](void* self, const Args&, Store& store) -> Value {
+    const auto target = [binding, node](void* self, const Args&, Store& store) -> Value {
         auto& property = binding(self);
         if (auto material = property.targetMaterial()) {
             std::string cls(material->typeName());  // read before the move: argument order is unspecified
             return store.share(std::move(cls), std::move(material));
         }
         return node(store, property.targetNode().get());
+    };
+    b.methods["targetObject"] = target;
+    // Engine-internal: bind and its target in one call, `[reason, targetObject]`; games bind every
+    // track of every clip while they load.
+    b.methods["__bind"] = [binding, target](void* self, const Args& a, Store& store) {
+        auto& property = binding(self);
+        property.bind();
+        return Value::array({textValue(property.diagnostic), target(self, a, store)});
     };
     b.methods["parseTrackName"] = [path](void*, const Args& a, Store&) {
         ParsedPath parsed;

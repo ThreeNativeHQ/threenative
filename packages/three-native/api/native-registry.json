@@ -5632,7 +5632,7 @@
     },
     "PropertyBinding": {
       "constructor": true,
-      "methods": ["bind", "findNode", "parseTrackName", "targetObject", "unbind"],
+      "methods": ["__bind", "bind", "findNode", "parseTrackName", "targetObject", "unbind"],
       "getters": ["path"],
       "setters": [],
       "members": [],

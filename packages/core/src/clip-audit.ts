@@ -111,8 +111,9 @@ function bindTrack(root: Object3D, path: string): IResolvedTrack {
     setConsoleFunction(previous);
   }
 
-  const reportedNode = PropertyBinding.findNode(root, nodeName) as Object3D | null;
   const bound = failure === null;
+  // Only a failed bind asks whether the node exists; a bound track found it.
+  const reportedNode = bound ? null : (PropertyBinding.findNode(root, nodeName) as Object3D | null);
   const target = (propertyBinding as IPropertyBindingWithTarget).targetObject;
   const resolvedNode =
     bound &&

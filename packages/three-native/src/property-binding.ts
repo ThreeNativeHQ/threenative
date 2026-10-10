@@ -9,6 +9,8 @@ type ConsoleFunction = (type: string, message: string, ...params: unknown[]) => 
 
 interface IEngineBinding {
   bind(): string;
+  __bind?(): [string, unknown];
+  unbind(): void;
   targetObject(): unknown;
   parseTrackName(path: string): Record<string, string | undefined>;
   findNode(root: unknown, nodeName?: string): unknown;
@@ -20,7 +22,14 @@ export function definePropertyBinding(Native: EngineClass) {
   let consoleFunction: ConsoleFunction | null = null;
   const prototype = Native.prototype as IEngineBinding;
   const bind = prototype.bind;
+  const bindWithTarget = prototype.__bind;
+  const unbind = prototype.unbind;
   const target = prototype.targetObject;
+  // Games bind every track of every clip while they load: `__bind` answers the reason and the target
+  // in one engine call, and the target is kept until the next bind or unbind. A path's parse depends
+  // on the path alone, so each is parsed once.
+  const targets = new WeakMap<object, unknown>();
+  const parsed = new Map<string, Record<string, string | undefined>>();
   // One engine object with no root answers the statics.
   let helper: IEngineBinding | undefined;
   const statics = (): IEngineBinding => {
@@ -34,7 +43,13 @@ export function definePropertyBinding(Native: EngineClass) {
       configurable: true,
       writable: true,
       value(this: IEngineBinding): void {
-        const reason = bind.call(this);
+        let reason: string;
+        if (bindWithTarget === undefined) reason = bind.call(this);
+        else {
+          const [text, object] = bindWithTarget.call(this);
+          reason = text;
+          targets.set(this, object);
+        }
         if (reason === "") return;
         if (consoleFunction !== null) consoleFunction("error", reason);
         else console.error(reason);
@@ -43,12 +58,27 @@ export function definePropertyBinding(Native: EngineClass) {
     targetObject: {
       configurable: true,
       get(this: IEngineBinding): unknown {
-        return target.call(this);
+        return targets.has(this) ? targets.get(this) : target.call(this);
+      },
+    },
+    unbind: {
+      configurable: true,
+      writable: true,
+      value(this: IEngineBinding): void {
+        targets.delete(this);
+        unbind.call(this);
       },
     },
   });
   Object.assign(Native, {
-    parseTrackName: (path: string) => statics().parseTrackName(path),
+    parseTrackName: (path: string) => {
+      let known = parsed.get(path);
+      if (known === undefined) {
+        known = statics().parseTrackName(path);
+        parsed.set(path, known);
+      }
+      return { ...known };
+    },
     findNode: (root: unknown, nodeName?: string) => statics().findNode(root, nodeName),
   });
 

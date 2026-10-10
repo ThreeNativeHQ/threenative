@@ -681,6 +681,45 @@ void walk_parents() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// `__bind`: a PropertyBinding binds and answers its reason and target in one call.
+void property_bind() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t root{}, hip{}, bound{}, missing{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &root, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &hip, &d.value) == TN_OK);
+    tn_value_t name{};
+    name.kind = TN_VALUE_STRING;
+    name.text = "hip";
+    name.count = 3;
+    CHECK(tn_set(hip, "name", &name, &d.value) == TN_OK);
+    tn_value_t result{};
+    const tn_value_t child = ref(hip);
+    CHECK(tn_invoke(root, "add", &child, 1, &result, &d.value) == TN_OK);
+    for (const auto& [path, out] : {std::pair{"hip.position", &bound}, std::pair{"leg.position", &missing}}) {
+        tn_value_t args[2] = {ref(root), {}};
+        args[1].kind = TN_VALUE_STRING;
+        args[1].text = path;
+        args[1].count = std::strlen(path);
+        CHECK(tn_construct(ctx, "PropertyBinding", args, 2, out, &d.value) == TN_OK);
+    }
+    CHECK(tn_invoke(bound, "__bind", nullptr, 0, &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_ARRAY && result.count == 2);
+    if (result.count == 2) {
+        CHECK(result.values[0].kind == TN_VALUE_STRING && text(result.values[0]).empty());
+        CHECK(result.values[1].kind == TN_VALUE_HANDLE && same(result.values[1].handle, hip));
+    }
+    CHECK(tn_invoke(missing, "__bind", nullptr, 0, &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_ARRAY && result.count == 2);
+    if (result.count == 2) {
+        CHECK(text(result.values[0]).find("No target node found") != std::string::npos);
+        CHECK(result.values[1].kind == TN_VALUE_NULL);
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-540: TSL by name through the C ABI, the table the V8 back end shares. Midway's first call is
 // a class field `uniform(0)`; its graph then reaches a node material and compiles.
 void tsl_call() {
@@ -934,4 +973,4 @@ void layers_field() {
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind})

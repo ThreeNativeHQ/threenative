@@ -8,6 +8,7 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
+  PropertyBinding,
   Quaternion,
   QuaternionKeyframeTrack,
   Skeleton,
@@ -321,12 +322,17 @@ describe("clipTrackBindings", () => {
     const source = rig(0);
     const target = rig(90);
     const clip = retargetedClip(source, target, sourceClip(), "delta");
+    // A bound track found its node: asking again is a second walk (an engine call on native).
+    // three's constructor finds it once per track.
+    const findNode = vi.spyOn(PropertyBinding, "findNode");
 
     const report = clipTrackBindings(target.root, clip);
 
     expect(report.tracks).toBe(4);
     expect(report.bound).toBe(4);
     expect(report.unbound).toEqual([]);
+    expect(findNode.mock.calls.filter(([root]) => root === target.root)).toHaveLength(4);
+    findNode.mockRestore();
   });
 
   it("names the tracks of a clip that binds nothing", () => {
