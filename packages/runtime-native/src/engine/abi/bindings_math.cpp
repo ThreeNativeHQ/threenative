@@ -1358,7 +1358,9 @@ void registerMathBindings(Registry& classes) {
     classes["Vector3"].fields = {{"x", field(v3, v3.x)}, {"y", field(v3, v3.y)}, {"z", field(v3, v3.z)}};
     classes["Vector4"].fields = {{"x", field(v4, v4.x)}, {"y", field(v4, v4.y)}, {"z", field(v4, v4.z)}, {"w", field(v4, v4.w)}};
     classes["Quaternion"].fields = {{"x", field(q, q.x)}, {"y", field(q, q.y)}, {"z", field(q, q.z)}, {"w", field(q, q.w)}};
-    classes["Euler"].fields = {{"x", field(e, e.x)}, {"y", field(e, e.y)}, {"z", field(e, e.z)}};
+    // `__order` is the order enum's low byte (count 0, as a bool field): with it the browser back end
+    // writes an Object3D's rotation in place and syncs the quaternion itself.
+    classes["Euler"].fields = {{"x", field(e, e.x)}, {"y", field(e, e.y)}, {"z", field(e, e.z)}, {"__order", field(e, e.order, 0)}};
     classes["Color"].fields = {{"r", field(c, c.r)}, {"g", field(c, c.g)}, {"b", field(c, c.b)}};
     classes["Matrix3"].fields = {{"elements", field(m3, m3.elements[0], 9)}};
     classes["Matrix4"].fields = {{"elements", field(m4, m4.elements[0], 16)}};

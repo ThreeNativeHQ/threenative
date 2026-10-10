@@ -969,8 +969,21 @@ void layers_field() {
     CHECK(mask == 3);
 }
 
+void euler_order_field() {
+    tn::binding::Registry classes;
+    tn::binding::registerAll(classes);
+    const tn::binding::ClassBinding& binding = classes.at("Euler");
+    CHECK(binding.fields.count("__order") == 1);
+    if (binding.fields.count("__order") == 0) return;
+    const auto [offset, count] = binding.fields.at("__order");
+    CHECK(count == 0);  // one byte, as a bool field is
+    tn::engine::Object3D object;
+    object.rotation.order = tn::engine::EulerOrder::XZY;
+    CHECK(reinterpret_cast<const unsigned char*>(&object.rotation)[offset] == 5);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field})

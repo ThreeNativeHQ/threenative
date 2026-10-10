@@ -1890,7 +1890,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": { "x": [0, 1], "y": [8, 1], "z": [16, 1] }
+      "fields": { "__order": [24, 0], "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "ExtrudeGeometry": {
       "constructor": true,
