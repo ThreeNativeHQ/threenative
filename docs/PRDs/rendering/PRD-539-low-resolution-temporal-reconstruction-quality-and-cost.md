@@ -24,11 +24,48 @@ PRD-455 shipped full-resolution temporal AA as opt-in generated source and the c
 
 Localization: accumulation works when the camera is static, and sub-pixel camera drift costs about `.010` of edge error through reprojection and resampling. Clipping, the reactive mask and the raw4 current-footprint candidate are not the lever. A 426×240 input does not recover native-resolution edge accuracy in this metric.
 
+## Unreal TSR levers not yet tried (UE 5.8.3, read 2026-10-09)
+
+Unreal's TSR attacks the same failure. Only the levers outside this PRD's "do not repeat" list are
+named here. Catmull–Rom history sampling is not a new lever: TSR also uses it
+(`UE 5.8.3: Engine/Shaders/Private/TemporalSuperResolution/TSRUpdateHistory.usf:952-975`), and
+PRD-455 already compared it. Paths are under `Engine/Source/Runtime/Renderer/Private/PostProcess/TemporalSuperResolution.cpp`
+unless named otherwise. Order is by fit to the measured localization above.
+
+1. **History stored above output resolution.** `r.TSR.History.ScreenPercentage` (`:54-60`) keeps the
+   history at 100–200% of the *output* resolution. Unreal uses 200% at its two highest quality tiers.
+   The stated reason is sampling-theorem headroom: details survive repeated reprojection without the
+   resampling blur that each bilinear or bicubic fetch adds. A resolve pass
+   (`TSRResolveHistory.usf`) filters the history down to output. This targets the `.010` drift loss
+   directly. The cost is 4× history memory and bandwidth, which Unreal offsets by storing history
+   as R11G11B10 (`:63-73`).
+2. **Velocity-clamped history weight.** When an output pixel moves at 1 px/frame or more, the
+   history's accumulated sample count is clamped to 4 (`r.TSR.Velocity.WeightClampingSampleCount`
+   and `...PixelSpeed`, `:310-330`). The default history cap is 16 (`:45-50`). This trades a little
+   stability for less successive-convolution blur during motion. That is the moving-camera edge
+   check, which is worse than no-AA today.
+3. **Spatial anti-aliasing of rejected input.** Where history is rejected, TSR runs a built-in
+   spatial anti-aliaser on the low-resolution input (`r.TSR.RejectionAntiAliasingQuality`, default 3,
+   off only at the lowest tier, `:234-246`; `Engine/Shaders/Private/TemporalSuperResolution/TSRSpatialAntiAliasing.usf`).
+   This targets the low-input edge and reveal checks. The low-input arm currently loses to plain
+   spatial upscale.
+4. **Flicker-aware shading rejection.** TSR measures luma flicker over a period of about 2 frames,
+   and rejects history by that, not only by colour clipping (`r.TSR.ShadingRejection.Flickering`,
+   on by default, `:138-195`; `TSRMeasureFlickeringLuma.usf`). This is not variance-clip widening,
+   which is already falsified.
+5. **Not recommended as a default:** thin-geometry detection (`r.TSR.ThinGeometryDetection`, `:332`)
+   and the reprojection field (`r.TSR.ReprojectionField`, `:290`) are both **off** by default in
+   Unreal. Try them only after 1–4.
+
+Each candidate is one arm in the unchanged gate, never a threshold change.
+
 ## Outcome
 
 One reconstructor that, at a sub-1.0 internal raster, produces a stable display-resolution image during motion, lowers measured GPU/render time, and degrades safely when history cannot be trusted. If it cannot beat full resolution after its own cost, it stays opt-in.
 
 ### Phase 1 — A reconstructor that clears the unchanged quality gate
+
+- [ ] One-variable control for the `.010` drift loss: the same reconstructor with history at 200% against 100% of output resolution, everything else equal, reports moving- and static-camera edge error for both arms. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` run once per arm on hardware WebGPU.
 
 - [ ] Thin fences, foliage, sub-pixel edges, a moving character and an instanced object stay within the pinned temporal thresholds against a full-resolution reference, and the temporal arm beats the spatial arm on the named stability metric. proof: an automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` exits 0 on hardware WebGPU with the original thresholds (`edge <.04778` full-res, `<.04687` low-input).
 - [ ] Newly revealed surfaces do not inherit stale colour, and disabling disocclusion rejection fails the check. proof: the same command, `revealRecovery` and `qualityRevealRecovery` true (`<=1%` stale after one frame).
@@ -45,3 +82,4 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
 - CI: `verify-temporal-motion.ts` is not in CI today (its hardware Vulkan flags lose the device on the GPU-less runner, and four checks fail by design). Phase 1 includes returning it to the `temporal` integration job, with the unmet checks fail-closed once they pass.
 - Ghosting margin to keep honest: the pinned moving-edge ratios (`<=.75`, `>=1.25x`) sit against measured `.629`/`.651` and `1.485`/`1.435` (hardware/CI).
 - First step for the owner of this PRD: explain the `.010` camera-drift loss (history resampling) with a one-variable control before designing the next reconstructor.
+- 2026-10-09 (João, via the Unreal source review): that one-variable control is history resolution, 200% against 100% (Unreal TSR lever 1 above). Its box is now the first box of Phase 1. Levers 2–4 follow in the listed order as gate arms. No existing box changed.

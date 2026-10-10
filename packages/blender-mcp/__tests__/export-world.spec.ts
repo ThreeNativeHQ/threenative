@@ -399,7 +399,13 @@ withBlender("export_terrain_layers against a real Blender", () => {
         width: 8,
       }),
     );
-    for (const name of ["moss_diff.jpg", "moss_nrm.jpg", "moss_orm.jpg", "rock_diff.jpg"])
+    for (const name of [
+      "moss_diff.jpg",
+      "moss_nrm.jpg",
+      "moss_orm.jpg",
+      "rock_diff.jpg",
+      "rock_h.jpg",
+    ])
       await writeFile(path.join(dcc, name), `TN_DCC_TEXTURE ${name}`);
     const table = path.join(dcc, "layers.json");
     await writeFile(
@@ -419,6 +425,7 @@ withBlender("export_terrain_layers against a real Blender", () => {
           {
             channel: "r",
             hi: 0.8,
+            height: true,
             id: "rock",
             lo: 0.2,
             mask: "moss-mask",
@@ -431,7 +438,12 @@ withBlender("export_terrain_layers against a real Blender", () => {
         macro: { max: 1.1, min: 0.9, scale: 0.05 },
         masks: { "moss-mask": { image: "moss-mask.png" } },
         splatSize: 8,
-        textures: { diff: "{id}_diff.jpg", nrm: "{id}_nrm.jpg", orm: "{id}_orm.jpg" },
+        textures: {
+          diff: "{id}_diff.jpg",
+          h: "{id}_h.jpg",
+          nrm: "{id}_nrm.jpg",
+          orm: "{id}_orm.jpg",
+        },
       }),
     );
     return table;
@@ -460,7 +472,9 @@ withBlender("export_terrain_layers against a real Blender", () => {
       "moss_nrm.jpg",
       "moss_orm.jpg",
       "rock_diff.jpg",
+      "rock_h.jpg",
     ]);
+    expect(readFileSync(path.join(tex, "rock_h.jpg"), "utf8")).toBe("TN_DCC_TEXTURE rock_h.jpg");
     expect(readFileSync(path.join(tex, "moss_orm.jpg"), "utf8")).toBe(
       "TN_DCC_TEXTURE moss_orm.jpg",
     );
@@ -484,7 +498,7 @@ withBlender("export_terrain_layers against a real Blender", () => {
     const authored = JSON.parse(readFileSync(table, "utf8")) as {
       textures: Record<string, string>;
     };
-    authored.textures = { diff: "{id}_diff.jpg", nrm: "{id}_nrm.jpg" };
+    authored.textures = { diff: "{id}_diff.jpg", h: "{id}_h.jpg", nrm: "{id}_nrm.jpg" };
     await writeFile(table, JSON.stringify(authored));
     await expect(
       blenderRun(root, [
@@ -502,5 +516,33 @@ withBlender("export_terrain_layers against a real Blender", () => {
       ]),
     ).rejects.toThrow();
     expect(existsSync(path.join(out, "terrain/tex/moss_orm.jpg"))).toBe(false);
+  }, 300_000);
+
+  it("refuses a table whose height layer names no h source texture", async () => {
+    const root = await makeTempDir("tn-export-terrain-layers-noheight-");
+    const blend = await makeFixtureBlend(root);
+    const out = path.join(root, "package");
+    const table = await terrainTable(root);
+    const authored = JSON.parse(readFileSync(table, "utf8")) as {
+      textures: Record<string, string>;
+    };
+    authored.textures = { diff: "{id}_diff.jpg", nrm: "{id}_nrm.jpg", orm: "{id}_orm.jpg" };
+    await writeFile(table, JSON.stringify(authored));
+    await expect(
+      blenderRun(root, [
+        "-b",
+        blend,
+        "--python",
+        recipeScript,
+        "--",
+        "--out",
+        out,
+        "--cell",
+        "64",
+        "--terrain-layers",
+        table,
+      ]),
+    ).rejects.toThrow();
+    expect(existsSync(path.join(out, "terrain/tex/rock_h.jpg"))).toBe(false);
   }, 300_000);
 });

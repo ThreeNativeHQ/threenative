@@ -14,6 +14,16 @@ export const SKY_COLOR = 0x0b1a2a;
 export const START_POSITION: readonly [number, number, number] = [26, 9, 26];
 export const LOOK_AT: readonly [number, number, number] = [-4, 0, -4];
 
+/**
+ * `?pose=close`: over the gradient where layer-14 gives way to layer-15, low sun from the
+ * side, so the transition band and its relief fill the frame. Both arms of a capture share it.
+ */
+export const CLOSE_POSE = {
+  position: new Vector3(-31.5, 1, 0.6),
+  sun: new Vector3(-30, 6, -40),
+  target: new Vector3(-31.5, -2.3, 0),
+} as const;
+
 /** A slow orbit, so a playtest capture and a judge's screenshot share one repeatable pose. */
 export function orbitPose(seconds: number): {
   readonly position: Vector3;

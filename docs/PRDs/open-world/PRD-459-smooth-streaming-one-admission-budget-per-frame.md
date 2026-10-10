@@ -1,7 +1,8 @@
 # PRD-459 — Smooth streaming: one admission budget per frame, prefetched ahead of the camera
 
-**Status:** NOT STARTED
-**Priority:** P1 — Measured 92 ms streaming-window p95; per-frame admission budget and prefetch unbuilt.
+**Status:** PARTIAL
+**Blocker:** Phase 1 landed in #358 (`4f9638c2e`) without updating this file; its boxes are ticked below from a 2026-10-09 run. AC-3 is measured and not met (see AC-3).
+**Priority:** P1 — Open: AC-3 pipelines still compile on streamed batches, prefetch has no spec, and the measured frame gate (Phase 3) is unrun.
 **Complexity:** 6 (MEDIUM); risk override: none. About 8 implementation files across `core` and `playtest`, one new per-frame budget, and an admission queue that resumes across frames.
 **Owner:** unassigned (drafted by Claude, 2026-09-26)
 **Depends on:** None. Landed prerequisites, already on `feat/world-cells-scatter-lod`: `aded4a85a` (per-instance package `lods` + rebuild skip and the `rebuildsPerUpdate` cap) and `f7164f850` (terrain seam/LOD thrash that cost ~39 ms/frame).
@@ -51,8 +52,9 @@ the camera and a warm-up that runs before the first draw.
    milliseconds spent. `TerrainTiles.process` takes the same budget as an optional argument, so a
    tile it could not afford is simply not admitted this pass — the `wanted` scan is already
    re-run every step (`packages/core/src/world-tiles.ts:1505`).
-2. **Prefetch ahead of the motion.** The stream centre is `follow.position + velocity ×
-   lookaheadSeconds`, with velocity measured from successive follow positions and smoothed; a
+2. **Prefetch ahead of the motion.** Landed as `prefetchSeconds` (default 1.5 s, lead capped at three
+   quarters of the ring, `packages/core/src/world-cells.ts:470-475`). The stream centre is
+   `follow.position + velocity × prefetchSeconds`, with velocity measured from successive follow positions and smoothed; a
    stationary follow point yields no lookahead and costs nothing. Residency, the refilter gates
    and the terrain follow point all read the same centre, so the budget, the ring and the terrain
    cannot disagree about where the player will be.
@@ -71,6 +73,19 @@ flowchart LR
   W["prewarm on asset adopt"] --> G
 ```
 
+4. **Texture uploads pay from the same budget.** `packages/core/src/profiling/FrameCounters.ts:16`
+   states that texture uploads are not counted, so a cell that arrives with many new textures
+   uploads them all on its first draw, outside the budget. Unreal amortizes this. Its texture
+   streamer can cap how many 2D textures move from CPU to GPU memory per frame
+   (`r.Streaming.AmortizeCPUToGPUCopy` with `r.Streaming.MaxNumTexturesToStreamPerFrame`,
+   UE 5.8.3 `Engine/Source/Runtime/Engine/Private/Streaming/StreamingManagerTexture.cpp:1645-1656`).
+   The lowest texture tier turns the cap on at one texture per frame
+   (`Engine/Config/BaseScalability.ini:740-744`). Here the budget already measures milliseconds, so
+   no count cap is needed. On adoption, each new texture is uploaded through three's
+   `renderer.initTexture` (three 0.185.1 `Renderer.js:2921`) as one admission unit charged to the
+   frame's budget, and the upload bytes are counted. A texture the budget cannot afford waits for
+   the next `update`, and its batch is not attached until its textures are resident.
+
 **Non-goals:** ring size, `maxDistance` and `lods` semantics; anything about how a cell looks;
 AutoLOD, GPU-driven culling or impostors (see the folder README's *Later* list); and any
 performance claim for the private 2 km map, whose own PRD owns that run.
@@ -86,7 +101,7 @@ performance claim for the private 2 km map, whose own PRD owns that run.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: agent]: with a deliberately slow unit of admission work, no `update` spends more than `admissionBudgetMs` plus one unit, the deferred work is admitted on later frames, and `stats()` reports the backlog and the milliseconds spent — proof: `pnpm --filter @threenative/core test world-cells-admission` — Evidence: pending.
+- [x] AC-1 [local; actor: agent]: with a deliberately slow unit of admission work, no `update` spends more than `admissionBudgetMs` plus one unit, the deferred work is admitted on later frames, and `stats()` reports the backlog and the milliseconds spent — proof: `pnpm --filter @threenative/core test world-cells-admission` — Evidence: 2026-10-09, `develop` `1fef8d137`: `world-cells-admission.spec.ts` 9/9 pass — the budget-plus-one-unit ceiling, the deferred admission on later updates and the `spentMs`/`deferred`/`backlog` report are each a named case.
 - [ ] AC-2 [local; actor: agent]: a scripted constant-velocity follow path admits cells before the follow point reaches them, and a stationary follow point admits nothing ahead of itself — proof: `pnpm --filter @threenative/core test world-cells-prefetch` — Evidence: pending.
 - [ ] AC-3 [local; actor: agent]: a streamed asset's pipelines are created before the first frame that draws its batch; the pipeline census records no creation attributable to a streamed batch after warm-up — proof: `pnpm --filter @threenative/core test world-cells-admission` plus `pnpm --filter abyss-framework playtest:world` — Evidence: **measured 2026-10-04, not met.** The Machinefall map-walk census carries **8** creations attributable to a streamed batch after `startup.compileSettledMs` in each of 5 runs on `origin/develop` (7 main pass, 1 shadow caster half; device service 1.1–1.6 ms). They are `#dressGpu`'s fresh objects: a key dressed after the prewarm gate cannot be re-dressed in place, so its first draw builds the node. `TN_WORLD_PREWARM shadowPrewarmed=0 castersUnbuilt=182` says the same about the prewarm — three's `getDrawParameters()` returns `null` at `count === 0`, so a prewarmed empty batch is never submitted and its "wait for a draw" plan cannot build anything. Two attempts to close it with the engine's `compileAsync` seam both failed on the walk itself: deferring the swap to the compile hangs a live renderer (900 s timeout, `.afk/scratch/walk-a7-r2-1`), and doing it behind the loading gate serialises ~200 key compiles behind `prewarmed` and does the same (`walk-a7b-r2-1`, aborted at 10 min). AC-3 needs a preparation seam that does not borrow the renderer's frame, which is [PRD-387](../performance/critical/PRD-387-shader-variants-are-prepared-off-frame-and-bounded.md)'s open Phase 1; see the runbook's "Where we stand".
 - [ ] AC-4 [local; actor: agent]: the `world-flythrough` playtest holds frame p95 ≤ 16.7 ms and max frame ≤ 33 ms while cells stream, on the dev machine's named WebGPU adapter — proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/world-flythrough.playtest.json --url … --browser-recipe webgpu` — Evidence: pending.
@@ -106,13 +121,13 @@ performance claim for the private 2 km map, whose own PRD owns that run.
 
 #### Phase 1: One shared admission budget
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/world-cells.ts` (budget, queue, `stats()`), `packages/core/src/world-tiles.ts` (optional budget argument on `process`), `packages/core/__tests__/world-cells-admission.spec.ts`.
 **Implementation:** a budget object created per `update` and threaded to the terrain call; batch build, refilter and chunk attach stop at the deadline and leave a resumable queue; a deferred cell keeps its residency slot so budgets are not spent on work that will be thrown away; `stats().admission` reports `spentMs`, `deferred` and `backlog`. The clock is injectable the way `IAddInSlicesOptions.yieldFrame` already is, so the spec proves the ceiling instead of hoping.
 **Verification:** `pnpm --filter @threenative/core test world-cells-admission world-cells` — AC-1, and the existing residency/cancellation suites must stay green.
-- [ ] budget ceiling + resumable queue, red first against an unbounded build. proof: `pnpm --filter @threenative/core test world-cells-admission`
-- [ ] terrain tile/collider admission draws on the same budget. proof: `pnpm --filter @threenative/core test world-tiles`
-- [ ] `stats().admission` reported and the existing world suites green. proof: `pnpm --filter @threenative/core test world`
+- [x] budget ceiling + resumable queue, red first against an unbounded build. proof: `pnpm --filter @threenative/core test world-cells-admission` — 2026-10-09 on `develop` `1fef8d137`: `pnpm exec vitest run packages/core/__tests__/world-cells-admission.spec.ts` 9/9 pass, including "spends at most the budget plus one unit per update, however long the backlog". The red-first run happened in #358 and is not re-observed here.
+- [x] terrain tile/collider admission draws on the same budget. proof: `pnpm --filter @threenative/core test world-tiles` — 2026-10-09, same revision: the admission spec's "admits terrain tiles and colliders on the same budget, and still converges" passes, and `world-terrain-tiles.spec.ts` passes 49/49.
+- [x] `stats().admission` reported and the existing world suites green. proof: `pnpm --filter @threenative/core test world` — 2026-10-09, same revision: `pnpm exec vitest run packages/core/__tests__/world` 32 files, 439 passed, 2 skipped, exit 0; "reports the deferred work and the backlog while it waits, and empties both" passes.
 
 **Checkpoint:** pending
 
@@ -123,6 +138,8 @@ performance claim for the private 2 km map, whose own PRD owns that run.
 **Implementation:** measure velocity from successive follow positions with a clamp and an explicit override; one stream centre feeds residency, refilter gates and the terrain follow point; `prewarm` each asset's level surfaces once per asset.
 **Verification:** `pnpm --filter @threenative/core test world-cells-prefetch` — AC-2; the census assertion in `world-cells-admission` covers AC-3.
 - [ ] stream centre leads the follow point by velocity × lookahead, clamped. proof: `pnpm --filter @threenative/core test world-cells-prefetch`
+  Implemented as `prefetchSeconds` (`world-cells.ts:470-475`); no spec asserts the lead yet (existing specs only set `prefetchSeconds: 0`), so this stays open until `world-cells-prefetch.spec.ts` exists and passes.
+- [ ] a streamed asset's textures upload through `renderer.initTexture` as budgeted admission units, the batch attaches only after they are resident, and upload bytes are counted. proof: red-green `pnpm --filter @threenative/core test world-cells-admission`
 - [ ] adopted asset surfaces prewarmed once per asset, not per cell. proof: `pnpm --filter @threenative/core test world-cells-admission`
 - [ ] probe reports the new counters for the playtest. proof: `pnpm --filter abyss-framework build`
 

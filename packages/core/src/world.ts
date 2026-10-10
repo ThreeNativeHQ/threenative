@@ -753,6 +753,7 @@ export type {
   ITerrainSplatLayer,
   ITerrainSplatMaskedLayer,
   ITerrainSplatTable,
+  ITerrainSplatWeightContext,
 } from "./world-terrain-splat.js";
 
 export { WorldCells } from "./world-cells.js";

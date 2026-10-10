@@ -4,6 +4,7 @@ import {
   type Camera,
   type DirectionalLight,
   Frustum,
+  type InstancedMesh,
   Matrix4,
   type Mesh,
   Object3D,
@@ -86,8 +87,9 @@ export interface IVirtualShadowOptions {
   readonly mapSize?: number;
   /**
    * Texels per edge of each level's mover map — the map tracked casters draw into every frame.
-   * Default: half of `mapSize`, never below 256. Movers are few and close, so half the texels
-   * over the same window reads as the same shadow at a quarter of the fill.
+   * Default: `mapSize`, the cached levels' own density, so a caster keeps the edge it had at rest
+   * while it moves and does not pop to a crisper one when it settles. Lower it to buy back fill
+   * on a weak GPU; the soft edge it costs is on the mover only.
    */
   readonly moverMapSize?: number;
   /**
@@ -207,6 +209,13 @@ export interface IVirtualShadowOptions {
    * Geometry swaps are restored before the next level, mover map and main pass.
    */
   readonly shadowLodBias?: boolean;
+  /**
+   * Quiet frames before an automatically detected mover goes back into the cached levels, default
+   * 100 (Unreal's `FramesStaticThreshold`). A caster whose world matrix, instance matrix or
+   * deformation changed is drawn through the mover maps without a `trackCaster` call; this is how
+   * long it must hold still before its shadow is baked into the cache again. Positive integer.
+   */
+  readonly staticAfterFrames?: number;
   /** Print the `TN_VIRTUAL_SHADOW` line every `markerEvery` frames; `false` silences it. Default 300. */
   readonly marker?: boolean | number;
 }
@@ -221,6 +230,21 @@ export interface IVirtualShadowStats {
   readonly invalidated: number;
   /** Tracked casters, as of this frame. */
   readonly movers: number;
+  /**
+   * Casters the node classified as movers by measuring them, as of this frame: a world or instance
+   * matrix that changed, or a deforming mesh. Counted apart from {@link movers}, which is `trackCaster`.
+   */
+  readonly autoMovers: number;
+  /**
+   * Static-to-mover and mover-to-static changes of those casters over the node's lifetime. Each one
+   * asks the levels for one region redraw, never a full one.
+   */
+  readonly autoTransitions: number;
+  /**
+   * Mean JS time of the classification scan per frame, in milliseconds, over the node's lifetime.
+   * It is the number the scan's 0.05 ms budget is judged against.
+   */
+  readonly autoScanMs: number;
   /** Mover maps rendered this frame: one per level when at least one caster is tracked. */
   readonly moverRenders: number;
   /** Levels served from their cached map this frame. */
@@ -403,7 +427,6 @@ export const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
  * it is not one half of a choice: a key is the whole of what a keyed map draws of the world.
  */
 export const VIRTUAL_SHADOW_KEY_LAYER = 25;
-const MIN_MOVER_MAP_SIZE = 256;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
 const DEFAULT_MARKER_EVERY = 300;
 /** Frames between markers while `?tnShadowStats=1` is on the URL: about a second a walk is long. */
@@ -421,6 +444,8 @@ const BASE_INVALIDATION_DELAY = 0.25;
  */
 const INVALIDATION_GPU_SHARE = 0.1;
 const DEFAULT_MIN_CASTER_TEXELS = 1.5;
+/** Unreal's `r.Shadow.Virtual.Cache.FramesStaticThreshold`: quiet frames before a mover is static. */
+const DEFAULT_STATIC_AFTER_FRAMES = 100;
 /**
  * The share of the display period a level's render may cost before adaptive refresh widens its
  * trail: two frames in five, 6.7 ms of a 60 Hz frame. A draw that big is worth a whole frame of its
@@ -480,6 +505,28 @@ const CASTER_KEY_STRIDE = 22;
 /** World centre and radius, then the box's world height range: what the pool row is written from. */
 const CASTER_WORLD_STRIDE = 6;
 const CASTER_STRIDE = CASTER_KEY_STRIDE + CASTER_WORLD_STRIDE;
+
+const MOTION_STATIC = 0;
+/** Drawn through the mover maps and kept out of the cached levels. */
+const MOTION_MOVER = 1;
+/**
+ * Back in the cached levels, still drawn through the mover maps until every level the redraw asked
+ * has rendered it, so the shadow never drops out between the two.
+ */
+const MOTION_SETTLING = 2;
+
+/** What the motion scan remembers of one caster mesh between frames. */
+interface ICasterMotion {
+  /** The 16 world-matrix elements at the last scan: where the cached levels last saw it. */
+  readonly world: Float64Array;
+  /** `instanceMatrix.version` at the last scan; unused on a plain mesh. */
+  instanceVersion: number;
+  phase: typeof MOTION_STATIC | typeof MOTION_MOVER | typeof MOTION_SETTLING;
+  /** `pinStatic` named this mesh or an ancestor. */
+  pinned: boolean;
+  /** Consecutive scans without movement while a mover. */
+  quiet: number;
+}
 
 /**
  * What a world publishes on its root for a shadow level to draw a map from GPU-scene keys:
@@ -628,6 +675,7 @@ const _focus = new Vector3();
 const _forward = new Vector3();
 /** A level's own light frustum, read once per level render and handed to its dispatch. */
 const _shadowProjection = new Matrix4();
+const _oldWorld = new Matrix4();
 const _shadowFrustum = new Frustum();
 const _shadowPlanes = new Float32Array(24);
 /**
@@ -637,6 +685,15 @@ const _shadowPlanes = new Float32Array(24);
 const COARSEST_SHADOW_LEVEL = 1 << 20;
 
 /** The state cached maps depend on: visible, casting, and admitted by the main pass. */
+/** A skinned mesh, or one with a morph target weighted above zero: its pixels change with no matrix change. */
+function deforms(mesh: Mesh): boolean {
+  if ((mesh as { isSkinnedMesh?: boolean }).isSkinnedMesh === true) return true;
+  const influences = mesh.morphTargetInfluences;
+  if (influences === undefined) return false;
+  for (const weight of influences) if (weight !== 0) return true;
+  return false;
+}
+
 function casterFlag(mesh: {
   castShadow?: boolean;
   mainAdmitted?: boolean;
@@ -778,7 +835,8 @@ interface IRenderingShadowNode {
  * @situation shadows shimmer when the camera moves
  * @constraint the light must be a DirectionalLight with `castShadow` and a target in the scene
  * @constraint clipExtents are half-widths in world units, finest first, strictly increasing
- * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves
+ * @constraint movers sort themselves: a layer-0 caster whose world matrix, instance matrix or deformation changed draws through the mover maps and leaves the cached levels, and returns to them after `staticAfterFrames` quiet frames; the cache redraws only the region it left
+ * @constraint `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region
  * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults
  * @override followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias
  * @example
@@ -815,11 +873,23 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #levels: ILevel[] = [];
   #invalidateAll = false;
   /** Regions handed to `invalidateRegion`, read and cleared by the next `updateBefore`. */
-  #regions: IBoundsLike[] = [];
+  #regions: Array<IBoundsLike & { urgent?: true }> = [];
   /** The same regions, resolved onto the clipmap's axes; scratch, so a frame allocates nothing. */
-  #projectedRegions: { u: ILightAxisRange; v: ILightAxisRange }[] | undefined;
+  #projectedRegions: { u: ILightAxisRange; urgent: boolean; v: ILightAxisRange }[] | undefined;
   #casters = new Map<string, Object3D>();
   #casterChildren = new Map<string, Set<Object3D>>();
+  /** Per caster mesh, what the motion scan remembers; entries live as long as the mesh does. */
+  #motionOf = new WeakMap<Object3D, ICasterMotion>();
+  /** Parallel to `#casterTable`, so the per-frame scan indexes an array rather than a map. */
+  #motion: ICasterMotion[] = [];
+  /** Meshes in `MOTION_MOVER`: drawn through the mover maps, kept out of the cached levels. */
+  #autoMovers = new Set<ICasterMesh>();
+  /** Meshes in `MOTION_SETTLING`, waiting for the levels their return redraw asked. */
+  #autoSettling = new Set<ICasterMesh>();
+  /** Roots `pinStatic` was called on; resolved onto their meshes whenever the table is rebuilt. */
+  #pinnedRoots = new Set<Object3D>();
+  #autoTransitions = 0;
+  #autoScanTotalMs = 0;
   #moverLayerStates = new Map<Object3D, { originallyEnabled: boolean; references: number }>();
   #centerU: UniformNode<"float", number> = uniform(0).setGroup(renderGroup);
   #centerV: UniformNode<"float", number> = uniform(0).setGroup(renderGroup);
@@ -943,8 +1013,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         `TN_VIRTUAL_SHADOW_INVALID: mapSize must be a positive integer, got ${String(mapSize)}.`,
       );
     }
-    const moverMapSize =
-      options.moverMapSize ?? Math.max(MIN_MOVER_MAP_SIZE, Math.floor(mapSize / 2));
+    const moverMapSize = options.moverMapSize ?? mapSize;
     if (!Number.isInteger(moverMapSize) || moverMapSize <= 0) {
       throw new RangeError(
         `TN_VIRTUAL_SHADOW_INVALID: moverMapSize must be a positive integer, got ${String(moverMapSize)}.`,
@@ -964,6 +1033,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (!Number.isFinite(minCasterTexels) || minCasterTexels < 0) {
       throw new RangeError(
         `TN_VIRTUAL_SHADOW_INVALID: minCasterTexels must be zero or positive, got ${String(minCasterTexels)}.`,
+      );
+    }
+    const staticAfterFrames = options.staticAfterFrames ?? DEFAULT_STATIC_AFTER_FRAMES;
+    if (!Number.isInteger(staticAfterFrames) || staticAfterFrames <= 0) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: staticAfterFrames must be a positive integer, got ${String(staticAfterFrames)}.`,
       );
     }
     const expensiveRefreshShare = options.expensiveRefreshShare ?? DEFAULT_EXPENSIVE_REFRESH_SHARE;
@@ -1067,6 +1142,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       refreshStep: steps,
       selectionGuard: guardedExtent,
       shadowLodBias: options.shadowLodBias ?? true,
+      staticAfterFrames,
       followViewFocus: options.followViewFocus ?? true,
       receiverPlaneBias: options.receiverPlaneBias ?? true,
     };
@@ -1083,6 +1159,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
       moved: 0,
       moverRenders: 0,
       movers: 0,
+      autoMovers: 0,
+      autoScanMs: 0,
+      autoTransitions: 0,
       perLevel: this.#perLevel,
       rendered: 0,
       rendersTotal: 0,
@@ -1120,31 +1199,38 @@ export class VirtualShadowNode extends ShadowBaseNode {
     object.traverse((child) => {
       if (children.has(child)) return;
       children.add(child);
-      const state = this.#moverLayerStates.get(child);
-      if (state === undefined) {
-        this.#moverLayerStates.set(child, {
-          originallyEnabled: child.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER),
-          references: 1,
-        });
-      } else {
-        state.references += 1;
-      }
-      child.layers.enable(VIRTUAL_SHADOW_MOVER_LAYER);
+      this.#holdMoverLayer(child);
     });
+  }
+
+  /** One more reason for `object` to be on the mover layer; the layer's first state is restored on the last. */
+  #holdMoverLayer(object: Object3D): void {
+    const state = this.#moverLayerStates.get(object);
+    if (state === undefined) {
+      this.#moverLayerStates.set(object, {
+        originallyEnabled: object.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER),
+        references: 1,
+      });
+    } else {
+      state.references += 1;
+    }
+    object.layers.enable(VIRTUAL_SHADOW_MOVER_LAYER);
+  }
+
+  #dropMoverLayer(object: Object3D): void {
+    const state = this.#moverLayerStates.get(object);
+    if (state === undefined) return;
+    state.references -= 1;
+    if (state.references > 0) return;
+    if (state.originallyEnabled) object.layers.enable(VIRTUAL_SHADOW_MOVER_LAYER);
+    else object.layers.disable(VIRTUAL_SHADOW_MOVER_LAYER);
+    this.#moverLayerStates.delete(object);
   }
 
   #restoreMoverChildren(id: string): void {
     const children = this.#casterChildren.get(id);
     if (children === undefined) return;
-    for (const child of children) {
-      const state = this.#moverLayerStates.get(child);
-      if (state === undefined) continue;
-      state.references -= 1;
-      if (state.references > 0) continue;
-      if (state.originallyEnabled) child.layers.enable(VIRTUAL_SHADOW_MOVER_LAYER);
-      else child.layers.disable(VIRTUAL_SHADOW_MOVER_LAYER);
-      this.#moverLayerStates.delete(child);
-    }
+    for (const child of children) this.#dropMoverLayer(child);
     this.#casterChildren.delete(id);
   }
 
@@ -1162,7 +1248,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (previous !== undefined && previous !== object) this.#restoreMoverChildren(object.uuid);
     this.#casters.set(object.uuid, object);
     this.#rememberMoverChildren(object);
-    this.invalidateAll();
+    // It leaves the cached levels from here on: only the ones around it redraw without it.
+    this.#askAboutCaster(object);
     return object.uuid;
   }
 
@@ -1173,8 +1260,19 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#restoreMoverChildren(id);
     this.tracker.remove(id);
     const removed = this.#casters.delete(id);
-    if (removed) this.invalidateAll();
+    if (removed) this.#askAboutCaster(object);
     return removed;
+  }
+
+  /**
+   * Keep an object and its descendants out of automatic mover detection: they are static casters
+   * whatever their transforms do, so a game that moves one takes on the stale shadow itself, or
+   * calls `invalidateRegion`. Takes effect from the next frame.
+   */
+  pinStatic(object: Object3D): void {
+    this.#pinnedRoots.add(object);
+    // The table is rebuilt on the next frame, which is where the pin reaches each mesh.
+    this.#casterStale = true;
   }
 
   /** Force every level to re-render on the next frame — a tree fell, a door opened. */
@@ -1276,6 +1374,142 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (mesh === undefined) continue;
       this.#casterFlags[entry] = casterFlag(mesh);
     }
+    this.#rebuildMotion();
+  }
+
+  /** One motion record per table entry, carried over for every mesh the previous table held. */
+  #rebuildMotion(): void {
+    const table = this.#casterTable;
+    this.#motion.length = 0;
+    for (const mesh of table) {
+      let state = this.#motionOf.get(mesh);
+      if (state === undefined) {
+        // Seeded from where the mesh stands now: an arrival is asked about by the event that added
+        // it, so its first scan has to report no movement.
+        state = {
+          instanceVersion: (mesh as Partial<InstancedMesh>).instanceMatrix?.version ?? 0,
+          phase: MOTION_STATIC,
+          pinned: false,
+          quiet: 0,
+          world: Float64Array.from(mesh.matrixWorld.elements),
+        };
+        this.#motionOf.set(mesh, state);
+      }
+      state.pinned = false;
+      this.#motion.push(state);
+    }
+    for (const root of this.#pinnedRoots) {
+      root.traverse((child) => {
+        const state = this.#motionOf.get(child);
+        if (state !== undefined) state.pinned = true;
+      });
+    }
+    if (this.#autoMovers.size + this.#autoSettling.size === 0) return;
+    // A mover whose mesh left the tree is a removed primitive: its state resets, as Unreal's does.
+    const present = new Set<Object3D>(table);
+    for (const set of [this.#autoMovers, this.#autoSettling]) {
+      for (const mesh of set) {
+        if (present.has(mesh)) continue;
+        set.delete(mesh);
+        this.#dropMoverLayer(mesh);
+        this.#motionOf.delete(mesh);
+      }
+    }
+  }
+
+  /**
+   * Sort every layer-0 caster into static and moving by measuring it, once a frame, after three has
+   * composed the world matrices. Movement is exact: the 16 world-matrix elements, an instance
+   * matrix's version, or a deforming mesh. A wrong answer costs one region redraw — the next frame
+   * that moves a caster makes it a mover again in that same frame — never a stale shadow.
+   *
+   * A caster that moved leaves the cached levels (the mover exclusion in `#updateFrame` reads
+   * `#autoMovers`) and the levels around where they last saw it redraw at once. A mover that held
+   * still for `staticAfterFrames` goes back into them with one ordinary redraw, and keeps its mover
+   * map draw until every level that redraw asked has taken it, so its shadow does not drop out.
+   */
+  #classifyCasters(): void {
+    const started = performance.now();
+    this.#ensureCasters();
+    const table = this.#casterTable;
+    const motion = this.#motion;
+    const quietFrames = this.options.staticAfterFrames;
+    for (let entry = 0; entry < table.length; entry += 1) {
+      const mesh = table[entry];
+      const state = motion[entry];
+      if (mesh === undefined || state === undefined) continue;
+      if (state.pinned) {
+        if (state.phase === MOTION_MOVER) this.#settle(mesh, state);
+        continue;
+      }
+      // A caster that casts nothing, is not drawn, or is not a layer-0 object is no business of
+      // this scan: the world's own batches reach the levels through `invalidateRegion` instead.
+      if (!mesh.castShadow || !mesh.visible || (mesh.layers.mask & 1) === 0) continue;
+      // `trackCaster` — or the game — put it on the mover layer itself, which pins it as a mover.
+      if (state.phase === MOTION_STATIC && mesh.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER))
+        continue;
+      const world = state.world;
+      const elements = mesh.matrixWorld.elements;
+      let moved = false;
+      for (let at = 0; at < 16; at += 1) {
+        if (world[at] !== elements[at]) {
+          moved = true;
+          break;
+        }
+      }
+      const instanced = (mesh as { isInstancedMesh?: boolean }).isInstancedMesh === true;
+      if (instanced) {
+        const version = (mesh as Partial<InstancedMesh>).instanceMatrix?.version ?? 0;
+        if (version !== state.instanceVersion) {
+          moved = true;
+          state.instanceVersion = version;
+        }
+      }
+      if (!moved && !deforms(mesh)) {
+        if (state.phase === MOTION_MOVER) {
+          state.quiet += 1;
+          if (state.quiet >= quietFrames) this.#settle(mesh, state);
+        }
+        continue;
+      }
+      state.quiet = 0;
+      if (state.phase !== MOTION_MOVER) {
+        // Where the cached levels last saw it, and so what must redraw without it. An instanced
+        // mesh's instances have already moved with no old extents to read, so it asks for all.
+        let bounds: IBoundsLike | undefined;
+        if (!instanced) {
+          if (mesh.geometry.boundingSphere === null) mesh.geometry.computeBoundingSphere();
+          _oldWorld.fromArray(world);
+          bounds = this.#casterBounds(mesh, _oldWorld);
+        }
+        // Urgent: this ask is made once per caster and not by a streamed burst, so the level does
+        // not wait out `invalidationDelay` with the old shadow still standing in its map.
+        if (this.#levels.length === 0) {
+          // The first render draws every level anyway.
+        } else if (bounds === undefined) {
+          this.invalidateAll();
+        } else {
+          this.#regions.push({ ...bounds, urgent: true });
+        }
+        if (state.phase === MOTION_STATIC) this.#holdMoverLayer(mesh);
+        else this.#autoSettling.delete(mesh);
+        state.phase = MOTION_MOVER;
+        this.#autoMovers.add(mesh);
+        this.#autoTransitions += 1;
+      }
+      world.set(elements);
+    }
+    this.#autoScanTotalMs += performance.now() - started;
+  }
+
+  /** A mover goes back into the cached levels: one redraw around where it stands now. */
+  #settle(mesh: ICasterMesh, state: ICasterMotion): void {
+    state.phase = MOTION_SETTLING;
+    state.quiet = 0;
+    this.#autoMovers.delete(mesh);
+    this.#autoSettling.add(mesh);
+    this.#autoTransitions += 1;
+    this.#askAboutCaster(mesh);
   }
 
   /**
@@ -1284,7 +1518,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * thing that measures where an evicted cell's instances stood — and its geometry's otherwise. A
    * caster that measures as nothing (a bare group) has no region to name, and asks every level.
    */
-  #casterBounds(object: Object3D): IBoundsLike | undefined {
+  #casterBounds(object: Object3D, world?: Matrix4): IBoundsLike | undefined {
     const mesh = object as ICasterMesh;
     const own = mesh.isMesh === true ? mesh.boundingSphere : undefined;
     const sphere = own ?? (mesh as Partial<Mesh>).geometry?.boundingSphere;
@@ -1293,7 +1527,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       _box.setFromObject(object, false);
       if (_box.isEmpty()) return undefined;
     } else {
-      _sphere.copy(sphere).applyMatrix4(mesh.matrixWorld);
+      _sphere.copy(sphere).applyMatrix4(world ?? mesh.matrixWorld);
       // The sphere's *diameter* is the box, not its radius: a half-radius box stops at the sphere's
       // own centre, so a caster straddling a level edge drew nothing of it into the level whose
       // window the far half of the sphere reaches, and that level kept the shadow of geometry the
@@ -2332,7 +2566,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (camera === null) return undefined;
     const source = this.light as DirectionalLight;
     syncLevelShadowSettings(source.shadow, this.#levels);
-    this.#moversActive.value = this.#casters.size > 0 ? 1 : 0;
     const parent = source.parent;
     for (const level of this.#levels) {
       if (level.light.parent === null && parent !== null) {
@@ -2369,6 +2602,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // changing the tree, so nothing else on the frame would say so. Asked here, before this frame's
     // own writes to those flags, which is what `#probe` and the mover exclusion below both do.
     this.#pollCasters();
+    this.#classifyCasters();
+    const moverSources = this.#casters.size + this.#autoMovers.size + this.#autoSettling.size;
+    this.#moversActive.value = moverSources > 0 ? 1 : 0;
 
     // Movers leave the cached maps and are drawn into the mover maps below. A child attached
     // after `trackCaster` — a loaded mesh under a placeholder group — picks up the layer here.
@@ -2384,6 +2620,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
         });
       }
     }
+    // The ones the scan measured moving are out of the cached levels the same way.
+    for (const mesh of this.#autoMovers) {
+      if (!mesh.castShadow) continue;
+      excluded.push({ castShadow: true, object: mesh });
+      mesh.castShadow = false;
+    }
     const invalidateAll = this.#invalidateAll;
     const invalidatedKeys = this.tracker.consumeInvalidatedKeys();
     const invalidatedLevels = new Set<number>();
@@ -2397,6 +2639,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     for (const region of this.#regions) {
       projected.push({
         u: projectBounds(region, this.clipmap.basisU),
+        urgent: region.urgent === true,
         v: projectBounds(region, this.clipmap.basisV),
       });
     }
@@ -2434,6 +2677,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         cu: (window.minX + half) * window.pageWorldSize,
         cv: (window.minY + half) * window.pageWorldSize,
       });
+      const finer: { cu: number; cv: number; half: number }[] = [];
       this.#levels.forEach((level, index) => {
         const window = windows[index];
         if (window === undefined) return;
@@ -2443,6 +2687,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // This level's own window against the regions handed to `invalidateRegion`. A window that
         // does not reach a region draws the same shadow either way.
         let regionDirty = false;
+        // An ask the node made about a caster it just measured moving, which no delay should hold.
+        let urgent = false;
+        // The same ask, when a fragment of the old spot is read from *this* level: a finer level's
+        // guarded window did not take all of it, so the finer map being redrawn does not clear it.
+        let urgentSelected = false;
         for (const region of projected) {
           if (
             region.u.low <= cu + level.extent &&
@@ -2451,9 +2700,23 @@ export class VirtualShadowNode extends ShadowBaseNode {
             region.v.high >= cv - level.extent
           ) {
             regionDirty = true;
-            break;
+            if (region.urgent) {
+              urgent = true;
+              urgentSelected ||= !finer.some(
+                (held) =>
+                  region.u.low >= held.cu - held.half &&
+                  region.u.high <= held.cu + held.half &&
+                  region.v.low >= held.cv - held.half &&
+                  region.v.high <= held.cv + held.half,
+              );
+            }
           }
         }
+        finer.push({
+          cu,
+          cv,
+          half: level.extent * (this.options.selectionGuard[index] ?? 0),
+        });
         const asked =
           invalidateAll || invalidatedLevels.has(index) || regionDirty || source.shadow.needsUpdate;
         if (windowMoved) moved += 1;
@@ -2470,7 +2733,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // render, and the level keeps the map and window it has in between — already right for
         // every static caster in it, missing only what streamed in since.
         const delay = Math.max(this.options.invalidationDelay[index] ?? 0, gpuDelay);
-        const matured = level.dirty && now - level.lastRender >= delay;
+        const matured = level.dirty && (urgent || now - level.lastRender >= delay);
         let reason: RenderReason = REASON_NONE;
         if (windowMoved) reason = REASON_MOVE;
         else if (matured) reason = REASON_INVALIDATION;
@@ -2479,7 +2742,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
         const due = canRender && reason !== REASON_NONE;
         // Finest first: the loop walks the levels in that order, so the first due level takes the
         // frame's single render and every other due level is deferred behind it.
-        const grant = due && !budgetSpent;
+        // One exception: a caster that has just been measured moving leaves its old shadow in every
+        // map that selects it, and the frame's first mover render is the only one the mover layer
+        // can hide it from. A level that reads part of that spot draws on this frame too, so the
+        // blob never stands next to the mover's new shadow. It fires once per caster, on the frame
+        // the node classifies it, and at most one render per level.
+        const grant = due && (!budgetSpent || (urgentSelected && matured));
         if (grant) {
           // A level's first render places its window; only later renders are travel.
           if (Number.isFinite(level.minX)) {
@@ -2570,9 +2838,21 @@ export class VirtualShadowNode extends ShadowBaseNode {
     } finally {
       for (const { castShadow, object } of excluded) object.castShadow = castShadow;
     }
+    // Every level the return redraw asked has rendered the caster, so its mover map draw can go.
+    if (
+      this.#autoSettling.size > 0 &&
+      this.#levels.every((level) => !level.dirty && level.pending === REASON_NONE)
+    ) {
+      for (const mesh of this.#autoSettling) {
+        this.#dropMoverLayer(mesh);
+        const state = this.#motionOf.get(mesh);
+        if (state !== undefined) state.phase = MOTION_STATIC;
+      }
+      this.#autoSettling.clear();
+    }
     // An untracked node keeps a neutral mover contribution in the shader and does no mover work.
     let moverRenders = 0;
-    if (this.#casters.size > 0) {
+    if (this.#casters.size + this.#autoMovers.size + this.#autoSettling.size > 0) {
       for (const level of this.#levels) {
         // A mover map draws only the tracked casters on layer 29, in a 256² map over the level's own
         // window, so it keeps full detail: every level's world changes were already put back above.
@@ -2597,6 +2877,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
       moved,
       moverRenders,
       movers: this.#casters.size,
+      autoMovers: this.#autoMovers.size,
+      autoScanMs: this.#autoScanTotalMs / this.#frame,
+      autoTransitions: this.#autoTransitions,
       perLevel: this.#perLevel,
       rendered,
       rendersTotal: this.#rendersTotal,
@@ -2653,6 +2936,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
       }
     }
     this.#levels = [];
+    for (const mesh of this.#autoMovers) this.#dropMoverLayer(mesh);
+    for (const mesh of this.#autoSettling) this.#dropMoverLayer(mesh);
+    this.#autoMovers.clear();
+    this.#autoSettling.clear();
+    this.#motion.length = 0;
+    this.#pinnedRoots.clear();
     for (const id of this.#casters.keys()) this.#restoreMoverChildren(id);
     for (const object of this.#casters.values()) {
       this.tracker.remove(object.uuid);
@@ -2665,6 +2954,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
 }
 
 const VIRTUAL_SHADOW_STAT_FIELDS = [
+  "autoMovers",
+  "autoScanMs",
+  "autoTransitions",
   "byInvalidation",
   "byMove",
   "cached",
@@ -2692,14 +2984,17 @@ function isVirtualShadowStats(value: unknown): value is IVirtualShadowStats {
   ) {
     return false;
   }
-  const countFields = VIRTUAL_SHADOW_STAT_FIELDS.filter((field) => field !== "reuseRatio");
+  // Two fields are measurements, not counts: a ratio and a mean in milliseconds.
+  const countFields = VIRTUAL_SHADOW_STAT_FIELDS.filter(
+    (field) => field !== "reuseRatio" && field !== "autoScanMs",
+  );
   if (
     countFields.some((field) => !Number.isInteger(stats[field]) || (stats[field] as number) < 0)
   ) {
     return false;
   }
   const reuseRatio = stats.reuseRatio as number;
-  return reuseRatio >= 0 && reuseRatio <= 1;
+  return reuseRatio >= 0 && reuseRatio <= 1 && (stats.autoScanMs as number) >= 0;
 }
 
 /**

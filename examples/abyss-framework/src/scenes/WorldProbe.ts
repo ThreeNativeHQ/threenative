@@ -1,6 +1,13 @@
 import { type ICtx, Scene, VirtualShadowNode } from "@threenative/core";
 import { type IWorldCellsStats, WorldCells } from "@threenative/core/world";
-import { Color, DirectionalLight, HemisphereLight } from "three";
+import {
+  Color,
+  DirectionalLight,
+  HemisphereLight,
+  Mesh,
+  MeshStandardMaterial,
+  SphereGeometry,
+} from "three";
 import { terrainMaterial } from "../render/terrain.js";
 import { worldFog } from "../render/worldFog.js";
 
@@ -39,6 +46,14 @@ const CELL_SIZE = 64;
  * ring-1 numbers the phase477 desktop and Android lanes measure.
  */
 const VIEW_DISTANCE = /[?&]viewDistance\b/.test(globalThis.location?.search ?? "");
+/**
+ * `?world&shadowMovers` holds the camera still and spends the `fly` input on a sphere that casts,
+ * which nothing hands to `trackCaster`: PRD-572's proof that the node finds a mover by measuring it.
+ */
+const SHADOW_MOVERS = /[?&]shadowMovers\b/.test(globalThis.location?.search ?? "");
+/** Metres the sphere swings either side of its rest point, and radians per second of the swing. */
+const BALL_SWING = 8;
+const BALL_RATE = 2;
 const BUDGETS = { bytes: 8_000_000, instances: 20_000, residentCells: 25 };
 
 const initialState = {
@@ -70,6 +85,7 @@ export class WorldProbe extends Scene<WorldState> {
   #cameraTarget: [number, number, number] = [START_X + 40, ALTITUDE - 14, 0];
   #residenceChanges = 0;
   #shadow: VirtualShadowNode | undefined;
+  #ball: Mesh | undefined;
   /** Tiles holding a body right now, as the game's own `createCollider` sees them. */
   readonly #bodies = new Map<string, { tileX: number; tileZ: number }>();
 
@@ -121,6 +137,18 @@ export class WorldProbe extends Scene<WorldState> {
     if (raw?.shadowMap !== undefined) raw.shadowMap.enabled = true;
     ctx.add(sky);
     ctx.add(sun);
+    if (SHADOW_MOVERS) {
+      const ball = new Mesh(
+        new SphereGeometry(1.5, 24, 16),
+        new MeshStandardMaterial({ color: 0xd9a441 }),
+      );
+      ball.castShadow = true;
+      // A material that never receives builds no shadow node, so the node would never run.
+      ball.receiveShadow = true;
+      ball.position.set(-30, 6, 0);
+      this.#ball = ball;
+      ctx.add(ball);
+    }
     ctx.entities.add("world", {
       debug: () => this.#debug(ctx),
       dispose: () => world.dispose(),
@@ -144,6 +172,15 @@ export class WorldProbe extends Scene<WorldState> {
     // hundreds of fixed steps while first-use compilation settles, and a time-driven camera would
     // have crossed the whole fixture before the baseline observation.
     if (ctx.input.pressed("fly")) this.#elapsed += dt;
+    if (this.#ball !== undefined) {
+      // The camera holds still over the fixture and only the sphere answers the input.
+      this.#ball.position.z = Math.sin(this.#elapsed * BALL_RATE) * BALL_SWING;
+      ctx.camera.position.set(-45, 14, 0);
+      this.#cameraTarget = [-30, 2, 0];
+      ctx.camera.lookAt(...this.#cameraTarget);
+      this.#sample(ctx);
+      return;
+    }
     const x = Math.min(START_X + this.#elapsed * SPEED, END_X);
     ctx.camera.position.set(x, ALTITUDE, 0);
     this.#cameraTarget = [x + 40, ALTITUDE - 14, 0];
@@ -169,10 +206,34 @@ export class WorldProbe extends Scene<WorldState> {
     if (shadow === undefined) return;
     if (shadow.deferred > 0) this.#shadowDeferrals += 1;
     this.#shadowRenders += shadow.rendered;
+    if (shadow.autoMovers > 0 && this.#rendersAtFirstMover < 0) {
+      this.#rendersAtFirstMover = shadow.rendersTotal;
+    }
+    this.#peakAutoMovers = Math.max(this.#peakAutoMovers, shadow.autoMovers);
   }
 
   #shadowDeferrals = 0;
   #shadowRenders = 0;
+  #peakAutoMovers = 0;
+  #rendersAtFirstMover = -1;
+
+  /** PRD-572: what the node measured about movers, read off its own stats. */
+  #moverDebug(): Record<string, number> {
+    const shadow = this.#shadow?.stats;
+    return {
+      shadowAutoMovers: shadow?.autoMovers ?? 0,
+      shadowPeakAutoMovers: this.#peakAutoMovers,
+      shadowAutoTransitions: shadow?.autoTransitions ?? 0,
+      shadowAutoScanMs: shadow?.autoScanMs ?? 0,
+      // Level renders since the node first measured a mover: a full redraw per moving frame would
+      // be hundreds; one region redraw per transition is a handful.
+      shadowRendersSinceMover:
+        shadow === undefined || this.#rendersAtFirstMover < 0
+          ? 0
+          : shadow.rendersTotal - this.#rendersAtFirstMover,
+      shadowMoverRenders: shadow?.moverRenders ?? 0,
+    };
+  }
 
   #debug(ctx: WorldCtx): Record<string, unknown> {
     const stats = this.#world?.stats();
@@ -229,6 +290,7 @@ export class WorldProbe extends Scene<WorldState> {
       shadowFrame: shadow?.frame ?? 0,
       shadowLevels: shadow?.levels ?? 0,
       shadowRendered: this.#shadowRenders,
+      ...this.#moverDebug(),
     };
   }
 }

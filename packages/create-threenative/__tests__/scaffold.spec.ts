@@ -241,7 +241,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "c4d3209511daa8a674ce717b84586f4d45c7da3d529944b5a856bf96f8b48d3f",
   shooter: "8d7a54b4ac68e0ceea625aaa1c127f49be84e6695542b1a57ba74f0ab4724089",
   snow: "4b4a6fa0007a0f9a8b7f951ae7c1f4554bbc822c3a3642b7d7548da3ba7368e7",
-  starter: "566ef1096074cc45a356cfb056a9a4f51ec3792d003190c53decd352bceca6e1",
+  starter: "9e663841c6445b06e5d65ec630d99ce5ec787f28989f4f7990a5aa1b3316dbff",
   "tower-defense": "24385a8e97412f8e1f6feeca4954f9c5f49979d9e299c4f4d5584af6607032f1",
 };
 

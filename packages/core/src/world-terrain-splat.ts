@@ -66,6 +66,11 @@ export interface ITerrainSplatLayer {
     readonly to: number;
     readonly amount: number;
   };
+  /**
+   * `<id>_h.jpg`: the layer's own height in r, read as linear data and handed to `layerWeight`.
+   * Read only on a masked layer; the base has no weight to bend.
+   */
+  readonly height?: boolean;
 }
 
 /** A layer blended over what is below it by one mask channel, remapped from `lo..hi`. */
