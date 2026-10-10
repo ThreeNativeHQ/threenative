@@ -10,6 +10,7 @@ prd_contract: v1
 **Priority:** P2 — the shipped meter was a clamped linear mean, so a bright sky behind the subject still set the exposure. AC-1 and AC-2 are met in the browser and on the desktop host; the phone cost is blocked on the device.
 **Complexity:** 2 (LOW) — 1–5 files (1): three identical template files, copied to 13 templates by the scaffolder, plus the existing fixture; no new module, no package change. Risk override: none.
 **Owner:** João
+**Commit names:** proofs cite `a0b7c91bc`, the tiled-gather commit before the rebase onto develop 07bcdf8d2. The rebase only re-pinned the starter scaffold hash for PRD-572's `AGENTS.md` change; the exposure sources are byte-identical. On this branch it is `e6e6bbba8`.
 **Depends on:** None. Follows [PRD-339](../../done/PRD-339-the-frame-sets-its-own-exposure.md) (done), which shipped the mean meter and says a compute histogram "is a separate PRD if a game ever needs one" (PRD-339:106-107). This is that PRD. Judged with the tone gate of [PRD-341](../../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md) (done).
 
 ## Context
