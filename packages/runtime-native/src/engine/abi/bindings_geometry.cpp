@@ -288,6 +288,17 @@ void registerBufferGeometry(ClassBinding& b) {
     b.getters["drawRange.start"] = [](void* self) { return Value::of(as<BufferGeometry>(self)->drawRange.start); };
     b.getters["drawRange.count"] = [](void* self) { return Value::of(as<BufferGeometry>(self)->drawRange.count); };
     b.getters["groups"] = [](void* self) { return string(as<BufferGeometry>(self)->groupsJson()); };
+    // Every attribute name, one per line: the web surface lists `attributes` with one call.
+    b.getters["__attributeNames"] = [](void* self) {
+        std::string names;
+        bool first = true;
+        for (const auto& [name, attribute] : as<BufferGeometry>(self)->attributes) {
+            if (!first) names += '\n';
+            names += name;
+            first = false;
+        }
+        return string(std::move(names));
+    };
     b.getters["parameters"] = [](void* self) {
         std::string json = as<BufferGeometry>(self)->parametersJson();
         if (json.empty()) throw Unsupported{"this geometry has no parameters"};

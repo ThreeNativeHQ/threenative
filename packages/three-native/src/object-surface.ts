@@ -17,8 +17,8 @@ export interface ISurfaceClasses {
 
 // three's `geometry.attributes` map over the native named attributes: one live view per geometry,
 // reading through getAttribute and writing through setAttribute/deleteAttribute.
-// ponytail: names are three's standard ones plus those set from JS; a custom-named attribute only a
-// native loader added is readable by name but not enumerated. Add a native name list if one appears.
+// The engine lists names in its own (sorted) order; three's standard names come first, as three
+// adds them, then the rest.
 const STANDARD_ATTRIBUTES = [
   "position",
   "normal",
@@ -33,6 +33,8 @@ const STANDARD_ATTRIBUTES = [
 ];
 
 interface IGeometry {
+  /** Every attribute name, one per line: one engine call. */
+  readonly __attributeNames: string;
   setAttribute(name: string, attribute: unknown): unknown;
   deleteAttribute(name: string): unknown;
   hasAttribute(name: string): boolean;
@@ -43,20 +45,9 @@ function defineGeometrySurface(
   BufferGeometry: Constructor,
   geometries: readonly Constructor[],
 ): void {
-  const authoredNames = new WeakMap<object, Set<string>>();
   const attributeViews = new WeakMap<object, object>();
   for (const geometry of [BufferGeometry, ...geometries]) {
     const prototype = geometry.prototype as Prototype & IGeometry;
-    const { setAttribute, deleteAttribute } = prototype;
-    prototype.setAttribute = function (this: IGeometry, name: string, attribute: unknown) {
-      if (!authoredNames.has(this)) authoredNames.set(this, new Set());
-      authoredNames.get(this)?.add(String(name));
-      return setAttribute.call(this, name, attribute);
-    };
-    prototype.deleteAttribute = function (this: IGeometry, name: string) {
-      authoredNames.get(this)?.delete(String(name));
-      return deleteAttribute.call(this, name);
-    };
     // three's morphAttributes is a plain object a game replaces whole (core's merge clears it with
     // {}): the engine's holder takes its position and normal arrays, an absent one as none, and
     // any other key is refused by name.
@@ -97,10 +88,12 @@ function defineGeometrySurface(
     get(this: IGeometry) {
       const cached = attributeViews.get(this);
       if (cached !== undefined) return cached;
-      const names = () =>
-        [...new Set([...STANDARD_ATTRIBUTES, ...(authoredNames.get(this) ?? [])])].filter((name) =>
-          this.hasAttribute(name),
+      const names = () => {
+        const listed = this.__attributeNames === "" ? [] : this.__attributeNames.split("\n");
+        return [...new Set([...STANDARD_ATTRIBUTES, ...listed])].filter((name) =>
+          listed.includes(name),
         );
+      };
       const view = new Proxy(
         {},
         {

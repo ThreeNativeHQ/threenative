@@ -752,6 +752,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -872,6 +873,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1148,6 +1150,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1244,6 +1247,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1362,6 +1366,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1436,6 +1441,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1811,6 +1817,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1907,6 +1914,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -2406,6 +2414,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -2527,6 +2536,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -3044,6 +3054,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -4886,6 +4897,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -5359,6 +5371,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -5738,6 +5751,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -5812,6 +5826,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -6080,6 +6095,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -6508,6 +6524,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -7249,6 +7266,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -7323,6 +7341,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -7397,6 +7416,7 @@
         "translate"
       ],
       "getters": [
+        "__attributeNames",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",

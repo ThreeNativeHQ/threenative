@@ -17,6 +17,9 @@ class BufferGeometry {
   getAttribute(name: string) {
     return this.stored.get(name);
   }
+  get __attributeNames() {
+    return [...this.stored.keys()].join("\n");
+  }
 }
 
 describe("defineObjectSurface", () => {
@@ -60,6 +63,9 @@ describe("defineObjectSurface", () => {
     expect(attributes.position).toBe("p");
     expect(attributes.normal).toBeUndefined();
     expect(geometry.calls).toBe(2);
+    // Listing asks the engine for every name at once, not one name at a time.
+    expect(Object.keys(attributes)).toEqual(["position"]);
+    expect(geometry.calls).toBe(3);
   });
 
   it("keeps a material flag the back end already defined read-only", () => {

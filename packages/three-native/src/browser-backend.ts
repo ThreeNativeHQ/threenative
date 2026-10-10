@@ -314,6 +314,7 @@ export function defineBrowserClasses(
     "gpuType",
     "geometry",
     "material",
+    "__attributeNames",
   ]);
   const labels = new WeakMap<object, Map<string, unknown>>();
   const fastGetter = (binding: IRegistryClass, property: string) => {
