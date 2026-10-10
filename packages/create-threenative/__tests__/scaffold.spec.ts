@@ -182,25 +182,69 @@ const BUG_REPORT_SKILL_PATHS = [
 // PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
-// Recomputed 2026-10-08 for the shooter fix. The normal target now uses the material blend mode
-// in every kit's worldEnvironment.ts. The shooter Rifle.ts gained a scope alpha test and a reticle.
-// All thirteen generated trees changed.
+// PR381 color/depth attachment caches: all thirteen actual createProject trees change only in the
+// copied Three patch. Restoring the previous patch bytes recovers every published fingerprint.
+// PR381 bounded compressed uploads: all thirteen actual trees change only in the copied
+// Three patch. Restoring the previous patch recovers every prior fingerprint.
+// Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
+// package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed on develop 07bcdf8d2 with the shooter fix and PRD-572 merged in; PRD-572 changes
-  // the starter instructions, so only its fingerprint moved from the shooter-fix values.
-  "action-rpg": "cfc4fdaa7aff7713f6cbeea93ef0b680bf665031fe3c04dd2bf3ba32476389d4",
-  minimal: "18d511d041161e706b450496e8b05cd2be8ad7224b75848da463b79ddc88b1f5",
-  platformer: "c31ad80077d41a7ecfcd497f78b36029ee872fe6249f9c71e04da10dff161cb1",
-  puzzle: "90bbb8d0ac5c969fca75ec879301a3adcc2f9cbf65ba52f82835905f07fb50de",
-  racing: "b82ec29cc1dffbdbd2664e396c1406e7d3ec1bfc09fabe1f59193b46163a98fb",
-  rain: "2640179c398fd265363845ffe4c60251658374fcdca5c57320608a5c5432d09a",
-  rts: "6666aea6a03027eec5ffd69fd732b38797afa0c9905ed0512aefdeeeddb5b154",
-  runner: "22b52899b6ba85b9efda315f3a7faea8da4c3d6d4273dcb492c42685eab97230",
-  sailing: "eff0c4b20bffbd1225afa033754d6d3df9cf375e7e9fa8f47e278412cc0ef571",
-  shooter: "91546efa42e694ee61bc1fffc309b4af33e007d94ea7195bb3446fd938addbff",
-  snow: "7e0963fb36ddd4c801c12207178c59a4f03f074a25fd2ed0d3b6fe81f78bed59",
-  starter: "00bb17d96e721f2e8ec977a644b51a0b5ae9b843e2ed34251e779f7ef5364e13",
-  "tower-defense": "0f49ea561767830611cf509c68efa024fab48337ec6e5ba66a729e99d59a1cd5",
+  // Measured by the actual thirteen-tree createProject equality test on the Oct 6
+  // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
+  // Measured through all thirteen actual createProject trees on the Oct 4 published-head
+  // merge with develop 15adf350; preserves Strata instructions and develop template changes.
+  // Recomputed 2026-10-01 on merging develop (#375, #376) into the PRD-466/467/468 branch: every
+  // template AGENTS/CLAUDE pair keeps the optional terrain reference sentence. Values are the
+  // observed no-install createProject trees of the merged tree.
+  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
+  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
+  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
+  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
+  // setupPost callers never forwarded the adapter fact to it; the third found no template but
+  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
+  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
+  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
+  // Values measured through createProject by the spec that asserts them, not by hand.
+  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
+  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
+  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
+  // beside it. Only the two sailing template files changed, so only this one tree moves.
+  // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
+  // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
+  // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
+  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
+  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
+  // all thirteen trees, rain and snow included, were re-measured through createProject.
+  // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
+  // threenative-assets skill ships in every scaffold, so all thirteen trees move.
+  // Recomputed 2026-10-02 on the merge of develop 114e268ef into the strata branch
+  // (PRD-466/467/468): the merged tree carries both sides' template bytes, so eleven trees were
+  // re-measured through createProject. Rain and snow carry none of this branch's template changes
+  // and kept develop's values.
+  // Measured through actual createProject trees after exposure/fog consolidation and restamping,
+  // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
+  // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
+  // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
+  // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
+  // merged Three patch changes every kit; starter also carries the merged render source.
+  // Recomputed 2026-10-09 on the merge of develop (31 commits, PRD-494 sharded bundles) into the
+  // strata branch: measured through createProject on the merged tree.
+  // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
+  // the merged tree, including its latest template changes.
+  "action-rpg": "29a2e2f8a8e1dbe84bed6b9752f9b50bc359c0526649b74236cab66e3ce5beec",
+  minimal: "29de540167ba97c5fd3883c0cf8c3a5435686312a97826426871b21a76f18607",
+  platformer: "ca93bd64f1efedd927b9cc428e1a20742a89d82930f8296fe0054ddb1d934ab8",
+  puzzle: "6b6896141c66be49c8a1a519b6c53039cfacb337fa816ad212b80c65daa864d7",
+  racing: "fd9affe9069f72f1c3a93eb1b126caeb156cb56e342c0768c646cbf1a831af34",
+  rain: "38302a90e87c5c1e4f864a75a6d4e8bdf108059df470798741a74cc6d3d990e0",
+  rts: "d7f3f1e9c3664386d32f99a8bdb8b5267632843f5dd2ed1804128fe3ddd0752d",
+  runner: "11a74a807e5e2f80c703098f3059bef04d3b8b42170b9ba68e37f71c247f5b27",
+  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
+  sailing: "3303a84c672a02dbbb5100cc4d647940c83c8a119e55c8cebf498b710cdd3e43",
+  shooter: "b856407fa828dc9ac76991cbffc4da8d327179a7f901229ccb2670cd4a486bd8",
+  snow: "0d3c4003a00e9b0772a877359ee204cffde78d2be21449e97ccc6e93ef941248",
+  starter: "27e4be7581d9ba96af39e2263c7645678aa30de6cb7b8fda4e0abb8195d6ee0b",
+  "tower-defense": "ff1a494154b4d2db224143046d4b2ffb02dd9cf74ad602b38af7eb72071042b3",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
