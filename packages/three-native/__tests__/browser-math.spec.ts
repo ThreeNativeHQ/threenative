@@ -327,41 +327,59 @@ describe("three's math values on the browser back end", () => {
     expect(reads).toEqual(["__shape"]);
   });
 
-  it("reads the shape of every attribute a geometry answered with one engine call", () => {
+  it("answers a geometry's attributes, names and shapes with one engine call", () => {
     const { runtime } = memoryRuntime();
     const reads: string[] = [];
     const attribute = runtime.typeId("BufferAttribute");
+    const ref = (name: string) => ({ key: `attribute ${name}`, type: attribute });
     const { classes } = defineBrowserClasses(registry, {
       ...runtime,
       construct: (name) => ({ key: name, type: runtime.typeId(name) }),
       get(_self, property) {
         reads.push(property);
-        return property === "__shapes"
-          ? { position: [4, 3, 0, 1015], normal: [4, 3, 0, 1015], uv: [4, 2, 1, 1015] }
+        return property === "__attributes"
+          ? {
+              position: [ref("position"), [4, 3, 0, 1015]],
+              normal: [ref("normal"), [4, 3, 0, 1015]],
+              uv: [ref("uv"), [4, 2, 1, 1015]],
+            }
           : [9, 9, 0, 0];
       },
-      invoke: (_self, method, args) => {
+      invoke: (_self, method) => {
         reads.push(method);
-        return { key: `attribute ${String(args[0])}`, type: attribute };
+        return null;
       },
     });
     type Attribute = { count: number; itemSize: number; normalized: boolean };
-    type Geometry = { getAttribute(name: string): Attribute; translate(...xyz: number[]): void };
+    type Geometry = {
+      __attributeNames: string;
+      getAttribute(name: string): Attribute | null;
+      hasAttribute(name: string): boolean;
+      translate(...xyz: number[]): void;
+    };
     const geometry = new (classes.BufferGeometry as new () => Geometry)();
     const position = geometry.getAttribute("position");
     const uv = geometry.getAttribute("uv");
-    expect([position.count, position.itemSize, uv.itemSize, uv.normalized]).toEqual([
+    expect([position?.count, position?.itemSize, uv?.itemSize, uv?.normalized]).toEqual([
       4,
       3,
       2,
       true,
     ]);
-    expect(reads).toEqual(["getAttribute", "getAttribute", "__shapes"]);
+    expect([geometry.hasAttribute("normal"), geometry.hasAttribute("color")]).toEqual([
+      true,
+      false,
+    ]);
+    expect([geometry.getAttribute("color"), geometry.__attributeNames]).toEqual([
+      null,
+      "position\nnormal\nuv",
+    ]);
+    expect(reads).toEqual(["__attributes"]);
     // After a method that may change attributes, the record is asked for again.
     geometry.translate(1, 0, 0);
     reads.length = 0;
-    expect(geometry.getAttribute("normal").itemSize).toBe(3);
-    expect(reads).toEqual(["getAttribute", "__shapes"]);
+    expect(geometry.getAttribute("normal")?.itemSize).toBe(3);
+    expect(reads).toEqual(["__attributes"]);
   });
 
   it("keeps a mesh's geometry until it is set", () => {
@@ -385,12 +403,16 @@ describe("three's math values on the browser back end", () => {
 
   it("keeps a geometry's attribute lookups until a method changes it", () => {
     const { runtime } = memoryRuntime();
-    const invokes: string[] = [];
+    const calls: string[] = [];
     const { classes } = defineBrowserClasses(registry, {
       ...runtime,
+      get(_self, property) {
+        calls.push(property);
+        return { position: [{ key: "a", type: runtime.typeId("BufferAttribute") }, [4, 3, 0, 1015]] };
+      },
       invoke(_self, method, args) {
-        invokes.push(`${method} ${String(args[0])}`);
-        return method === "hasAttribute" ? args[0] === "position" : null;
+        calls.push(`${method} ${String(args[0])}`);
+        return null;
       },
     });
     const geometry = new (
@@ -406,23 +428,18 @@ describe("three's math values on the browser back end", () => {
       ]);
     geometry.setAttribute("uv", null);
     geometry.hasAttribute("uv");
-    expect(invokes).toEqual([
-      "hasAttribute position",
-      "hasAttribute uv",
-      "setAttribute uv",
-      "hasAttribute uv",
-    ]);
+    expect(calls).toEqual(["__attributes", "setAttribute uv", "__attributes"]);
   });
 
   it("keeps a geometry's attribute lookups across a setter of another property", () => {
     const { runtime } = memoryRuntime();
-    const invokes: string[] = [];
+    const reads: string[] = [];
     const { classes } = defineBrowserClasses(registry, {
       ...runtime,
       set: () => undefined,
-      invoke(_self, method, args) {
-        invokes.push(`${method} ${String(args[0])}`);
-        return true;
+      get(_self, property) {
+        reads.push(property);
+        return { instanceColor: [{ key: "a", type: runtime.typeId("BufferAttribute") }, [4, 3, 0, 1015]] };
       },
     });
     const geometry = new (
@@ -433,9 +450,9 @@ describe("three's math values on the browser back end", () => {
     )();
     for (let i = 0; i < 3; i++) {
       geometry.instanceCount = i;
-      geometry.hasAttribute("instanceColor");
+      expect(geometry.hasAttribute("instanceColor")).toBe(true);
     }
-    expect(invokes).toEqual(["hasAttribute instanceColor"]);
+    expect(reads).toEqual(["__attributes"]);
   });
 
   it("runs three's Layers bit operations on the engine's mask in place", () => {

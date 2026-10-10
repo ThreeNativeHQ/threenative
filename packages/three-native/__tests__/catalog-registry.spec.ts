@@ -40,7 +40,7 @@ function registryMembers(binding: IRegistryClass): string[] {
   return [
     ...binding.methods.filter(published),
     ...binding.getters.filter((name) => !name.includes(".") && published(name)),
-    ...binding.members.filter((name) => !name.includes(".")),
+    ...binding.members.filter((name) => !name.includes(".") && published(name)),
     ...binding.callbacks,
   ];
 }

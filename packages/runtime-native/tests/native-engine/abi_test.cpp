@@ -1005,22 +1005,45 @@ void object_addresses() {
     }
 }
 
-// One `__shapes` call answers each attribute's `__shape` by name.
+// One `__attributes` read answers each attribute, the handle `getAttribute` returns, and its `__shape`.
 void geometry_shapes() {
-    tn::binding::Registry classes;
-    tn::binding::registerAll(classes);
-    const tn::binding::ClassBinding& geometry = classes.at("BufferGeometry");
-    CHECK(geometry.getters.count("__shapes") == 1);
-    if (geometry.getters.count("__shapes") == 0) return;
-    using tn::engine::BufferAttribute;
-    tn::engine::BufferGeometry shaped;
-    shaped.setAttribute("position", BufferAttribute::fromFloats(std::vector<double>(12, 0.0), 3));
-    shaped.setAttribute("skinWeight", BufferAttribute::fromDoubles(tn::engine::Scalar::U8, std::vector<double>(8, 0.0), 4, true));
-    const tn::binding::Value shapes = geometry.getters.at("__shapes")(&shaped);
-    CHECK(shapes.fields.size() == 2);
-    for (const auto& [name, shape] : shapes.fields)
-        CHECK(shape.numbers == classes.at("BufferAttribute").getters.at("__shape")(shaped.attributes.at(name).get()).numbers);
-    CHECK(shapes.fields.at(1).second.numbers == std::vector<double>({2, 4, 1, double(shaped.attributes.at("skinWeight")->gpuType)}));
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t box{};
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &box, &d.value) == TN_OK);
+    tn_value_t result{};
+    CHECK(tn_get(box, "__attributes", &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_RECORD && result.count == 3);  // position, normal, uv
+    if (result.kind != TN_VALUE_RECORD) return;
+    struct Entry {
+        std::string name;
+        tn_handle_t handle;
+        std::vector<double> shape;
+    };
+    std::vector<Entry> entries;
+    for (uint64_t i = 0; i + 1 < 2 * result.count; i += 2) {
+        const tn_value_t& pair = result.values[i + 1];
+        CHECK(pair.kind == TN_VALUE_ARRAY && pair.count == 2);
+        if (pair.kind != TN_VALUE_ARRAY || pair.count != 2) return;
+        CHECK(pair.values[0].kind == TN_VALUE_HANDLE && pair.values[1].kind == TN_VALUE_NUMBERS);
+        entries.push_back({text(result.values[i]), pair.values[0].handle,
+                           std::vector<double>(pair.values[1].numbers, pair.values[1].numbers + pair.values[1].count)});
+    }
+    CHECK(entries.size() == 3);
+    for (const Entry& entry : entries) {
+        tn_value_t name{};
+        name.kind = TN_VALUE_STRING;
+        name.text = entry.name.c_str();
+        name.count = entry.name.size();
+        CHECK(tn_invoke(box, "getAttribute", &name, 1, &result, &d.value) == TN_OK);
+        CHECK(result.kind == TN_VALUE_HANDLE && same(result.handle, entry.handle));
+        CHECK(tn_get(entry.handle, "__shape", &result, &d.value) == TN_OK && result.kind == TN_VALUE_NUMBERS);
+        CHECK(std::vector<double>(result.numbers, result.numbers + result.count) == entry.shape);
+        CHECK(entry.shape.size() == 4 && entry.shape[1] == (entry.name == "uv" ? 2 : 3));
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
 }  // namespace

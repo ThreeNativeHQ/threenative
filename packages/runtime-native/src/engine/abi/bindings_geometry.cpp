@@ -306,11 +306,13 @@ void registerBufferGeometry(ClassBinding& b) {
         }
         return string(std::move(names));
     };
-    // Every attribute's `__shape` by name: the web surface reads a geometry's shapes with one call.
-    b.getters["__shapes"] = [](void* self) {
-        std::vector<std::pair<std::string, Value>> shapes;
-        for (const auto& [name, attribute] : as<BufferGeometry>(self)->attributes) shapes.emplace_back(name, shapeOf(*attribute));
-        return Value::record(std::move(shapes));
+    // Every attribute by name as [attribute, its `__shape`]: the web surface answers a geometry's
+    // getAttribute, hasAttribute and shape reads with one call.
+    b.members["__attributes"] = [](void* self, const Args&, Store& store) {
+        std::vector<std::pair<std::string, Value>> attributes;
+        for (const auto& [name, attribute] : as<BufferGeometry>(self)->attributes)
+            attributes.emplace_back(name, Value::array({store.share("BufferAttribute", attribute), shapeOf(*attribute)}));
+        return Value::record(std::move(attributes));
     };
     b.getters["parameters"] = [](void* self) {
         std::string json = as<BufferGeometry>(self)->parametersJson();

@@ -513,23 +513,43 @@ export function defineBrowserClasses(
   const pending = new Set<object>();
   let epoch = 0;
   // An attribute a geometry's `getAttribute` answered -> [that geometry, its name, the epoch]. A shape
-  // changes only through a method that bumps `epoch`, so until one runs the geometry's one `__shapes`
-  // call answers the shape of each attribute it handed out, fresh wrappers included.
+  // changes only through a method that bumps `epoch`, so until one runs the geometry's one
+  // `__attributes` call answers the shape of each attribute it handed out, fresh wrappers included.
   const homes = new WeakMap<object, [object, string, number]>();
   const geometryShapes = new WeakMap<object, { epoch: number; shapes: Record<string, number[]> }>();
+  // One `__attributes` call answers every getAttribute, hasAttribute and `__attributeNames` read on
+  // the geometry, kept in its labels, and every attribute's shape for this epoch.
+  const listAttributes = (geometry: object): Map<string, unknown> => {
+    if (pending.size > 0) writeBack();
+    const found = runtime.get(refOf(geometry), "__attributes") as Record<
+      string,
+      [EngineValue, number[]]
+    >;
+    const known = labels.get(geometry) ?? new Map<string, unknown>();
+    labels.set(geometry, known);
+    const shapes: Record<string, number[]> = {};
+    for (const [name, [ref, shape]] of Object.entries(found)) {
+      const attribute = fromEngine(ref) as object;
+      known.set(`getAttribute ${name}`, attribute);
+      known.set(`hasAttribute ${name}`, true);
+      homes.set(attribute, [geometry, name, epoch]);
+      shapes[name] = shape;
+    }
+    known.set("__attributeNames", Object.keys(found).join("\n"));
+    known.set("__attributes", true);
+    geometryShapes.set(geometry, { epoch, shapes });
+    return known;
+  };
   const shapeOf = (attribute: object): number[] => {
     const home = homes.get(attribute);
     if (home === undefined || home[2] !== epoch)
       return runtime.get(refOf(attribute), "__shape") as number[];
-    let found = geometryShapes.get(home[0]);
-    if (found === undefined || found.epoch !== epoch) {
-      found = {
-        epoch,
-        shapes: runtime.get(refOf(home[0]), "__shapes") as Record<string, number[]>,
-      };
-      geometryShapes.set(home[0], found);
-    }
-    return found.shapes[home[1]] ?? (runtime.get(refOf(attribute), "__shape") as number[]);
+    const found = geometryShapes.get(home[0]);
+    if (found === undefined || found.epoch !== epoch) listAttributes(home[0]);
+    return (
+      geometryShapes.get(home[0])?.shapes[home[1]] ??
+      (runtime.get(refOf(attribute), "__shape") as number[])
+    );
   };
   const writeBack = (): void => {
     for (const attribute of pending) {
@@ -679,7 +699,8 @@ export function defineBrowserClasses(
       const bumps = writesAttributes && !/^(get|has|clone|equals|toJSON)/u.test(method);
       // A geometry's attribute lookups are kept with its labels, until anything else runs on it.
       const query = method === "getAttribute" || method === "hasAttribute";
-      const homed = method === "getAttribute" && binding.getters.includes("__shapes");
+      const listed = query && binding.members.includes("__attributes");
+      const homed = listed && method === "getAttribute";
       // Without a target the curve answers a new engine vector, whose lanes cost an `__address` call;
       // a JS target, lent to the call, answers a JS vector instead.
       const targeted = name === "CatmullRomCurve3" && /^get(Point|Tangent)(At)?$/u.test(method);
@@ -702,6 +723,11 @@ export function defineBrowserClasses(
             if (homed && typeof hit === "object" && hit !== null)
               homes.set(hit, [this, String(args[0]), epoch]);
             return hit;
+          }
+          if (listed) {
+            const known = labels.get(this);
+            if (known?.has("__attributes")) return method === "getAttribute" ? null : false;
+            return listAttributes(this).get(key) ?? (method === "getAttribute" ? null : false);
           }
           if (pending.size > 0) writeBack();
           if (!query) labels.delete(this);
@@ -763,6 +789,7 @@ export function defineBrowserClasses(
     }
     const write = runtime.writeDouble;
     const shaped = binding.getters.includes("__shape");
+    const listsAttributes = binding.members.includes("__attributes");
     const whole = binding.getters.includes("__addresses");
     for (const property of [...binding.getters, ...binding.members]) {
       if (
@@ -794,7 +821,9 @@ export function defineBrowserClasses(
                     shapeKeys.forEach((key, i) =>
                       known?.set(key, key === "normalized" ? shape[i] === 1 : shape[i]),
                     );
-                  } else known.set(property, fromEngine(runtime.get(refOf(this), property)));
+                  } else if (property === "__attributeNames" && listsAttributes)
+                    listAttributes(this);
+                  else known.set(property, fromEngine(runtime.get(refOf(this), property)));
                 }
                 return known.get(property);
               }
