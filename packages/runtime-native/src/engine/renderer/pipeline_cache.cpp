@@ -1,6 +1,8 @@
 #include "pipeline_cache.h"
 
 #include <bit>
+#include <stdexcept>
+#include <optional>
 
 #include "mystral/webgpu_compat.h"
 
@@ -28,7 +30,46 @@ WGPUShaderModule module(WGPUDevice device, const std::string& code) {
 
 }  // namespace
 
+PipelineCompilation::~PipelineCompilation() {
+    if (pipeline_) wgpuRenderPipelineRelease(pipeline_);
+}
+
+WGPURenderPipeline PipelineCompilation::get() const {
+    const int status = status_.load(std::memory_order_acquire);
+    if (status == 0) throw std::runtime_error("TN_NATIVE_COMPILE_PENDING");
+    if (status < 0) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: " + error_);
+    return pipeline_;
+}
+
+void PipelineCompilation::complete(WGPURenderPipeline pipeline, const std::string& error) {
+    pipeline_ = pipeline;
+    error_ = error;
+    status_.store(pipeline && error.empty() ? 1 : -1, std::memory_order_release);
+}
+
+struct PipelineCache::Pending : PipelineCompilation {
+    IdKey id;
+    bool named;
+    WGPUDevice device;
+    Pending(IdKey key, bool named, WGPUDevice device) : id(key), named(named), device(device) {
+        wgpuDeviceAddRef(device);
+        if (id.target.layout) wgpuPipelineLayoutAddRef(id.target.layout);
+    }
+    ~Pending() {
+        if (id.target.layout) wgpuPipelineLayoutRelease(id.target.layout);
+        wgpuDeviceRelease(device);
+    }
+};
+
 PipelineCache::~PipelineCache() {
+#ifndef __EMSCRIPTEN__
+    {
+        std::lock_guard lock(workMutex_);
+        stopping_ = true;
+    }
+    workReady_.notify_all();
+    for (auto& worker : workers_) if (worker.joinable()) worker.join();
+#endif
     for (auto& [key, pipeline] : pipelines_) {
         if (pipeline) wgpuRenderPipelineRelease(pipeline);
     }
@@ -75,16 +116,14 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     return size_t(h ^ h >> 32);
 }
 
-WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const shader::StageModule* fragment,
-                                      const PipelineTarget& target) {
-    // Emitted stages carry an id for their text; two ids and the target name a pipeline already
-    // compiled without touching the text. An unnamed stage (id 0) falls back to the text itself.
-    const bool named = vertex.wgsl.id != 0 && (!fragment || fragment->wgsl.id != 0);
-    const IdKey idKey{vertex.wgsl.id, fragment ? fragment->wgsl.id : 0, vertex.wgsl.code.size(),
-                      fragment ? fragment->wgsl.code.size() : 0, target};
-    if (named)
-        if (const auto found = byId_.find(idKey); found != byId_.end()) return found->second;
-    ++textLookups_;
+PipelineCache::IdKey PipelineCache::idKey(const shader::StageModule& vertex, const shader::StageModule* fragment,
+                                         const PipelineTarget& target) {
+    return {vertex.wgsl.id, fragment ? fragment->wgsl.id : 0, vertex.wgsl.code.size(),
+            fragment ? fragment->wgsl.code.size() : 0, target};
+}
+
+std::string PipelineCache::textKey(const shader::StageModule& vertex, const shader::StageModule* fragment,
+                                   const PipelineTarget& target) {
     std::string key = vertex.wgsl.code;
     key += '\x1f';
     if (fragment) key += fragment->wgsl.code;
@@ -95,11 +134,97 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
            std::to_string(target.depthBias) + ':' + std::to_string(std::bit_cast<uint32_t>(target.depthBiasSlopeScale)) +
            ':' + std::to_string(target.instanceStepMask) + ':' + std::to_string(target.topology) + ':' +
            std::to_string(target.stripIndexFormat);
+    return key;
+}
+
+void PipelineCache::poll() {
+    for (auto it = compiling_.begin(); it != compiling_.end();) {
+        auto request = it->second;
+        if (!request->ready()) { ++it; continue; }
+        auto ready = it++;
+        const std::string key = ready->first;
+        compiling_.erase(ready);
+        const auto pipeline = request->get();  // a failed compile is a failure, never a cached null
+        const auto [stored, inserted] = pipelines_.emplace(key, pipeline);
+        if (inserted) wgpuRenderPipelineAddRef(pipeline);  // cache and completion each own a reference
+        if (request->named) byId_.emplace(request->id, stored->second);
+    }
+}
+
+WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const shader::StageModule* fragment,
+                                      const PipelineTarget& target) {
+    poll();
+    const bool named = vertex.wgsl.id != 0 && (!fragment || fragment->wgsl.id != 0);
+    const IdKey id = idKey(vertex, fragment, target);
+    if (named)
+        if (const auto found = byId_.find(id); found != byId_.end()) return found->second;
+    ++textLookups_;
+    const std::string key = textKey(vertex, fragment, target);
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
-        if (named) byId_.emplace(idKey, found->second);  // the same text under another id
+        if (named) byId_.emplace(id, found->second);
         return found->second;
     }
+    const auto pipeline = create(device_, vertex, fragment, target);
+    ++compiles_;
+    if (!pipeline) return nullptr;
+    pipelines_.emplace(key, pipeline);
+    if (named) byId_.emplace(id, pipeline);
+    return pipeline;
+}
 
+std::shared_ptr<PipelineCompilation> PipelineCache::getAsync(const shader::StageModule& vertex,
+    const shader::StageModule* fragment, const PipelineTarget& target) {
+    poll();
+    const bool named = vertex.wgsl.id != 0 && (!fragment || fragment->wgsl.id != 0);
+    const IdKey id = idKey(vertex, fragment, target);
+    const auto ready = [id, named, this](WGPURenderPipeline pipeline) {
+        auto result = std::make_shared<Pending>(id, named, device_);
+        wgpuRenderPipelineAddRef(pipeline);
+        result->complete(pipeline);
+        return result;
+    };
+    if (named)
+        if (const auto found = byId_.find(id); found != byId_.end()) return ready(found->second);
+    ++textLookups_;
+    const std::string key = textKey(vertex, fragment, target);
+    if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
+        if (named) byId_.emplace(id, found->second);
+        return ready(found->second);
+    }
+    if (const auto found = compiling_.find(key); found != compiling_.end()) return found->second;
+    auto pending = std::make_shared<Pending>(id, named, device_);
+    compiling_.emplace(key, pending);
+    ++compiles_;
+#ifdef __EMSCRIPTEN__
+    create(device_, vertex, fragment, target, pending);
+#else
+    std::lock_guard lock(workMutex_);
+    for (auto& worker : workers_) {
+        if (worker.joinable()) continue;
+        worker = std::thread([this] {
+            for (;;) {
+                std::function<void()> job;
+                {
+                    std::unique_lock lock(workMutex_);
+                    workReady_.wait(lock, [this] { return stopping_ || !pending_.empty(); });  // TN_WORKER_ONLY: only inside a compile worker
+                    if (pending_.empty()) return;
+                    job = std::move(pending_.front()); pending_.pop_front();
+                }
+                job();
+            }
+        });
+    }
+    pending_.push_back([pending, vertex, fragment = fragment ? std::optional(*fragment) : std::nullopt, target] {
+        try { pending->complete(create(pending->device, vertex, fragment ? &*fragment : nullptr, target)); }
+        catch (const std::exception& error) { pending->complete(nullptr, error.what()); }
+    });
+    workReady_.notify_all();
+#endif
+    return pending;
+}
+
+WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageModule& vertex,
+    const shader::StageModule* fragment, const PipelineTarget& target, const std::shared_ptr<Pending>& pending) {
     // One vertex buffer per attribute, in location order: the renderer binds them the same way. The
     // instance attributes step per instance; the four instance-matrix columns are one mat4 per
     // instance, the same buffer bound four times at offsets 0, 16, 32 and 48.
@@ -124,8 +249,8 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
         buffers[i].attributeCount = 1;
         buffers[i].attributes = &attributes[i];
     }
-    WGPUShaderModule vs = module(device_, vertex.wgsl.code);
-    WGPUShaderModule fs = fragment ? module(device_, fragment->wgsl.code) : nullptr;
+    WGPUShaderModule vs = module(device, vertex.wgsl.code);
+    WGPUShaderModule fs = fragment ? module(device, fragment->wgsl.code) : nullptr;
     WGPURenderPipelineDescriptor desc = {};
     desc.layout = target.layout;
     desc.vertex.module = vs;
@@ -164,12 +289,26 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
         fragmentState.targets = &color;
         desc.fragment = &fragmentState;
     }
-    WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device_, &desc);
+    WGPURenderPipeline pipeline = nullptr;
+#ifdef __EMSCRIPTEN__
+    if (pending) {
+        WGPUCreateRenderPipelineAsyncCallbackInfo callback = {};
+        callback.mode = WGPUCallbackMode_AllowProcessEvents;
+        callback.userdata1 = new std::shared_ptr<Pending>(pending);
+        callback.callback = [](WGPUCreatePipelineAsyncStatus status, WGPURenderPipeline result,
+                               WGPUStringView message, void* data, void*) {
+            std::unique_ptr<std::shared_ptr<Pending>> request(static_cast<std::shared_ptr<Pending>*>(data));
+            const std::string error = status == WGPUCreatePipelineAsyncStatus_Success ? ""
+                : message.data ? std::string(message.data, message.length == WGPU_STRLEN ? std::char_traits<char>::length(message.data) : message.length)
+                               : "async creation failed";
+            (*request)->complete(result, error);
+        };
+        wgpuDeviceCreateRenderPipelineAsync(device, &desc, callback);
+    } else
+#endif
+        pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
     wgpuShaderModuleRelease(vs);
     if (fs) wgpuShaderModuleRelease(fs);
-    ++compiles_;
-    pipelines_.emplace(std::move(key), pipeline);
-    if (named) byId_.emplace(idKey, pipeline);
     return pipeline;
 }
 

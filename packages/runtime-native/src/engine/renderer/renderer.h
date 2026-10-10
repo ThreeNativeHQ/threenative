@@ -311,6 +311,9 @@ public:
      */
     uint64_t render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                     std::array<double, 4> clear = {0, 0, 0, 0});
+    /** Pipeline preparation only: shares render's planning, submits no frame. */
+    std::vector<std::shared_ptr<PipelineCompilation>> compileAsync(std::span<const DrawItem> items,
+        const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
     /**
      * Draws the last render() output into `target` and submits it, so a windowed player puts the
      * very same frame on the screen the render database just built. `format` is the target view's
@@ -441,6 +444,9 @@ private:
                                 kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
                                 kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
                                 kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightFieldCount };
+    uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
+        std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
+        WGPUTextureFormat outputFormat);
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
@@ -464,7 +470,8 @@ private:
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
     struct MaterialTexture;
     /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */
-    WGPURenderPipeline copyPipeline(WGPUTextureFormat format, uint8_t blend);
+    WGPURenderPipeline copyPipeline(WGPUTextureFormat format, uint8_t blend,
+        std::vector<std::shared_ptr<PipelineCompilation>>* compilation = nullptr);
     /** Records a texture's mip chain into the pending mip encoder; `submit` flushes it first. */
     void generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels);
     /** Submits the mip passes of every texture uploaded since the last submit, as one command buffer. */

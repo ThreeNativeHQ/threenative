@@ -150,6 +150,7 @@ void logCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
 /** A game bundle on V8: the isolate, the adapter, the `tn` host object and the native world it built. */
 class V8Game {
   public:
+    explicit V8Game(bool hasGpu = true) : hasGpu_(hasGpu) {}
     bool start(const std::string& path, std::string& error);
     ~V8Game();
 
@@ -194,6 +195,7 @@ class V8Game {
     assets::Package assets_;
     shader::graph::Node post_;
     Renderer* renderer_ = nullptr;
+    bool hasGpu_;
     // three's renderer settings the game last set (WebGPURenderer's defaults until it does).
     OutputState output_{std::nullopt, 1, true};
     // The GPU adapter's `info` fields, read before the bundle boots; empty without a GPU (a check).
@@ -241,6 +243,18 @@ class V8Game {
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info);
+    struct Compilation {
+        std::shared_ptr<void> root, camera, scene;
+        OutputState output;
+        bool shadows;
+        int shadowType;
+        uint32_t samples;
+        v8::Global<v8::Promise::Resolver> resolver;
+        std::optional<std::vector<std::shared_ptr<PipelineCompilation>>> pipelines;
+    };
+    std::vector<Compilation> compilations_;
+    void pollCompilations();
     /** The engine object a JS wrapper stands for, when it is one of `cls` (or any Object3D for "Object3D"). */
     tn::binding::Object* engineObject(v8::Local<v8::Value> value, std::string_view cls);
     static void decodeImage(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -557,6 +571,64 @@ void V8Game::readTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     else if (started != GpuStatus::Ok) reject("TN_NATIVE_READ_TARGET: region outside the target");
 }
 
+// The scene walk stays on the isolate's thread; only owned pipeline descriptors reach workers.
+void V8Game::compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
+    info.GetReturnValue().Set(resolver->GetPromise());
+    if (!game.hasGpu_) {
+        resolver->Reject(ctx, v8::Exception::Error(v8str(isolate, "TN_NATIVE_COMPILE: --check-game has no GPU; pipeline compilation requires a renderer"))).Check();
+        return;
+    }
+    auto* root = info.Length() > 0 ? game.engineObject(info[0], "Object3D") : nullptr;
+    const bool hasCamera = info.Length() > 1 && !info[1]->IsUndefined();
+    const bool hasScene = info.Length() > 2 && !info[2]->IsNullOrUndefined();
+    auto* camera = hasCamera ? game.engineObject(info[1], "Camera") : nullptr;
+    auto* scene = hasScene ? game.engineObject(info[2], "Object3D") : nullptr;
+    if (!root || (hasCamera && !camera) || (hasScene && !scene)) {
+        resolver->Reject(ctx, v8::Exception::Error(v8str(isolate, "TN_NATIVE_COMPILE: root, camera or target scene invalid"))).Check();
+        return;
+    }
+    game.compilations_.push_back({root->ptr, camera ? camera->ptr : std::make_shared<Camera>(),
+        scene ? scene->ptr : nullptr, game.output_, game.shadowMap_, game.shadowMapType_, game.samples_,
+        v8::Global<v8::Promise::Resolver>(isolate, resolver), std::nullopt});
+    game.pollCompilations();
+}
+
+void V8Game::pollCompilations() {
+    if (!renderer_ || compilations_.empty()) return;  // boot can call before the device is initialized
+    v8::Isolate::Scope isolateScope(isolate_);
+    v8::HandleScope scope(isolate_);
+    auto ctx = js_.Get(isolate_);
+    v8::Context::Scope contextScope(ctx);
+    for (auto it = compilations_.begin(); it != compilations_.end();) {
+        try {
+            if (!it->pipelines) {
+                renderer_->setOutput(it->output);
+                renderer_->setSampleCount(it->samples);
+                outputChanged_ = true;  // the next frame reapplies the game's current settings
+                RenderDatabase database;
+                database.shadowMapEnabled = it->shadows;
+                database.shadowMapType = it->shadowType;
+                it->pipelines = database.compileAsync(*renderer_, *static_cast<Object3D*>(it->root.get()),
+                    *static_cast<Camera*>(it->camera.get()), static_cast<Object3D*>(it->scene.get()));
+            }
+            bool pending = false;
+            for (const auto& pipeline : *it->pipelines) {
+                if (!pipeline->ready()) pending = true;
+                else if (!pipeline->get()) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: async creation returned null");
+            }
+            if (pending) { ++it; continue; }
+            it->resolver.Get(isolate_)->Resolve(ctx, v8::Undefined(isolate_)).Check();
+        } catch (const std::exception& error) {
+            it->resolver.Get(isolate_)->Reject(ctx, v8::Exception::Error(v8str(isolate_, error.what()))).Check();
+        }
+        it = compilations_.erase(it);
+    }
+}
+
 void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     try {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
@@ -589,6 +661,7 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
 void V8Game::initialize(Renderer& renderer) {
     renderer_ = &renderer;
     if (post_) renderer.setPostGraph(post_);
+    pollCompilations();
 }
 
 bool V8Game::observe(const std::string& method, const json::Value* argument, json::Value& result, std::string& error) {
@@ -725,6 +798,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
 #endif
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderTarget"), v8::Function::New(ctx, &renderTarget, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "compileAsync"), v8::Function::New(ctx, &compileAsync, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
@@ -803,6 +877,7 @@ V8Game::~V8Game() {
         v8::HandleScope scope(isolate_);
         // The adapter and the module-level globals die with the isolate; the engine context keeps
         // its own objects until it is released below.
+        compilations_.clear();
         update_.Reset();
         js_.Reset();
         mystral::audio::cleanupAudioBindings();
@@ -910,6 +985,8 @@ void V8Game::uiFrame() {
 void V8Game::safePoint() {
     v8::Isolate::Scope isolateScope(isolate_);
     v8::HandleScope scope(isolate_);
+    pollCompilations();
+    isolate_->PerformMicrotaskCheckpoint();
     adapter_->collect();
 }
 
@@ -998,7 +1075,7 @@ int main(int argc, char** argv) {
     if (!checkRequest.empty() && !checkGame)
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --check-request requires --check-game\n"), 2;
 
-    V8Game game;
+    V8Game game(!checkGame);
     // The adapter's identity, read the way core reads it (a request of its own beside the renderer's):
     // what the game's `adapter.info` and the playtest's adapter class come from. A check has no GPU.
     if (!checkGame) game.setAdapter(adapterIdentity());

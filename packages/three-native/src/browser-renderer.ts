@@ -17,6 +17,8 @@ type HostCall =
   | "_tnw_web_adapter"
   | "_tnw_web_resize"
   | "_tnw_web_render"
+  | "_tnw_web_compile"
+  | "_tnw_web_compile_poll"
   | "_tnw_web_renderer_state"
   | "_tnw_web_frame"
   | "_tnw_web_render_target"
@@ -318,8 +320,24 @@ export function defineWebRenderer(
       return 16;
     }
 
-    compileAsync(): Promise<void> {
-      return Promise.resolve();
+    async compileAsync(root: unknown, camera?: unknown, scene?: unknown): Promise<void> {
+      await this.init();
+      beforeRender();
+      this.#applyState();
+      writeHandle(0, root, "scene");
+      const cameraPointer = camera === undefined ? 0 : handles + 12;
+      const scenePointer = scene == null ? 0 : handles + 24;
+      if (cameraPointer) writeHandle(12, camera, "camera");
+      if (scenePointer) writeHandle(24, scene, "target scene");
+      const id = module._tnw_web_compile(handles, cameraPointer, scenePointer);
+      if (id === 0) check(1);
+      let status = module._tnw_web_compile_poll(id);
+      while (status === 0) {
+        module._tnw_web_poll();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        status = module._tnw_web_compile_poll(id);
+      }
+      check(status === READY ? 0 : 1);
     }
 
     getRenderTarget(): null {

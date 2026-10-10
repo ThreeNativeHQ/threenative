@@ -1,8 +1,11 @@
 #include "check.h"
 #include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/pipeline_cache.h"
+#include "engine/renderer/render_database.h"
+#include "engine/scene/geometries.h"
 #include "engine/shader/standard.h"
 #include "mystral/webgpu/context.h"
+#include "mystral/webgpu_compat.h"
 
 #include <chrono>
 #include <cstring>
@@ -105,14 +108,53 @@ void geometry() {
     CHECK(cache.entries() == held - 1);
 }
 
+// Dawn's Null backend validates the real renderer/cache path without a GPU or browser.
+struct CompileDevice {
+    WGPUInstance instance = wgpuCreateInstance(nullptr);
+    WGPUDevice device = nullptr;
+    WGPUQueue queue = nullptr;
+    EventQueue events;
+    CompileDevice() {
+        WGPUAdapter adapter = nullptr;
+        bool done = false;
+        WGPURequestAdapterOptions options = {};
+        options.backendType = WGPUBackendType_Null;
+        WGPURequestAdapterCallbackInfo callback = {};
+        callback.mode = WGPUCallbackMode_AllowProcessEvents;
+        callback.userdata1 = &adapter; callback.userdata2 = &done;
+        callback.callback = [](WGPURequestAdapterStatus, WGPUAdapter result, WGPUStringView, void* out, void* done) {
+            *static_cast<WGPUAdapter*>(out) = result; *static_cast<bool*>(done) = true;
+        };
+        wgpuInstanceRequestAdapter(instance, &options, callback);
+        while (!done) wgpuInstanceProcessEvents(instance);
+        if (!adapter) return;
+        done = false;
+        WGPURequestDeviceCallbackInfo deviceCallback = {};
+        deviceCallback.mode = WGPUCallbackMode_AllowProcessEvents;
+        deviceCallback.userdata1 = &device; deviceCallback.userdata2 = &done;
+        deviceCallback.callback = [](WGPURequestDeviceStatus, WGPUDevice result, WGPUStringView, void* out, void* done) {
+            *static_cast<WGPUDevice*>(out) = result; *static_cast<bool*>(done) = true;
+        };
+        wgpuAdapterRequestDevice(adapter, nullptr, deviceCallback);
+        while (!done) wgpuInstanceProcessEvents(instance);
+        wgpuAdapterRelease(adapter);
+        if (device) queue = wgpuDeviceGetQueue(device);
+    }
+    ~CompileDevice() {
+        if (queue) wgpuQueueRelease(queue);
+        if (device) wgpuDeviceRelease(device);
+        if (instance) wgpuInstanceRelease(instance);
+    }
+};
+
 void pipelines() {
-    Device d;
-    CHECK(d.ok);
-    if (!d.ok) return;
+    CompileDevice d;
+    CHECK(d.device != nullptr);
+    if (!d.device) return;
     const shader::StandardPrograms standard = shader::buildStandard(shader::StandardMaterial{});
     const shader::StageModule vs = shader::buildStage(standard.vertex, 0);
     const shader::StageModule fs = shader::buildStage(standard.fragment, 1);
-    PipelineCache cache(d.context.getDevice());
+    PipelineCache cache(d.device);
     const PipelineTarget color{};
     WGPURenderPipeline first = cache.get(vs, &fs, color);
     CHECK(first != nullptr);
@@ -184,8 +226,8 @@ void pipelines() {
     WGPUPipelineLayoutDescriptor layoutDesc = {};
     layoutDesc.bindGroupLayoutCount = 2;
     layoutDesc.bindGroupLayouts = groups;
-    WGPUPipelineLayout layoutA = wgpuDeviceCreatePipelineLayout(d.context.getDevice(), &layoutDesc);
-    WGPUPipelineLayout layoutB = wgpuDeviceCreatePipelineLayout(d.context.getDevice(), &layoutDesc);
+    WGPUPipelineLayout layoutA = wgpuDeviceCreatePipelineLayout(d.device, &layoutDesc);
+    WGPUPipelineLayout layoutB = wgpuDeviceCreatePipelineLayout(d.device, &layoutDesc);
     PipelineTarget withA = color, withB = color;
     withA.layout = layoutA;
     withB.layout = layoutB;
@@ -197,6 +239,86 @@ void pipelines() {
     wgpuBindGroupLayoutRelease(groups[1]);
 }
 
+// Baseline has no native compile entry: the first render exposes the missed pipeline work.
+template <class Database>
+void compileScene(Database& database, Renderer& renderer, Object3D& root, Camera& camera, Object3D* scene = nullptr) {
+    if constexpr (requires { database.compileAsync(renderer, root, camera, scene); }) {
+        const auto pipelines = database.compileAsync(renderer, root, camera, scene);
+        for (const auto& pipeline : pipelines) {
+            for (int i = 0; i < 2000 && !pipeline->ready(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            CHECK(pipeline->ready());
+            if (pipeline->ready()) CHECK(pipeline->get() != nullptr);
+        }
+    }
+}
+
+void compileBeforeRender() {
+    CompileDevice d;
+    CHECK(d.device != nullptr);
+    if (!d.device) return;
+    Renderer renderer(d.instance, d.device, d.queue, d.events);
+    renderer.setSize(32, 32);
+    RenderDatabase database;
+    Scene scene;
+    PerspectiveCamera camera;
+    camera.position.z = 8;
+    auto geometry = makeBoxGeometry();
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto map = std::make_shared<Texture>();
+    map->width = map->height = 2;
+    map->data.assign(16, 255);
+    material->maps["map"] = map;
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 5; ++i) {
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.x = (i - 2) * 0.25;
+        mesh->setCastShadow(true);
+        mesh->setReceiveShadow(true);
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    auto glass = std::make_shared<Material>(MaterialType::Basic);
+    glass->transparent = true;
+    glass->side = Side::Double;
+    glass->opacity = 0.3;
+    Mesh transparent(geometry, glass);
+    scene.add(transparent);
+    DirectionalLight sun;
+    sun.setCastShadow(true);
+    scene.add(sun);
+    database.shadowMapEnabled = true;
+    compileScene(database, renderer, scene, camera);
+    const uint64_t compiled = renderer.pipelines().compiles();
+    CHECK(compiled > 0);
+    CHECK(renderer.lastFrame().draws == 0);  // compiling must not draw a warm-up frame
+    database.render(renderer, scene, camera);
+    CHECK(renderer.pipelines().compiles() == compiled);  // after compileAsync, render compiles 0 pipelines
+    CHECK(renderer.lastFrame().draws > 0);
+    compileScene(database, renderer, scene, camera);
+    CHECK(renderer.pipelines().compiles() == compiled);  // repeated compile is a lookup
+
+    // The frame's synchronous fallback still builds a newly introduced material variant.
+    auto changed = std::make_shared<Material>(MaterialType::Phong);
+    transparent.material = changed;
+    database.render(renderer, scene, camera);
+    CHECK(renderer.pipelines().compiles() > compiled);
+
+    // Three's three-argument form borrows lights and fog from the target scene, not its meshes.
+    Scene context;
+    Group root;
+    Mesh object(geometry, material);
+    root.add(object);
+    context.add(root);
+    DirectionalLight light;
+    context.add(light);
+    context.fog = std::make_shared<Fog>(Color(0.2, 0.3, 0.4), 1, 20);
+    compileScene(database, renderer, root, camera, &context);
+    const auto withContext = renderer.pipelines().compiles();
+    database.render(renderer, context, camera);
+    CHECK(renderer.pipelines().compiles() == withContext);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"geometry", geometry}, {"pipelines", pipelines})
+TN_TEST_MAIN({"geometry", geometry}, {"pipelines", pipelines}, {"compile_before_render", compileBeforeRender})

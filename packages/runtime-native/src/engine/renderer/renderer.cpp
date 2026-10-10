@@ -30,6 +30,12 @@ namespace tn::engine {
 
 namespace {
 
+WGPUTextureFormat textureFormat(const Texture& texture) {
+    return texture.isFloat() ? WGPUTextureFormat_RGBA32Float
+         : texture.isHalfFloat() ? WGPUTextureFormat_RGBA16Float
+         : texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm;
+}
+
 using Matrix3 = std::array<double, 9>;
 
 Matrix multiply(const Matrix& a, const Matrix& b) {
@@ -906,10 +912,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     // textures decode before filtering in the GPU, not after filtering in the material/PMREM shader.
     if (texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
         throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: FloatType requires float32-filterable");
-    const WGPUTextureFormat format = texture.isFloat() ? WGPUTextureFormat_RGBA32Float
-                                    : texture.isHalfFloat() ? WGPUTextureFormat_RGBA16Float
-                                    : texture.isSRGB() ? WGPUTextureFormat_RGBA8UnormSrgb
-                                                       : WGPUTextureFormat_RGBA8Unorm;
+    const WGPUTextureFormat format = textureFormat(texture);
     if (texture.hasImage() && texture.volume) {
         // A Data3DTexture: one 3D texture of `depth` slices, one level (ponytail: a volume's
         // generateMipmaps is ignored; no corpus game turns it on).
@@ -1636,14 +1639,27 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
     return opaque;
 }
 
-uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& unjitteredCamera, const LightState& lights,
+uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                           std::array<double, 4> clear) {
-    const uint64_t id = ++renderId_;
+    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm);
+}
+
+std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::span<const DrawItem> items,
+    const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat) {
+    std::vector<std::shared_ptr<PipelineCompilation>> compilation;
+    renderPrepared(items, camera, lights, {}, &compilation, outputFormat);
+    return compilation;
+}
+
+uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraState& unjitteredCamera,
+    const LightState& lights, std::array<double, 4> clear,
+    std::vector<std::shared_ptr<PipelineCompilation>>* compilation, WGPUTextureFormat outputFormat) {
+    const uint64_t id = compilation ? renderId_ : ++renderId_;
     // Taken at once: a frame that throws must not leave a borrowed view armed for the next one.
-    const WGPUTextureView presentTarget = std::exchange(presentTarget_, nullptr);
+    const WGPUTextureView presentTarget = compilation ? nullptr : std::exchange(presentTarget_, nullptr);
     const WGPUTextureFormat presentFormat = presentFormat_;
     CameraState camera = unjitteredCamera;
-    if (traa_) camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse);
+    if (traa_ && !compilation) camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse);
     const Matrix& view = camera.matrixWorldInverse;
     geometry_.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
@@ -1672,7 +1688,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     if (storagesMoved && uniformCapacity_ != 0) rebuildGroups();
 
     WGPUCommandEncoderDescriptor encoderDesc = {};
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
+    WGPUCommandEncoder encoder = compilation ? nullptr : wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
     WGPURenderPassColorAttachment color = {};
     if (sampleCount_ == 4) {
         color.view = msaaColorView_;
@@ -1713,6 +1729,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
     std::map<std::size_t, std::map<uint64_t, Box3>> casterBounds;
     for (auto& [i, shadow] : virtualShadows_) {
+        if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
         const uint32_t mask = lights.direct[i].shadow->layersMask;
@@ -1767,7 +1784,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         shadow.casters = lightCasterBounds;
         virtualPages[i] = shadow.atlas.update(Vector3(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]), towards, virtualCut_);
     }
-    virtualCut_ = false;
+    if (!compilation) virtualCut_ = false;
     std::string lightKinds, unshadowedKinds;
     bool shadowMapsChanged = false;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
@@ -2049,6 +2066,11 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         target.skinIndex = skinIndexFormat(item);
         target.instanceStepMask = instanceStepMask(program.vertex, item);
         lineTopology(target, item);
+        if (compilation) {
+            compilation->push_back(pipelines_.getAsync(program.vertex, &program.fragment, target));
+            plan.push_back({&item, &program, nullptr, 0, 0});
+            continue;
+        }
         const uint64_t targetKey = drawTargetKey(item, program.vertex);
         WGPURenderPipeline pipeline;
         if (cache && cache->pipeline && cache->targetKey == targetKey) {
@@ -2185,12 +2207,12 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         const DirectLight::Shadow& shadow = *lights.direct[i].shadow;
         const auto virtualIt = virtualShadows_.find(i);
         const bool virtualMap = virtualIt != virtualShadows_.end();
-        const int passCount = virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
+        const int passCount = compilation ? 1 : virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
         for (int face = 0; face < passCount; ++face) {
-        const shadows::AtlasPage* page = virtualMap ? &virtualPages[i][face] : nullptr;
+        const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
         ShadowPass& pass = shadowPasses.emplace_back();
-        pass.target = virtualMap ? virtualIt->second.map.view : shadow.cube ? cubeShadowMaps_[i].faces[face] : shadowMaps_[i].view;
+        pass.target = compilation ? nullptr : virtualMap ? virtualIt->second.map.view : shadow.cube ? cubeShadowMaps_[i].faces[face] : shadowMaps_[i].view;
         if (page) {
             const auto [x, y] = virtualIt->second.atlas.origin(page->slot);
             pass.x = x; pass.y = y; pass.size = virtualIt->second.atlas.stride();
@@ -2223,6 +2245,10 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(program.vertex, item);
+            if (compilation) {
+                compilation->push_back(pipelines_.getAsync(program.vertex, nullptr, target));
+                continue;
+            }
             const uint64_t depthTargetKey = drawTargetKey(item, program.vertex);
             WGPURenderPipeline pipeline;
             if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
@@ -2277,6 +2303,10 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             target.layout = velocity.pipelineLayout; target.depthWrite = false;
             lineTopology(target, item);
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            if (compilation) {
+                compilation->push_back(pipelines_.getAsync(velocity.vertex, &velocity.fragment, target));
+                continue;
+            }
             const auto pipeline = pipelines_.get(velocity.vertex, &velocity.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
             const uint32_t offset = frameUniforms_.size();
@@ -2293,6 +2323,106 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
             velocityPlan.push_back({&item, &velocity, pipeline, offset, 0});
         }
     }
+    // A post pass that reads "normal" (GTAO, denoise) gets three's MRT normal output as a second
+    // pass over the same draws: each draw's own vertex stage (skinning, morphs, instancing, position
+    // nodes included, so the depth matches the main pass exactly) with a fragment that writes the
+    // interpolated view-space normal, depth-tested Equal against the main pass's depth.
+    std::vector<Planned> normalPlan;
+    const bool normalPass = postEffects_ && postEffects_->reads("normal");
+    const auto planNormals = [&] {
+        if (normalPass) {
+            if (normalFragment_.wgsl.code.empty()) {
+                shader::Program fragment{shader::Stage::Fragment};
+                fragment.output("color", fragment.construct(shader::Type::vec(4),
+                    {fragment.call("normalize", {fragment.varying("normalView", shader::Type::vec(3))}), fragment.constant(0.f)}));
+                normalFragment_ = shader::buildStage(fragment, 1);
+                if (!normalFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: post normal program");
+            }
+            for (const Planned& draw : plan) {
+                const DrawItem& item = *draw.item;
+                // The sky and unlit materials write no view-space normal (their programs have no normalView).
+                if (item.background || item.kind == MaterialKind::Basic) continue;
+                // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
+                // frame, not thrown: a transparent particle must not cost the frame.
+                if (item.transparent || item.sprite || item.material->alphaTest > 0) {
+                    const std::string reason = item.transparent ? "transparent" : item.sprite ? "sprite" : "alpha-tested";
+                    const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
+                    if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                    continue;
+                }
+                if (item.nodes.normalNode)
+                    throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
+                // The normal fragment reads `normalView` at location 0, which the program's vertex stage must write there.
+                if (draw.program->vertex.wgsl.code.find("@location(0) o_normalView") == std::string::npos)
+                    throw std::runtime_error("TN_POST_NORMAL_LAYOUT: normalView is not the vertex stage's first varying");
+                PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
+                    item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
+                target.layout = draw.program->pipelineLayout; target.depthWrite = false;
+                target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+                target.skinIndex = skinIndexFormat(item);
+                target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
+                if (compilation) {
+                    compilation->push_back(pipelines_.getAsync(draw.program->vertex, &normalFragment_, target));
+                    continue;
+                }
+                const auto pipeline = pipelines_.get(draw.program->vertex, &normalFragment_, target);
+                if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
+                Planned normal = draw;
+                normal.pipeline = pipeline;
+                normalPlan.push_back(normal);
+            }
+            if (!compilation && !normalTexture_) {
+                WGPUTextureDescriptor desc = {};
+                desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+                desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
+                desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
+                normalTexture_ = wgpuDeviceCreateTexture(device_, &desc);
+                normalView_ = view2d(normalTexture_, WGPUTextureFormat_RGBA16Float);
+            }
+            if (!compilation) postEffects_->input("normal", normalView_);
+        }
+    };
+    WGPURenderPipeline pageClear = nullptr;
+    if (!virtualShadows_.empty()) {
+        shader::Program clear(shader::Stage::Vertex);
+        const auto i = clear.builtin("vertexIndex");
+        const auto zero = clear.construct(shader::Type::u32(), {clear.constant(int32_t(0))}), one = clear.construct(shader::Type::u32(), {clear.constant(int32_t(1))});
+        const auto x = clear.select(clear.equal(i, one), clear.constant(3.0f), clear.constant(-1.0f));
+        const auto y = clear.select(clear.equal(i, zero), clear.constant(3.0f), clear.constant(-1.0f));
+        clear.output("position", clear.construct(shader::Type::vec(4), {x, y, clear.constant(1.0f), clear.constant(1.0f)}));
+        const auto vertex = shader::buildStage(clear, 0);
+        PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, WGPUCullMode_None};
+        target.depthCompare = WGPUCompareFunction_Always;
+        if (compilation) compilation->push_back(pipelines_.getAsync(vertex, nullptr, target));
+        else {
+            pageClear = pipelines_.get(vertex, nullptr, target);
+            if (!pageClear) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: virtual page clear");
+        }
+    }
+    if (compilation) {
+        planNormals();
+        PipelineTarget target{outputFormat, WGPUTextureFormat_Undefined, WGPUCullMode_None};
+        target.layout = outputPipelineLayout_;
+        compilation->push_back(pipelines_.getAsync(outputVertex_, &outputFragment_, target));
+        const auto texture = [&](const Texture* map) {
+            if (map && !map->volume && map->hasImage() && map->generateMipmaps && map->bytesPerTexel() == 4 &&
+                std::max(map->width, map->height) > 1)
+                copyPipeline(textureFormat(*map), 0, compilation);
+        };
+        for (const DrawItem& item : items) {
+            texture(item.map); texture(item.normalMap); texture(item.envMap); texture(item.pmremMap);
+            for (const Texture* map : item.pbrMaps) texture(map);
+            if (item.nodeTextures) for (const auto& [name, map] : *item.nodeTextures) texture(map);
+            if (item.background && item.map) {
+                const auto conversion = shader::buildEquirectangularCube();
+                const auto vs = shader::buildStage(conversion.vertex, 0), fs = shader::buildStage(conversion.fragment, 0);
+                PipelineTarget cube{textureFormat(*item.map), WGPUTextureFormat_Undefined, WGPUCullMode_None};
+                compilation->push_back(pipelines_.getAsync(vs, &fs, cube));
+            }
+        }
+        return id;
+    }
+
     if (frameUniforms_.size() > uniformCapacity_) {
         if (uniformCapacity_ != 0) gpu_.destroy(uniformBuffer_);
         uniformCapacity_ = std::max<uint64_t>(frameUniforms_.size() * 2, 64 * 1024);
@@ -2419,59 +2549,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         if (cache) { cache->mapGroupKey = groupKey; cache->mapGroup = p.mapGroup; }
     }
 
-    // A post pass that reads "normal" (GTAO, denoise) gets three's MRT normal output as a second
-    // pass over the same draws: each draw's own vertex stage (skinning, morphs, instancing, position
-    // nodes included, so the depth matches the main pass exactly) with a fragment that writes the
-    // interpolated view-space normal, depth-tested Equal against the main pass's depth.
-    std::vector<Planned> normalPlan;
-    const bool normalPass = postEffects_ && postEffects_->reads("normal");
-    if (normalPass) {
-        if (normalFragment_.wgsl.code.empty()) {
-            shader::Program fragment{shader::Stage::Fragment};
-            fragment.output("color", fragment.construct(shader::Type::vec(4),
-                {fragment.call("normalize", {fragment.varying("normalView", shader::Type::vec(3))}), fragment.constant(0.f)}));
-            normalFragment_ = shader::buildStage(fragment, 1);
-            if (!normalFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: post normal program");
-        }
-        for (const Planned& draw : plan) {
-            const DrawItem& item = *draw.item;
-            // The sky and unlit materials write no view-space normal (their programs have no normalView).
-            if (item.background || item.kind == MaterialKind::Basic) continue;
-            // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
-            // frame, not thrown: a transparent particle must not cost the frame.
-            if (item.transparent || item.sprite || item.material->alphaTest > 0) {
-                const std::string reason = item.transparent ? "transparent" : item.sprite ? "sprite" : "alpha-tested";
-                const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
-                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
-                continue;
-            }
-            if (item.nodes.normalNode)
-                throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
-            // The normal fragment reads `normalView` at location 0, which the program's vertex stage must write there.
-            if (draw.program->vertex.wgsl.code.find("@location(0) o_normalView") == std::string::npos)
-                throw std::runtime_error("TN_POST_NORMAL_LAYOUT: normalView is not the vertex stage's first varying");
-            PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
-                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
-            target.layout = draw.program->pipelineLayout; target.depthWrite = false;
-            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
-            target.skinIndex = skinIndexFormat(item);
-            target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
-            const auto pipeline = pipelines_.get(draw.program->vertex, &normalFragment_, target);
-            if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
-            Planned normal = draw;
-            normal.pipeline = pipeline;
-            normalPlan.push_back(normal);
-        }
-        if (!normalTexture_) {
-            WGPUTextureDescriptor desc = {};
-            desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
-            desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
-            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
-            normalTexture_ = wgpuDeviceCreateTexture(device_, &desc);
-            normalView_ = view2d(normalTexture_, WGPUTextureFormat_RGBA16Float);
-        }
-        postEffects_->input("normal", normalView_);
-    }
+    planNormals();
 
     // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
     // shadow passes first, so the main pass samples this frame's maps.
@@ -2549,19 +2627,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
         }
 #undef TN_ENCODE
     };
-    WGPURenderPipeline pageClear = nullptr;
     if (!virtualShadows_.empty()) {
-        shader::Program clear(shader::Stage::Vertex);
-        const auto i = clear.builtin("vertexIndex");
-        const auto zero = clear.construct(shader::Type::u32(), {clear.constant(int32_t(0))}), one = clear.construct(shader::Type::u32(), {clear.constant(int32_t(1))});
-        const auto x = clear.select(clear.equal(i, one), clear.constant(3.0f), clear.constant(-1.0f));
-        const auto y = clear.select(clear.equal(i, zero), clear.constant(3.0f), clear.constant(-1.0f));
-        clear.output("position", clear.construct(shader::Type::vec(4), {x, y, clear.constant(1.0f), clear.constant(1.0f)}));
-        const auto vertex = shader::buildStage(clear, 0);
-        PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, WGPUCullMode_None};
-        target.depthCompare = WGPUCompareFunction_Always;
-        pageClear = pipelines_.get(vertex, nullptr, target);
-        if (!pageClear) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: virtual page clear");
         graph::RenderGraph graph;
         std::vector<graph::Read> reads;
         for (const auto& [i, shadow] : virtualShadows_) {
@@ -2864,14 +2930,19 @@ GpuStatus Renderer::readPresented(ReadbackCallback done) {
 
 // The output triangle again, this time sampling the finished RGBA8 frame into a window surface. The
 // program's own variant is chosen by the target format, so a BGRA swapchain gets a BGRA pipeline.
-WGPURenderPipeline Renderer::copyPipeline(WGPUTextureFormat format, uint8_t blend) {
+WGPURenderPipeline Renderer::copyPipeline(WGPUTextureFormat format, uint8_t blend,
+    std::vector<std::shared_ptr<PipelineCompilation>>* compilation) {
     if (blitVertex_.wgsl.code.empty()) {
         const shader::OutputPrograms copy = shader::buildOutput(std::nullopt, false);
         blitVertex_ = shader::buildStage(copy.vertex, 0);
         blitFragment_ = shader::buildStage(copy.fragment, 0);
     }
-    return pipelines_.get(blitVertex_, &blitFragment_,
-                          PipelineTarget{format, WGPUTextureFormat_Undefined, WGPUCullMode_None, blend});
+    const PipelineTarget target{format, WGPUTextureFormat_Undefined, WGPUCullMode_None, blend};
+    if (compilation) {
+        compilation->push_back(pipelines_.getAsync(blitVertex_, &blitFragment_, target));
+        return nullptr;
+    }
+    return pipelines_.get(blitVertex_, &blitFragment_, target);
 }
 
 // WebGPUTextureUtils.generateMipmaps: each level is drawn from a one-level view of the level above,

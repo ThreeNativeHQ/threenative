@@ -1,6 +1,16 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
+#include <memory>
+#ifndef __EMSCRIPTEN__
+#include <array>
+#include <condition_variable>  // TN_WORKER_ONLY: the compile workers park between jobs
+#include <deque>
+#include <functional>
+#include <mutex>
+#include <thread>
+#endif
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -10,6 +20,21 @@
 #include "engine/shader/package.h"
 
 namespace tn::engine {
+
+/** A nonblocking compile result; only renderer-thread poll/get observes a worker's completion. */
+class PipelineCompilation {
+public:
+    ~PipelineCompilation();
+    bool ready() const { return status_.load(std::memory_order_acquire) != 0; }
+    /** Throws if still pending or refused; never waits on the game thread. */
+    WGPURenderPipeline get() const;
+private:
+    friend class PipelineCache;
+    void complete(WGPURenderPipeline pipeline, const std::string& error = {});
+    WGPURenderPipeline pipeline_ = nullptr;
+    std::string error_;
+    std::atomic<int> status_{0};
+};
 
 /** What a render pipeline depends on besides its shaders. */
 struct PipelineTarget {
@@ -58,6 +83,12 @@ public:
     /** `fragment` null builds a depth-only pipeline. Returns null when the device refuses it. */
     WGPURenderPipeline get(const shader::StageModule& vertex, const shader::StageModule* fragment, const PipelineTarget& target);
 
+    /** Missing keys compile on two native workers, or through WebGPU's browser async entry. */
+    std::shared_ptr<PipelineCompilation> getAsync(const shader::StageModule& vertex,
+        const shader::StageModule* fragment, const PipelineTarget& target);
+    /** Adopt completed pipelines on the renderer thread; workers never mutate the cache. */
+    void poll();
+
     uint64_t compiles() const { return compiles_; }
     /** Lookups that had to build the text key: the ones an id did not answer. */
     uint64_t textLookups() const { return textLookups_; }
@@ -74,6 +105,19 @@ private:
     struct IdKeyHash {
         size_t operator()(const IdKey& key) const;
     };
+    struct Pending;
+    static IdKey idKey(const shader::StageModule& vertex, const shader::StageModule* fragment, const PipelineTarget& target);
+    static std::string textKey(const shader::StageModule& vertex, const shader::StageModule* fragment, const PipelineTarget& target);
+    static WGPURenderPipeline create(WGPUDevice device, const shader::StageModule& vertex,
+        const shader::StageModule* fragment, const PipelineTarget& target, const std::shared_ptr<Pending>& pending = {});
+    std::unordered_map<std::string, std::shared_ptr<Pending>> compiling_;
+#ifndef __EMSCRIPTEN__
+    std::array<std::thread, 2> workers_;
+    std::mutex workMutex_;
+    std::condition_variable workReady_;  // TN_WORKER_ONLY: the compile workers park between jobs
+    std::deque<std::function<void()>> pending_;
+    bool stopping_ = false;
+#endif
     WGPUDevice device_;
     std::unordered_map<std::string, WGPURenderPipeline> pipelines_;
     std::unordered_map<IdKey, WGPURenderPipeline, IdKeyHash> byId_;  // aliases of pipelines_, never owners

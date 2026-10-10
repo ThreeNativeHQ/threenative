@@ -608,7 +608,8 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
 }
 
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
-                             bool updateChildren, bool force, Record* cached, bool plainMesh) {
+                             bool updateChildren, bool force, Record* cached, bool plainMesh, bool lightsOnly, const Object3D* excluded) {
+    if (&object == excluded) return;
     if (!object.visible()) {
         if (updateChildren)
             for (Object3D* child : object.children)
@@ -619,14 +620,14 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
     bool shadowCaster = shadowMapEnabled && object.castShadow();
     if (mainPass || shadowCaster) {
         const std::string_view type = plainMesh ? "Mesh" : object.type();
-        if (type == "LOD") {
+        if (!lightsOnly && type == "LOD") {
             if (mainPass) {
                 auto& lod = static_cast<LOD&>(object);
                 if (lod.autoUpdate) lod.update(camera);
             }
         }
-        if (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
-            type == "LineSegments") {
+        if (!lightsOnly && (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
+            type == "LineSegments")) {
             const auto& mesh = static_cast<const Mesh&>(object);
             if (mainPass && mesh.frustumCulled && !cullExempt_ && !inFrustum(object, type)) mainPass = false;
             if (shadowCaster && mesh.frustumCulled && !cullExempt_ && !inShadowFrustum(object, type)) shadowCaster = false;
@@ -699,7 +700,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                         callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
                 }
             }
-        } else if (type == "BatchedMesh") {
+        } else if (!lightsOnly && type == "BatchedMesh") {
             // three's BatchedMesh: each geometry's visible instances, drawn as one instanced mesh.
             // ponytail: never culled; three culls the whole batch and then each instance. Add when a
             // BatchedMesh scene draws mostly off screen.
@@ -769,9 +770,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 lights.hemisphereUp = normalized(worldPosition(l));
             }
         }
-    } else if (cached && cached->meshId == object.id()) {
+    } else if (!lightsOnly && cached && cached->meshId == object.id()) {
         cached->seen = frame_; // flat records also survive another camera's layer mask
-    } else if (const auto it = records_.find(&object); it != records_.end()) {
+    } else if (const auto it = records_.find(&object); !lightsOnly && it != records_.end()) {
         it->second.seen = frame_; // in the scene, on another camera's layer: its record stays
     }
     for (std::size_t i = 0; i < object.children.size(); ++i) {
@@ -807,7 +808,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         if (updateChildren)
             child->Object3D::updateMatrixWorldSelf(force, flatParentIdentity_, flatPlainMeshes_[i]);
         project(*child, camera, items, lights, false, false, updateChildren ? &flatRecords_[i] : nullptr,
-                updateChildren && flatPlainMeshes_[i]);
+                updateChildren && flatPlainMeshes_[i], lightsOnly, excluded);
     }
 }
 
@@ -1152,9 +1153,10 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
     }
 }
 
-const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& camera, LightState& lights) {
+const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene) {
     using Clock = std::chrono::steady_clock;
     const auto start = profiling ? Clock::now() : Clock::time_point{};
+    if (targetScene && targetScene != &scene && targetScene->matrixWorldAutoUpdate) targetScene->updateMatrixWorld();
     ++frame_;
     ++projection::detail::uniformEpoch();
     diagnostics_.clear();
@@ -1222,10 +1224,12 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     projectionView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     batchProjView_ = toArray(projectionView);
     frustum_.setFromProjectionMatrix(projectionView, camera.coordinateSystem, camera.reversedDepth());
-    collectShadowFrustums(scene, camera);
+    collectShadowFrustums(targetScene ? *targetScene : scene, camera);
     if (flat) flatRecords_.resize(scene.children.size());
     else flatRecords_.clear();
     project(scene, camera, items, lights, flat, force);
+    if (targetScene && targetScene != &scene)
+        project(*targetScene, camera, items, lights, false, false, nullptr, false, true, &scene);
     const auto projected = profiling ? Clock::now() : Clock::time_point{};
     // three's LightsNode sorts its lights by id; the direct terms are summed in that order.
     std::stable_sort(direct_.begin(), direct_.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
@@ -1282,6 +1286,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     const auto batched = profiling ? Clock::now() : Clock::time_point{};
     // Resolve the scene fallback every frame: environment can change without a material version bump.
     const Scene* world = dynamic_cast<const Scene*>(&scene);
+    if (!world && targetScene) world = dynamic_cast<const Scene*>(targetScene);
     for (DrawItem& item : items) {
         const Material& source = *static_cast<const Material*>(item.materialKey);
         item.fog = world && source.fog ? world->fog.get() : nullptr;
@@ -1362,6 +1367,18 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         std::chrono::duration<double, std::milli>((beforeBatch - projected) + (Clock::now() - batched)).count()};
     previousDrawCount_ = items.size();
     return items_;
+}
+
+std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(Renderer& renderer,
+    Object3D& root, Camera& camera, Object3D* targetScene, WGPUTextureFormat outputFormat) {
+    LightState lights;
+    const auto& items = prepare(root, camera, lights, targetScene);
+    if (!diagnostics_.empty()) throw std::runtime_error(diagnostics_.front());
+    CameraState state;
+    state.matrixWorld = toArray(camera.matrixWorld);
+    state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
+    state.projectionMatrix = toArray(camera.projectionMatrix);
+    return renderer.compileAsync(items, state, lights, outputFormat);
 }
 
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear, std::array<double, 2>* cpuMs) {

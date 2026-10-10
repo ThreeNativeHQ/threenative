@@ -10,6 +10,7 @@
 #include "engine/shader/graph/graph.h"
 
 #include <cstdio>
+#include <chrono>
 #include <cstring>
 #include <map>
 #include <set>
@@ -255,6 +256,56 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     if (!refused.empty()) return fail(refused);
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
     return 0;
+}
+
+namespace {
+uint32_t nextCompilation = 0;
+std::map<uint32_t, std::vector<std::shared_ptr<PipelineCompilation>>> compilations;
+}
+
+/** Starts preparing the root with the target scene's lighting/environment; submits no frame. */
+extern "C" uint32_t tnw_web_compile(const tn_handle_t* rootHandle, const tn_handle_t* cameraHandle,
+                                     const tn_handle_t* targetSceneHandle) {
+    tnw_web_poll();
+    if (state != Ready) { fail("TN_WASM_COMPILE: device not ready"); return 0; }
+    auto* root = rootOf(rootHandle);
+    Camera defaultCamera;
+    auto* camera = cameraHandle ? cameraOf(cameraHandle) : &defaultCamera;
+    auto* targetScene = targetSceneHandle ? rootOf(targetSceneHandle) : nullptr;
+    if (!root || !camera || (targetSceneHandle && !targetScene)) {
+        fail("TN_WASM_COMPILE: root, camera or target scene handle invalid"); return 0;
+    }
+    try {
+        if (outputChanged) renderer->setOutput(output);
+        outputChanged = false;
+        database.shadowMapEnabled = shadowMap;
+        database.shadowMapType = shadowMapType;
+        auto pending = database.compileAsync(*renderer, *root, *camera, targetScene, surfaceFormat);
+        const uint32_t id = ++nextCompilation;
+        compilations.emplace(id, std::move(pending));
+        return id;
+    } catch (const std::exception& error) {
+        fail(error.what()); return 0;
+    }
+}
+
+/** 0 pending, 1 complete (consumes the request), -1 failed. */
+extern "C" int tnw_web_compile_poll(uint32_t id) {
+    const auto found = compilations.find(id);
+    if (found == compilations.end()) { fail("TN_WASM_COMPILE: unknown request"); return -1; }
+    if (state == Failed) { compilations.erase(found); return -1; }
+    try {
+        bool pending = false;
+        for (const auto& pipeline : found->second) {
+            if (!pipeline->ready()) pending = true;
+            else if (!pipeline->get()) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: async creation returned null");
+        }
+        if (pending) return 0;
+        compilations.erase(found);
+        return 1;
+    } catch (const std::exception& error) {
+        compilations.erase(found); fail(error.what()); return -1;
+    }
 }
 
 /**

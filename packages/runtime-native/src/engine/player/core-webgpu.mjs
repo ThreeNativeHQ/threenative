@@ -69,6 +69,11 @@ export class WebGPURenderer {
     globalThis.tn.camera = camera;
     globalThis.tn.setRendererState(this);
   }
+  compileAsync(root, camera, scene) {
+    syncUniforms();
+    globalThis.tn.setRendererState(this);
+    return globalThis.tn.compileAsync(root, camera, scene);
+  }
   dispose() {}
 }
 

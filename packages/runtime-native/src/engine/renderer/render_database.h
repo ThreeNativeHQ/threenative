@@ -41,8 +41,11 @@ class RenderDatabase {
     uint64_t render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear = {0, 0, 0, 0},
                     std::array<double, 2>* cpuMs = nullptr);
 
+    std::vector<std::shared_ptr<PipelineCompilation>> compileAsync(Renderer& renderer, Object3D& root,
+        Camera& camera, Object3D* targetScene = nullptr, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
+
     /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
-    const std::vector<DrawItem>& prepare(Object3D& scene, Camera& camera, LightState& lights);
+    const std::vector<DrawItem>& prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene = nullptr);
 
     /** Float32 copies of quantized attributes held for live sources (dead ones are swept). */
     [[nodiscard]] std::size_t convertedCount() const { return converted_.size(); }
@@ -122,7 +125,8 @@ class RenderDatabase {
         std::unique_ptr<Draw> draw; // materialize only actual draws, not every batched member
     };
     void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
-                 bool updateChildren = false, bool force = false, Record* cached = nullptr, bool plainMesh = false);
+                 bool updateChildren = false, bool force = false, Record* cached = nullptr, bool plainMesh = false,
+                 bool lightsOnly = false, const Object3D* excluded = nullptr);
     void batch(std::vector<DrawItem>& items, Object3D& scene,
                const std::vector<std::pair<double, const DrawItem*>>& ordered);
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group

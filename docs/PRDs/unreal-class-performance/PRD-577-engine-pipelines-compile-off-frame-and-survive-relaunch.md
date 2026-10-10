@@ -1,7 +1,7 @@
 # PRD-577 — Engine pipelines compile off the frame and survive a relaunch
 
-**Status:** NOT STARTED
-**Priority:** P1 — the engine's `compileAsync()` compiles nothing, so every pipeline compiles inside a frame (Phase 1 open), and no engine pipeline persists across launches (Phase 2 open).
+**Status:** IN PROGRESS
+**Priority:** P1 — the engine's `compileAsync()` compiles nothing, so every pipeline compiles inside a frame (Phase 1 implementation landed; GPU/browser proof open), and no engine pipeline persists across launches (Phase 2 open).
 **Complexity:** 4 (MEDIUM) — 1–5 engine files (+1), a compile pool and async completions are concurrent state (+2), a disk cache crosses the native build (+1); risk override: none
 **Owner:** João
 **Depends on:** None for Phase 1. Phase 3 reads [PRD-573](./PRD-573-the-performance-bar-is-a-scorecard-on-named-scenes.md).
@@ -63,10 +63,10 @@ Facts read 2026-10-09 at `76989167f`:
 ## Execution Phases
 
 #### Phase 1: `compileAsync` compiles on web and native
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/three-native/src/browser-renderer.ts`, `src/engine/renderer/pipeline_cache.{h,cpp}`, `src/engine/wasm/web_host.cpp`, `tests/native-engine/renderer/` (pipeline cache test)
-- [ ] **[QW ≤4 h]** On native desktop, `compileAsync` builds every missing pipeline on a compile pool, and the next `render` compiles zero pipelines. proof: red-green case in `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_pipeline_cache` (`compiles()` unchanged across the first render after `compileAsync`)
-- [ ] On the web, `compileAsync` builds every missing pipeline through the async entry, and the first frame after it compiles zero pipelines. proof: red-green case in `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend`
+- [x] **[QW ≤4 h]** On native desktop, `compileAsync` builds every missing pipeline on a compile pool, and the next `render` compiles zero pipelines. proof: red-green case in `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_pipeline_cache` (`compiles()` unchanged across the first render after `compileAsync`). Verified 2026-10-09 in this task’s `build/tn-linux-engine` with `ctest -L native-engine -R pipeline`: baseline `native_engine_renderer_pipeline_compile_async` failed; modified case passes on Dawn Null with no GPU. Both pipeline cases pass; the next render creates 0 pipelines, and an unseen material still uses the synchronous fallback.
+- [ ] On the web, `compileAsync` builds every missing pipeline through the async entry, and the first frame after it compiles zero pipelines. proof: red-green case in `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend`. Implementation and requested GPU-stubbed facade proof verified 2026-10-09: baseline 4 failures, modified 4 passes; 1/2/3-argument calls await all creates and the next frame creates none. `tn-native-engine-web` builds using the available async API. This box remains open for actual Wasm/browser execution, excluded by this task’s no-browser/no-GPU rule.
 - [ ] Midway's native page reaches `ready` sooner against its own base build, frames pixel-identical. proof: `pnpm profile:wasm-page -- --url <native Midway, this build> --control <native Midway, base build> --load --gpu-calls` with subject/control `ready` below 1.0 and at least 1 async compile counted on the subject
 
 #### Phase 2: Native pipelines survive a relaunch
