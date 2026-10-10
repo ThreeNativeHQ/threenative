@@ -76,24 +76,24 @@ describe("generated template conventions", () => {
 
   it("authors the platformer fox in metres, so it needs neither a scale nor a snap", () => {
     // The platformer's applicability row is N/A for both generated conventions, and this is what
-    // makes that honest rather than a gap: the rig is built from primitives with its feet on
-    // y = 0 (its lowest primitive, the tail, rests 0.16 m above it, and the shoes 0.21 m), and the
-    // collider is the `CharacterBody3D` capsule the body already sits on. There is no imported
-    // scale to normalise and no visual offset from the body to snap back. A painted blob at y = 0
-    // used to make this box read exactly 0; the contact shadow stage replaced it and draws nothing
-    // the rig could be measured by, so the bound is the rig's own.
+    // makes that honest rather than a gap: the rig is built from primitives with its soles on
+    // y = 0 (the tail tip dips a few centimetres under it), and the collider is the
+    // `CharacterBody3D` capsule the body already sits on. There is no imported scale to normalise
+    // and no visual offset from the body to snap back. A painted blob at y = 0 used to hide a rig
+    // that hovered 0.2 m above it; the contact shadow stage shows any gap, so the rig is measured.
     const fox = createFox();
     const rig = fox.group;
     rig.updateMatrixWorld(true);
     const box = new Box3().setFromObject(rig);
 
     expect(Number.isFinite(box.min.y)).toBe(true);
-    expect(box.min.y).toBeGreaterThanOrEqual(0);
-    expect(box.min.y).toBeLessThan(0.25);
-    // A fox-sized character: under two metres, over one, and taller than it is long.
+    expect(box.min.y).toBeGreaterThan(-0.1);
+    expect(box.min.y).toBeLessThan(0.02);
+    // A fox-sized character: under two metres, over one, and taller than it is wide (the tail
+    // makes it longer than tall, so the width is the z extent of a rig that faces +X).
     expect(box.max.y).toBeGreaterThan(1);
     expect(box.max.y).toBeLessThan(2);
-    expect(box.max.y).toBeGreaterThan(box.max.x - box.min.x);
+    expect(box.max.y).toBeGreaterThan(box.max.z - box.min.z);
   });
 
   it("scales the racing vehicle", () => {

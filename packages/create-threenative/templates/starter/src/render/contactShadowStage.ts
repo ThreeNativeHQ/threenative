@@ -8,12 +8,12 @@
 // The split: `contactShadow()` from the core package owns the compute passes and returns the
 // term as a texture node. Everything you see is decided in this file: how far the
 // shadow reaches, how thick a surface is assumed to be, how hard the edge is, how dark it gets,
-// and that the term multiplies the lit colour after the scene pass. To make it softer, lower
-// `strength` or `contrast` below. To remove it, drop `"contactShadows"` from
+// and that the term multiplies the lit colour after the scene pass, on faces the sun reaches. To
+// make it softer, lower `strength` or `contrast` below. To remove it, drop `"contactShadows"` from
 // `authoredStageNames` in `postprocessing.ts`; `TN_RENDER_CHAIN` then stops listing it.
 import { type IContactShadowOptions, contactShadow } from "@threenative/core";
-import { type DirectionalLight, Vector3 } from "three";
-import { float } from "three/tsl";
+import { type DirectionalLight, Vector2, Vector3 } from "three";
+import { float, getViewPosition, screenUV, sign, smoothstep, uniform, vec2 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { QualityTier } from "./quality.js";
 import type { ChainStage, IWorldEnvironmentStageContext } from "./worldEnvironment.js";
@@ -34,6 +34,10 @@ export interface IContactShadowLook {
   readonly contrast: number;
   /** 0 leaves the frame as it was, 1 applies the whole term. */
   readonly strength: number;
+  /** Neighbour distance, in pixel footprints, where a pixel starts to count as a silhouette. */
+  readonly silhouetteJump: number;
+  /** Surface-to-sun cosine where the term starts, and where it is whole. Faces below it get none. */
+  readonly sunFacing: readonly [number, number];
 }
 
 /**
@@ -47,6 +51,8 @@ export function contactShadowStages(
   look: IContactShadowLook,
 ): readonly ChainStage[] {
   let mask: Node | undefined;
+  const towardSun = uniform(new Vector3());
+  const texelSize = uniform(new Vector2(1, 1));
   const from = new Vector3();
   const to = new Vector3();
   return [
@@ -71,7 +77,10 @@ export function contactShadowStages(
           direction: () => {
             sun.getWorldPosition(from);
             sun.target.getWorldPosition(to);
-            return from.sub(to).normalize();
+            const world = from.sub(to).normalize();
+            texelSize.value.set(1 / depth.value.image.width, 1 / depth.value.image.height);
+            towardSun.value.copy(world).transformDirection(context.camera.matrixWorldInverse);
+            return world;
           },
           fadeSamples: look.fadeSamples,
           hardSamples: look.hardSamples,
@@ -80,8 +89,45 @@ export function contactShadowStages(
         };
         const node = contactShadow(options) as unknown as Node<"vec4">;
         mask = node;
-        // `.r` is 1 where lit and 0 where shadowed; `strength` is how much of that this game wants.
-        const term = float(1).sub(float(1).sub(node.r).mul(look.strength));
+        const sceneDepth = context.depthNode as unknown as Node;
+        const depthAt = (uv: Node): Node<"float"> => sceneDepth.sample(uv).r as Node<"float">;
+        // The multiply also reaches faces the sun never touches, which the lighting already
+        // darkened. Only surfaces that face the sun take the term: the normal is rebuilt from the
+        // neighbour on each axis whose depth is closer, so it holds at silhouettes.
+        // The pass camera's inverse, not the post quad's: depth is only meaningful in its own space.
+        const projectionInverse = uniform(context.camera.projectionMatrixInverse);
+        const viewAt = (uv: Node): Node<"vec3"> =>
+          getViewPosition(uv, depthAt(uv), projectionInverse) as Node<"vec3">;
+        const step = (x: number, y: number): Node =>
+          screenUV.add(vec2(texelSize.x.mul(x), texelSize.y.mul(y)));
+        const centre = viewAt(screenUV);
+        // Pixel footprint at this depth. A neighbour further than a few footprints is across a
+        // silhouette, and there the rebuilt normal is noise: the pixel takes no term.
+        const footprint = getViewPosition(step(1, 0), depthAt(screenUV), projectionInverse)
+          .sub(centre)
+          .length();
+        const reachOf = (dx: number, dy: number): Node<"vec3"> =>
+          viewAt(step(dx, dy)).sub(centre) as Node<"vec3">;
+        const right = reachOf(1, 0);
+        const left = reachOf(-1, 0);
+        const below = reachOf(0, 1);
+        const above = reachOf(0, -1);
+        const nearer = (a: Node<"vec3">, b: Node<"vec3">): Node<"vec3"> =>
+          a.length().lessThan(b.length()).select(a, b) as Node<"vec3">;
+        const acrossRaw = nearer(right, left);
+        const upRaw = nearer(above, below);
+        const jump = right.length().max(left.length()).max(above.length().max(below.length()));
+        const smooth = float(1).sub(
+          smoothstep(look.silhouetteJump, look.silhouetteJump * 2, jump.div(footprint)),
+        );
+        const normal = acrossRaw
+          .mul(sign(acrossRaw.x))
+          .cross(upRaw.mul(sign(upRaw.y)))
+          .normalize();
+        const facing = smoothstep(look.sunFacing[0], look.sunFacing[1], normal.dot(towardSun));
+        const reach = facing.mul(smooth).mul(look.strength);
+        // `.r` is 1 where lit and 0 where shadowed; `reach` is how much of that this game wants.
+        const term = float(1).sub(float(1).sub(node.r).mul(reach));
         return (input as Node<"vec4">).mul(term);
       },
       dispose: () => {
@@ -107,6 +153,8 @@ const CONTACT_SHADOW_HIGH: IContactShadowLook = {
   sampleCount: 24,
   strength: 0.75,
   surfaceThickness: 0.005,
+  silhouetteJump: 8,
+  sunFacing: [0.25, 0.6],
 };
 const CONTACT_SHADOW_MEDIUM: IContactShadowLook = {
   ...CONTACT_SHADOW_HIGH,

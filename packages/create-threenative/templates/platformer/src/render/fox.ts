@@ -39,6 +39,10 @@ function part(geometry: BufferGeometry, material: Material, x = 0, y = 0, z = 0)
   return mesh;
 }
 
+// The body group's height at rest. The shoes sit 0.215 m under it and the idle sway is 0.012 m, so
+// the soles stand on y = 0 instead of hovering above it where a contact shadow would show the gap.
+const BODY_REST = 0.377;
+
 export function createFox(): IFox {
   const root = new Group();
   const fur = toon(C.fur);
@@ -48,7 +52,7 @@ export function createFox(): IFox {
   const ink = toon(C.ink);
 
   const body = new Group();
-  body.position.y = 0.58;
+  body.position.y = BODY_REST;
   root.add(body);
 
   // Torso, then the jacket's hem and collar: not one solid tube.
@@ -154,7 +158,7 @@ export function createFox(): IFox {
         limbs.armL.rotation.z = -swing * 0.85;
         limbs.armR.rotation.z = swing * 0.85;
         body.position.y =
-          0.58 + Math.abs(Math.sin(cycle)) * 0.06 * run + Math.sin(time * 2.2) * 0.012;
+          BODY_REST + Math.abs(Math.sin(cycle)) * 0.06 * run + Math.sin(time * 2.2) * 0.012;
         body.rotation.z = -0.06 - run * 0.16 - (pose.dashing ? 0.16 : 0);
       } else {
         const rise = MathUtils.clamp(pose.vy / 9, -1, 1);
@@ -162,7 +166,7 @@ export function createFox(): IFox {
         limbs.legR.rotation.z = MathUtils.lerp(limbs.legR.rotation.z, -0.2 + rise * 0.4, 0.25);
         limbs.armL.rotation.z = MathUtils.lerp(limbs.armL.rotation.z, -1.5 - rise * 0.6, 0.2);
         limbs.armR.rotation.z = MathUtils.lerp(limbs.armR.rotation.z, -1.2 - rise * 0.5, 0.2);
-        body.position.y = 0.58;
+        body.position.y = BODY_REST;
         body.rotation.z = MathUtils.lerp(body.rotation.z, -0.12, 0.15);
       }
       head.rotation.z = Math.sin(cycle * 0.5) * 0.04 - run * 0.08;
