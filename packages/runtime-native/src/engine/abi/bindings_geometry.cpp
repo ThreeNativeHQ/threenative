@@ -107,6 +107,12 @@ BufferAttribute& attributeArg(Store& store, const Value& arg) {
 
 Value string(std::string text) { return Value{Value::Kind::String, 0, std::move(text)}; }
 
+// count, itemSize, normalized (0 or 1) and gpuType: the web surface reads the shape with one call.
+Value shapeOf(const BufferAttribute& attribute) {
+    return numbers({double(attribute.count()), double(attribute.itemSize), attribute.normalized ? 1.0 : 0.0,
+                    double(attribute.gpuType)});
+}
+
 /** `updateRanges` as canonical JSON (`[{"count":N,"start":M}, ...]`), three's array of records. */
 Value updateRangesJson(const BufferAttribute& attribute) {
     std::string json = "[";
@@ -155,12 +161,7 @@ void registerBufferAttribute(ClassBinding& b, const char* cls) {
     b.getters["count"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->count())); };
     b.getters["itemSize"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->itemSize)); };
     b.getters["normalized"] = [](void* self) { return Value::of(as<BufferAttribute>(self)->normalized); };
-    // count, itemSize, normalized (0 or 1) and gpuType: the web surface reads the shape with one call.
-    b.getters["__shape"] = [](void* self) {
-        const auto* attribute = as<BufferAttribute>(self);
-        return numbers({double(attribute->count()), double(attribute->itemSize), attribute->normalized ? 1.0 : 0.0,
-                        double(attribute->gpuType)});
-    };
+    b.getters["__shape"] = [](void* self) { return shapeOf(*as<BufferAttribute>(self)); };
     b.getters["usage"] = [](void* self) { return Value::of(double(as<BufferAttribute>(self)->usage)); };
     // three's usage is a hint the WebGPU backend keeps and the engine uploads on needsUpdate either
     // way; a value that is none of three's nine *Usage constants is refused.
@@ -304,6 +305,12 @@ void registerBufferGeometry(ClassBinding& b) {
             first = false;
         }
         return string(std::move(names));
+    };
+    // Every attribute's `__shape` by name: the web surface reads a geometry's shapes with one call.
+    b.getters["__shapes"] = [](void* self) {
+        std::vector<std::pair<std::string, Value>> shapes;
+        for (const auto& [name, attribute] : as<BufferGeometry>(self)->attributes) shapes.emplace_back(name, shapeOf(*attribute));
+        return Value::record(std::move(shapes));
     };
     b.getters["parameters"] = [](void* self) {
         std::string json = as<BufferGeometry>(self)->parametersJson();

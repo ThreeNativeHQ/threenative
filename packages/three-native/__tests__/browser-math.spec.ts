@@ -252,6 +252,43 @@ describe("three's math values on the browser back end", () => {
     expect(reads).toEqual(["__shape"]);
   });
 
+  it("reads the shape of every attribute a geometry answered with one engine call", () => {
+    const { runtime } = memoryRuntime();
+    const reads: string[] = [];
+    const attribute = runtime.typeId("BufferAttribute");
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      construct: (name) => ({ key: name, type: runtime.typeId(name) }),
+      get(_self, property) {
+        reads.push(property);
+        return property === "__shapes"
+          ? { position: [4, 3, 0, 1015], normal: [4, 3, 0, 1015], uv: [4, 2, 1, 1015] }
+          : [9, 9, 0, 0];
+      },
+      invoke: (_self, method, args) => {
+        reads.push(method);
+        return { key: `attribute ${String(args[0])}`, type: attribute };
+      },
+    });
+    type Attribute = { count: number; itemSize: number; normalized: boolean };
+    type Geometry = { getAttribute(name: string): Attribute; translate(...xyz: number[]): void };
+    const geometry = new (classes.BufferGeometry as new () => Geometry)();
+    const position = geometry.getAttribute("position");
+    const uv = geometry.getAttribute("uv");
+    expect([position.count, position.itemSize, uv.itemSize, uv.normalized]).toEqual([
+      4,
+      3,
+      2,
+      true,
+    ]);
+    expect(reads).toEqual(["getAttribute", "getAttribute", "__shapes"]);
+    // After a method that may change attributes, the record is asked for again.
+    geometry.translate(1, 0, 0);
+    reads.length = 0;
+    expect(geometry.getAttribute("normal").itemSize).toBe(3);
+    expect(reads).toEqual(["getAttribute", "__shapes"]);
+  });
+
   it("keeps a mesh's geometry until it is set", () => {
     const { runtime } = memoryRuntime();
     const reads: string[] = [];

@@ -1005,8 +1005,26 @@ void object_addresses() {
     }
 }
 
+// One `__shapes` call answers each attribute's `__shape` by name.
+void geometry_shapes() {
+    tn::binding::Registry classes;
+    tn::binding::registerAll(classes);
+    const tn::binding::ClassBinding& geometry = classes.at("BufferGeometry");
+    CHECK(geometry.getters.count("__shapes") == 1);
+    if (geometry.getters.count("__shapes") == 0) return;
+    using tn::engine::BufferAttribute;
+    tn::engine::BufferGeometry shaped;
+    shaped.setAttribute("position", BufferAttribute::fromFloats(std::vector<double>(12, 0.0), 3));
+    shaped.setAttribute("skinWeight", BufferAttribute::fromDoubles(tn::engine::Scalar::U8, std::vector<double>(8, 0.0), 4, true));
+    const tn::binding::Value shapes = geometry.getters.at("__shapes")(&shaped);
+    CHECK(shapes.fields.size() == 2);
+    for (const auto& [name, shape] : shapes.fields)
+        CHECK(shape.numbers == classes.at("BufferAttribute").getters.at("__shape")(shaped.attributes.at(name).get()).numbers);
+    CHECK(shapes.fields.at(1).second.numbers == std::vector<double>({2, 4, 1, double(shaped.attributes.at("skinWeight")->gpuType)}));
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes})

@@ -759,6 +759,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -881,6 +882,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1160,6 +1162,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1257,6 +1260,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1376,6 +1380,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1451,6 +1456,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1829,6 +1835,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -1926,6 +1933,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -2431,6 +2439,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -2554,6 +2563,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -3076,6 +3086,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -4927,6 +4938,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -5405,6 +5417,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -5787,6 +5800,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -5862,6 +5876,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -6133,6 +6148,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -6564,6 +6580,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -7310,6 +7327,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -7385,6 +7403,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",
@@ -7460,6 +7479,7 @@
       ],
       "getters": [
         "__attributeNames",
+        "__shapes",
         "attributes.color.array",
         "attributes.normal.array",
         "attributes.position.array",

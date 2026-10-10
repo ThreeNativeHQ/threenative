@@ -484,6 +484,25 @@ export function defineBrowserClasses(
   const arrays = new WeakMap<object, { array: TypedArray; epoch: number }>();
   const pending = new Set<object>();
   let epoch = 0;
+  // An attribute a geometry's `getAttribute` answered -> [that geometry, its name, the epoch]. A shape
+  // changes only through a method that bumps `epoch`, so until one runs the geometry's one `__shapes`
+  // call answers the shape of each attribute it handed out, fresh wrappers included.
+  const homes = new WeakMap<object, [object, string, number]>();
+  const geometryShapes = new WeakMap<object, { epoch: number; shapes: Record<string, number[]> }>();
+  const shapeOf = (attribute: object): number[] => {
+    const home = homes.get(attribute);
+    if (home === undefined || home[2] !== epoch)
+      return runtime.get(refOf(attribute), "__shape") as number[];
+    let found = geometryShapes.get(home[0]);
+    if (found === undefined || found.epoch !== epoch) {
+      found = {
+        epoch,
+        shapes: runtime.get(refOf(home[0]), "__shapes") as Record<string, number[]>,
+      };
+      geometryShapes.set(home[0], found);
+    }
+    return found.shapes[home[1]] ?? (runtime.get(refOf(attribute), "__shape") as number[]);
+  };
   const writeBack = (): void => {
     for (const attribute of pending) {
       const entry = arrays.get(attribute);
@@ -632,6 +651,7 @@ export function defineBrowserClasses(
       const bumps = writesAttributes && !/^(get|has|clone|equals|toJSON)/u.test(method);
       // A geometry's attribute lookups are kept with its labels, until anything else runs on it.
       const query = method === "getAttribute" || method === "hasAttribute";
+      const homed = method === "getAttribute" && binding.getters.includes("__shapes");
       // Forgotten before the call too, so an `added` listener reads the new parent.
       const forget = moves.has(method)
         ? (self: object, args: unknown[]) => {
@@ -646,7 +666,12 @@ export function defineBrowserClasses(
         value(this: object, ...args: unknown[]) {
           const intersections = method === "intersectObject" || method === "intersectObjects";
           const key = query ? `${method} ${String(args[0])}` : "";
-          if (query && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
+          if (query && labels.get(this)?.has(key)) {
+            const hit = labels.get(this)?.get(key);
+            if (homed && typeof hit === "object" && hit !== null)
+              homes.set(hit, [this, String(args[0]), epoch]);
+            return hit;
+          }
           if (pending.size > 0) writeBack();
           if (!query) labels.delete(this);
           const mark = loans.length;
@@ -674,6 +699,8 @@ export function defineBrowserClasses(
           }
           if (query)
             labels.get(this)?.set(key, result) ?? labels.set(this, new Map([[key, result]]));
+          if (homed && typeof result === "object" && result !== null)
+            homes.set(result, [this, String(args[0]), epoch]);
           return result;
         },
       });
@@ -731,7 +758,7 @@ export function defineBrowserClasses(
                 }
                 if (!known.has(property)) {
                   if (shaped && shapeKeys.includes(property)) {
-                    const shape = runtime.get(refOf(this), "__shape") as number[];
+                    const shape = shapeOf(this);
                     shapeKeys.forEach((key, i) =>
                       known?.set(key, key === "normalized" ? shape[i] === 1 : shape[i]),
                     );
