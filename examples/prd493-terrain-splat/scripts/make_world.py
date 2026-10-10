@@ -26,6 +26,7 @@ import bpy
 LAYER_COUNT = 16
 TEXTURE_SIZE = 128
 SPLAT_SIZE = 128
+MASK_RAMP = 8.0
 HEIGHT_COLUMNS = 64
 HEIGHT_ROWS = 64
 SPACING = 2.0
@@ -125,6 +126,30 @@ def write_layer_maps(tex, layer):
     )
 
 
+def write_height_map(tex, layer):
+    """The layer's own height in 0..1: stones with grout between, so an edge has relief to follow.
+
+    Whole cycles per tile in both axes, so the map wraps without a seam where the tile repeats.
+    """
+    seed = layer["_seed"]
+    turn = 2.0 * math.pi / TEXTURE_SIZE
+    phase = seed * 0.9
+
+    def stones(x, y):
+        beads = math.sin(x * turn * 5 + phase) * math.sin(y * turn * 4 - phase)
+        drift = math.sin((x * 3 + y * 2) * turn + phase * 2.0)
+        return min(1.0, max(0.0, 0.5 + 0.9 * (0.65 * beads + 0.35 * drift)))
+
+    write_image(
+        os.path.join(tex, "%s_h.jpg" % layer["id"]),
+        TEXTURE_SIZE,
+        TEXTURE_SIZE,
+        lambda x, y: (lambda v: (v, v, v))(stones(x, y)),
+        file_format="JPEG",
+        quality=90,
+    )
+
+
 def build(out):
     source = os.path.join(out, "dcc")
     tex = os.path.join(source, "tex")
@@ -140,6 +165,8 @@ def build(out):
                 "_hsv": (hue, 0.25 + 0.05 * (index % 4), 0.35 + 0.03 * (index % 5)),
                 "_seed": index + 1,
                 "_weave": index % 3 == 0,
+                # The two topmost layers blend by their own height, so the band they bound has relief on its edge.
+                "height": index in (14, 15),
                 "id": "layer-%02d" % index,
                 "metalness": 0.0 if index % 5 else 0.35,
                 "normal": True,
@@ -152,8 +179,23 @@ def build(out):
 
     for layer in layers:
         write_layer_maps(tex, layer)
+        if layer["height"]:
+            write_height_map(tex, layer)
 
-    # Fifteen masked layers over three channels per mask image: five planes, each band a gradient.
+    # Fifteen masked layers over three channels per mask image: five planes, each band a gradient
+    # MASK_RAMP texels across, so a layer's own height map has room to decide where it takes over.
+    # Layers composite over the one below, so a layer reaches MASK_RAMP texels under the edge of the
+    # layer above it: weights that merely sum to one would let the layer beneath show through.
+    def band(position, start, stop):
+        """0..1 across MASK_RAMP texels centred on each edge of the periodic band [start, stop)."""
+        along = (position - start) % SPLAT_SIZE
+        width = stop - start
+        if along < width:
+            inside = min(along, width - along)
+        else:
+            inside = -min(along - width, SPLAT_SIZE - along)
+        return min(1.0, max(0.0, 0.5 + inside / MASK_RAMP))
+
     for plane in range(5):
         name = "mask-%d" % plane
         masks[name] = {"image": "%s.png" % name, "channels": "rgb"}
@@ -162,15 +204,17 @@ def build(out):
             SPLAT_SIZE,
             SPLAT_SIZE,
             lambda x, y, plane=plane: (
-                1.0 if (x + plane * 24) % SPLAT_SIZE < SPLAT_SIZE / 3 else 0.0,
-                1.0 if (x + plane * 24) % SPLAT_SIZE < 2 * SPLAT_SIZE / 3 else 0.0,
-                1.0 if (x + plane * 24) % SPLAT_SIZE >= SPLAT_SIZE / 3 else 0.0,
+                band(x + plane * 24, 0.0, SPLAT_SIZE / 3),
+                band(x + plane * 24, -MASK_RAMP, 2 * SPLAT_SIZE / 3),
+                band(x + plane * 24, SPLAT_SIZE / 3, SPLAT_SIZE + MASK_RAMP),
             ),
             file_format="PNG",
         )
 
     def table_entry(layer, masked):
         entry = {key: value for key, value in layer.items() if not key.startswith("_")}
+        if not entry.get("height"):
+            entry.pop("height", None)
         if masked:
             entry.update(
                 {
@@ -191,6 +235,7 @@ def build(out):
         "splatSize": SPLAT_SIZE,
         "textures": {
             "diff": "{id}_diff.jpg",
+            "h": "{id}_h.jpg",
             "nrm": "{id}_nrm.jpg",
             "orm": "{id}_orm.jpg",
             "search": ["."],
@@ -255,7 +300,7 @@ def build(out):
     shutil.rmtree(source, ignore_errors=True)
     sys.stdout.write(
         "TN_PRD493_WORLD layers=%d maps=%d splatPlanes=%d out=%s\n"
-        % (LAYER_COUNT, LAYER_COUNT * 3, len(masks), out)
+        % (LAYER_COUNT, LAYER_COUNT * 3 + 2, len(masks), out)
     )
 
 

@@ -28,16 +28,16 @@
         "equals": 16
       },
       {
-        "allowTrivial": "The splat planes plus one array per set: albedo, normal and ORM.",
+        "allowTrivial": "The splat planes plus one array per set: albedo, normal, ORM and height.",
         "component": "samplers",
         "entity": "splat",
-        "lte": 4
+        "lte": 5
       },
       {
         "allowTrivial": "One array texture per set, whatever the layer count.",
         "component": "stacked",
         "entity": "splat",
-        "equals": 3
+        "equals": 4
       },
       {
         "changed": true,

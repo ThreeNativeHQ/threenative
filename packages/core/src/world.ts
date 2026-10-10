@@ -727,6 +727,7 @@ export type {
   IWorldAssetBounds,
   IWorldAssetLod,
   IWorldCell,
+  IWorldCellProxy,
   IWorldExtent,
   IWorldPackage,
   IWorldPackageError,
@@ -752,6 +753,7 @@ export type {
   ITerrainSplatLayer,
   ITerrainSplatMaskedLayer,
   ITerrainSplatTable,
+  ITerrainSplatWeightContext,
 } from "./world-terrain-splat.js";
 
 export { WorldCells } from "./world-cells.js";
@@ -762,4 +764,5 @@ export type {
   IWorldCellsLoadOptions,
   IWorldCellsStats,
   IWorldCellsTerrainOptions,
+  IWorldRegionReadiness,
 } from "./world-cells.js";

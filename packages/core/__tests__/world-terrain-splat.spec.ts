@@ -206,6 +206,42 @@ describe("loadTerrainSplat", () => {
     );
   });
 
+  it("blends a layer's own map at the game's far tile, by distance, when the table asks", async () => {
+    // A repeated ground map reads as a grid at grazing angles; the same map at a much larger tile,
+    // mixed in with distance, breaks the period. Sizes and distances are the table's, not ours.
+    const textureNodes = (node: unknown, seen = new Set<unknown>()): number => {
+      if (node === null || typeof node !== "object" || ArrayBuffer.isView(node) || seen.has(node))
+        return 0;
+      seen.add(node);
+      let count = (node as { isTextureNode?: boolean }).isTextureNode === true ? 1 : 0;
+      for (const value of Object.values(node)) count += textureNodes(value, seen);
+      return count;
+    };
+    const surfaceFor = async (base: Record<string, unknown>) => {
+      const { assets } = served({
+        "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+        "world/terrain/layers.json": { ...table, base, layers: [] },
+        "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+      });
+      return (await loadTerrainSplat({
+        assets,
+        url: "world/world.json",
+      })) as MeshStandardNodeMaterial;
+    };
+    const plain = await surfaceFor(table.base);
+    const far = await surfaceFor({
+      ...table.base,
+      far: { amount: 0.6, from: 4, to: 40, tile: 17 },
+    });
+    expect(textureNodes(far.colorNode)).toBeGreaterThan(textureNodes(plain.colorNode));
+    await expect(
+      surfaceFor({ ...table.base, far: { amount: 0.6, from: 40, to: 4, tile: 17 } }),
+    ).rejects.toThrow(/far/u);
+    await expect(
+      surfaceFor({ ...table.base, far: { amount: 0.6, from: 4, to: 40, tile: 0 } }),
+    ).rejects.toThrow(/far/u);
+  });
+
   it("drives roughness, occlusion and metalness from the table and its ORM maps", async () => {
     const { assets } = served({
       "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
@@ -293,6 +329,59 @@ describe("loadTerrainSplat", () => {
     // The splat planes plus one array per set: three sampled textures for sixteen layers.
     expect(sampledTextures(surface).size).toBe(3);
     expect(info).toHaveBeenCalledWith("TN_TERRAIN_SPLAT layers=16 samplers=3 stacked=2");
+  });
+
+  it("loads and stacks a height set for the layers that name one, and hands it to the weight seam", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { assets, requested } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": {
+        ...table,
+        layers: table.layers.map((layer) =>
+          layer.id === "rock" || layer.id === "grass" ? { ...layer, height: true } : layer,
+        ),
+      },
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    const seen: { id: string; index: number; hasHeight: boolean }[] = [];
+    const surface = (await loadTerrainSplat({
+      assets,
+      layerWeight: (weight, { height, index, layer }) => {
+        seen.push({ hasHeight: height !== undefined, id: layer.id, index });
+        // A seam that reads the height is what puts the height array into the graph.
+        return height === undefined ? weight : weight.add(height);
+      },
+      renderer: copyingRenderer() as never,
+      url: "world/world.json",
+    })) as MeshStandardNodeMaterial;
+    expect(requested).toContain("world/terrain/tex/rock_h.jpg");
+    expect(requested).toContain("world/terrain/tex/grass_h.jpg");
+    expect(requested.filter((path) => path.endsWith("_h.jpg"))).toHaveLength(2);
+    expect(seen).toEqual([
+      { hasHeight: false, id: "litter", index: 0 },
+      { hasHeight: true, id: "grass", index: 1 },
+      { hasHeight: true, id: "rock", index: 2 },
+    ]);
+    // splat + albedo + normal + ORM + the one height array.
+    expect(sampledTextures(surface).size).toBe(5);
+    expect(info).toHaveBeenCalledWith("TN_TERRAIN_SPLAT layers=4 samplers=5 stacked=4");
+  });
+
+  it("builds the same surface with no height set and no seam as before either existed", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { assets, requested } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": table,
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+    const surface = (await loadTerrainSplat({
+      assets,
+      renderer: copyingRenderer() as never,
+      url: "world/world.json",
+    })) as MeshStandardNodeMaterial;
+    expect(requested.some((path) => path.endsWith("_h.jpg"))).toBe(false);
+    expect(sampledTextures(surface).size).toBe(4);
+    expect(info).toHaveBeenCalledWith("TN_TERRAIN_SPLAT layers=4 samplers=4 stacked=3");
   });
 
   it("names the sampler count a set that cannot stack costs", async () => {
