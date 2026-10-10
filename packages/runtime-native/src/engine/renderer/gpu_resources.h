@@ -54,11 +54,15 @@ public:
     GpuResources& operator=(const GpuResources&) = delete;
 
     Handle createBuffer(uint64_t size, WGPUBufferUsage usage);
+    /** A buffer holding `bytes` of `data` from creation (mapped at creation, as three's backend does). */
+    Handle createBuffer(uint64_t size, WGPUBufferUsage usage, const void* data, uint64_t bytes);
     /** RGBA8-sized formats only for now; mip 0, one layer. */
     Handle createTexture(uint32_t width, uint32_t height, WGPUTextureFormat format, WGPUTextureUsage usage);
 
     /** The queue copies the bytes before returning, so the caller's memory is free at once. */
     GpuStatus writeBuffer(Handle buffer, uint64_t offset, const void* data, uint64_t size);
+    /** Bytes sent through queue writes so far; the geometry cache test bounds it. */
+    uint64_t queueWriteBytes() const { return queueWriteBytes_; }
     GpuStatus writeTexture(Handle texture, const void* pixels, uint64_t size);
 
     /** Completes on a later drain of the event queue, never inside this call. */
@@ -117,6 +121,7 @@ private:
     HandleTable handles_;
     std::vector<Record> records_;
     std::shared_ptr<Shared> shared_ = std::make_shared<Shared>();
+    uint64_t queueWriteBytes_ = 0;
 };
 
 }  // namespace tn::engine

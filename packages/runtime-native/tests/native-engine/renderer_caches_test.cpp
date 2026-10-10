@@ -51,6 +51,9 @@ void geometry() {
     const uint32_t usage = WGPUBufferUsage_Vertex | WGPUBufferUsage_CopySrc;
     const Handle first = cache.sync(positions, usage);
     CHECK(cache.stats().fullUploads == 1);
+    // A new store's first copy is written into the buffer as it is created, as three's backend does:
+    // a browser queue write of that size waits on the GPU process's command stream.
+    CHECK(gpu.queueWriteBytes() == 0);
     CHECK(readBack(gpu, d.events, first, 1200) == bytesOf(positions, 1200));
 
     for (int frame = 0; frame < 300; ++frame) CHECK(cache.sync(positions, usage).index == first.index);
@@ -64,6 +67,7 @@ void geometry() {
     cache.sync(positions, usage);
     CHECK(cache.stats().rangeUploads == 1 && cache.stats().fullUploads == 1);
     CHECK(positions.updateRanges().empty());                                  // consumed, as three's renderer does
+    CHECK(gpu.queueWriteBytes() == 8);                                        // an update writes only its range
     CHECK(readBack(gpu, d.events, first, 1200) == bytesOf(positions, 1200));
 
     positions.write(0, &changed, 4);

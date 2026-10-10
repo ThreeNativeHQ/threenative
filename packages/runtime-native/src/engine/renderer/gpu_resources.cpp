@@ -93,11 +93,26 @@ GpuResources::Record* GpuResources::record(Handle handle, uint16_t type, GpuStat
 }
 
 Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage) {
+    return createBuffer(size, usage, nullptr, 0);
+}
+
+Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage, const void* data, uint64_t bytes) {
     WGPUBufferDescriptor desc = {};
     desc.size = size;
     desc.usage = usage;
+    // Mapped creation needs a whole number of words; the mapped memory starts zeroed.
+    desc.mappedAtCreation = bytes > 0 && bytes <= size && size % 4 == 0;
     WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &desc);
     if (!buffer) return Handle{};
+    if (desc.mappedAtCreation) {
+        void* mapped = wgpuBufferGetMappedRange(buffer, 0, size);
+        if (mapped) std::memcpy(mapped, data, bytes);
+        wgpuBufferUnmap(buffer);
+        if (!mapped) {
+            wgpuBufferRelease(buffer);
+            return Handle{};
+        }
+    }
     const Handle handle = handles_.allocate(kBuffer);
     if (records_.size() <= handle.index) records_.resize(handle.index + 1);
     records_[handle.index] = Record{buffer, nullptr, size, 0, 0};
@@ -130,6 +145,7 @@ GpuStatus GpuResources::writeBuffer(Handle buffer, uint64_t offset, const void* 
         return GpuStatus::OutOfRange;
     }
     wgpuQueueWriteBuffer(queue_, target->buffer, offset, data, size);
+    queueWriteBytes_ += size;
     return GpuStatus::Ok;
 }
 

@@ -38,13 +38,14 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
         isNew = true;
     }
     if (isNew) {
-        e.buffer = gpu_.createBuffer(byteLength == 0 ? 4 : byteLength, usage | WGPUBufferUsage_CopyDst);
+        e.buffer = gpu_.createBuffer(byteLength == 0 ? 4 : byteLength, usage | WGPUBufferUsage_CopyDst,
+                                     store.data(), store.byteLength());
         e.byteLength = byteLength;
         e.epoch = store.epoch();
         e.owner = store.weak_from_this();
         e.tracked = !e.owner.expired();
         e.releases = store.gpuReleases();
-        upload(e.buffer, store, 0, store.byteLength());
+        stats_.bytesUploaded += store.byteLength();
         ++stats_.fullUploads;
     } else if (store.version() != e.version) {
         const auto ranges = store.updateRanges();
