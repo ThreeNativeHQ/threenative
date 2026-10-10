@@ -251,7 +251,7 @@ What does not ship is occlusion culling. Nothing in `packages/core/src` reads a 
 depth to skip geometry — no depth pyramid, no HZB — so a cell behind a hill is submitted and culled
 by frustum only. It was declined twice on measured headroom and is now a single go/no-go:
 
-[PRD-489](../PRDs/open-world/PRD-489-gpu-scene-occlusion-culling.md) — occlusion culling re-tested
+[PRD-489](../PRDs/done/PRD-489-gpu-scene-occlusion-culling.md) — occlusion culling re-tested
 on the GPU scene. Read it before assuming a cell is free to stream wide; the answer today is that it
 is not.
 

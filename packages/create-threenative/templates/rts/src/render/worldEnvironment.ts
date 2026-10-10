@@ -308,6 +308,16 @@ export type ChainStage = {
   readonly name: string;
   readonly before?: string;
   readonly after?: string;
+  /**
+   * This stage reads display-referred colour — tone-mapped and sRGB-encoded — so the chain
+   * installs the graph with the renderer's automatic output transform switched off and the stage
+   * applies that transform itself (`renderOutput` from `three/tsl`).
+   *
+   * For effects authored against the picture rather than against light: a `.cube` table, an
+   * sRGB-space edge filter. Such a stage runs last and may not declare an anchor, and the chain
+   * only hands the renderer its transform back when the stage was actually refused.
+   */
+  readonly afterOutputTransform?: boolean;
   readonly available?: (context: ChainContext) => boolean | string;
   readonly dispose?: () => void;
   readonly minimumTier?: ChainTier;

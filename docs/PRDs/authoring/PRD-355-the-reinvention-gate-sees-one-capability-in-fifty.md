@@ -11,7 +11,7 @@ prd_contract: v1
 +2 for multi-package (`create-threenative`, `engine-mcp`, `playtest`, `scripts/`) = **7 → HIGH
 mode.** Run a `prd-work-reviewer` checkpoint after every phase.
 
-**Depends on** [PRD-354](PRD-354-the-manifest-never-names-an-import-a-game-cannot-resolve.md) —
+**Depends on** [PRD-354](../done/PRD-354-the-manifest-never-names-an-import-a-game-cannot-resolve.md) —
 a detector that names a capability must name one the game can import.
 
 ## 1. Context

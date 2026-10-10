@@ -19,6 +19,7 @@
 // probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
 // in `sky.ts`, not in this file.
 //
+import type { IGradeSettings } from "./grade.js";
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
@@ -119,9 +120,43 @@ const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 
+/**
+ * This game's colour grade and grain, per tier. The table itself lives in `public/grade.cube` and
+ * the maths in `grade.ts`; these are the four numbers the look is dialled with.
+ *
+ * **The grain default is 1/255, and that is the point.** `film()` scales its noise by
+ * the pixel's own value, so on mid-grey concrete this moves a channel by well under half an 8-bit
+ * step — below what the framebuffer can show. It shipped at 0.12, and a blind judge called the
+ * result "grain clearly visible as speckle over sky and flat walls and behind HUD text". A default
+ * must never degrade the look, so raise this number when you want the film look: 0.12 is a visible
+ * grain, 0.3 a heavy one.
+ *
+ * A zero refuses its stage rather than running it at zero strength, so `low` — a phone, where a
+ * moving grain is the first thing to go — reports `grain` as refused with its reason instead of
+ * reading as applied. The grade survives there: it is one texture fetch and the frame is the
+ * same frame without it. `high` keeps a non-zero grain on purpose, so `TN_RENDER_CHAIN` can still
+ * name it as applied there rather than reporting the stage a default deliberately declined to run.
+ */
+const GRADE_PRESETS: Record<QualityTier, IGradeSettings> = {
+  high: { gradeIntensity: 1, grainAnimated: true, grainIntensity: 0.0039, tier: "high" },
+  medium: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0.0039, tier: "medium" },
+  low: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0, tier: "low" },
+};
+
 /** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
   const preset = QUALITY_PRESETS[tier as QualityTier];
+  if (preset === undefined) {
+    throw new Error(
+      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
+    );
+  }
+  return preset;
+}
+
+/** The grade and grain a tier runs. Throws on a name that is not a tier, for the same reason. */
+export function gradePreset(tier: string): IGradeSettings {
+  const preset = GRADE_PRESETS[tier as QualityTier];
   if (preset === undefined) {
     throw new Error(
       `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${QUALITY_TIERS.join(", ")}.`,

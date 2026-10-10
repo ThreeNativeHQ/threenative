@@ -335,4 +335,63 @@ describe("the frame budget names the surface the game's own loop drew", () => {
       });
     }
   });
+
+  it("feeds the simulation tick into a plain window with no spans installed", async () => {
+    // `TN_FRAME_SPANS` is not set here, so no `FrameCounters` are installed: the tick is the only
+    // counter in the window, and it must arrive anyway or a plain log cannot join window ends.
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    const lines: string[] = [];
+    let clock = 0;
+    class Empty extends Scene {
+      static override readonly initialState = {};
+    }
+    const game = defineGame({
+      frameBudget: { report: (line) => lines.push(line), reportEvery: 2 },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: Empty },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    const nowSpy = vi.spyOn(globalThis.performance, "now").mockImplementation(() => clock);
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      clock = 1_000;
+      frame(1_000);
+      clock = 1_016.7;
+      frame(1_016.7);
+
+      const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
+      expect(marker, "no frame-budget window was reported").toBeDefined();
+      const reported = JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}");
+      expect(reported.counters).toBeDefined();
+      expect(Number.isInteger(reported.counters.simulationTick)).toBe(true);
+      expect(reported.counters.simulationTick).toBeGreaterThan(0);
+      // No spans, so no boundary series: the tick is the only counter.
+      expect(reported.counters.hostCalls).toBeUndefined();
+    } finally {
+      await game.stop();
+      nowSpy.mockRestore();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
 });

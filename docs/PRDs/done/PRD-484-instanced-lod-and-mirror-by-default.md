@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-484 — Instanced LOD and selective water mirrors work by default
 
-**Status:** PARTIAL — started 2026-10-02.
+**Status:** DONE — 2026-10-05. Every box ticked: the instanced-LOD and mirror defaults landed via #423, and Strata with its stopgap reverted measures low scene and mirror counts under them.
 **Progress:** 3/3 implementation phases verified; final game acceptance capture queued.
 **Complexity:** 3 → LOW; existing selection and reflector plumbing, state partitioning; risk override: none.
 **Integration:** branch `feat/prd-484-instanced-defaults` off `origin/develop`, its own draft PR (runbook row A0; #390 merged without it).
@@ -83,7 +83,7 @@ Spatial leaves are derived from placement count and longest-axis bounds, keeping
 
 ## Acceptance criteria
 
-- [ ] Strata with the local stopgap reverted submits low scene/mirror triangle counts under the engine defaults; restore all local game edits. proof: Strata playtest console `TN_FRAME_BUDGET` scene/mirror triangles and draw counts, recorded baseline and candidate (display-control differences stated below).
+- [x] Strata with the local stopgap reverted submits low scene/mirror triangle counts under the engine defaults; restore all local game edits. proof: Strata playtest console `TN_FRAME_BUDGET` scene/mirror triangles and draw counts, recorded baseline and candidate (display-control differences stated below). **Pass 2026-10-05 (develop `9b3c4824c` engine):** Strata with the stopgap reverted (`pack.ts` batches the baked LOD rungs again; `river.ts` omits the mirror mask and refresh interval, and the engine default logs `TN_WATER_REFLECTION_DEFAULT {"included":4,"excluded":3}`; `terrain.ts` drops `REFLECTED_LAYER`), console `TN_FRAME_BUDGET` maxima on nvidia/turing at 1920x1080: scene `nested` 15,809,090 triangles / 22 draws at its worst view and 10,970,078 / 42 over the view cycle, against the recorded 96,418,017 / 48; mirror `reflection` 922,540 / 3 draws, against 96,408,493 / 46. Display-control differences: the canvas is full-size at `resolutionScale: 1` (the baseline used a 1x1 collapsed raster with `refreshInterval: 2`), and the scenario waits for `worldReady` instead of a fixed 240 frames, because the fixture's wait ends while the world is still streaming and reads 0 instances. Every local game edit is restored: 430 files byte-identical to the pre-run fingerprint, and the three render files identical to their pristine snapshots. Found separately, not caused by this change: every run on this host ends in `TN_DEVICE_LOST`, and the game emits 22 pre-existing `THREE.TSL: No stack defined for assign operation` errors on develop.
 
 The batch's ordinary build and engine frame loop use reduced geometry for far placements;
 the water's ordinary reflected pass excludes repeated small props. Overrides remain effective,

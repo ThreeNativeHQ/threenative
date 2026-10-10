@@ -186,21 +186,21 @@ const BUG_REPORT_SKILL_PATHS = [
 // in every kit's worldEnvironment.ts. The shooter Rifle.ts gained a scope alpha test and a reticle.
 // All thirteen generated trees changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Actual no-install generation of the isolated raw4 candidate at parent4e86/develop29f.
-  // The canonical Three patch changes every kit; only starter also changes render source/docs.
-  "action-rpg": "a396e4fa85c50b81283c44af4d231d23479a87783661e174f3ea220ba6f8178b",
-  minimal: "fe90f52855a88d824c59babefffa255ca742b92f83892c28c25d97ebf303e237",
-  platformer: "10c93422bf3f2ad3253f161c01d3f95c760883b3f7b699a436d4ed17e7230c91",
-  puzzle: "64628346a18ddc9bcb5659b893dd174e1b5d82e16a4015978b4bc5d79ad4c6d1",
-  racing: "a02ce42747e48f15b5ba5a4a7850a658de0ee6985e475e207e702be9c1bdd66b",
-  rain: "1c65e3ac5afbce289b62d95851831058fae7ab9f1308aac5f5c9de8800cb3a55",
-  rts: "2ee62aa3039b41925d0ab3f7fc8281d8bb763c5516443de7c19fa33b6a8f0fa1",
-  runner: "2cd1eae9aa60bba3589a39c0c17b98aaf8e29197e305ccd739fba29a0cc799cb",
-  sailing: "717107b424833fc6d7c0c8e78b5952dcf0b89d8be007c61c33decb92817de7b4",
-  shooter: "d5b94f28534228ef13ff7a8258f612df6bd3a6663f5efd2ee0cedc41395f13af",
-  snow: "4b8ff343a0d92ffe09c09548fa5442e1a8eeb84e5c5b402391d2f70d47550091",
-  starter: "ef640928b516f0c48b27fb9cb77fc28d1c72cf905bab6d296ae355cdadaac78c",
-  "tower-defense": "2bf27076c4f753426813a154a160770d046b6ad91f975dc0630b108d437795e8",
+  // Recomputed 2026-10-09 on develop 708612e12 with the shooter fix merged in. Every kit's
+  // generated tree changed, so all thirteen fingerprints moved.
+  "action-rpg": "cfc4fdaa7aff7713f6cbeea93ef0b680bf665031fe3c04dd2bf3ba32476389d4",
+  minimal: "18d511d041161e706b450496e8b05cd2be8ad7224b75848da463b79ddc88b1f5",
+  platformer: "c31ad80077d41a7ecfcd497f78b36029ee872fe6249f9c71e04da10dff161cb1",
+  puzzle: "90bbb8d0ac5c969fca75ec879301a3adcc2f9cbf65ba52f82835905f07fb50de",
+  racing: "b82ec29cc1dffbdbd2664e396c1406e7d3ec1bfc09fabe1f59193b46163a98fb",
+  rain: "2640179c398fd265363845ffe4c60251658374fcdca5c57320608a5c5432d09a",
+  rts: "6666aea6a03027eec5ffd69fd732b38797afa0c9905ed0512aefdeeeddb5b154",
+  runner: "22b52899b6ba85b9efda315f3a7faea8da4c3d6d4273dcb492c42685eab97230",
+  sailing: "eff0c4b20bffbd1225afa033754d6d3df9cf375e7e9fa8f47e278412cc0ef571",
+  shooter: "91546efa42e694ee61bc1fffc309b4af33e007d94ea7195bb3446fd938addbff",
+  snow: "7e0963fb36ddd4c801c12207178c59a4f03f074a25fd2ed0d3b6fe81f78bed59",
+  starter: "3c9044cd1629d3e8ce51d1eaa0920c10e00c11047046e6e2e665f9a997796e84",
+  "tower-defense": "0f49ea561767830611cf509c68efa024fab48337ec6e5ba66a729e99d59a1cd5",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -788,18 +788,19 @@ describe("create-threenative", () => {
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,
       });
-      const channel = (x: number, y: number, shift: number): number => {
+      // Gradients with ±3 levels of noise resist PNG compression without violating PRD-351's quality floor like pure noise.
+      const noise = (x: number, y: number, shift: number): number => {
         let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
         value ^= value >>> 16;
-        return value >>> shift;
+        return ((value >>> shift) % 7) - 3;
       };
       await writeFile(
         path.join(root, "assets", "web-codec-proof.png"),
         rgbaPng({
-          blue: (x, y) => channel(x, y, 16),
-          green: (x, y) => channel(x, y, 8),
+          blue: (x, y) => 48 + Math.floor((x + y) / 2) + noise(x, y, 16),
+          green: (x, y) => 48 + y + noise(x, y, 8),
           height: 128,
-          red: (x, y) => channel(x, y, 0),
+          red: (x, y) => 48 + x + noise(x, y, 0),
           width: 128,
         }),
       );

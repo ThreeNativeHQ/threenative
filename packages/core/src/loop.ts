@@ -66,6 +66,8 @@ export interface IFixedStepLoopOptions {
   readonly maxSteps?: number;
   /** Collect per-frame render samples for diagnostics consumers. Default false. */
   readonly collectMetrics?: boolean;
+  /** Runs once per presented frame, before any fixed-step simulation dispatches. */
+  readonly onBeginFrame?: () => void;
   readonly onUpdate: (dt: number) => void;
   /** Runs after `onUpdate` has completed and before `onRender` starts. */
   readonly onAfterPhysics?: (dt: number) => void;
@@ -147,6 +149,7 @@ const FROZEN_SETTLE_STEPS = 60;
 export class FixedStepLoop {
   readonly step: number;
   readonly maxSteps: number;
+  #onBeginFrame: (() => void) | undefined;
   #onUpdate: (dt: number) => void;
   #onAfterPhysics: (dt: number) => void;
   #onRender: () => undefined | IRenderPerformanceMetrics;
@@ -194,6 +197,7 @@ export class FixedStepLoop {
     this.#budget = options.budget;
     this.#spans = options.spans;
     this.#now = options.now ?? (() => globalThis.performance?.now() ?? Date.now());
+    this.#onBeginFrame = options.onBeginFrame;
     this.#onUpdate = options.onUpdate;
     this.#onAfterPhysics = options.onAfterPhysics ?? (() => undefined);
     this.#onRender = options.onRender ?? (() => undefined);
@@ -387,6 +391,7 @@ export class FixedStepLoop {
     let metrics: IRenderPerformanceMetrics | undefined;
     let phases: IFramePhaseSample | undefined;
     try {
+      this.#onBeginFrame?.();
       updates = this.#advanceSimulation(now);
       budget?.markSimulationEnd(this.#now(), updates);
       frameMs = this.#recordFrameTiming(now);

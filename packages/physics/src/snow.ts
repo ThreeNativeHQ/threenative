@@ -61,6 +61,7 @@ function positive(value: number, name: string): number {
  * @situation give a capsule a shape-appropriate snow contact instead of a sphere's dot
  * @constraint radius and halfHeight are metres and never grow with load
  * @example const footprint = capsuleFootprint(0.5, 0.2);
+ * @requires npm i @threenative/physics
  */
 export function capsuleFootprint(halfHeight: number, radius: number): ISnowFootprint {
   positive(radius, "capsule radius");
@@ -84,6 +85,7 @@ export function capsuleFootprint(halfHeight: number, radius: number): ISnowFootp
  * @situation imprint a box's own footprint rather than a circle around it
  * @constraint halfWidth and halfDepth are metres; rotation comes from the contact, not the footprint
  * @example const footprint = boxFootprint(0.4, 0.25);
+ * @requires npm i @threenative/physics
  */
 export function boxFootprint(halfWidth: number, halfDepth: number): ISnowFootprint {
   positive(halfWidth, "box halfWidth");

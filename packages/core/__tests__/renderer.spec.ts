@@ -1326,3 +1326,88 @@ describe("renderer info", () => {
     }
   });
 });
+
+/**
+ * `compileAsync` builds pipelines, not pixels, so a streamed chunk's textures reached the device
+ * inside `_renderObjectDirect` on the frame the chunk first drew. `uploadTextures` moves that to
+ * admission, and through three's own `Textures.updateTexture` rather than the backend's, because that
+ * path owns the bookkeeping (`initialized`, `generation`) the first draw reads to skip the upload.
+ */
+describe("uploadTextures", () => {
+  const textured = (): Scene => {
+    const scene = new Scene();
+    const mesh = new Object3D();
+    const map = { isTexture: true, version: 1 };
+    const normal = { isTexture: true, version: 1 };
+    (mesh as unknown as { material: unknown }).material = { map, normalMap: normal, opacity: 1 };
+    const shader = new Object3D();
+    (shader as unknown as { material: unknown }).material = {
+      uniforms: { albedo: { value: map }, gain: { value: 2 } },
+    };
+    scene.add(mesh, shader);
+    return scene;
+  };
+
+  const withGpu = <T>(raw: unknown): { descriptor?: PropertyDescriptor; restore: () => void } => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    void raw;
+    return {
+      descriptor,
+      restore: () => {
+        if (descriptor) Object.defineProperty(globalThis, "navigator", descriptor);
+      },
+    };
+  };
+
+  it("hands every texture in the subtree to three's own texture path, once each", async () => {
+    const canvas = testCanvas();
+    const asked: unknown[] = [];
+    const gpu = withGpu(undefined);
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: true,
+      webgpuFactory: () => ({
+        _textures: {
+          updateTexture: (texture: unknown, options: object) => {
+            asked.push(texture);
+            // three fills width, height, mip levels and the image list into the object it is handed,
+            // so each texture needs one of its own.
+            expect(options).toEqual({});
+          },
+        },
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      expect(renderer.kind).toBe("webgpu");
+      expect(renderer.uploadTextures?.(textured())).toBe(2);
+      expect(asked.length).toBe(2);
+    } finally {
+      renderer.dispose();
+      gpu.restore();
+    }
+  });
+
+  it("answers 0 on a renderer with no texture path instead of throwing", async () => {
+    const canvas = testCanvas();
+    const gpu = withGpu(undefined);
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: true,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      expect(renderer.uploadTextures?.(textured())).toBe(0);
+    } finally {
+      renderer.dispose();
+      gpu.restore();
+    }
+  });
+});

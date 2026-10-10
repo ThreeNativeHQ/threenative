@@ -1,4 +1,13 @@
-import { type BufferAttribute, type Camera, Frustum, Matrix4, Vector3, Vector4 } from "three";
+import {
+  type BufferAttribute,
+  type Camera,
+  type DepthTexture,
+  Frustum,
+  Matrix4,
+  PerspectiveCamera,
+  Vector3,
+  Vector4,
+} from "three";
 import {
   Fn,
   If,
@@ -6,6 +15,7 @@ import {
   Return,
   abs,
   atomicAdd,
+  float,
   instanceIndex,
   int,
   length,
@@ -22,6 +32,12 @@ import {
   StorageInstancedBufferAttribute,
 } from "three/webgpu";
 import { biasedLodDistance } from "./model-lod.js";
+import {
+  DepthPyramid,
+  type IKernelOcclusion,
+  type OcclusionMode,
+  occludedBy,
+} from "./render/depth-pyramid.js";
 import type { IRendererLike } from "./renderer.js";
 
 /**
@@ -45,6 +61,18 @@ const PLACEMENT_WORDS = 24;
 const DRAW_ARGS_WORDS = 5;
 /** The same record in bytes, which is the unit `BufferGeometry.setIndirect` takes its offset in. */
 export const DRAW_ARGS_BYTES = DRAW_ARGS_WORDS * 4;
+
+/**
+ * How many words the args buffer holds for `keys` keys: one indirect record each, plus one word
+ * each of measured-occlusion tally past the last record.
+ *
+ * The tally rides this buffer rather than a buffer of its own so a measured run reads the two out
+ * of the one readback the GPU-selected tally already issues on its own clock — a second readback on
+ * a second buffer is a second queue submission per window for eight bytes.
+ */
+function argsWords(keys: number): number {
+  return keys * DRAW_ARGS_WORDS + keys;
+}
 /** One `vec4` per key, per asset slot and per level gate. */
 const VEC4_WORDS = 4;
 /** `mat4` per key: the part's own offset inside the model, the same matrix the CPU composes. */
@@ -179,6 +207,12 @@ export interface IRegion {
    * know what shape a key draws — and the validation holds the record against it.
    */
   indexCount: number;
+  /**
+   * This key has no shadow twin (its level is past the world's `castLevels`), so a shadow map drops
+   * a placement the main pass draws here. The GPU twin reads the same fact as `keys.w`, which only a
+   * minted twin sets.
+   */
+  readonly uncast?: boolean;
 }
 
 /**
@@ -198,6 +232,26 @@ function growBuffer<A extends BufferAttribute>(
   grown.array.set(current.array as Uint32Array);
   grown.addUpdateRange(0, current.array.length);
   return grown;
+}
+
+/** Adds an update range, extending the last one when the new range touches or overlaps it. */
+export function addRange(
+  attribute: {
+    updateRanges: { start: number; count: number }[];
+    addUpdateRange(start: number, count: number): void;
+  },
+  start: number,
+  count: number,
+): void {
+  const last = attribute.updateRanges[attribute.updateRanges.length - 1];
+  if (last === undefined || start > last.start + last.count || start + count < last.start) {
+    attribute.addUpdateRange(start, count);
+    return;
+  }
+  const newStart = Math.min(last.start, start);
+  // Set the count first. It is measured from the old start.
+  last.count = Math.max(last.start + last.count, start + count) - newStart;
+  last.start = newStart;
 }
 
 /** One level's parts and the single capacity all of them are sized from. */
@@ -255,6 +309,12 @@ export interface IKernelInput {
   readonly slots: readonly IAssetSlot[];
   readonly regions: readonly IRegion[];
   readonly regionCount: number;
+  /**
+   * The hierarchical-depth occlusion test, when a launch asked for one. Absent, the frustum is the
+   * whole visibility rule; present, every placement the frustum kept is reprojected into the
+   * pyramid's own frame and tested. See {@link IKernelOcclusion}.
+   */
+  readonly occlusion?: IKernelOcclusion;
 }
 
 /** What one dispatch produced: the compacted survivors and the per-key instance counts. */
@@ -264,6 +324,12 @@ export interface IKernelResult {
   readonly drawn: Float32Array;
   /** Instances drawn per region, which is what the args record's count must say. */
   readonly counts: Uint32Array;
+  /**
+   * What the pyramid test hid, and only when one ran: the instances and the triangles of every
+   * placement it would have dropped. Absent is "no test ran", never "the test hid nothing" — a
+   * measured run reads these while drawing every one of them.
+   */
+  readonly occluded?: { readonly instances: number; readonly triangles: number };
 }
 
 /**
@@ -335,6 +401,32 @@ function drawableLevel(slot: Pick<IAssetSlot, "levels">, level: number): number 
 }
 
 /**
+ * The level a shadow map draws a placement at, or -1 when no level of its asset casts. A placement
+ * whose main level casts nothing casts with the coarsest level at or below it that does: past
+ * `castLevels` a tree keeps its shadow, drawn in the last shape that has a twin, rather than
+ * leaving a hole in the map (PRD-541). The level is then floored at the map's base and clamped to
+ * the last level that casts, so a coarse map draws the coarsest shape that has a twin. `base` past
+ * the chain is clamped by the chain length first.
+ */
+function shadowLevel(
+  slot: Pick<IAssetSlot, "levels">,
+  regions: readonly IRegion[],
+  drawn: number,
+  base: number,
+): number {
+  const casts = (at: number): boolean => {
+    const gate = slot.levels[at];
+    return gate !== undefined && gate.parts > 0 && regions[gate.firstKey]?.uncast !== true;
+  };
+  // At or below `drawn` any casting level qualifies, above it only up to the map's base, so the
+  // last casting level in `[0, max(drawn, base)]` is both rules at once.
+  const last = Math.max(drawn, Math.min(base, slot.levels.length - 1));
+  let level = -1;
+  for (let at = 0; at <= last; at += 1) if (casts(at)) level = at;
+  return level;
+}
+
+/**
  * One representable Float32 step past a gate: `g * (1 + 2^-22)`, two f32 ULPs at `g`'s exponent.
  *
  * A floored terminal gate must start strictly after the source gate it is floored by and must stay
@@ -349,21 +441,18 @@ function strictlyAfterGate(gate: number): number {
 }
 
 /**
- * One shadow map's own four numbers, which is the whole of what a level render knows that the main
+ * One shadow map's own three numbers, which is the whole of what a level render knows that the main
  * camera does not.
  *
- * They are the level's, never the camera's: a map's frustum is the light's window, its distance test
- * is measured from the window centre its own map was rendered with (`offsetU`/`offsetV` exist
- * because a deferred level's map sits where it was drawn), its gate is the texel size it can
- * resolve, and its base is the chain level the cluster path hands it — `#probe` swaps a coarse
- * level's geometry for the coarsest shape, so a coarse map draws that shape whatever a placement's
- * own distance would have selected.
+ * They are the level's, never the camera's: a map's frustum is the light's window, its gate is the
+ * texel size it can resolve, and its base is the chain level the cluster path hands it — `#probe`
+ * swaps a coarse level's geometry for the coarsest shape, so a coarse map draws that shape whatever a
+ * placement's own distance would have selected. The distance itself is the main pass's, from the
+ * eye: a placement's shape and its cast come from the key the main pass draws it in.
  */
 export interface IShadowLevel {
   /** The six frustum planes of this map's own shadow camera. */
   readonly planes: Float32Array;
-  /** The window centre this map was rendered with, in world XZ. */
-  readonly centre: { readonly x: number; readonly z: number };
   /** This map's texel gate in world metres: a placement narrower than it casts nothing here. */
   readonly gate: number;
   /**
@@ -421,9 +510,10 @@ export function cullAndSelectShadow(input: IKernelInput, level: IShadowLevel): I
  */
 function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelResult {
   const { placements, camera, regions, slots } = input;
+  // A shadow map has no main camera to reproject into, so the test is the main pass's alone — a
+  // caster the eye cannot see still casts.
+  const occlusion = shadow === undefined ? input.occlusion : undefined;
   const planes = shadow?.planes ?? camera.planes;
-  const eyeX = shadow?.centre.x ?? camera.x;
-  const eyeZ = shadow?.centre.z ?? camera.z;
   const metres = shadow?.gate ?? 0;
   const base = shadow?.base ?? 0;
   const counts = new Uint32Array(input.regionCount);
@@ -437,6 +527,8 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
   for (const region of regions) {
     args[region.argsIndex * DRAW_ARGS_WORDS + 4] = region.start;
   }
+  let occludedInstances = 0;
+  let occludedTriangles = 0;
   for (let index = 0; index < input.count; index += 1) {
     const placement = placements[index];
     if (placement === undefined || placement.slot < 0) continue;
@@ -461,28 +553,32 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
     // Sub-texel, exactly as `#probe` decides it for a mesh: a caster this map cannot resolve casts
     // no shadow a fragment could tell from ground cover.
     if (radius * 2 < metres) continue;
-    const distance = Math.hypot((at[0] as number) - eyeX, (at[2] as number) - eyeZ);
+    const distance = Math.hypot((at[0] as number) - camera.x, (at[2] as number) - camera.z);
     if (slot.cull !== undefined && distance > slot.cull) continue;
     // Cull above is the authored distance; the level below is the biased one for the main pass — the
     // same multiplier the kernel's uniform carries, so the reference and the dispatch cross a switch
-    // together. A shadow map has no frame budget of its own to be biased by, so it takes the
-    // authored distance and its own base instead.
-    const lodDistance = shadow === undefined ? biasedLodDistance(distance) : distance;
-    const level = drawableLevel(
+    // together. A shadow map takes the main pass's own level, from the eye: that is the key a
+    // placement is drawn in, and the cluster path casts each key's placements from that key's mesh.
+    const drawn = drawableLevel(
       slot,
-      // Clamped to the asset's own last level, so a base past the chain asks for its coarsest
-      // shape rather than walking a million empty indices to find it. Same answer either way:
-      // `drawableLevel` reads a level with no parts as one to skip.
-      Math.max(
-        levelAtGates(slot, lodDistance, placement.scale ?? 1),
-        Math.min(base, slot.levels.length - 1),
-      ),
+      levelAtGates(slot, biasedLodDistance(distance), placement.scale ?? 1),
     );
+    const level = shadow === undefined ? drawn : shadowLevel(slot, regions, drawn, base);
+    if (level < 0) continue;
     const gate = slot.levels[level];
     if (gate === undefined) continue;
+    const hidden =
+      occlusion !== undefined && occludedBy(occlusion, at, radius) ? occlusion : undefined;
     for (let part = 0; part < gate.parts; part += 1) {
       const region = regions[gate.firstKey + part];
       if (region === undefined) continue;
+      // Counted either way: a measured run draws what it hides, so the count is the only place the
+      // answer can live.
+      if (hidden !== undefined) {
+        occludedInstances += 1;
+        occludedTriangles += region.indexCount / 3;
+        if (hidden.cull) continue;
+      }
       const taken = counts[gate.firstKey + part] as number;
       if (taken >= region.capacity) continue;
       counts[gate.firstKey + part] = taken + 1;
@@ -490,7 +586,14 @@ function select(input: IKernelInput, shadow: IShadowLevel | undefined): IKernelR
       compose(placement.matrix, region.local, matrix, (region.start + taken) * LOCAL_WORDS);
     }
   }
-  return { args, counts, drawn: matrix };
+  return {
+    args,
+    counts,
+    drawn: matrix,
+    ...(occlusion === undefined
+      ? {}
+      : { occluded: { instances: occludedInstances, triangles: occludedTriangles } }),
+  };
 }
 
 /**
@@ -1102,6 +1205,29 @@ export interface IWorldGpuSceneReport {
   readonly gpuTriangles?: number;
   /** Dispatches between the tally's bytes being issued and now; grows until the first lands. */
   readonly gpuTallyAgeFrames?: number;
+  /**
+   * What the pyramid occlusion test would cull, when a launch asked it to measure. Absent unless
+   * `?tnOcclusion=measure` asked, `reason` names why it measured nothing (`no scene depth`), and the
+   * counts and `occlusion.gpuTriangles` come from one landed dispatch, even if a later tally
+   * was skipped for occlusion.
+   */
+  readonly occlusion?: {
+    readonly mode: OcclusionMode;
+    readonly reason: string;
+    /** Pyramid levels and the dispatches that rebuild them each frame. */
+    readonly levels: number;
+    readonly buildDispatches: number;
+    /** The last landed sample, and the mean over every sample that landed. */
+    readonly instances: number;
+    readonly triangles: number;
+    readonly meanInstances: number;
+    readonly meanTriangles: number;
+    readonly samples: number;
+    /** `triangles / gpuTriangles` of the same sample, which is what the go/no-go multiplies. */
+    readonly share: number;
+    readonly gpuTriangles: number;
+    readonly ageFrames: number;
+  };
 }
 
 /**
@@ -1198,6 +1324,20 @@ function cameraPlanes(camera: Camera, out: Float32Array): void {
 const _proj = new Matrix4();
 const _cullFrustum = new Frustum();
 const _eye = new Vector3();
+const _view = new Matrix4();
+
+/** Camera travel in one dispatch that the occlusion test reads as a cut rather than a turn. */
+const OCCLUSION_CUT_METRES = 2;
+
+/** Two projection matrices are unchanged when every element is within this. */
+const VIEW_EPSILON = 1e-6;
+
+/** Whether the projection changed; ordinary camera travel and turns are not cuts. */
+function sameProjection(left: Matrix4, right: Matrix4): boolean {
+  for (const [index, element] of right.elements.entries())
+    if (Math.abs((left.elements[index] as number) - element) > VIEW_EPSILON) return false;
+  return true;
+}
 
 /**
  * A TSL node this module pokes at through the swizzles and the `.element()` chain.
@@ -1418,9 +1558,11 @@ export class WorldGpuScene {
     wanted: boolean,
     validate = false,
     tally = false,
+    occlusion: OcclusionMode = "off",
   ): boolean {
     this.#validate = validate;
-    this.#tally = tally;
+    this.#tally = tally || occlusion !== "off";
+    this.#occlusion = occlusion;
     if (this.#on) return true;
     if (this.#reported) return false;
     if (renderer === undefined) {
@@ -1570,6 +1712,33 @@ export class WorldGpuScene {
             gpuTallyAgeFrames: this.#dispatched - this.#tallySample,
             gpuTriangles: this.#tallyTriangles,
           }),
+      ...(this.#occlusion === "off"
+        ? {}
+        : {
+            occlusion: {
+              ageFrames: this.#occlusionSample < 0 ? 0 : this.#dispatched - this.#occlusionSample,
+              buildDispatches: this.#pyramid.levels,
+              instances: this.#occludedInstances,
+              levels: this.#pyramid.levels,
+              meanInstances:
+                this.#occlusionSamples === 0
+                  ? 0
+                  : Math.round(this.#occlusionSumInstances / this.#occlusionSamples),
+              meanTriangles:
+                this.#occlusionSamples === 0
+                  ? 0
+                  : Math.round(this.#occlusionSumTriangles / this.#occlusionSamples),
+              mode: this.#occlusion,
+              reason: this.#occlusionReason,
+              samples: this.#occlusionSamples,
+              gpuTriangles: this.#occlusionTotalTriangles,
+              share:
+                this.#occlusionTotalTriangles === 0
+                  ? 0
+                  : this.#occludedTriangles / this.#occlusionTotalTriangles,
+              triangles: this.#occludedTriangles,
+            },
+          }),
     };
   }
 
@@ -1597,7 +1766,7 @@ export class WorldGpuScene {
       const regrown = this.#regions.length - 1;
       this.#growOf("keys", regrown + 1);
       this.#growOf("locals", regrown + 1);
-      this.#growOf("args", (regrown + 1) * DRAW_ARGS_WORDS);
+      this.#growOf("args", argsWords(regrown + 1));
       this.#growDrawn();
       this.#writeKey(this.#regions.length - 1);
       return this.#regions.length - 1;
@@ -1629,7 +1798,7 @@ export class WorldGpuScene {
     this.#drawnCapacity += capacity;
     this.#growOf("keys", index + 1);
     this.#growOf("locals", index + 1);
-    this.#growOf("args", (index + 1) * DRAW_ARGS_WORDS);
+    this.#growOf("args", argsWords(index + 1));
     this.#growDrawn();
     this.#writeKey(index);
     return index;
@@ -1924,7 +2093,7 @@ export class WorldGpuScene {
 
   /**
    * One shadow level's set: zero every twin's instance count, then cull and LOD-select every resident
-   * placement against the map's own light frustum, its own rendered window centre, its texel gate
+   * placement against the map's own light frustum, the main pass's eye and level, its texel gate
    * and the chain level it draws at — into the twin buffers, which the main pass cannot be holding.
    *
    * The twin of the main kernel branch for branch, and reading the main pass's own gate table,
@@ -1948,15 +2117,14 @@ export class WorldGpuScene {
         level.planes[at + 3] as number,
       );
     }
-    this.#shadowCentre.value.set(level.centre.x, 0, level.centre.z);
     this.#shadowGate.value = level.gate;
     this.#shadowBase.value = level.base;
     // `(placements, slots, keys, keys)`: the last two are the same count, and the clear dispatch is
     // one thread per key. The main pass writes the same uniform before its own pair.
     const keys = this.#regions.length;
     this.#counts.value.set(this.placements.length, this.#order.length, keys, keys);
-    renderer.compute(kernel.clear);
-    renderer.compute(kernel.cull);
+    // One pass holds both kernels: storage writes reach the next dispatch, so clear precedes cull.
+    renderer.compute([kernel.clear, kernel.cull]);
   }
 
   /**
@@ -1966,8 +2134,6 @@ export class WorldGpuScene {
   dispatch(renderer: IRendererLike, camera: Camera): void {
     if (this.#on === false) return;
     if (this.#buffers === undefined) return;
-    const kernel = this.#kernel ?? this.#buildKernel();
-    if (kernel === undefined) return;
     cameraPlanes(camera, this.#planes);
     for (const [index, plane] of this.#planeVectors.entries()) {
       const at = index * 4;
@@ -1982,10 +2148,15 @@ export class WorldGpuScene {
     this.#eye.value.copy(_eye);
     // `(placements, slots, keys, keys)`: the last two are the same count, and the clear dispatch is
     // one thread per key.
+    if (this.#occlusion !== "off") this.#measureOcclusion(renderer, camera);
+    // Measurement may replace the pyramid buffer on first use or resize. Bind the new buffer in
+    // this frame's cull, rather than dispatching a kernel captured before the replacement.
+    const kernel = this.#kernel ?? this.#buildKernel();
+    if (kernel === undefined) return;
     const keys = this.#regions.length;
     this.#counts.value.set(this.placements.length, this.#order.length, keys, keys);
-    renderer.compute(kernel.clear);
-    renderer.compute(kernel.cull);
+    // One pass holds both kernels: storage writes reach the next dispatch, so clear precedes cull.
+    renderer.compute([kernel.clear, kernel.cull]);
     this.#dispatched += 1;
     if (
       this.#validate === true &&
@@ -1999,10 +2170,94 @@ export class WorldGpuScene {
     else if (
       this.#validate === false &&
       this.#tally === true &&
+      (this.#occlusion === "off" || this.#occlusionCut.value === 0) &&
       this.#tallyPending === false &&
       (this.#tallyRequested < 0 || this.#dispatched - this.#tallyRequested >= TALLY_EVERY)
     )
       this.#tallyRead(renderer);
+  }
+
+  /**
+   * One frame of `?tnOcclusion=measure`: rebuild the max-distance chain from the depth the previous
+   * frame's scene pass left behind, and point the test at the camera that depth was rendered with.
+   *
+   * The depth is last frame's on purpose. This runs in `beforeRender`, before the frame's own scene
+   * pass draws, so the texture still holds what the last one wrote — which is the only depth there
+   * is, and the reason the test reprojects rather than sampling the current frame.
+   *
+   * With no scene-pass depth — no render chain installed, so nothing rendered into a target of its
+   * own — the mode refuses and says so in `report().occlusion.reason` rather than reporting nothing
+   * hidden and reading as a cull that found no work.
+   */
+  #measureOcclusion(renderer: IRendererLike, camera: Camera): void {
+    this.#occlusionCut.value = 1;
+    // The main pass returns on an orthographic camera before it gets here (that is a shadow level's
+    // own), and a linear depth in metres is a perspective projection's to begin with.
+    if (!(camera instanceof PerspectiveCamera)) {
+      this.#previousDepth = undefined;
+      this.#occlusionReason = "refused: not a perspective camera";
+      return;
+    }
+    const raw = renderer.raw as { logarithmicDepthBuffer?: boolean; reversedDepthBuffer?: boolean };
+    if (raw?.logarithmicDepthBuffer || raw?.reversedDepthBuffer || camera.reversedDepth) {
+      this.#previousDepth = undefined;
+      this.#occlusionReason = "refused: nonstandard depth";
+      return;
+    }
+    const depth = renderer.scenePassDepth?.();
+    const width = depth?.width ?? 0;
+    const height = depth?.height ?? 0;
+    if (depth === undefined || width < 2 || height < 2) {
+      this.#previousDepth = undefined;
+      this.#occlusionReason = "refused: no scene depth";
+      return;
+    }
+    this.#occlusionReason = "";
+    // A resized depth resizes the chain, and the chain's two buffers are what the cull kernel reads,
+    // so a new chain is a new pipeline: structural, like every other grow in this class.
+    const resized = this.#pyramid.resize(width, height);
+    if (resized) {
+      this.#kernel = undefined;
+      this.#version += 1;
+    }
+    _view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    _eye.setFromMatrixPosition(camera.matrixWorld);
+    // A cut skips the test for the frame: a teleport moved the camera further than a walk step, and
+    // a projection change means the pyramid is a different camera's depth altogether.
+    // ponytail: 2 m of camera travel in one dispatch is a cut. A game that teleports further per
+    // step than that raises the bound; one that cuts under it gets a frame of frustum-only.
+    const samples = depth.samples ?? 1;
+    const previous = this.#previousDepth;
+    const depthChanged =
+      previous?.texture !== depth.texture ||
+      previous.width !== width ||
+      previous.height !== height ||
+      previous.samples !== samples ||
+      previous.version !== depth.texture.version;
+    this.#occlusionCut.value =
+      depthChanged ||
+      resized ||
+      !sameProjection(this.#previousProjection, camera.projectionMatrix) ||
+      _eye.distanceTo(this.#previousEye) > OCCLUSION_CUT_METRES
+        ? 1
+        : 0;
+    if (this.#occlusionCut.value !== 0)
+      this.#occlusionReason =
+        depthChanged || resized ? "skipped: depth changed" : "skipped: camera cut";
+    this.#previousDepth = {
+      texture: depth.texture,
+      width,
+      height,
+      samples,
+      version: depth.texture.version,
+    };
+    this.#previousProjection.copy(camera.projectionMatrix);
+    // The chain first, then the camera the chain belongs to: last frame's, which is what the
+    // previous frame's depth recorded.
+    this.#pyramid.build(renderer, depth.texture, camera.near, camera.far, samples);
+    this.#occlusionView.value.copy(this.#previousView);
+    this.#previousView.copy(_view);
+    this.#previousEye.copy(_eye);
   }
 
   /**
@@ -2054,6 +2309,34 @@ export class WorldGpuScene {
   #validating = false;
   /** Whether the owner asked for the GPU-selected main-pass tally; a validation turns it on too. */
   #tally = false;
+  /** What a launch asked the pyramid occlusion test to do. `measure` never changes what is drawn. */
+  #occlusion: OcclusionMode = "off";
+  /** The max-distance chain, and the previous frame's camera the test reprojects into. */
+  readonly #pyramid = new DepthPyramid();
+  readonly #previousView = new Matrix4();
+  readonly #previousProjection = new Matrix4();
+  #previousDepth:
+    | {
+        texture: DepthTexture;
+        width: number;
+        height: number;
+        samples: number;
+        version: number;
+      }
+    | undefined;
+  readonly #previousEye = new Vector3();
+  readonly #occlusionView = uniform(new Matrix4());
+  readonly #occlusionCut = uniform(1);
+  /** Why the measure mode measured nothing, or `""` while it is measuring. */
+  #occlusionReason = "";
+  /** The last landed tally's occlusion counts, and the running mean over every sample. */
+  #occludedInstances = 0;
+  #occludedTriangles = 0;
+  #occlusionTotalTriangles = 0;
+  #occlusionSample = -1;
+  #occlusionSamples = 0;
+  #occlusionSumInstances = 0;
+  #occlusionSumTriangles = 0;
   #tallyPending = false;
   /** Dispatch the in-flight tally readback was issued on, or `-1` when none is in flight. */
   #tallyRequested = -1;
@@ -2086,9 +2369,12 @@ export class WorldGpuScene {
     const issued = this.#dispatched;
     this.#tallyRequested = issued;
     this.#tallyPending = true;
+    // Streaming may grow the args tail while this copy is in flight. Decode its own layout.
+    const regions = this.#regions.map((region) => ({ argsIndex: region.argsIndex }));
+    const occlusionReason = this.#occlusionReason;
     renderer
       .readback(args)
-      .then((bytes) => this.#landTally(bytes, issued))
+      .then((bytes) => this.#landTally(bytes, issued, regions, occlusionReason))
       .catch(() => {
         this.#tallyPending = false;
       });
@@ -2099,12 +2385,17 @@ export class WorldGpuScene {
    * divided by three. A record the GPU never wrote reads as the zero it holds, which is correct —
    * a key that selected nothing draws nothing.
    */
-  #landTally(bytes: ArrayBuffer, issued: number): void {
+  #landTally(
+    bytes: ArrayBuffer,
+    issued: number,
+    regions: readonly Pick<IRegion, "argsIndex">[],
+    occlusionReason: string,
+  ): void {
     this.#tallyPending = false;
     const words = new Uint32Array(bytes);
     let instances = 0;
     let products = 0;
-    for (const region of this.#regions) {
+    for (const region of regions) {
       const record = region.argsIndex * DRAW_ARGS_WORDS;
       const count = word(words, record + 1);
       instances += count;
@@ -2113,6 +2404,65 @@ export class WorldGpuScene {
     this.#tallyInstances = instances;
     this.#tallyTriangles = products / 3;
     this.#tallySample = issued;
+    if (this.#occlusion !== "off") this.#landOcclusion(words, issued, regions, occlusionReason);
+  }
+
+  /**
+   * What the measured cull hid, out of the same landed bytes as the drawn counts.
+   *
+   * The tail of the args buffer is one word per key of measured-occlusion instances, so a hidden
+   * part's triangles are that word times its own `indexCount` — the same product the tally above
+   * sums over the records, which is why both numbers can be divided into a share without a second
+   * readback or a second clock.
+   */
+  #landOcclusion(
+    words: Uint32Array,
+    issued: number,
+    regions: readonly Pick<IRegion, "argsIndex">[],
+    sampleReason: string,
+  ): void {
+    let reason = sampleReason;
+    const tail = regions.length * DRAW_ARGS_WORDS;
+    if (reason === "" && words.length < tail + regions.length) reason = "skipped: short readback";
+    if (
+      reason === "" &&
+      regions.some(
+        (region, index) =>
+          word(words, tail + index) > word(words, region.argsIndex * DRAW_ARGS_WORDS + 1),
+      )
+    )
+      reason = "skipped: inconsistent readback";
+    if (reason !== "") {
+      this.#occlusionReason = reason;
+      console.info(
+        `TN_WORLD_GPU_SCENE_OCCLUSION mode=${this.#occlusion} dispatch=${String(issued)} skipped=1 reason=${reason}`,
+      );
+      return;
+    }
+    let instances = 0;
+    let products = 0;
+    for (const [index, region] of regions.entries()) {
+      const count = word(words, regions.length * DRAW_ARGS_WORDS + index);
+      instances += count;
+      products += count * word(words, region.argsIndex * DRAW_ARGS_WORDS);
+    }
+    this.#occludedInstances = instances;
+    this.#occludedTriangles = products / 3;
+    this.#occlusionReason = "";
+    this.#occlusionSample = issued;
+    this.#occlusionTotalTriangles = this.#tallyTriangles;
+    this.#occlusionSamples += 1;
+    this.#occlusionSumInstances += instances;
+    this.#occlusionSumTriangles += this.#occludedTriangles;
+    const report = this.report().occlusion;
+    if (report === undefined) return;
+    const line =
+      `TN_WORLD_GPU_SCENE_OCCLUSION mode=${report.mode} levels=${String(report.levels)} ` +
+      `dispatch=${String(issued)} reason=${report.reason || "none"} ` +
+      `wouldCullInstances=${String(report.instances)} wouldCullTriangles=${String(report.triangles)} ` +
+      `gpuInstances=${String(this.#tallyInstances)} gpuTriangles=${String(this.#tallyTriangles)} ` +
+      `share=${report.share.toFixed(4)}`;
+    console.info(line);
   }
 
   /**
@@ -2147,11 +2497,12 @@ export class WorldGpuScene {
     const draws = this.#draws?.() ?? [];
     const issued = this.#dispatched;
     this.#validating = true;
+    const occlusionReason = this.#occlusionReason;
     Promise.all([renderer.readback(snapshot.args), renderer.readback(snapshot.drawn)])
       .then(([argsBytes, drawnBytes]) => {
         this.#validating = false;
         // The same landed args feed the tally, so a validation pays for it and this adds no copy.
-        this.#landTally(argsBytes, issued);
+        this.#landTally(argsBytes, issued, snapshot.regions, occlusionReason);
         this.#publish(
           renderer,
           this.#against(
@@ -2363,6 +2714,7 @@ export class WorldGpuScene {
     this.#tallyPending = false;
     this.#tallyRequested = -1;
     this.#tallySample = -1;
+    this.#pyramid.dispose();
   }
 
   readonly #planeVectors = Array.from({ length: 6 }, () => new Vector4());
@@ -2375,13 +2727,12 @@ export class WorldGpuScene {
   #lodBias = uniform(1);
   #planeUniforms = this.#planeVectors.map((plane) => uniform(plane));
   /**
-   * The shadow kernel's own four, kept apart from the camera's: a level's planes and window centre
-   * are written here and the main pass's own are never disturbed, so the two dispatches in one frame
-   * cannot read each other's uniforms. A shadow map takes no LOD bias — it has no frame budget to
-   * be biased by — and its gate and base are the level's own texel gate and chain level.
+   * The shadow kernel's own three, kept apart from the camera's: a level's planes are written here
+   * and the main pass's own are never disturbed, so the two dispatches in one frame cannot read each
+   * other's uniforms. Its gate and base are the level's own texel gate and chain level; its eye and
+   * LOD bias are the main pass's, which this frame's main dispatch already set.
    */
   #shadowPlaneVectors = Array.from({ length: 6 }, () => new Vector4());
-  #shadowCentre = uniform(new Vector3());
   #shadowGate = uniform(0);
   #shadowBase = uniform(0);
   #shadowPlaneUniforms = this.#shadowPlaneVectors.map((plane) => uniform(plane));
@@ -2431,8 +2782,10 @@ export class WorldGpuScene {
     if (grown === current) return true;
     this.#buffers = { ...buffers, [name]: grown };
     // The attributes the kernel is built from changed, so the kernel is a new pipeline: a structural
-    // event, and the only one this class pays a compile for.
+    // event, and the only one this class pays a compile for. The shadow kernel reads the same
+    // placements, keys, locals, gates and levels, so it is rebuilt with it.
     this.#kernel = undefined;
+    this.#shadowKernel = undefined;
     this.#version += 1;
     return true;
   }
@@ -2461,7 +2814,7 @@ export class WorldGpuScene {
     // `info.y` is the placement's uniform scale, read by the kernel's impostor gate. The remaining
     // `info` words stay whatever they were, which is zero.
     array[at + 21] = placement.scale ?? 1;
-    buffers.source.addUpdateRange(at, PLACEMENT_WORDS);
+    addRange(buffers.source, at, PLACEMENT_WORDS);
     buffers.source.needsUpdate = true;
   }
 
@@ -2476,10 +2829,10 @@ export class WorldGpuScene {
     keys[at] = region.start;
     keys[at + 1] = region.capacity;
     keys[at + 2] = region.argsIndex;
-    buffers.keys.addUpdateRange(at, VEC4_WORDS);
+    addRange(buffers.keys, at, VEC4_WORDS);
     buffers.keys.needsUpdate = true;
     (buffers.locals.array as Float32Array).set(region.local, index * LOCAL_WORDS);
-    buffers.locals.addUpdateRange(index * LOCAL_WORDS, LOCAL_WORDS);
+    addRange(buffers.locals, index * LOCAL_WORDS, LOCAL_WORDS);
     buffers.locals.needsUpdate = true;
     const args = buffers.args.array as Uint32Array;
     const record = region.argsIndex * DRAW_ARGS_WORDS;
@@ -2556,11 +2909,26 @@ export class WorldGpuScene {
     const eye = nodes(this.#eye);
     const bias = nodes(this.#lodBias);
     const planes = this.#planeUniforms.map((plane) => nodes(plane));
+    // Measuring doubles the clear: the second thread per key zeroes that key's word of the
+    // measured-occlusion tally, which is why the args buffer is sized for it (see `argsWords`).
+    // A run that is not measuring never pays the second thread.
+    const clearWidth = this.#occlusion === "off" ? 1 : 2;
     const clear = Fn(() => {
-      If(instanceIndex.greaterThanEqual(counts.w), () => Return());
-      const key = keys.element(instanceIndex);
-      argsPlain.element(key.z.mul(DRAW_ARGS_WORDS).add(1)).assign(int(0));
-    })().compute(Math.max(1, buffers.keys.count));
+      If(instanceIndex.greaterThanEqual(counts.w.mul(clearWidth)), () => Return());
+      If(instanceIndex.lessThan(counts.w), () => {
+        const key = keys.element(instanceIndex);
+        argsPlain.element(key.z.mul(DRAW_ARGS_WORDS).add(1)).assign(int(0));
+      });
+      If(instanceIndex.greaterThanEqual(counts.w), () => {
+        argsPlain
+          .element(
+            nodes(counts.w.mul(DRAW_ARGS_WORDS)).add(
+              nodes(float(instanceIndex).sub(counts.w).floor()),
+            ),
+          )
+          .assign(int(0));
+      });
+    })().compute(Math.max(1, buffers.keys.count * clearWidth));
     const cull = Fn(() => {
       If(instanceIndex.greaterThanEqual(counts.x), () => Return());
       const placement = source.element(instanceIndex);
@@ -2612,9 +2980,20 @@ export class WorldGpuScene {
         });
       });
       const at = levels.element(gate.x.add(level));
+      // The pyramid test, once per placement: a placement the frustum and the gates kept, reprojected
+      // into the previous frame's pyramid. Measured only, so the write below happens either way and
+      // the indirect counts are develop's.
+      const hidden = float(0).toVar();
+      if (this.#occlusion !== "off" && this.#pyramid.levels > 0)
+        hidden.assign(
+          this.#pyramid.occluded(centre.xyz, radius, this.#occlusionView, this.#occlusionCut),
+        );
       Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
         const keyIndex = at.y.add(i as never);
         const key = keys.element(keyIndex);
+        If(hidden.greaterThan(0.5), () => {
+          atomicAdd(argsAtomic.element(counts.w.mul(DRAW_ARGS_WORDS).add(keyIndex)), int(1));
+        });
         const taken = nodes(
           atomicAdd(argsAtomic.element(key.z.mul(DRAW_ARGS_WORDS).add(1)), int(1)),
         );
@@ -2704,16 +3083,21 @@ export class WorldGpuScene {
     args[record + 3] = 0;
     args[record + 4] = region.start;
     shadow.args.needsUpdate = true;
+    // The twin's mark on the main key record, which the shadow kernel reads to know a level casts.
+    const buffers = this.#buffers;
+    if (buffers === undefined) return;
+    (buffers.keys.array as Float32Array)[index * VEC4_WORDS + 3] = 1;
+    addRange(buffers.keys, index * VEC4_WORDS, VEC4_WORDS);
+    buffers.keys.needsUpdate = true;
   }
 
   /**
    * The shadow twin of {@link #buildKernel}: the same clear and the same per-placement selection,
    * reading the same source, gate, level and key tables and writing the twin records and runs.
    *
-   * Three branches are the level's rather than the camera's — the planes it tests against, the
-   * centre it measures distance from, and its texel gate — and one is the level's base instead of
-   * the main pass's LOD bias: a shadow map is not competing for a frame budget, so it takes the
-   * authored distance and floors the level at the shape the cluster path hands it.
+   * Two branches are the level's rather than the camera's — the planes it tests against and its
+   * texel gate — and one is the level's base, which floors the main pass's own level at the shape the
+   * cluster path hands it. A level whose key has no minted twin (`keys.w`) casts nothing.
    */
   #buildShadowKernel(): { readonly cull: unknown; readonly clear: unknown } | undefined {
     const buffers = this.#buffers;
@@ -2728,17 +3112,33 @@ export class WorldGpuScene {
     const gates = nodes(storage(buffers.gates, "vec4", buffers.gates.count));
     const levels = nodes(storage(buffers.levels, "vec4", buffers.levels.count));
     const counts = nodes(this.#counts);
-    // The level's window centre, in the uniform the main kernel measures the eye from: the same
-    // field, this dispatch's own number.
-    const eye = nodes(this.#shadowCentre);
+    // The main pass's own eye and bias, which this frame's main dispatch set: a shadow map draws each
+    // placement at the level the main pass draws it, as the cluster path does.
+    const eye = nodes(this.#eye);
+    const bias = nodes(this.#lodBias);
     const gate = nodes(this.#shadowGate);
     const base = nodes(this.#shadowBase);
     const planes = this.#shadowPlaneUniforms.map((plane) => nodes(plane));
+    // Measuring doubles the clear: the second thread per key zeroes that key's word of the
+    // measured-occlusion tally, which is why the args buffer is sized for it (see `argsWords`).
+    // A run that is not measuring never pays the second thread.
+    const clearWidth = this.#occlusion === "off" ? 1 : 2;
     const clear = Fn(() => {
-      If(instanceIndex.greaterThanEqual(counts.w), () => Return());
-      const key = keys.element(instanceIndex);
-      argsPlain.element(key.z.mul(DRAW_ARGS_WORDS).add(1)).assign(int(0));
-    })().compute(Math.max(1, buffers.keys.count));
+      If(instanceIndex.greaterThanEqual(counts.w.mul(clearWidth)), () => Return());
+      If(instanceIndex.lessThan(counts.w), () => {
+        const key = keys.element(instanceIndex);
+        argsPlain.element(key.z.mul(DRAW_ARGS_WORDS).add(1)).assign(int(0));
+      });
+      If(instanceIndex.greaterThanEqual(counts.w), () => {
+        argsPlain
+          .element(
+            nodes(counts.w.mul(DRAW_ARGS_WORDS)).add(
+              nodes(float(instanceIndex).sub(counts.w).floor()),
+            ),
+          )
+          .assign(int(0));
+      });
+    })().compute(Math.max(1, buffers.keys.count * clearWidth));
     const cull = Fn(() => {
       If(instanceIndex.greaterThanEqual(counts.x), () => Return());
       const placement = source.element(instanceIndex);
@@ -2756,8 +3156,8 @@ export class WorldGpuScene {
       const asset = gates.element(slot);
       const distance = length(vec3(centre.x.sub(eye.x), 0.0, centre.z.sub(eye.z)));
       If(asset.w.greaterThan(0.5).and(distance.greaterThan(asset.z)), () => Return());
-      // The authored distance, with no bias: this map has no frame budget to be biased by, and its
-      // base is what the cluster path hands it.
+      // The main pass's own biased distance and level; see `shadowLevel`, which the reference runs.
+      const lodDistance = nodes(distance).mul(bias as never);
       const level = int(0).toVar();
       const scale = abs(placement.get("info").y);
       Loop(
@@ -2772,18 +3172,39 @@ export class WorldGpuScene {
           });
           // A level the prewarm has minted no key for is not taken, as in the main kernel: see
           // `drawableLevel`, which the reference mirrors.
-          If(distance.greaterThan(threshold), () => {
+          If(lodDistance.greaterThan(threshold), () => {
             If(candidate.z.greaterThan(0.5), () => {
               level.assign(i as never);
             });
           });
         },
       );
-      // Clamped to the asset's own last level, as the reference clamps it: a base past the chain
-      // asks for its coarsest shape, and reading a level outside the table is not that.
-      const at = levels.element(
-        asset.x.add(int(max(level.toFloat(), min(base as never, asset.y.sub(1.0) as never)))),
+      // A level casts when its first key has a minted twin (`keys.w`). The shape is the last
+      // casting level in `[0, max(level, base)]`: a placement whose own level casts nothing casts
+      // with the coarsest one below it that does, and the map's base floors it, clamped to the last
+      // level that casts, so a coarse map never asks for a twin that was not minted. None: no cast.
+      const castsAt = (index: unknown): unknown => {
+        const entry = levels.element(asset.x.add(index as never));
+        return nodes(entry.z.greaterThan(0.5)).and(keys.element(entry.y).w.greaterThan(0.5));
+      };
+      const shape = int(-1).toVar();
+      Loop(
+        {
+          start: int(0),
+          end: nodes(
+            max(level as never, int(min(base as never, asset.y.sub(1.0) as never)) as never),
+          ).add(1),
+          type: "int",
+          condition: "<",
+        },
+        ({ i }: { i: unknown }) => {
+          If(castsAt(i) as never, () => {
+            shape.assign(i as never);
+          });
+        },
       );
+      If(shape.lessThan(0), () => Return());
+      const at = levels.element(asset.x.add(shape));
       Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
         const keyIndex = at.y.add(i as never);
         const key = keys.element(keyIndex);

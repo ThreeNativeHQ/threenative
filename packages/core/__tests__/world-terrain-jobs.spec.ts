@@ -1,5 +1,6 @@
 import { type BufferGeometry, Mesh, MeshBasicMaterial } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SpanRecorder, setSpanRecorder } from "../src/profiling/Spans.js";
 import {
   type ITerrainJob,
   type ITerrainJobResult,
@@ -387,6 +388,37 @@ describe("terrain jobs", () => {
   // The box's structural claim, without a clock: a reply the main thread did not compute is one it
   // could only have swapped in, so marking the worker's result marks the settled geometry too. If
   // any of the merge ran here, the correct bytes would win over the mark and this case fails.
+  // The box's timing clause, on the frame-span table the browser report reads: the main-thread work
+  // a block rebuild and a seam pass do is entered as the `terrainBlock`/`terrainSeam` spans. Inline
+  // here, so the entry is deterministic and a node sample is not read as a browser frame.
+  it("records the terrain block and seam spans on the frame-span table", () => {
+    const recorder = new SpanRecorder();
+    setSpanRecorder(recorder);
+    try {
+      // Two rings, because one ring cannot do both jobs: a block merges only where a whole 4x4 tile
+      // block shares one LOD tier, and a seam needs a LOD boundary inside the resident ring.
+      const merged = terrain({ lodDistances: [], lodFactors: [1], streamRadius: 2 });
+      const seamed = terrain(TWO_TIERS);
+      try {
+        for (let frame = 0; frame < 16; frame += 1) {
+          merged.follow(ISLAND);
+          seamed.follow(ISLAND);
+        }
+        recorder.endFrame(1);
+        const window = recorder.window();
+        expect(window?.spans.terrainBlock?.frames).toBeGreaterThan(0);
+        expect(window?.spans.terrainBlock?.perFrame).toBeGreaterThan(0);
+        expect(window?.spans.terrainSeam?.frames).toBeGreaterThan(0);
+        expect(window?.spans.terrainSeam?.perFrame).toBeGreaterThan(0);
+      } finally {
+        merged.dispose();
+        seamed.dispose();
+      }
+    } finally {
+      setSpanRecorder(undefined);
+    }
+  });
+
   it("swaps the returned attributes and computes nothing itself", async () => {
     vi.stubGlobal("Worker", FakeWorker);
     const tiles = terrain();
