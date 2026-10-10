@@ -25,9 +25,11 @@ struct WgslModule {
 
 /**
  * IR → WGSL (PRD-511). Deterministic: names come from IR ids and fixed prefixes (u.f_ uniform
- * fields, a_ attributes, s_ storage, b_ builtins, v vars, l lets), so one program always emits
- * the same text and the text can key a pipeline cache. Pure expressions are emitted inline; ordered
- * reads become `let` at their statement, which is what keeps effects in program order.
+ * fields, a_ attributes, s_ storage, b_ builtins, v vars, l lets, e shared values), so one program
+ * always emits the same text and the text can key a pipeline cache. Pure expressions are emitted
+ * inline, except one used twice, which becomes `let e<id>` before its first use and is named
+ * after it within that scope; ordered reads become `let` at their statement, which is what keeps
+ * effects in program order.
  */
 class WgslEmitter {
 public:
@@ -35,13 +37,19 @@ public:
     static WgslModule emit(const Program& program, uint32_t group = 0);
 
 private:
-    explicit WgslEmitter(const Program& program) : p_(program) {}
+    explicit WgslEmitter(const Program& program);
     std::string type(const Type& t) const;
     std::string expr(ExprId id) const;
+    std::string inlined(ExprId id) const;
     void block(uint32_t index, int depth, std::string& out) const;
 
     const Program& p_;
     mutable std::vector<std::string> errors_;
+    std::vector<uint32_t> uses_;              // parents (and statements) reaching each expression
+    mutable std::vector<bool> bound_;         // a `let e<id>` is in scope
+    mutable std::vector<ExprId> boundStack_;  // the lets in scope, innermost last
+    mutable std::string* out_ = nullptr;      // where a shared value's `let` goes: before the statement
+    mutable int depth_ = 0;
 };
 
 }  // namespace tn::engine::shader

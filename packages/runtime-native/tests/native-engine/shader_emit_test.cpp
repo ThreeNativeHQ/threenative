@@ -89,6 +89,27 @@ void stable() {
     CHECK(!bad.errors.empty() && bad.errors[0].rfind("TN_SHADER_PACKAGE_INVALID", 0) == 0);
 }
 
+// A subexpression the program uses twice is emitted once and named: inlining it at every use grew
+// Midway's largest fragment module to 192 KB, one 87 000-character line, and stalled the GPU process.
+void sharedOnce() {
+    Program p(Stage::Fragment);
+    const ExprId shared = p.call("normalize", {p.varying("normal", Type::vec(3))});
+    const ExprId twice = p.add(shared, shared);
+    p.If(p.less(p.swizzle(shared, "x"), p.constant(0.0f)),
+         [&] { p.output("color", p.construct(Type::vec(4), {twice, p.constant(1.0f)})); },
+         [&] { p.output("color", p.construct(Type::vec(4), {p.mul(twice, shared), p.constant(1.0f)})); });
+    const std::string code = WgslEmitter::emit(p).code;
+    std::size_t count = 0;
+    for (std::size_t at = code.find("normalize("); at != std::string::npos; at = code.find("normalize(", at + 1)) ++count;
+    CHECK(count == 1);
+    if (count != 1) std::fprintf(stderr, "normalize emitted %zu times:\n%s", count, code.c_str());
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    const std::string error = validate(context, code);
+    if (!error.empty()) std::fprintf(stderr, "%s\n%s", error.c_str(), code.c_str());
+    CHECK(error.empty());
+}
+
 // Two pipelines that share a vertex module (a depth-Equal normal pass after the colour pass) are only
 // guaranteed the same clip position when the position output is invariant.
 void positionInvariant() {
@@ -115,4 +136,5 @@ void positionInvariant() {
 
 }  // namespace
 
-TN_TEST_MAIN({"validates", validates}, {"stable", stable}, {"position_invariant", positionInvariant})
+TN_TEST_MAIN({"validates", validates}, {"stable", stable}, {"position_invariant", positionInvariant},
+            {"shared_once", sharedOnce})

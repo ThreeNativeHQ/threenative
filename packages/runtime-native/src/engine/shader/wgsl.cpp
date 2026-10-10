@@ -63,7 +63,43 @@ std::string WgslEmitter::type(const Type& t) const {
     return "mat" + std::to_string(t.cols) + "x" + std::to_string(t.rows) + "<" + scalar + ">";
 }
 
+WgslEmitter::WgslEmitter(const Program& program)
+    : p_(program), uses_(program.exprs_.size()), bound_(program.exprs_.size()) {
+    // Counted from the statements down, so an expression a dead branch alone shares stays inline.
+    std::vector<bool> seen(program.exprs_.size());
+    const auto visit = [&](auto& self, ExprId id) -> void {
+        ++uses_[id];
+        if (seen[id]) return;
+        seen[id] = true;
+        const Expr& e = program.exprs_[id];
+        for (uint8_t i = 0; i < e.argc; ++i) self(self, e.args[i]);
+    };
+    using Kind = Program::StmtKind;
+    for (const auto& b : program.blocks_) {
+        for (const auto& s : b) {
+            if (s.kind == Kind::Eval || s.kind == Kind::Assign || s.kind == Kind::Output) visit(visit, s.b);
+            else if (s.kind == Kind::Store) visit(visit, s.b), visit(visit, s.c);
+            else if (s.kind == Kind::If || s.kind == Kind::Loop) visit(visit, s.a);
+        }
+    }
+}
+
 std::string WgslEmitter::expr(ExprId id) const {
+    if (bound_[id]) return "e" + std::to_string(id);
+    std::string text = inlined(id);
+    switch (p_.exprs_[id].op) {
+        case Op::Constant: case Op::Uniform: case Op::Attribute: case Op::Builtin: case Op::Varying:
+        case Op::LoadVar: case Op::LoadStorage: case Op::AtomicAdd: return text;  // already a name
+        default: break;
+    }
+    if (uses_[id] < 2 || out_ == nullptr) return text;
+    *out_ += std::string(static_cast<size_t>(depth_) * 2, ' ') + "let e" + std::to_string(id) + " = " + text + ";\n";
+    bound_[id] = true;
+    boundStack_.push_back(id);
+    return "e" + std::to_string(id);
+}
+
+std::string WgslEmitter::inlined(ExprId id) const {
     const Expr& e = p_.exprs_[id];
     switch (e.op) {
         case Op::Constant: {
@@ -151,7 +187,12 @@ std::string WgslEmitter::expr(ExprId id) const {
 void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
     const std::string indent(static_cast<size_t>(depth) * 2, ' ');
     using Kind = Program::StmtKind;
+    // A shared value's `let` is appended to `out` while its statement's text is built, so it lands
+    // before that statement; it goes out of scope with this block.
+    const size_t scope = boundStack_.size();
     for (const Program::Stmt& s : p_.blocks_[index]) {
+        out_ = &out;
+        depth_ = depth;
         switch (s.kind) {
             case Kind::Eval: {
                 const Expr& e = p_.exprs_[s.b];
@@ -205,6 +246,8 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
             }
         }
     }
+    for (size_t i = scope; i < boundStack_.size(); ++i) bound_[boundStack_[i]] = false;
+    boundStack_.resize(scope);
 }
 
 WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
