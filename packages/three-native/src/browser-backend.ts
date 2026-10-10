@@ -968,6 +968,126 @@ export function defineBrowserClasses(
         },
       });
     }
+    // Games aim objects and instances with these: three's code runs on the quaternion's lanes, and
+    // an object's own quaternion syncs its rotation here, as three's onQuaternionChange does.
+    const euler = registry.classes.Euler?.fields;
+    if (name === "Quaternion" && quaternion && euler?.__order && read && readByte && write) {
+      type Quat = { x: number; y: number; z: number; w: number };
+      const [ox = 0, oy = 0, oz = 0, ow = 0] = ["x", "y", "z", "w"].map(
+        (lane) => quaternion[lane]?.[0] ?? 0,
+      );
+      const [ex = 0, ey = 0, ez = 0] = ["x", "y", "z"].map((lane) => euler[lane]?.[0] ?? 0);
+      const [orderAt = 0] = euler.__order;
+      const clamp = (value: number) => Math.max(-1, Math.min(1, value));
+      const store = (self: object, x: number, y: number, z: number, w: number) => {
+        const at = addressOf(self);
+        write(at + ox, x);
+        write(at + oy, y);
+        write(at + oz, z);
+        write(at + ow, w);
+        const home = within.get(self);
+        if (home?.[1] !== "quaternion") return self;
+        const rotation = recordOf(home[0]).rotation;
+        if (rotation === undefined) throw new Error("an Object3D's __addresses names no rotation");
+        // three's setFromQuaternion: makeRotationFromQuaternion, then setFromRotationMatrix.
+        const x2 = x + x;
+        const y2 = y + y;
+        const z2 = z + z;
+        const [xx, xy, xz, yy, yz, zz] = [x * x2, x * y2, x * z2, y * y2, y * z2, z * z2];
+        const [wx, wy, wz] = [w * x2, w * y2, w * z2];
+        const [m11, m12, m13] = [1 - (yy + zz), xy - wz, xz + wy];
+        const [m21, m22, m23] = [xy + wz, 1 - (xx + zz), yz - wx];
+        const [m31, m32, m33] = [xz - wy, yz + wx, 1 - (xx + yy)];
+        const edge = (value: number) => !(Math.abs(value) < 0.9999999); // NaN as three takes it
+        // In the engine enum's order: XYZ, YXZ, ZXY, ZYX, YZX, XZY.
+        const angles = [
+          () => [
+            edge(m13) ? Math.atan2(m32, m22) : Math.atan2(-m23, m33),
+            Math.asin(clamp(m13)),
+            edge(m13) ? 0 : Math.atan2(-m12, m11),
+          ],
+          () => [
+            Math.asin(-clamp(m23)),
+            edge(m23) ? Math.atan2(-m31, m11) : Math.atan2(m13, m33),
+            edge(m23) ? 0 : Math.atan2(m21, m22),
+          ],
+          () => [
+            Math.asin(clamp(m32)),
+            edge(m32) ? 0 : Math.atan2(-m31, m33),
+            edge(m32) ? Math.atan2(m21, m11) : Math.atan2(-m12, m22),
+          ],
+          () => [
+            edge(m31) ? 0 : Math.atan2(m32, m33),
+            Math.asin(-clamp(m31)),
+            edge(m31) ? Math.atan2(-m12, m22) : Math.atan2(m21, m11),
+          ],
+          () => [
+            edge(m21) ? 0 : Math.atan2(-m23, m22),
+            edge(m21) ? Math.atan2(m13, m33) : Math.atan2(-m31, m11),
+            Math.asin(clamp(m21)),
+          ],
+          () => [
+            edge(m12) ? Math.atan2(-m23, m33) : Math.atan2(m32, m22),
+            edge(m12) ? 0 : Math.atan2(m13, m11),
+            Math.asin(-clamp(m12)),
+          ],
+        ][readByte(rotation + orderAt)];
+        if (angles === undefined) throw new Error("an Euler holds an unknown order");
+        const [ax = 0, ay = 0, az = 0] = angles();
+        write(rotation + ex, ax);
+        write(rotation + ey, ay);
+        write(rotation + ez, az);
+        return self;
+      };
+      const multiplyQuaternions = (self: object, a: Quat, b: Quat) => {
+        const { x: qax, y: qay, z: qaz, w: qaw } = a;
+        const { x: qbx, y: qby, z: qbz, w: qbw } = b;
+        return store(
+          self,
+          qax * qbw + qaw * qbx + qay * qbz - qaz * qby,
+          qay * qbw + qaw * qby + qaz * qbx - qax * qbz,
+          qaz * qbw + qaw * qbz + qax * qby - qay * qbx,
+          qaw * qbw - qax * qbx - qay * qby - qaz * qbz,
+        );
+      };
+      const quaternionMethods: Record<string, (this: Quat, ...args: never[]) => unknown> = {
+        setFromAxisAngle(axis: Quat, angle: number) {
+          const half = angle / 2;
+          const s = Math.sin(half);
+          return store(this, axis.x * s, axis.y * s, axis.z * s, Math.cos(half));
+        },
+        setFromUnitVectors(from: Quat, to: Quat) {
+          const r = from.x * to.x + from.y * to.y + from.z * to.z + 1;
+          // three's epsilon (#31286): opposite vectors turn about any axis normal to `from`.
+          const [x, y, z, w] =
+            r < 1e-8
+              ? Math.abs(from.x) > Math.abs(from.z)
+                ? [-from.y, from.x, 0, 0]
+                : [0, -from.z, from.y, 0]
+              : [
+                  from.y * to.z - from.z * to.y,
+                  from.z * to.x - from.x * to.z,
+                  from.x * to.y - from.y * to.x,
+                  r,
+                ];
+          const length = Math.sqrt(x * x + y * y + z * z + w * w);
+          if (length === 0) return store(this, 0, 0, 0, 1);
+          const l = 1 / length;
+          return store(this, x * l, y * l, z * l, w * l);
+        },
+        multiply(q: Quat) {
+          return multiplyQuaternions(this, this, q);
+        },
+        premultiply(q: Quat) {
+          return multiplyQuaternions(this, q, this);
+        },
+        multiplyQuaternions(a: Quat, b: Quat) {
+          return multiplyQuaternions(this, a, b);
+        },
+      };
+      for (const [method, value] of Object.entries(quaternionMethods))
+        Object.defineProperty(prototype, method, { configurable: true, writable: true, value });
+    }
     // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
     // a holder made per read, as the V8 adapter makes it: each tail reads and writes the full path.
     const holders = new Map<string, string[]>();

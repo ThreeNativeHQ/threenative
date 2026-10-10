@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { Euler, Quaternion } from "three";
+import { Euler, Quaternion, Vector3 as ThreeVector3 } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -588,6 +588,85 @@ describe("three's math values on the browser back end", () => {
     const free = new (classes.Euler as new () => IRotation)();
     free.x = 1;
     expect(calls.at(-1)).toBe("set x");
+  });
+
+  it("runs three's quaternion math on the lanes and syncs an object's rotation as three does", () => {
+    const { runtime, calls, heap } = memoryRuntime();
+    const bytes = new Uint8Array(heap.buffer);
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      readByte: (address) => bytes[address] as number,
+      get(self, property) {
+        if (property === "__addresses") {
+          calls.push("get __addresses");
+          return { rotation: 64, quaternion: 128 };
+        }
+        if (property === "rotation") return runtime.construct("Euler", []);
+        if (property === "quaternion") return runtime.construct("Quaternion", [0, 0, 0, 1]);
+        return runtime.get(self, property);
+      },
+    });
+    interface IQuat {
+      x: number;
+      y: number;
+      z: number;
+      w: number;
+      setFromUnitVectors(from: IVec, to: IVec): IQuat;
+      setFromAxisAngle(axis: IVec, angle: number): IQuat;
+      multiply(q: IQuat): IQuat;
+      premultiply(q: IQuat): IQuat;
+    }
+    const Vector3 = classes.Vector3 as new (x?: number, y?: number, z?: number) => IVec;
+    const Quat = classes.Quaternion as new () => IQuat;
+    const lanes = (q: { x: number; y: number; z: number; w: number }) => [q.x, q.y, q.z, q.w];
+    const pairs = [
+      [0, 0, 1, 0.3, -0.5, 0.8],
+      [0, 1, 0, 0.6, 0.0, -0.8],
+      [0, 0, 1, 0, 0, -1], // opposite, |x| <= |z|
+      [1, 0, 0, -1, 0, 0], // opposite, |x| > |z|
+    ].map(([a = 0, b = 0, c = 0, d = 0, e = 0, f = 0]) => {
+      const to = new ThreeVector3(d, e, f).normalize();
+      return [new ThreeVector3(a, b, c), to] as const;
+    });
+    const group = new (classes.Group as new () => { rotation: IVec; quaternion: IQuat })();
+    const { rotation, quaternion } = group; // at 64 and 128
+    const [orderOffset = -1] = registry.classes.Euler?.fields?.__order ?? [];
+    const orders = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"] as const;
+    for (const [from, to] of pairs) {
+      const ours = [new Quat(), new Quat()];
+      const theirs = [new Quaternion(), new Quaternion()];
+      const [q, twist] = ours as [IQuat, IQuat];
+      const [tq, tTwist] = theirs as [Quaternion, Quaternion];
+      const vFrom = new Vector3(from.x, from.y, from.z);
+      const vTo = new Vector3(to.x, to.y, to.z);
+      expect(q.setFromUnitVectors(vFrom, vTo)).toBe(q);
+      expect(lanes(q)).toEqual(lanes(tq.setFromUnitVectors(from, to)));
+      expect(twist.setFromAxisAngle(vTo, 0.7)).toBe(twist);
+      expect(lanes(twist)).toEqual(lanes(tTwist.setFromAxisAngle(to, 0.7)));
+      expect(lanes(q.multiply(twist))).toEqual(lanes(tq.multiply(tTwist)));
+      expect(lanes(q.premultiply(twist))).toEqual(lanes(tq.premultiply(tTwist)));
+      // An object's own quaternion turns its rotation, in every order, at the gimbal edge too.
+      orders.forEach((order, i) => {
+        bytes[64 + orderOffset] = i;
+        const expected = new Quaternion().setFromUnitVectors(from, to);
+        quaternion.setFromUnitVectors(vFrom, vTo);
+        expect(lanes(quaternion)).toEqual(lanes(expected));
+        const turned = new Euler().setFromQuaternion(expected, order);
+        expect([rotation.x, rotation.y, rotation.z]).toEqual([turned.x, turned.y, turned.z]);
+        quaternion.setFromAxisAngle(new Vector3(0, 1, 0), Math.PI / 2);
+        const edge = new Euler().setFromQuaternion(
+          expected.setFromAxisAngle(new ThreeVector3(0, 1, 0), Math.PI / 2),
+          order,
+        );
+        expect([rotation.x, rotation.y, rotation.z]).toEqual([edge.x, edge.y, edge.z]);
+      });
+    }
+    // Each JS quaternion asks for its address once; the object answers both members' in one call.
+    expect(calls.filter((call) => /^(set|invoke) /u.test(call))).toEqual([]);
+    expect(calls.filter((call) => call.startsWith("get __address")).sort()).toEqual([
+      ...Array.from({ length: 8 }, () => "get __address"),
+      "get __addresses",
+    ]);
   });
 
   it.each(["visible", "castShadow", "receiveShadow"])(
