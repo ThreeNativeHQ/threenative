@@ -77,7 +77,11 @@ function memoryRuntime() {
       calls.push(`get ${property}`);
       if (property === "__address") return addresses.get(self.key) as number;
       // An object's members, and the one record that answers all their addresses.
-      if (property === "__addresses") return Object.fromEntries(members.get(self.key) ?? []);
+      if (property === "__addresses")
+        return Object.fromEntries([
+          ["__address", addresses.get(self.key)],
+          ...(members.get(self.key) ?? []),
+        ]);
       if (property === "position" || property === "layers") {
         const member = construct(property === "layers" ? "Layers" : "Vector3", [7, 8, 9]);
         members.set(self.key, [
@@ -434,6 +438,8 @@ describe("three's math values on the browser back end", () => {
       group[flag] = true;
       group[flag] = false;
       expect(calls.filter((call) => call.includes(flag))).toEqual([`set ${flag}`]);
+      // A group's own address comes in its `__addresses` record, which its members share.
+      expect(calls.filter((call) => call.startsWith("get __address"))).toEqual(["get __addresses"]);
     },
   );
 });

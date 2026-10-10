@@ -294,7 +294,7 @@ void registerObject3D(ClassBinding& b) {
     b.getters["__addresses"] = [](void* self) {
         auto* o = as<Object3D>(self);
         const auto at = [](const void* member) { return Value::of(double(reinterpret_cast<uintptr_t>(member))); };
-        return Value::record({{"position", at(&o->positionValue())}, {"rotation", at(&o->rotationValue())},
+        return Value::record({{"__address", at(self)}, {"position", at(&o->positionValue())}, {"rotation", at(&o->rotationValue())},
             {"quaternion", at(&o->quaternionValue())}, {"scale", at(&o->scaleValue())},
             {"up", at(&o->up)}, {"matrix", at(&o->matrixValue())}, {"matrixWorld", at(&o->matrixWorldValue())},
             {"layers", at(&o->layers())}});

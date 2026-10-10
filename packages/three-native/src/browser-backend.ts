@@ -354,16 +354,17 @@ export function defineBrowserClasses(
     const field = binding.fields?.[property];
     const read = runtime.readDoubles;
     const readByte = runtime.readByte;
+    const whole = binding.getters.includes("__addresses");
     if (field?.[1] === 0)
       return readByte === undefined
         ? undefined
         : function (this: object) {
-            return readByte(addressOf(this) + (field[0] ?? 0)) !== 0;
+            return readByte(addressOf(this, whole) + (field[0] ?? 0)) !== 0;
           };
     if (field !== undefined && read !== undefined) {
       const [offset = 0, count = 1] = field;
       return function (this: object) {
-        return read(addressOf(this) + offset, count);
+        return read(addressOf(this, whole) + offset, count);
       };
     }
     if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property))
@@ -383,13 +384,13 @@ export function defineBrowserClasses(
       };
     return undefined;
   };
-  const addressOf = (self: object): number => {
+  // `whole`: the object answers `__addresses`, whose record also holds its own `__address`.
+  const addressOf = (self: object, whole = false): number => {
     let address = addresses.get(self);
     if (address === undefined) {
       const home = within.get(self);
-      address = home
-        ? (recordOf(home[0])[home[1]] ?? (runtime.get(refOf(self), "__address") as number))
-        : (runtime.get(refOf(self), "__address") as number);
+      address = whole ? recordOf(self).__address : home ? recordOf(home[0])[home[1]] : undefined;
+      address ??= runtime.get(refOf(self), "__address") as number;
       addresses.set(self, address);
     }
     return address;
@@ -703,6 +704,7 @@ export function defineBrowserClasses(
     }
     const write = runtime.writeDouble;
     const shaped = binding.getters.includes("__shape");
+    const whole = binding.getters.includes("__addresses");
     for (const property of [...binding.getters, ...binding.members]) {
       if (
         property.includes(".") ||
@@ -752,7 +754,7 @@ export function defineBrowserClasses(
                   if (
                     readFlag !== undefined &&
                     typeof value === "boolean" &&
-                    (readFlag(addressOf(this) + (flag?.[0] ?? 0)) !== 0) === value
+                    (readFlag(addressOf(this, whole) + (flag?.[0] ?? 0)) !== 0) === value
                   )
                     return;
                   // A setter changes only its own property; the kept lookups stay.

@@ -993,7 +993,8 @@ void object_addresses() {
         if (binding.getters.count("__addresses") == 0) return;
         tn::engine::Object3D object;
         const auto at = [](const void* member) { return double(reinterpret_cast<uintptr_t>(member)); };
-        const std::map<std::string, double> expected = {{"position", at(&object.position)},
+        const std::map<std::string, double> expected = {
+            {"__address", binding.getters.at("__address")(&object).number}, {"position", at(&object.position)},
             {"rotation", at(&object.rotation)}, {"quaternion", at(&object.quaternion)}, {"scale", at(&object.scale)},
             {"up", at(&object.up)}, {"matrix", at(&object.matrix)}, {"matrixWorld", at(&object.matrixWorld)},
             {"layers", at(&object.layers())}};
