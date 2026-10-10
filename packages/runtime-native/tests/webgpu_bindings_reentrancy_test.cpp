@@ -1716,7 +1716,7 @@ bool exercisePublishedWebGPUObjects(mystral::Runtime& runtime) {
         ]);
         requireMethods("GPURenderBundleEncoder", bundle, [
             "setPipeline", "setVertexBuffer", "setIndexBuffer", "setBindGroup", "draw",
-            "drawIndexed", "finish",
+            "drawIndexed", "drawIndirect", "drawIndexedIndirect", "finish",
         ]);
         requireMethods("GPUCanvasContext", canvasContext, [
             "configure", "unconfigure", "getCurrentTexture",

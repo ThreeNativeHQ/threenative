@@ -84,8 +84,10 @@ export interface IThreeNativeAudioConfig {
 
 /** Texture compression options for the asset compile step; `"none"` ships sources verbatim. */
 export interface IThreeNativeTexturesConfig {
-  /** Integer at least 4; caps the longest edge, preserving aspect and 4x4 alignment; never upscales. */
-  readonly maxSize?: number;
+  /** Automatic compression floor; omitted fields default to SSIM 0.95 and mean ΔE00 3. */
+  readonly floor?: { readonly ssim?: number; readonly meanDeltaE00?: number };
+  /** Scalar or glTF slot map (e.g. baseColorTexture/normalTexture). Integer at least 4; caps the longest edge, preserving aspect and 4x4 alignment; never upscales. */
+  readonly maxSize?: number | Readonly<Record<string, number>>;
   readonly overrides?: readonly {
     readonly codec: "etc1s" | "none" | "uastc";
     readonly glob: string;
@@ -151,7 +153,9 @@ export interface IThreeNativeModelsConfig {
   readonly textures?:
     | "none"
     | {
-        readonly maxSize?: number;
+        readonly floor?: { readonly ssim?: number; readonly meanDeltaE00?: number };
+        /** Scalar or glTF slot map; unlisted slots retain the 2048 default. Shared images use the largest cap. */
+        readonly maxSize?: number | Readonly<Record<string, number>>;
         readonly quality?: number;
         readonly overrides?: readonly {
           readonly slot: string;
@@ -339,7 +343,8 @@ export interface IThreeNativeConfig {
      * What the native host does when the player leaves the app — presses the power button,
      * switches away, minimizes the window. `"pause"` (the default) stops running frames and
      * suspends audio until the app comes back; `"continue"` keeps rendering off-screen, which a
-     * server-shaped or split-screen game may genuinely want.
+     * server-shaped or split-screen game may genuinely want. On Android the operating system
+     * stops the app whatever this says, so `"continue"` takes effect on desktop only.
      *
      * Turning the pause off does not turn the reporting off: `TN_LIFECYCLE` markers are emitted
      * either way and name the mode that executed.

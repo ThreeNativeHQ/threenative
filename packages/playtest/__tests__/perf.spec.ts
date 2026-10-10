@@ -7,6 +7,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   assessPerfMarkers,
   formatPerfReport,
+  newestProcessLines,
   parsePerformanceMarkers,
   parsePerfArgs,
   perfCommand,
@@ -283,6 +284,20 @@ describe("parsePerfArgs", () => {
     expect(args.timeoutSeconds).toBe(180);
     expect(args.hostArgs).toEqual([]);
   });
+
+  it("refuses a value-taking flag that has no value instead of dropping it", () => {
+    expect(() => parsePerfArgs(["--executable", "host", "--host-arg"])).toThrow(/--host-arg needs a value/u);
+    expect(() => parsePerfArgs(["--file", "a.log", "--min-fps", ""])).toThrow(/--min-fps needs a number/u);
+  });
+});
+
+describe("a logcat buffer that holds an earlier launch", () => {
+  it("reads only the markers of the newest process", () => {
+    const earlier = [budgetLine(1, 12, 55, 25), budgetLine(2, 12, 55, 25)].map((line) => `I/MystralStdio( 1111): ${line}`);
+    const later = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10)].map((line) => `I/MystralStdio( 2222): ${line}`);
+    const parsed = parsePerformanceMarkers(newestProcessLines([...earlier, ...later].join("\n")));
+    expect(parsed.budgets.map(({ fps }) => fps)).toEqual([60, 60]);
+  });
 });
 
 describe("perfCommand", () => {
@@ -356,6 +371,24 @@ describe("perfCommand", () => {
     errSpy.mockRestore();
     expect(code).toBe(2);
     expect(errors.join("")).toContain("TN_PERF_MARKER_MALFORMED");
+  });
+
+  it("fails a host that exits non-zero after enough windows, even though its markers pass", async () => {
+    // Three windows cover the default two steady windows. The runner then stops the host, and the
+    // host answers that SIGTERM by exiting 139. A plain signal kill would read as the runner's own stop.
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const script = `process.on("SIGTERM", () => process.exit(139)); setInterval(() => {}, 1000); process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const code = await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script]);
+    spy.mockRestore();
+    expect(code).toBe(1);
+    const report = JSON.parse(written.join("")) as { pass: boolean; violations: Array<{ code: string; observed?: number }> };
+    expect(report.pass).toBe(false);
+    expect(report.violations).toContainEqual(expect.objectContaining({ code: "TN_PERF_HOST_EXIT", observed: 139 }));
   });
 });
 

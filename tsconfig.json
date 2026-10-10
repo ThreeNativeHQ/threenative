@@ -25,6 +25,7 @@
     "node_modules",
     "**/dist/**",
     "packages/runtime-native/scripts/**",
-    "scripts/performance-regression/labs"
+    "scripts/performance-regression/labs",
+    "examples/avbd-rigging"
   ]
 }

@@ -140,6 +140,8 @@ describe("packed frame op stream", () => {
     [34, "auto e = encoder(r.u32());", "wgpuCommandEncoderResolveQuerySet", "resolve encoder"],
     [34, "auto q = querySetFor(r.u32());", "wgpuCommandEncoderResolveQuerySet", "resolve query set"],
     [34, "auto dst = buffer(r.u32());", "wgpuCommandEncoderResolveQuerySet", "resolve destination"],
+    [35, "auto p = computePass(r.u32());", "wgpuComputePassEncoderDispatchWorkgroupsIndirect", "indirect dispatch pass"],
+    [35, "auto b = buffer(r.u32());", "wgpuComputePassEncoderDispatchWorkgroupsIndirect", "indirect dispatch buffer"],
   ];
 
   function assertReplayLookupGuards(replaySource) {
@@ -314,6 +316,7 @@ describe("packed frame op stream", () => {
       ["setPipeline", 19, [computePipeline]],
       ["setBindGroup", 20, [0, group]],
       ["dispatchWorkgroups", 21, [1]],
+      ["dispatchWorkgroupsIndirect", 35, [buffer, 0]],
       ["end", 22, []],
     ];
 
@@ -447,6 +450,7 @@ describe("packed frame op stream", () => {
     compute.setPipeline(pipeline);
     compute.setBindGroup(0, group);
     compute.dispatchWorkgroups(1);
+    compute.dispatchWorkgroupsIndirect(buffer, 0);
     compute.end();
     encoder.copyBufferToBuffer(buffer, 0, buffer, 0, 4);
     encoder.copyBufferToTexture({ buffer }, { texture }, [1, 1, 1]);

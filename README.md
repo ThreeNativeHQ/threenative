@@ -137,6 +137,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/metahuman` | MetaHuman head expressions — checksum-verified OpenRigLogic WASM evaluator and the binding-metadata asset contract |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
+| `@threenative/procedural-animals` | Baked animal payloads, runtime poses, accepted-state following, and conservative bounds |
 | `@threenative/runtime-native` | Owned C++ host for desktop and Android |
 | `@threenative/raw-unreal` | Raw Unreal editor `.uasset` static-mesh loader — UE5 FMeshDescription and UE4.18 FRawMesh, no interchange conversion |
 | `@threenative/terrain` | Optional headless Strata authoring: validated recipes, baked heightfields and indexed Three.js geometry |

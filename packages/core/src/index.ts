@@ -114,7 +114,7 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
  * @situation load assets from a nonstandard base path or a compiled asset manifest
- * @alias different props in each area
+ * @alias different area props
  * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
  * @example const assets = createAssetLoader({ basePath: "/assets" });
@@ -187,9 +187,9 @@ export type { IRandom } from "./random.js";
  * @situation register physics and gameplay plugins
  * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
  * @situation frame a camera behind the player
- * @alias firing line nearest target crosshair
+ * @alias nearest target crosshair spawns
  * @alias third-person camera
- * @alias restart the run without a page reload
+ * @alias restart run without page reload
  * @alias field of view while aiming
  * @constraint keep DOM and React mounting in src/main.ts
  * @constraint bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener
@@ -527,9 +527,13 @@ export type { IMatrixWorldReport, MatrixWorldMode } from "./matrix-world.js";
  * @situation tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp
  * @situation split a frame's draw calls and triangles per render pass (main, shadow, reflection)
  * @situation tell a shadow or reflection pass's cost from the main colour pass
+ * @situation retain every asynchronous GPU render frame for a complete paired benchmark
  * @constraint on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
  * @constraint per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main
  * @constraint GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero
+ * @constraint `ctx.renderer.observeGpuFrames({ maxFrames, maxQueries })` is opt-in, bounded and fail-closed; `take()` delivers immutable complete render-query groups once, while `status()` reports pending/undrained/queued membership and losses
+ * @constraint observation preserves ordinary sampling; a complete benchmark explicitly requests `renderer.gpuTimestampFrameInterval: 1` and joins Three query IDs to actual world renders, including separate overlay IDs
+ * @constraint `stop()` fences allocated frames and drains existing resolver work; `dispose()` invalidates late completions, and a failed observation must be disposed before replacement
  * @example defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
  */
 export {

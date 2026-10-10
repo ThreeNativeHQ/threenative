@@ -282,6 +282,14 @@ export type DepthTextureNode = ReturnType<ReturnType<typeof pass>["getTextureNod
 type ChainTier = "high" | "medium" | "low" | "off";
 type ChainContext = {
   readonly tier: ChainTier;
+  /**
+   * The sampled velocity texture, present only when this chain request provisioned one.
+   *
+   * Distinct from the accessor TRAANode wants: the chain passes the texture here and installs the
+   * accessor on the graph separately, so a stage that handed this node over as the accessor would
+   * sample a texture that no fragment stage writes.
+   */
+  readonly velocityNode?: Node;
 };
 /**
  * What a kit's `authoredStages` factory is handed. The depth node is the scene pass's, so a
@@ -290,15 +298,34 @@ type ChainContext = {
 export interface IWorldEnvironmentStageContext {
   readonly depthNode: DepthTextureNode;
   readonly tier: ChainTier;
+  /** The camera the scene pass renders with, which is the one a temporal stage must jitter. */
+  readonly camera: Camera;
 }
 
 export type ChainStage = {
   readonly name: string;
   readonly before?: string;
   readonly after?: string;
+  /**
+   * This stage reads display-referred colour — tone-mapped and sRGB-encoded — so the chain
+   * installs the graph with the renderer's automatic output transform switched off and the stage
+   * applies that transform itself (`renderOutput` from `three/tsl`).
+   *
+   * For effects authored against the picture rather than against light: a `.cube` table, an
+   * sRGB-space edge filter. Such a stage runs last and may not declare an anchor, and the chain
+   * only hands the renderer its transform back when the stage was actually refused.
+   */
+  readonly afterOutputTransform?: boolean;
   readonly available?: (context: ChainContext) => boolean | string;
   readonly dispose?: () => void;
   readonly minimumTier?: ChainTier;
+  /**
+   * A temporal stage's completed rejection measurement. Its shape is the engine's velocity
+   * contract, restated here so this file keeps importing nothing, and it is asked once per frame
+   * after rendering. A stage that has not built, or has nothing landed yet, answers `undefined` —
+   * which the chain reports as absent rather than as zero.
+   */
+  readonly rejectionMeasurement?: () => { frame: number; rejectionFraction: number } | undefined;
   /** The chain plumbing is stage-agnostic, so it names the node it carries `unknown`. */
   readonly build: (input: unknown, context: ChainContext) => unknown;
 };
@@ -352,7 +379,19 @@ export type OutputRenderer = {
   createRenderChain?: (options: {
     input?: unknown;
     worldPass?: unknown;
-    request?: { stages?: readonly string[]; tier?: ChainContext["tier"] };
+    request?: {
+      stages?: readonly string[];
+      tier?: ChainContext["tier"];
+      /**
+       * The scene pass that owns the shared velocity output, for a temporal stage to read. Its
+       * shape is the engine's velocity contract, restated here so this file keeps importing
+       * nothing: `pass(scene, camera)` returns exactly this.
+       */
+      velocity?: {
+        pass?: ReturnType<typeof pass>;
+        rejectionMeasurement?: () => { frame: number; rejectionFraction: number } | undefined;
+      };
+    };
     stages?: readonly ChainStage[];
   }) => {
     applied: { dropped: readonly { name: string; reason: string }[]; stages: readonly string[] };
@@ -769,7 +808,13 @@ export class WorldEnvironment {
     // The kit's own stages, composed after the built-ins. The factory is called with the two
     // things only this file can produce — the scene pass's depth texture and the resolved tier —
     // and returns the complete authored graph plus the subset to run.
-    stages.push(...options.authoredStages({ depthNode: depth(), tier: options.renderChainTier }));
+    stages.push(
+      ...options.authoredStages({
+        depthNode: depth(),
+        tier: options.renderChainTier,
+        camera,
+      }),
+    );
 
     // A composed base colour with every stage off still has to reach the frame. The chain
     // installs nothing for an empty stage list, so this is the one path that goes direct.
@@ -807,9 +852,23 @@ export class WorldEnvironment {
     }
 
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
+    // One stage owns the measurement, so the chain is asked for the one that published a callback
+    // rather than every stage in turn. A stage that dropped keeps answering `undefined`.
+    const rejectionMeasurement = stages.find(
+      (entry) => entry.rejectionMeasurement !== undefined,
+    )?.rejectionMeasurement;
     const chain = renderer.createRenderChain({
       input: exposed,
-      request: { stages: requested, tier: options.renderChainTier },
+      request: {
+        stages: requested,
+        tier: options.renderChainTier,
+        // Asked for on every chain and paid for only when a temporal stage is named: the chain
+        // provisions nothing while no requested stage needs velocity.
+        velocity: {
+          pass: scenePass,
+          ...(rejectionMeasurement === undefined ? {} : { rejectionMeasurement }),
+        },
+      },
       stages,
       worldPass: scenePass,
     });

@@ -313,6 +313,8 @@ async function runWindows(options: {
   const game = defineGame({
     frameBudget: {
       report: (line: string) => {
+        // The sink also receives projection, span, validation and warning lines; keep the windows.
+        if (!line.startsWith("TN_FRAME_BUDGET")) return;
         windows.push(JSON.parse(line.slice(line.indexOf("{"))) as IWindow);
       },
       reportEvery: 300,

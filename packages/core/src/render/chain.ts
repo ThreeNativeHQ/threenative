@@ -1,7 +1,14 @@
+import type { Texture } from "three";
+import { velocity as velocityAccessor } from "three/tsl";
 import type { MRTNode, Node } from "three/webgpu";
 
 import type { IFrameBudgetWindow } from "../frame-budget.js";
-import type { IRenderOutputInstallation, RenderOutputSetter, RendererKind } from "../renderer.js";
+import type {
+  IRenderOutputInstallation,
+  IRenderOutputOptions,
+  RenderOutputSetter,
+  RendererKind,
+} from "../renderer.js";
 import { VELOCITY_OUTPUT_NAME, velocityTexture, withVelocityContext } from "./velocity.js";
 import type { IVelocityRenderPass } from "./velocity.js";
 
@@ -129,6 +136,19 @@ export interface IRenderChainStage {
   readonly before?: RenderChainStageId;
   /** Place an authored stage immediately after this built-in or supplied stage. */
   readonly after?: RenderChainStageId;
+  /**
+   * This stage reads display-referred colour, so the chain installs the graph with the renderer's
+   * automatic output transform switched off and the stage applies that transform itself.
+   *
+   * Mechanism, not look. Some effects are defined against the sRGB picture — a `.cube` table, a
+   * sharpening or edge filter — and bending scene-referred light into that domain costs precision
+   * instead of buying anything: measured on an 8-bit table, a bijective log shaper costs 2–4
+   * 8-bit steps per channel against under 1 for the transform this names (PRD-492).
+   *
+   * The stage therefore runs last, and may not declare an anchor: a stage placed after it would
+   * receive display-referred colour it was not written for.
+   */
+  readonly afterOutputTransform?: boolean;
   readonly build: (input: unknown, context: IRenderChainStageContext) => unknown;
   /** Stages below this tier are named as dropped instead of silently changing the graph. */
   readonly minimumTier?: RenderChainTier;
@@ -274,6 +294,7 @@ export class RenderChain {
     undefined;
   #ownedVelocityPass: IVelocityRenderPass | undefined = undefined;
   #ownedVelocityMrt: MRTNode | null | undefined = undefined;
+  #ownedVelocityTexture: Texture | undefined = undefined;
   #disposed = false;
   #installedNode: unknown;
   #installation: IRenderOutputInstallation | undefined;
@@ -394,9 +415,16 @@ export class RenderChain {
           velocity.source === "mrt" &&
           this.#requestVelocity.pass !== undefined
         ) {
-          velocityNode = velocityTexture(this.#requestVelocity.pass);
-          this.#ownedVelocityPass = this.#requestVelocity.pass;
+          const pass = this.#requestVelocity.pass;
+          const priorTextures = [...(pass.renderTarget?.textures ?? [])];
+          velocityNode = velocityTexture(pass);
+          this.#ownedVelocityPass = pass;
           this.#ownedVelocityMrt = originalMrt;
+          if (originalMrt?.has(VELOCITY_OUTPUT_NAME) !== true)
+            this.#ownedVelocityTexture = pass.renderTarget?.textures.find(
+              (texture) =>
+                texture.name === VELOCITY_OUTPUT_NAME && !priorTextures.includes(texture),
+            );
         }
         const buildContext = stageContext(this.#tier, velocity, velocityNode);
         const next = definition.build(node, buildContext);
@@ -421,16 +449,23 @@ export class RenderChain {
     // Temporal nodes jitter the scene-side velocity node (TRAANode calls setProjectionMatrix on
     // it); the pass texture is what a stage samples, so it stays on the build context only.
     if (velocityNode !== undefined && hasActiveVelocityStage)
-      node = withVelocityContext(
-        node,
-        this.#requestVelocity.pass?.getMRT()?.get(VELOCITY_OUTPUT_NAME) ?? velocityNode,
-      );
+      // TRAANode uses context.velocity to set the unjittered projection, not to sample MRT.
+      // The sampled texture already travels to the factory via context.velocityNode.
+      node = withVelocityContext(node, velocityAccessor);
 
     if (stages.length > 0) {
       try {
+        // Only a stage that actually ran may take the transform away from the renderer; a
+        // dropped one would leave the frame untone-mapped with nothing to have applied it.
+        const outputOptions: IRenderOutputOptions[] = builtStageDefinitions.some(
+          (definition) => definition.afterOutputTransform === true,
+        )
+          ? [{ outputColorTransform: false }]
+          : [];
         const installation = this.#renderer.setOutputNode(
           node,
           this.#worldPass ?? this.#requestVelocity.pass,
+          ...outputOptions,
         );
         // Historical void-style callbacks can return an ignored value (for example Array.push).
         // Only an explicit receipt upgrades that adapter to installation ownership.
@@ -595,9 +630,20 @@ export class RenderChain {
   #restoreOwnedVelocityOutput(): void {
     if (this.#ownedVelocityPass !== undefined && this.#ownedVelocityMrt !== undefined) {
       this.#ownedVelocityPass.setMRT(this.#ownedVelocityMrt);
+      const target = this.#ownedVelocityPass.renderTarget;
+      const texture = this.#ownedVelocityTexture;
+      if (target !== undefined && texture !== undefined) {
+        const index = target.textures.indexOf(texture);
+        if (index !== -1) {
+          // Three must destroy the old GPU attachment set before the cached texture is detached.
+          target.dispose();
+          target.textures.splice(index, 1);
+        }
+      }
     }
     this.#ownedVelocityPass = undefined;
     this.#ownedVelocityMrt = undefined;
+    this.#ownedVelocityTexture = undefined;
   }
 
   #disposeActiveStages(): void {
@@ -617,13 +663,18 @@ function createStageDefinitions(
       throw new Error(`render-chain stage '${name}' needs a build function`);
     const hasBefore = stage.before !== undefined;
     const hasAfter = stage.after !== undefined;
+    if (stage.afterOutputTransform === true && (hasBefore || hasAfter)) {
+      throw new Error(
+        `render-chain stage '${name}' declares afterOutputTransform and an anchor; a stage that reads display-referred colour is last by construction, so an anchor is either ignored or wrong`,
+      );
+    }
     if (isBuiltInStageId(name)) {
       if (hasBefore || hasAfter) {
         throw new Error(
           `built-in render-chain stage '${name}' cannot declare before or after; its canonical order is fixed`,
         );
       }
-    } else if (hasBefore === hasAfter) {
+    } else if (hasBefore === hasAfter && stage.afterOutputTransform !== true) {
       throw new Error(
         `authored render-chain stage '${name}' must declare exactly one of before or after`,
       );
@@ -682,6 +733,12 @@ function resolveStageOrder(
     const definition = definitions.get(id);
     if (definition === undefined) {
       throw new Error(`render-chain stage '${id}' has no supplied definition`);
+    }
+    // The output transform's own seat. No stage may follow it, so it outranks every anchor
+    // without needing one, and it needs no anchor to be ordered.
+    if (definition.afterOutputTransform === true) {
+      ranks.set(id, RENDER_CHAIN_STAGE_ORDER.length + 1);
+      return ranks.get(id) as number;
     }
     const anchor = definition.before ?? definition.after;
     if (anchor === undefined) {

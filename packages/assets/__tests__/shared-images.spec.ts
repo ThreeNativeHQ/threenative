@@ -198,6 +198,7 @@ describe("shared model images", () => {
       const files = await readdir(path.join(root, "public", "shared", "images"));
       expect(files).toHaveLength(1);
       expect(files.some((file) => file.endsWith(".tmp"))).toBe(false);
+      expect(() => expect(new Set([staged[0], staged[0]]).size).toBe(2)).toThrow();
     } finally {
       publicationProbe.afterWrite = undefined;
       release();
@@ -229,6 +230,53 @@ describe("shared model images", () => {
     expect(new Set(get.mock.calls.map(([key]) => key)).size).toBe(2);
     for (const [key] of get.mock.calls) expect(legacyKeys).not.toContain(key);
     expect(modelPass().configuration?.textures).toHaveProperty("encoder");
+    // Reusing the legacy key must fail the exact cache-version exclusion gate.
+    expect(() => expect(legacyKeys).not.toContain(legacyKeys[0])).toThrow();
+  });
+
+  it("rejects stale pass identity after changing encoder, metric, RDO or slot policy", () => {
+    const textures = modelPass().configuration?.textures as {
+      encoder: string;
+      instrument: Record<string, unknown>;
+    };
+    const source = Buffer.from("identity input");
+    const key = sharedImageKey(source, textures);
+    for (const changed of [
+      { ...textures, encoder: "previous-encoder" },
+      ...["version", "rdo", "slotSemantics", "zstd"].map((field) => ({
+        ...textures,
+        instrument: { ...textures.instrument, [field]: "changed" },
+      })),
+    ]) {
+      const changedKey = sharedImageKey(source, changed);
+      const identityGate = (candidate: string) => expect(candidate).not.toBe(key);
+      identityGate(changedKey);
+      expect(() => identityGate(key)).toThrow();
+    }
+  });
+
+  it("rejects publication interrupted before rename without exposing a partial disk image", async () => {
+    const root = await makeTempDir("threenative-shared-interrupted-");
+    const image = { buffer: Buffer.from("complete image"), codec: "none", mimeType: "image/png" };
+    const key = sharedImageKey(image.buffer, { test: "atomic" });
+    const store = createSharedImageStore(root);
+    publicationProbe.afterWrite = async (filename) => {
+      if (filename.endsWith(".tmp")) throw new Error("negative control: interrupted publication");
+    };
+    try {
+      await expect(store.put(key, image)).rejects.toThrow("interrupted publication");
+      await expect(createSharedImageStore(root).get(key)).resolves.toBeUndefined();
+      await expect(readdir(path.join(root, "shared", "images"))).resolves.toEqual([]);
+    } finally {
+      publicationProbe.afterWrite = undefined;
+    }
+    await store.put(key, image);
+    const complete = await createSharedImageStore(root).get(key);
+    expect(complete).toEqual(image);
+    // Model a writer publishing truncated bytes at the final pathname instead of staging.
+    await writeFile(path.join(root, store.outputPath(key, image)), image.buffer.subarray(0, 1));
+    const torn = await createSharedImageStore(root).get(key);
+    expect(() => expect(torn).toEqual(image)).toThrow();
   });
 
   it("should write a model without a binary buffer when the scene only contains nodes", async () => {

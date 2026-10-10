@@ -213,4 +213,74 @@ describe("ResolutionScaler", () => {
     }
     expect(() => new ResolutionScaler({ start: 0.5, targetFps: 60 })).toThrow(/rung/u);
   });
+
+  it("judges a stalled window on its ordinary frame when that frame alone misses the budget", () => {
+    // PRD-549, Intel Iris Xe: shadow redraws stall every window (p99 ~16x p50), and the ordinary
+    // frame is still slow (p50 11 ms, GPU 25 ms against 8.33). Deferring every such window held
+    // the scale at 1.0 for the whole walk.
+    const weak = new ResolutionScaler({ targetFps: 120 });
+    weak.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    const stalledSlow = {
+      fps: 37,
+      gpuAgeFrames: 0,
+      gpuMs: 25,
+      presented: { p50: 11, p95: 60, p99: 180, max: 350 },
+    };
+    expect(weak.observe(stalledSlow)).toBeLessThan(1);
+
+    // The laptop's measured window (live11, Iris Xe): the presented median reads 7 ms because the
+    // GPU-bound frame does not show in the present interval, while the main pass is 30 ms and the
+    // window runs at 35 fps. The GPU is the evidence, not the present median.
+    const igpu = new ResolutionScaler({ targetFps: 120 });
+    igpu.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    expect(
+      igpu.observe({
+        fps: 35,
+        gpuAgeFrames: 0,
+        gpuMs: 30,
+        presented: { p50: 7, p95: 40, p99: 230, max: 900 },
+      }),
+    ).toBeLessThan(1);
+
+    // live12 on the same laptop: the last resolve at window close is 438 frames old, past
+    // `maxGpuAgeFrames`, yet the window holds 25 GPU samples of its own at a 39 ms median. Those
+    // samples are this window's, so they are fresh however late the last one resolved.
+    const lagged = new ResolutionScaler({ targetFps: 120 });
+    lagged.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    expect(
+      lagged.observe({
+        fps: 41,
+        gpu: { p50: 39, samples: 25 },
+        gpuAgeFrames: 438,
+        gpuMs: 38.9,
+        presented: { p50: 10.6, p95: 101, p99: 235, max: 900 },
+      }),
+    ).toBeLessThan(1);
+
+    // A game whose ordinary frame meets its target keeps the stall deferral: its hitches are not
+    // a frame rate, and fewer pixels would not bring them back.
+    const hitchy = new ResolutionScaler({ targetFps: 60 });
+    hitchy.observe({ fps: 60, presented: { p50: 16.6, p95: 16.7, p99: 16.7, max: 16.7 } });
+    expect(
+      hitchy.observe({
+        fps: 55,
+        gpuAgeFrames: 0,
+        gpuMs: 7,
+        presented: { p50: 16.6, p95: 17, p99: 400, max: 420 },
+      }),
+    ).toBeUndefined();
+    expect(hitchy.scale).toBe(1);
+
+    // And a stalled window is never grounds to climb, whatever its GPU says.
+    const low = new ResolutionScaler({ start: 0.72, targetFps: 120 });
+    low.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    for (let window = 0; window < 8; window += 1)
+      low.observe({
+        fps: 150,
+        gpuAgeFrames: 0,
+        gpuMs: 2,
+        presented: { p50: 6, p95: 7, p99: 90, max: 120 },
+      });
+    expect(low.scale).toBe(0.72);
+  });
 });

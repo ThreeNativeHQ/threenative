@@ -218,6 +218,9 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
     await run("tar", ["-xzf", join(archiveDirectory, archive), "-C", archiveDirectory]);
 
     const packed = join(archiveDirectory, "package");
+    expect(
+      await readFile(join(packed, "patches", "three@0.185.1-prd269-upgrade.patch"), "utf8"),
+    ).toBe(await readFile(join(coreRoot, "patches", "three@0.185.1-prd269-upgrade.patch"), "utf8"));
     const packageManifest = JSON.parse(await readFile(join(packed, "package.json"), "utf8")) as {
       scripts?: { postinstall?: string };
     };

@@ -15,6 +15,7 @@ import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
 import { modelPass } from "../src/passes/model.js";
 import { unpackGlb } from "../src/passes/shared-images.js";
+import { sine, wavClip } from "./audio-fixtures.js";
 
 const TRANSCODER = basisTranscoderPaths();
 const THREE_INSTALL = path.resolve(import.meta.dirname, "../node_modules/three");
@@ -125,8 +126,7 @@ describe("compileAssets", () => {
   it("should write a hashed output and a manifest entry when an input exists", async () => {
     const root = await makeTempDir("threenative-compile-hashed-");
     await mkdir(path.join(root, "assets"));
-    // High-entropy pixels: the PNG stays large while the fixed-rate KTX2 encode shrinks,
-    // which is what the byte assertions below pin.
+    // A permissive floor isolates hashed publication from the quality-selection tests.
     const source = rgbaPng({
       blue: (x, y) => (x * 31 + y * 17) % 256,
       green: (x, y) => (x * 7 + y * 29) % 256,
@@ -136,7 +136,11 @@ describe("compileAssets", () => {
     });
     await writeFile(path.join(root, "assets", "rock.png"), source);
 
-    const result = await compileAssets({ cwd: root, transcoder: TRANSCODER });
+    const result = await compileAssets({
+      cwd: root,
+      transcoder: TRANSCODER,
+      config: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } },
+    });
 
     expect(result.written).toBe(1);
     const manifest = JSON.parse(
@@ -225,7 +229,12 @@ describe("compileAssets", () => {
 
     // The same config, the target that can decode it: compression ships.
     await rm(path.join(root, "public"), { force: true, recursive: true });
-    await compileAssets({ cwd: root, platform: "web", transcoder: TRANSCODER });
+    await compileAssets({
+      cwd: root,
+      platform: "web",
+      transcoder: TRANSCODER,
+      config: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } },
+    });
     const webManifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
     ) as { entries: Record<string, { output: string }> };
@@ -895,6 +904,24 @@ describe("compileAssets", () => {
       );
     }
 
+    for (const maxSize of [
+      null,
+      [],
+      { baseColorTexture: 0 },
+      { normalTexture: 3 },
+      { baseColorTexture: "2048" },
+      { baseColorTexture: Number.POSITIVE_INFINITY },
+      { mask: 1024 },
+      { unknownTexture: 1024 },
+    ]) {
+      await expect(
+        compileAssets({
+          config: { textures: { maxSize } } as unknown as IAssetSourceConfig,
+          cwd: root,
+        }),
+      ).rejects.toThrow(/TN_ASSETS_CONFIG_INVALID/u);
+    }
+
     for (const value of [1, 2, 3]) {
       const tooSmallMaxSize = { textures: { maxSize: value } } as unknown as IAssetSourceConfig;
       await expect(compileAssets({ config: tooSmallMaxSize, cwd: root })).rejects.toThrow(
@@ -1215,4 +1242,50 @@ describe("compile cache", () => {
     expect(fifth.written).toBe(1);
     expect(applied).toBe(6);
   });
+});
+
+describe("manifest and per-kind pass isolation", () => {
+  it("rejects a corrupt existing manifest instead of rebuilding over it silently", async () => {
+    const root = await makeTempDir("threenative-corrupt-manifest-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets/keep.txt"), "kept");
+    await mkdir(path.join(root, "public"));
+    const config = { audio: "none", models: "none", textures: "none" } as const;
+    const manifest = path.join(root, "public/assets.manifest.json");
+
+    await writeFile(manifest, "{not json");
+    await expect(compileAssets({ cwd: root, config })).rejects.toThrow(
+      "TN_ASSETS_MANIFEST_INVALID",
+    );
+    await writeFile(manifest, JSON.stringify({ version: 2, entries: {} }));
+    await expect(compileAssets({ cwd: root, config })).rejects.toThrow(
+      "TN_ASSETS_MANIFEST_INVALID",
+    );
+  });
+
+  it("keeps a non-audio entry unchanged when only the audio options change", async () => {
+    const root = await makeTempDir("threenative-pass-isolation-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets/notes.txt"), "notes");
+    await writeFile(
+      path.join(root, "assets/tone.wav"),
+      wavClip({ frames: 4_410, sample: sine(440) }),
+    );
+    const entriesWith = async (audio: Record<string, unknown>) => {
+      await compileAssets({
+        cwd: root,
+        config: { audio, models: "none", textures: "none" } as never,
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+      );
+      return manifest.entries as Record<string, unknown>;
+    };
+
+    const before = await entriesWith({});
+    const after = await entriesWith({ seamMaxRatio: 2 });
+
+    expect(after["tone.wav"]).not.toEqual(before["tone.wav"]);
+    expect(after["notes.txt"]).toEqual(before["notes.txt"]);
+  }, 30_000);
 });

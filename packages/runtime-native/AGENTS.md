@@ -81,21 +81,22 @@ enforced contract, not a second prose-only list.
 Native bundles enter through the project's declared `threenative.nativeEntry` (default
 `src/game.ts`), which must default-export the game. `TN_NATIVE_ENTRY_MISSING` and
 `TN_NATIVE_ENTRY_NO_DEFAULT` are entry-contract failures; `TN_NATIVE_WEB_ONLY_UI` means the
-portable graph reached browser UI; `TN_NATIVE_WASM_ON_MOBILE` means Android or iOS reached
-WASM. Do not weaken these guards. Every packager stages the configured asset root (`assets.output`, default `public/`) through
+portable graph reached browser UI; `TN_NATIVE_WASM_ON_MOBILE` means iOS or Android QuickJS reached
+WASM, or Rapier/Recast WASM reached Android V8. Do not weaken these guards. Every packager stages the configured asset root (`assets.output`, default `public/`) through
 `selectManifestAssets` beside the game bundle, and a missing runtime asset must reject game startup rather than fall back to the network.
 
-**Mobile still has no qualified compressed-asset decoder path.** Android's V8 engine alone
-is not loader proof: Basis, Meshopt and Draco stay refusing stubs until their packaged paths are
-qualified. Android QuickJS and iOS JSC also have no WASM engine. The desktop build resolves and
+**Android V8 admits KTX2 and Meshopt; every other mobile codec stays refused.** The Android
+engine is the one `THREENATIVE_GRADLE_ARGS` selects (`-PthreenativeJsEngine`, default `v8`), and
+`scripts/bundle.mjs --decoders ktx2,meshopt` keeps those two real loaders (PRD-485, emulator only).
+Draco stays a refusing stub on Android. Android QuickJS and iOS JSC have no WASM engine. The desktop build resolves and
 hashes its exact package runtime before cooking; QuickJS, JSC and unknown engine probes take the
 decoder-free compiler and bundle path. The existing desktop V8 decoder path stays unchanged.
 `scripts/bundle.mjs --native-backend` selects the refusing stubs on desktop too. A compiled asset
 that needs a missing decoder is refused before packaging with `TN_NATIVE_KTX2_UNSUPPORTED` or
 `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED`, naming the asset and selected runtime. Authored KTX2,
 embedded Basis textures and shared KTX2 images are all checked. Native cook-cache keys include
-runtime identity and decoder capabilities. Full mobile artifact/cohort resolution and
-packaged-loader qualification remain open in PRD-VQ-01.
+runtime identity and decoder capabilities. iOS artifact resolution and Android Draco qualification
+remain open.
 
 ## Package boundaries
 

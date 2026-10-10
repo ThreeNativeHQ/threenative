@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 import { installCommandFor, resolveBlender } from "threenative-blender-mcp/bridge";
 
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
+import { resolveRuntimeAssetCapabilities } from "./build.js";
 import { loadConfig } from "./config.js";
 import {
   type IMcpPackage,
@@ -865,21 +866,22 @@ function assetPipelineCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   const mobileTargets = configuredTargets(snapshot).filter(
     (target) => target === "android" || target === "ios",
   );
-  if (mobileTargets.length > 0) {
-    const textures = assets.textures;
-    if (textures !== "none") {
-      details.push(
-        `TN_NATIVE_KTX2_UNSUPPORTED: assets.textures compiles textures for ${mobileTargets.join("/")}; mobile native targets require assets.textures to be "none"`,
-      );
-      status = "warn";
-    }
-    const models = assets.models;
-    if (models !== "none") {
-      details.push(
-        `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: assets.models compiles model geometry for ${mobileTargets.join("/")}; mobile native targets require assets.models to be "none"`,
-      );
-      status = "warn";
-    }
+  // Android V8 admits KTX2 and Meshopt (the same resolution `threenative build` makes).
+  const lacking = (codec: "ktx2" | "meshopt") =>
+    mobileTargets.filter((target) => !resolveRuntimeAssetCapabilities(target).decoders[codec]);
+  const noKtx2 = lacking("ktx2");
+  if (noKtx2.length > 0 && assets.textures !== "none") {
+    details.push(
+      `TN_NATIVE_KTX2_UNSUPPORTED: assets.textures compiles textures for ${noKtx2.join("/")}; that runtime requires assets.textures to be "none"`,
+    );
+    status = "warn";
+  }
+  const noMeshopt = lacking("meshopt");
+  if (noMeshopt.length > 0 && assets.models !== "none") {
+    details.push(
+      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: assets.models compiles model geometry for ${noMeshopt.join("/")}; that runtime requires assets.models to be "none"`,
+    );
+    status = "warn";
   }
   return {
     detail: details.join("; "),

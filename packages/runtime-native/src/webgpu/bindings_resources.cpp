@@ -594,6 +594,20 @@ WGPUTextureFormat stringToFormat(const std::string& format) {
     if (format == "bc6h-rgb-float") return WGPUTextureFormat_BC6HRGBFloat;
     if (format == "bc7-rgba-unorm") return WGPUTextureFormat_BC7RGBAUnorm;
     if (format == "bc7-rgba-unorm-srgb") return WGPUTextureFormat_BC7RGBAUnormSrgb;
+    // The mobile counterparts, selected when the device advertises texture-compression-etc2 or
+    // -astc (Android). Unmapped, they took the same BGRA8 fall-through as BC once did.
+    if (format == "etc2-rgb8unorm") return WGPUTextureFormat_ETC2RGB8Unorm;
+    if (format == "etc2-rgb8unorm-srgb") return WGPUTextureFormat_ETC2RGB8UnormSrgb;
+    if (format == "etc2-rgb8a1unorm") return WGPUTextureFormat_ETC2RGB8A1Unorm;
+    if (format == "etc2-rgb8a1unorm-srgb") return WGPUTextureFormat_ETC2RGB8A1UnormSrgb;
+    if (format == "etc2-rgba8unorm") return WGPUTextureFormat_ETC2RGBA8Unorm;
+    if (format == "etc2-rgba8unorm-srgb") return WGPUTextureFormat_ETC2RGBA8UnormSrgb;
+    if (format == "eac-r11unorm") return WGPUTextureFormat_EACR11Unorm;
+    if (format == "eac-r11snorm") return WGPUTextureFormat_EACR11Snorm;
+    if (format == "eac-rg11unorm") return WGPUTextureFormat_EACRG11Unorm;
+    if (format == "eac-rg11snorm") return WGPUTextureFormat_EACRG11Snorm;
+    if (format == "astc-4x4-unorm") return WGPUTextureFormat_ASTC4x4Unorm;
+    if (format == "astc-4x4-unorm-srgb") return WGPUTextureFormat_ASTC4x4UnormSrgb;
     // Integer formats, the absence of which is not a missing feature but a wrong picture. An
     // unrecognized name fell through to the BGRA8Unorm default below, so a texture three.js asked
     // to sample as `uint` came back as a float colour format, every bind group built against it
@@ -1145,8 +1159,9 @@ static js::JSValueHandle handleGpuBufferGetMappedRange(BindingsState* state, uin
                                         if (state->verboseLogging) std::cerr << "[WebGPU] getMappedRange: Buffer " << bufferId << " is not mapped" << std::endl;
                                         return state->engine->newUndefined();
                                     }
-                                    uint64_t offset = args.empty() ? 0 : (uint64_t)state->engine->toNumber(args[0]);
-                                    uint64_t rangeSize = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : bufferInfo.size - offset;
+                                    // An explicit undefined means the argument was omitted (WebGPU optional), not NaN.
+                                    uint64_t offset = args.empty() || state->engine->isUndefined(args[0]) ? 0 : (uint64_t)state->engine->toNumber(args[0]);
+                                    uint64_t rangeSize = args.size() > 1 && !state->engine->isUndefined(args[1]) ? (uint64_t)state->engine->toNumber(args[1]) : bufferInfo.size - offset;
                                     // Use wgpuBufferGetConstMappedRange for MAP_READ, wgpuBufferGetMappedRange for MAP_WRITE
                                     // Dawn requires the const version for read-only mapped buffers
                                     const void* mappedData = nullptr;
@@ -1199,10 +1214,10 @@ static js::JSValueHandle handleGpuBufferMapAsync(
                                         // GPUMapMode.READ = 1, GPUMapMode.WRITE = 2
                                         if (jsMode == 2) mode = WGPUMapMode_Write;
                                     }
-                                    uint64_t offset = args.size() > 1
+                                    uint64_t offset = args.size() > 1 && !state->engine->isUndefined(args[1])
                                         ? (uint64_t)state->engine->toNumber(args[1])
                                         : 0;
-                                    uint64_t mapSize = args.size() > 2
+                                    uint64_t mapSize = args.size() > 2 && !state->engine->isUndefined(args[2])
                                         ? (uint64_t)state->engine->toNumber(args[2])
                                         : bufferInfo.size - offset;
 

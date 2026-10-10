@@ -60,6 +60,26 @@ static js::JSValueHandle handleGpuRenderBundleEncoderDrawIndexed(BindingsState* 
                                     return state->engine->newUndefined();
 }
 
+// renderBundleEncoder.drawIndexedIndirect(indirectBuffer, indirectOffset): the GPU scene records its
+// dispatch-sized draws into bundles, so a bundle without it throws on every recorded world batch.
+static js::JSValueHandle handleGpuRenderBundleEncoderDrawIndexedIndirect(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.size() < 2) return state->engine->newUndefined();
+                                    WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                    uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
+                                    if (capturedEncoder && indirectBuffer)
+                                        wgpuRenderBundleEncoderDrawIndexedIndirect(capturedEncoder, indirectBuffer, indirectOffset);
+                                    return state->engine->newUndefined();
+}
+
+static js::JSValueHandle handleGpuRenderBundleEncoderDrawIndirect(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
+                                    if (args.size() < 2) return state->engine->newUndefined();
+                                    WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                    uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
+                                    if (capturedEncoder && indirectBuffer)
+                                        wgpuRenderBundleEncoderDrawIndirect(capturedEncoder, indirectBuffer, indirectOffset);
+                                    return state->engine->newUndefined();
+}
+
 static js::JSValueHandle handleGpuRenderBundleEncoderDraw(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
                                     if (args.empty()) return state->engine->newUndefined();
                                     uint32_t vertexCount = (uint32_t)state->engine->toNumber(args[0]);
@@ -184,6 +204,14 @@ js::JSValueHandle handleGpuDeviceCreateRenderBundleEncoder(BindingsState* state,
                             // renderBundleEncoder.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
                                 {"GPURenderBundleEncoder", "drawIndexed", 0, nullptr,
                                 makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderDrawIndexed)
+                            , jsEncoder},
+                            // renderBundleEncoder.drawIndirect(indirectBuffer, indirectOffset)
+                                {"GPURenderBundleEncoder", "drawIndirect", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderDrawIndirect)
+                            , jsEncoder},
+                            // renderBundleEncoder.drawIndexedIndirect(indirectBuffer, indirectOffset)
+                                {"GPURenderBundleEncoder", "drawIndexedIndirect", 0, nullptr,
+                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderDrawIndexedIndirect)
                             , jsEncoder},
                             // renderBundleEncoder.finish(descriptor?)
                                 {"GPURenderBundleEncoder", "finish", 0, nullptr,
@@ -656,6 +684,17 @@ static js::JSValueHandle handleGpuComputePassEncoderDispatchWorkgroups(BindingsS
                                             return state->engine->newUndefined();
 }
 
+static js::JSValueHandle handleGpuComputePassEncoderDispatchWorkgroupsIndirect(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+                                            if (args.size() < 2) return state->engine->newUndefined();
+                                            WGPUBuffer indirectBuffer = (WGPUBuffer)state->engine->getPrivateData(args[0]);
+                                            uint64_t indirectOffset = (uint64_t)state->engine->toNumber(args[1]);
+                                            if (state->registries.jsComputePass && indirectBuffer) {
+                                                wgpuComputePassEncoderDispatchWorkgroupsIndirect(state->registries.jsComputePass, indirectBuffer, indirectOffset);
+                                                if (state->verboseLogging) std::cout << "[WebGPU] DispatchWorkgroupsIndirect at offset " << indirectOffset << std::endl;
+                                            }
+                                            return state->engine->newUndefined();
+}
+
 static js::JSValueHandle handleGpuComputePassEncoderSetBindGroup(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                                             if (args.size() < 2) return state->engine->newUndefined();
                                             uint32_t index = (uint32_t)state->engine->toNumber(args[0]);
@@ -721,6 +760,10 @@ static js::JSValueHandle handleGpuCommandEncoderBeginComputePass(BindingsState* 
                                     // computePass.dispatchWorkgroups(countX, countY?, countZ?)
                                                                             {"GPUComputePassEncoder", "dispatchWorkgroups", 0, nullptr,
                                         &handleGpuComputePassEncoderDispatchWorkgroups
+                                    , jsComputePass},
+                                    // computePass.dispatchWorkgroupsIndirect(indirectBuffer, indirectOffset)
+                                                                            {"GPUComputePassEncoder", "dispatchWorkgroupsIndirect", 0, nullptr,
+                                        &handleGpuComputePassEncoderDispatchWorkgroupsIndirect
                                     , jsComputePass},
                                     // computePass.end()
                                                                             {"GPUComputePassEncoder", "end", 0, nullptr,

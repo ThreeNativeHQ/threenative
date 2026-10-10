@@ -42,6 +42,7 @@ function harness() {
       }),
     }),
     ground: { dispose: vi.fn() },
+    water: { lakes: 1, rivers: 1 },
     colliders: { active: 198, detach: vi.fn() },
   };
   const addForest = vi.fn(async () => forest);
@@ -110,9 +111,9 @@ function harness() {
     beforeRender: (callback: () => void) => callbacks.push(callback),
   };
   type Fixture = {
-    load(ctx: typeof ctx): Promise<void>;
-    enter(ctx: typeof ctx): void;
-    update(ctx: typeof ctx, dt: number): void;
+    load(context: typeof ctx): Promise<void>;
+    enter(context: typeof ctx): void;
+    update(context: typeof ctx, dt: number): void;
     exit(): void;
   };
   const Forest = exports.Forest as new () => Fixture;

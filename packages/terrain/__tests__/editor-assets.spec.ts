@@ -48,7 +48,7 @@ async function api(assetLimits?: { maxBytes?: number }) {
       editor,
       {
         name: "test-editor-page",
-        configureServer(vite) {
+        configureServer(vite: ViteDevServer) {
           vite.middlewares.use((req, res, next) => {
             if (req.url !== "/terrain-editor/") return next();
             res.setHeader("content-type", "text/html");

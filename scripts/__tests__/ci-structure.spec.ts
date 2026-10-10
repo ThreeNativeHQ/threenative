@@ -1668,6 +1668,22 @@ describe("CI pipeline structure", () => {
     expect(verifier).toBeGreaterThan(sdk);
   });
 
+  // A clean-room-only dispatch re-proves the published cohort without a publish: it must never
+  // reach `gates` or `publish`, and the clean room must still run after a real publish succeeds.
+  it("runs the clean room alone on a clean_room_only dispatch, never the publish", async () => {
+    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
+    const jobs = jobSections(npm);
+    const gates = jobs.find(([job]) => job === "gates")?.[1];
+    const cleanRoom = jobs.find(([job]) => job === "clean-room")?.[1];
+    expect(npm).toMatch(/clean_room_only:\n(?: {8}.+\n)*? {8}default: false/u);
+    expect(gates).toContain("if: inputs.clean_room_only != true");
+    expect(cleanRoom).toContain("inputs.clean_room_only == true");
+    // The desktop prebuilt links the overlay webview; without it doctor and native exit 127.
+    expect(cleanRoom).toContain("libwebkit2gtk-4.1-0");
+    expect(cleanRoom).toContain("needs.publish.result == 'success'");
+    expect(cleanRoom).toContain("!cancelled()");
+  });
+
   it("requires native release CI to be a successful push on main", async () => {
     const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
     const gates = jobSections(native).find(([job]) => job === "gates")?.[1];

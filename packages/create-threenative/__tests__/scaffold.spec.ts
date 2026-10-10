@@ -172,6 +172,11 @@ const BUG_REPORT_SKILL_PATHS = [
 // docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
 // Current develop c18a42b integration: all13 actual generated trees were byte-compared
 // against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
+// Recomputed in the isolated PR398 lane for linear coverage blending and coherent input moments;
+// actual no-install generation changes only starter. All thirteen generator hashes were measured.
+// Recomputed for the additional matched-surface depth guard; all other twelve stay unchanged.
+// Recomputed for bounded integer depth donors; actual no-install generation changes only starter.
+// Recomputed after existing temporal declarations moved; all thirteen trees measured, only starter moves.
 // Re-measured on current develop plus TS7: restoring only each compiler manifest and
 // rain's shader API import recovers all 13 develop fingerprints.
 // PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
@@ -220,20 +225,24 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
   // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
   // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
-  "action-rpg": "50af94a62c41f25ece2bb72b875b1b1cd3893729d449076a7cdcebebfc0bea0d",
-  minimal: "3dcbb219d6eee5062776b79e099c865304600f9e386b7f07f38cd3a57d508d4b",
-  platformer: "3929c2a00be948484d98310b243c063f71fe67dde1624829349e62bd02ccebd5",
-  puzzle: "dc2422df6244993cb210c6d7d80e9a88c22813e91e1acd76ab4012b37231cee1",
-  racing: "14239087e9ffbe4930c0dd7dc674ab3d840003362ebf8c7ffd0cc69129df51eb",
-  rain: "d184a5c63eddf7892089523a8f84fa6f3224fe380539b4e0fc85e33feb597d53",
-  rts: "c97e2dccf9d465aeadc893e695ae72d32eeba461ff91bdf75cde003e384b0717",
-  runner: "5454cc8a6d5e9ed6e9fb1e15f1156ddaca7cc1d6dd0cb2ebf22ad610259137c6",
+  // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
+  // merged Three patch changes every kit; starter also carries the merged render source.
+  // Recomputed 2026-10-09 on the merge of develop (31 commits, PRD-494 sharded bundles) into the
+  // strata branch: measured through createProject on the merged tree.
+  "action-rpg": "4f3fc59d0968f66a943458c44c93cb5cfeaa6806099d02a28962aa166f247289",
+  minimal: "1e93fe009432283d08630395d03e80cbc08491f840d002ab6f7f6f38a94347ee",
+  platformer: "4eee373e68444718da5fc8dc2139741ae8a3cf6926edf7eb6cbe9dffa6f08bdf",
+  puzzle: "360adf72ec0dfb09d97f3d59aadf1cbed5f66ff860783ec476438463b45492a4",
+  racing: "f8e92b3ffe32f33f139edf08da70fc62c2b4a2aaca100a8f3f42bc8c0f3eab7a",
+  rain: "5a9ed126758973499fdea015ef67d3ae836474a14b39d7dc23146eb58d72eb39",
+  rts: "28ee9b2f8edffb877350f32e4e2a3981a127b8d7198c91804c422e573f103e29",
+  runner: "deed79b7bb247e14b071502978cc16c5e6a9553ce53dd2f90142fe4d3c1bb098",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "1e6bab25d173fb6aac8fce2d257b014e356a276f67c0fc6cab7b11d6e8e5b324",
-  shooter: "c313b0d98896e5809536a662a364118e74d6d86e3b2bf0da0a0eb67c61649e7c",
-  snow: "a05dee4dc202dc50baa00ec5e0157c9b8ef54c04b7dc21f3413bac45e2ecdbfa",
-  starter: "74ba367a151bb154e3c76c1d88beee773ccb0d6d150a559ca6746c099109301c",
-  "tower-defense": "15917c9202a3d7eee228f76711b8952775f9e10c9379a4c4463de72c4cf73da9",
+  sailing: "c4d3209511daa8a674ce717b84586f4d45c7da3d529944b5a856bf96f8b48d3f",
+  shooter: "8d7a54b4ac68e0ceea625aaa1c127f49be84e6695542b1a57ba74f0ab4724089",
+  snow: "4b4a6fa0007a0f9a8b7f951ae7c1f4554bbc822c3a3642b7d7548da3ba7368e7",
+  starter: "566ef1096074cc45a356cfb056a9a4f51ec3792d003190c53decd352bceca6e1",
+  "tower-defense": "24385a8e97412f8e1f6feeca4954f9c5f49979d9e299c4f4d5584af6607032f1",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -333,6 +342,17 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
+  "src/render/temporalAA.ts",
+  "src/render/temporalAAInput.ts",
+  "src/render/temporalAAResolve.ts",
+  "src/render/temporalCurrentArea.ts",
+  "src/render/temporalCurrentFootprint.ts",
+  "src/render/temporalCurrentFootprintMath.ts",
+  "src/render/temporalCurrentProducer.ts",
+  "src/render/temporalCurrentReplay.ts",
+  "src/render/temporalCurrentSelection.ts",
+  "src/render/temporalCurrentVisibility.ts",
+  "src/render/temporalResolve.ts",
   "src/render/exposure.ts",
   "src/render/autoExposure.ts",
   "src/render/volumetricFog.ts",
@@ -810,18 +830,19 @@ describe("create-threenative", () => {
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,
       });
-      const channel = (x: number, y: number, shift: number): number => {
+      // Gradients with ±3 levels of noise resist PNG compression without violating PRD-351's quality floor like pure noise.
+      const noise = (x: number, y: number, shift: number): number => {
         let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
         value ^= value >>> 16;
-        return value >>> shift;
+        return ((value >>> shift) % 7) - 3;
       };
       await writeFile(
         path.join(root, "assets", "web-codec-proof.png"),
         rgbaPng({
-          blue: (x, y) => channel(x, y, 16),
-          green: (x, y) => channel(x, y, 8),
+          blue: (x, y) => 48 + Math.floor((x + y) / 2) + noise(x, y, 16),
+          green: (x, y) => 48 + y + noise(x, y, 8),
           height: 128,
-          red: (x, y) => channel(x, y, 0),
+          red: (x, y) => 48 + x + noise(x, y, 0),
           width: 128,
         }),
       );

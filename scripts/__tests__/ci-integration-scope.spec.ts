@@ -146,6 +146,7 @@ describe("integration work applies to the changed source", () => {
   it("retains shared playtest and workspace action consumers", () => {
     expect(select(workflow, ["packages/playtest/src/capture.ts"])).toEqual({
       ...none,
+      velocity: true,
       "world-capture": true,
       decals: true,
       tone: true,
@@ -197,6 +198,18 @@ describe("integration work applies to the changed source", () => {
         select(workflow, [`packages/create-threenative/template-assets/${name}.ts`]).tone,
       ).toBe(true);
     }
+  });
+  it.each(["temporal", "velocity"])("selects %s alone for its workflow job edit", (lane) => {
+    expect(select(workflow.replace(`    name: ${lane}\n`, `    name: ${lane} proof\n`))).toEqual({
+      ...none,
+      [lane]: true,
+    });
+  });
+  it.each([
+    ["packages/create-threenative/templates/starter/src/render/temporalAA.ts", "temporal"],
+    ["examples/abyss-framework/src/render/velocityCost.ts", "velocity"],
+  ])("routes the temporal consumer %s to %s", (file, lane) => {
+    expect(select(workflow, [file])).toEqual({ ...none, [lane]: true });
   });
   it("does not run product integration for unrelated CI or inert docs", () => {
     expect(
@@ -620,6 +633,39 @@ describe("fluid CI observer ownership", () => {
 });
 
 describe("reviewed producer and independent feature boundaries", () => {
+  it.each(["Area", "Footprint", "FootprintMath", "Producer", "Replay", "Selection", "Visibility"])(
+    "routes isolated temporalCurrent%s edits to temporal alone",
+    (suffix) => {
+      const file = `packages/create-threenative/templates/starter/src/render/temporalCurrent${suffix}.ts`;
+      expect(select(workflow, [file])).toEqual({ ...none, temporal: true });
+      expect(select(workflow, [file.replace(".ts", ".txt")])).toEqual(none);
+    },
+  );
+  it("routes an isolated rejection-counter edit to its temporal evidence lane", () => {
+    const file =
+      "packages/create-threenative/templates/starter/src/render/temporalRejectionCounter.ts";
+    expect(select(workflow, [file])).toEqual({ ...none, temporal: true });
+  });
+  it("registers temporal and velocity as workspace producer consumers", () => {
+    for (const file of ["packages/core/tsup.config.ts", "packages/playtest/package.json"]) {
+      const lanes = select(workflow, [file]);
+      expect(lanes.temporal, file).toBe(true);
+      expect(lanes.velocity, file).toBe(true);
+      expect(lanes.csg, file).toBe(false);
+      expect(lanes.ik, file).toBe(false);
+      expect(lanes.vegetation, file).toBe(false);
+    }
+  });
+  it("keeps independent terrain and animation modules outside temporal and velocity", () => {
+    for (const file of [
+      "packages/core/src/terrain-jobs-worker.ts",
+      "packages/core/src/animation.ts",
+    ]) {
+      const lanes = select(workflow, [file]);
+      expect(lanes.temporal, file).toBe(false);
+      expect(lanes.velocity, file).toBe(false);
+    }
+  });
   it("registers animation as a workspace producer consumer", () => {
     for (const file of ["packages/core/tsup.config.ts", "packages/playtest/package.json"]) {
       const lanes = select(workflow, [file]);

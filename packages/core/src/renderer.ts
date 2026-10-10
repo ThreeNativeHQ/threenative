@@ -1,17 +1,35 @@
-import type { BufferGeometry, Camera, Object3D, Texture } from "three";
-import { type PassNode, RenderPipeline } from "three/webgpu";
+import type { BufferGeometry, Camera, DepthTexture, Object3D, Texture } from "three";
+import {
+  type PassNode,
+  ReadbackBuffer,
+  RenderPipeline,
+  type StorageBufferAttribute,
+} from "three/webgpu";
+import { ComputeTimingScopes, type IComputeTimingReceipt } from "./compute-timing.js";
 import type { IFrameSurfaceState } from "./frame-budget.js";
+import {
+  GpuFrameObservation,
+  type IGpuFrameObservation,
+  type IGpuFrameObservationOptions,
+} from "./gpu-frame-observation.js";
 import {
   type IPipelineCensus,
   type PipelineCensus,
   createPipelineCensus,
 } from "./pipeline-census.js";
+import type { ITimestampQueryPool } from "./render-pass-budget.js";
 import { AlphaAntialiasing, type IAlphaAntialiasingReport } from "./render/alpha-antialiasing.js";
 import {
   type IRenderChainBudgetWindow,
   type IRenderChainOptions,
   RenderChain,
 } from "./render/chain.js";
+
+import {
+  type IStorageBufferLease,
+  type IStorageBufferSource,
+  StorageBufferLeases,
+} from "./storage-buffer.js";
 
 export type RendererKind = "webgpu" | "webgl2";
 
@@ -21,10 +39,22 @@ export interface IRenderOutputInstallation {
   dispose(): void;
 }
 
+/**
+ * Where the transform goes when a stage does the renderer's job for it. The chain passes
+ * `false` only when a stage that read display-referred colour actually ran.
+ */
+export interface IRenderOutputOptions {
+  readonly outputColorTransform?: boolean;
+}
+
 /** Union of callbacks preserves TypeScript's legacy void-callback return-value compatibility. */
 export type RenderOutputSetter =
-  | ((node: unknown, worldPass?: unknown) => void)
-  | ((node: unknown, worldPass?: unknown) => IRenderOutputInstallation);
+  | ((node: unknown, worldPass?: unknown, options?: IRenderOutputOptions) => void)
+  | ((
+      node: unknown,
+      worldPass?: unknown,
+      options?: IRenderOutputOptions,
+    ) => IRenderOutputInstallation);
 
 type WarmableSurface = {
   clone: () => WarmableSurface;
@@ -161,7 +191,14 @@ export interface IRendererLike {
    * exposes the same four `adapter.info` fields, so the same read works on every target.
    */
   readonly softwareAdapter?: string;
-  compute(node: unknown): void;
+  /** Advances the GPU sample once before a presented frame's simulation and render passes. */
+  beginFrame?(): void;
+  compute(node: unknown, span?: "depthPyramid"): void;
+  /** Opt-in synchronous dispatch scope; consumes exact Three-owned query UID membership once resolved. */
+  computeTiming?(
+    operation: () => unknown,
+    options?: { readonly maxCalls?: number },
+  ): IComputeTimingReceipt;
   /**
    * Creates the GPU buffers these geometries draw from, through the backend's own attribute path,
    * and reports how many it created.
@@ -173,6 +210,23 @@ export interface IRendererLike {
    * draw uploads exactly as it did before.
    */
   uploadAttributes?(geometries: Iterable<BufferGeometry>): number;
+  /** Exclusive Float32 vec4 storage on the existing WebGPU device; release its receipt on scene exit. */
+  storageBuffer?(attribute: StorageBufferAttribute): IStorageBufferLease;
+  /**
+   * Copies one streamed subtree's textures to the device, through three's own texture path, and
+   * reports how many it took.
+   *
+   * The same argument as `uploadAttributes`, one resource class over: `compileAsync` builds
+   * pipelines, not pixels, so a streamed chunk's textures reach the device inside `_renderObjectDirect`
+   * on the frame the chunk first draws. On a Machinefall map-walk with three's internals counted per
+   * render, that was 87 ms of a 94 ms first draw in one frame, 79 ms of 131 ms in another, and 519 ms
+   * in a third — 10 renders of 19,000 hold the whole 2,574 ms the run spends on first draws.
+   * `Textures.updateTexture` returns early when the texture is already at its current version, so this
+   * is a move rather than a second upload, and a material the world shares with what is already on
+   * screen costs one call and no work. WebGPU only — the WebGL fallback has no seam here — and
+   * absent or throwing answers 0, so the first draw uploads exactly as it did before.
+   */
+  uploadTextures?(object: Object3D): number;
   /**
    * Prepares unique cold compressed textures before their first compile or draw. WebGPU uses
    * one upload lane, a measured 2 ms budget and at most 64 KiB per write; one final write may
@@ -195,9 +249,26 @@ export interface IRendererLike {
    * must cast through `.raw` to read its own simulation will either not read it or read it wrong.
    * The copy is asynchronous by nature — the caller gets the bytes some frames after the frame
    * that produced them, and `GPUReadback` is what turns that latency into a reported number
-   * instead of a silent one.
+   * instead of a silent one. Pass a public ReadbackBuffer to own staging cleanup on rejected maps;
+   * the returned bytes are copied before the caller disposes that target in finally.
    */
-  readback(attribute: unknown): Promise<ArrayBuffer>;
+  readback(attribute: unknown, target?: ReadbackBuffer): Promise<ArrayBuffer>;
+  /**
+   * The scene pass's stored depth attachment and sample count, from an authored pass or three's
+   * internal framebuffer target. `undefined` when neither has rendered a depth to read.
+   *
+   * Optional because a backend that cannot render into a target of its own has no scene-pass depth to
+   * hand over. A cull reads this every dispatch: on the frame it answers, the texture holds what the
+   * previous frame's pass wrote, because this is asked before the frame draws.
+   */
+  scenePassDepth?():
+    | {
+        readonly texture: DepthTexture;
+        readonly width: number;
+        readonly height: number;
+        readonly samples?: number;
+      }
+    | undefined;
   render(scene: Object3D, camera: Camera): void;
   /** Draws after the world without clearing or passing through the world's output pipeline. */
   renderOverlay(scene: Object3D, camera: Camera): void;
@@ -241,6 +312,14 @@ export interface IRendererLike {
    */
   gpuFrameSample?(): { readonly frame: number; readonly ms: number } | undefined;
   /**
+   * Observes complete allocated render-query groups without changing ordinary sampling.
+   * Frame IDs are Three query IDs, including any overlay draws; callers map world callbacks.
+   * Capacities bound undrained, pending and queued membership. maxQueries counts timestamp
+   * slots (two per pass). A failed receipt is sticky and must be disposed before replacement.
+   * Requires timestamp-capable WebGPU and its existing asynchronous resolver.
+   */
+  observeGpuFrames?(options: IGpuFrameObservationOptions): IGpuFrameObservation;
+  /**
    * GPU milliseconds of the last resolved compute frame, when the adapter reports one.
    *
    * The compute pool is a separate series from the render pool and `resolveGpuFrame` resolves it,
@@ -249,6 +328,8 @@ export interface IRendererLike {
    * frame that ran no compute.
    */
   gpuComputeMs?(): number | undefined;
+  /** Consume one fresh timestamped pyramid build, including its depth resolve; absent until resolved. */
+  gpuPyramidMs?(): number | undefined;
   /**
    * The main render pass's GPU milliseconds, smoothed over fresh resolved samples, or `undefined`
    * while no reading is fresh.
@@ -265,6 +346,14 @@ export interface IRendererLike {
    * frame by `game.ts`; `ms` is `undefined` when the frame attributed no main-pass reading.
    */
   noteGpuMainMs?(ms: number | undefined, frame?: number): void;
+  /**
+   * The frame rate the game resolved as its target (`resolveTargetFps`), or `undefined` before one
+   * is known or when it is uncapped. Budgets that are a share of a frame read it, so a frame that ran
+   * faster than the target does not shrink what the next one may spend.
+   */
+  targetFps?(): number | undefined;
+  /** Records the resolved target; called by `game.ts` when it resolves or retargets. */
+  noteTargetFps?(fps: number): void;
   /** Starts a resolve of the GPU timestamps for the frames drawn since the last call. */
   resolveGpuFrame(): void;
   /**
@@ -333,7 +422,7 @@ export interface IRendererOptions {
   webgl2Factory?: (canvas: HTMLCanvasElement, options: Readonly<{ antialias: boolean }>) => unknown;
 }
 
-type RendererInstance = {
+type RendererInstance = IStorageBufferSource & {
   autoClear?: boolean;
   /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
   info?: {
@@ -343,6 +432,7 @@ type RendererInstance = {
   };
   backend?: {
     trackTimestamp?: boolean;
+    timestampQueryPool?: Record<string, ITimestampQueryPool | null>;
     /** The backend's own attribute creation, which a compile does not do. */
     createAttribute?: (attribute: unknown) => void;
     createIndexAttribute?: (attribute: unknown) => void;
@@ -367,7 +457,10 @@ type RendererInstance = {
     options: { budgetMs: number; maxBytesPerWrite: number; signal: AbortSignal },
   ) => Promise<void>;
   compute?: (node: unknown) => void;
-  getArrayBufferAsync?: (attribute: unknown) => Promise<ArrayBuffer>;
+  getArrayBufferAsync?: (
+    attribute: unknown,
+    target?: ReadbackBuffer,
+  ) => Promise<ArrayBuffer | ReadbackBuffer>;
   render: (scene: Object3D, camera: Camera) => void;
   setSize: (width: number, height: number, updateStyle?: boolean) => void;
   dispose?: () => void;
@@ -450,17 +543,18 @@ function wrapRenderer(
   let compileCount = 0;
   let disposed = false;
   const texturePreparations = new Set<AbortController>();
+  const storageBuffers = new StorageBufferLeases(() => raw);
+  let computeTimings: ComputeTimingScopes | undefined;
   let pendingScale: { scale: number; source: "auto" | "auto-pinned" } | undefined;
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
   let timestampFrame = -1;
+  let timestampFramesManaged = false;
+  const pyramidQueries: string[][] = [];
+  let gpuObservation: GpuFrameObservation | undefined;
+  let gpuObservationGeneration = 0;
   const setTimestampTracking = (): void => {
-    // Three writes `info.frame` only inside its own animation loop, which the engine deliberately
-    // does not run -- the game drives frames through here -- so it sat at 0 for the whole session.
-    // Everything downstream reads it: this sampler derived its frame from it, `0 % 8 === 0`
-    // recorded a timestamp on *every* frame, the 2048-query pool filled in ~38 frames and every
-    // later read was null (~15 timestamps in a 300-frame window that had asked for 37), and three
-    // keys each query uid by it, so the per-pass split filed every uid under one hot frame id. The
-    // engine owns the cadence, so the engine is what advances the clock.
+    // Three advances info.frame only in its own animation loop, which we do not run.
+    // Advance once per presented frame: compute, world and overlay share its sample and query id.
     timestampFrame += 1;
     const rawInfo = (raw as { info?: { frame: number } | null }).info;
     if (rawInfo !== undefined && rawInfo !== null) rawInfo.frame = timestampFrame;
@@ -549,6 +643,7 @@ function wrapRenderer(
   const mainSmoothing = 0.5;
   const mainStaleLimit = 8;
   let gpuMainEma: number | undefined;
+  let targetFps: number | undefined;
   let gpuMainStaleFrames = 0;
   let gpuMainLastFrame: number | undefined;
   const noteGpuMainMs = (ms: number | undefined, frame?: number): void => {
@@ -587,8 +682,31 @@ function wrapRenderer(
       return frame - sample.frame;
     },
     gpuFrameSample,
+    observeGpuFrames: (options) => {
+      if (
+        disposed ||
+        kind !== "webgpu" ||
+        !timestampCapable ||
+        typeof raw.resolveTimestampsAsync !== "function"
+      )
+        throw new Error("TN_GPU_FRAME_OBSERVATION_UNSUPPORTED");
+      if (gpuObservation !== undefined && gpuObservation.status().state !== "disposed")
+        throw new Error("TN_GPU_FRAME_OBSERVATION_ALREADY_ACTIVE");
+      gpuObservation = new GpuFrameObservation(
+        ++gpuObservationGeneration,
+        timestampFrame + 1,
+        () => raw.backend?.timestampQueryPool?.render,
+        () => timestampFrame,
+        options,
+      );
+      return gpuObservation;
+    },
     gpuMainMs: () => gpuMainEma,
     noteGpuMainMs,
+    targetFps: () => targetFps,
+    noteTargetFps: (fps: number) => {
+      targetFps = Number.isFinite(fps) && fps > 0 ? fps : undefined;
+    },
     gpuComputeMs: () => {
       const timestamp = raw.info?.compute?.timestamp;
       // Three writes `0` before the first resolve and on a failed one, so a non-positive value is
@@ -597,12 +715,28 @@ function wrapRenderer(
         ? timestamp
         : undefined;
     },
+    gpuPyramidMs: () => {
+      const timestamps = raw.backend?.timestampQueryPool?.compute?.timestamps;
+      if (timestamps === undefined) return undefined;
+      for (const [index, uids] of pyramidQueries.entries()) {
+        const values = uids.map((uid) => timestamps.get(uid));
+        if (values.some((ms) => ms === undefined || !Number.isFinite(ms) || ms < 0)) continue;
+        pyramidQueries.splice(index, 1);
+        return values.reduce<number>((sum, ms) => sum + (ms ?? 0), 0);
+      }
+      return undefined;
+    },
     resolveGpuFrame: () => {
       // Fire and forget: a rejected resolve means this adapter has no timestamps, which is a
       // reported absence rather than a frame-time error.
       const resolveTimestampsAsync = raw.resolveTimestampsAsync;
       if (resolveTimestampsAsync === undefined) return;
+      const observationBatch =
+        gpuObservation !== undefined && raw.backend?.trackTimestamp === true
+          ? gpuObservation.capture()
+          : undefined;
       void resolveTimestampsAsync.call(raw)?.catch(() => undefined);
+      gpuObservation?.submitted(observationBatch);
       // Three maintains independent 2,048-query pools for render and compute passes. Resolving
       // only the default render pool lets GPU simulations exhaust the compute pool even when the
       // render pool is healthy, after which the adapter can be lost instead of merely reporting
@@ -747,12 +881,32 @@ function wrapRenderer(
         }
       }
     },
-    compute: (node) => {
+    beginFrame: () => {
+      timestampFramesManaged = true;
+      setTimestampTracking();
+    },
+    compute: (node, span) => {
       if (kind !== "webgpu") throw new Error(`compute is unavailable on the ${kind} renderer.`);
       if (typeof raw.compute !== "function")
         throw new Error("webgpu renderer does not expose compute().");
-      setTimestampTracking();
+      // As a standalone draw: a caller that does not manage frames with beginFrame() gets one
+      // sampler frame per dispatch, which is what the compute timing scope keys its calls by.
+      if (!timestampFramesManaged) setTimestampTracking();
+      const backend = raw.backend;
+      const before = backend?.timestampQueryPool?.compute?.queryOffsets?.size ?? 0;
       raw.compute(node);
+      if (span === "depthPyramid") {
+        const offsets = backend?.timestampQueryPool?.compute?.queryOffsets;
+        const uids = offsets === undefined ? [] : [...offsets.keys()].slice(before);
+        if (uids.length > 0) pyramidQueries.push(uids);
+        // Match the render-pass recorder's bounded query retention on a stalled resolve.
+        if (pyramidQueries.length > 64) pyramidQueries.shift();
+      }
+    },
+    computeTiming: (operation, options) => {
+      if (disposed) throw new Error("TN_COMPUTE_TIMING_STALE: renderer disposed.");
+      computeTimings ??= new ComputeTimingScopes(() => raw);
+      return computeTimings.capture(operation, options);
     },
     uploadAttributes: (geometries) => {
       const backend = kind === "webgpu" ? raw.backend : undefined;
@@ -810,18 +964,113 @@ function wrapRenderer(
         signal?.removeEventListener("abort", abort);
       }
     },
-    readback: async (attribute) => {
+    scenePassDepth: () => {
+      // Three's implicit depth is in Textures.updateRenderTarget's data, not target.depthTexture.
+      // Never fall through to presentation depth: the output blit does not draw the world there.
+      // Read the existing attachment without creating a target or claiming texture bookkeeping.
+      const host = raw as {
+        needsFrameBufferTarget?: boolean;
+        _getFrameBufferTarget?: () => {
+          depthTexture?: DepthTexture | null;
+          samples?: number;
+        } | null;
+        _textures?: { get(t: unknown): { depthTexture?: DepthTexture | null } };
+      };
+      const target =
+        outputPass?.renderTarget ??
+        (host.needsFrameBufferTarget === true ? host._getFrameBufferTarget?.() : undefined);
+      if (!target) return undefined;
+      const texture = host._textures?.get(target).depthTexture ?? target.depthTexture;
+      if (!texture) return undefined;
+      const width = texture.image.width ?? 0;
+      const height = texture.image.height ?? 0;
+      if (width < 2 || height < 2) return undefined;
+      return { height, texture, width, samples: Math.max(1, target.samples ?? 1) };
+    },
+    uploadTextures: (object) => {
+      // three's own texture path, not the backend's: `Textures.updateTexture` owns the bookkeeping
+      // (`initialized`, `generation`, the bind groups to invalidate) that is what makes the first draw
+      // skip the upload, and a backend call without it would upload twice.
+      const textures = (raw as { _textures?: { updateTexture?: (t: unknown, o: object) => void } })
+        ._textures;
+      if (kind !== "webgpu" || typeof textures?.updateTexture !== "function") return 0;
+      const pending = new Set<unknown>();
+      object.traverse((node) => {
+        const material = (node as { material?: unknown }).material;
+        if (material === undefined || material === null) return;
+        for (const entry of Array.isArray(material) ? material : [material]) {
+          if (typeof entry !== "object" || entry === null) continue;
+          // A material's texture slots are own enumerable values and a `ShaderMaterial`'s live ones
+          // are in `uniforms`; both are found by reading the value and asking whether it is a texture.
+          for (const value of Object.values(entry as Record<string, unknown>)) {
+            if ((value as { isTexture?: boolean } | null)?.isTexture === true) pending.add(value);
+          }
+          for (const uniform of Object.values(
+            (entry as { uniforms?: Record<string, { value?: unknown }> }).uniforms ?? {},
+          )) {
+            if ((uniform?.value as { isTexture?: boolean } | null)?.isTexture === true)
+              pending.add(uniform.value);
+          }
+        }
+      });
+      let created = 0;
+      try {
+        for (const texture of pending) {
+          // `updateTexture` fills width, height, mip levels and the image list into the options it is
+          // handed, so each texture needs an object of its own.
+          textures.updateTexture?.(texture, {});
+          created += 1;
+        }
+      } catch {
+        // A device that will not take the texture takes it on the frame that needs it, where the
+        // error belongs.
+      }
+      return created;
+    },
+    storageBuffer: (attribute) => storageBuffers.allocate(attribute),
+    readback: async (attribute, target) => {
       if (kind !== "webgpu") throw new Error(`readback is unavailable on the ${kind} renderer.`);
       if (typeof raw.getArrayBufferAsync !== "function")
         throw new Error("webgpu renderer does not expose getArrayBufferAsync().");
-      return raw.getArrayBufferAsync(attribute);
+      if (
+        target !== undefined &&
+        (!(target instanceof ReadbackBuffer) ||
+          !Number.isSafeInteger(target.maxByteLength) ||
+          target.maxByteLength <= 0 ||
+          target.maxByteLength % 4 !== 0 ||
+          target.buffer !== null)
+      )
+        throw new Error(
+          "TN_READBACK_TARGET_INVALID: a fresh aligned public ReadbackBuffer is required.",
+        );
+      const result = await raw.getArrayBufferAsync(attribute, target);
+      if (target === undefined) {
+        if (!(result instanceof ArrayBuffer))
+          throw new Error("TN_READBACK_RESULT_INVALID: CPU bytes are absent.");
+        return result;
+      }
+      if (
+        result !== target ||
+        !(target.buffer instanceof ArrayBuffer) ||
+        target.buffer.byteLength > target.maxByteLength
+      )
+        throw new Error(
+          "TN_READBACK_RESULT_INVALID: caller-owned target did not receive bounded CPU bytes.",
+        );
+      return target.buffer.slice(0);
     },
     dispose: () => {
-      if (disposed) return;
+      computeTimings?.dispose();
+      if (disposed) {
+        storageBuffers.dispose();
+        return;
+      }
       disposed = true;
       for (const preparation of texturePreparations)
         preparation.abort(new Error("Renderer disposed during texture preparation."));
       texturePreparations.clear();
+      gpuObservation?.dispose();
+      gpuObservation = undefined;
       pendingScale = undefined;
       pendingSize = undefined;
       for (const chain of renderChains) chain.dispose();
@@ -832,10 +1081,15 @@ function wrapRenderer(
       outputInput = undefined;
       outputPass = undefined;
       pipelineCensus?.dispose();
-      raw.dispose?.();
+      try {
+        storageBuffers.dispose();
+      } finally {
+        raw.dispose?.();
+      }
     },
     render: (scene, camera) => {
-      setTimestampTracking();
+      // Standalone render callers retain one frame per draw unless they supply beginFrame().
+      if (!timestampFramesManaged) setTimestampTracking();
       renderingFrame += 1;
       try {
         renderFrame(scene, camera);
@@ -844,7 +1098,6 @@ function wrapRenderer(
       }
     },
     renderOverlay: (scene, camera) => {
-      setTimestampTracking();
       renderingFrame += 1;
       try {
         renderOverlayFrame(scene, camera);
@@ -852,7 +1105,7 @@ function wrapRenderer(
         renderingFrame -= 1;
       }
     },
-    setOutputNode: (node, worldPass) => {
+    setOutputNode: (node, worldPass, options) => {
       if (kind !== "webgpu")
         throw new Error(`setOutputNode is unavailable on the ${kind} renderer.`);
       const nextOutputPass = selectOutputPass(node, worldPass);
@@ -860,6 +1113,11 @@ function wrapRenderer(
         raw as unknown as ConstructorParameters<typeof RenderPipeline>[0],
         node as ConstructorParameters<typeof RenderPipeline>[1],
       );
+      // The pipeline applies the tone curve and the output encode by default. A stage that took
+      // the transform over applies it itself, so the pipeline must not apply a second one.
+      if (options?.outputColorTransform !== undefined) {
+        nextPipeline.outputColorTransform = options.outputColorTransform;
+      }
       outputPipeline?.dispose();
       outputPass = nextOutputPass;
       outputPipeline = nextPipeline;
@@ -932,16 +1190,29 @@ function isOutputPassNode(node: unknown): node is PassNode {
 }
 
 function selectOutputPass(node: unknown, worldPass: unknown): PassNode | undefined {
-  if (isOutputPassNode(worldPass)) return worldPass;
+  return outputPassOf(worldPass) ?? outputPassOf(node) ?? findSoleOutputPass(node);
+}
+
+/**
+ * The pass a node names, whether it is the pass itself or one of its texture nodes.
+ *
+ * A game that composes onto the pass output hands `setOutputNode` the composed node, not the pass:
+ * `renderer.setOutputNode(scenePass.getTextureNode("output"))` carries the pass on `passNode`, and
+ * without reading that the wrapper has no scene-pass depth to give an occlusion cull.
+ */
+function outputPassOf(node: unknown): PassNode | undefined {
   if (isOutputPassNode(node)) return node;
-  return findSoleOutputPass(node);
+  if (isObject(node) && node.isPassTextureNode === true && isOutputPassNode(node.passNode))
+    return node.passNode;
+  return undefined;
 }
 
 function findSoleOutputPass(node: unknown): PassNode | undefined {
   if (!isTraversableOutputNode(node)) return undefined;
   const passes = new Set<PassNode>();
   node.traverse((candidate) => {
-    if (isOutputPassNode(candidate)) passes.add(candidate);
+    const pass = outputPassOf(candidate);
+    if (pass !== undefined) passes.add(pass);
   });
   if (passes.size > 1)
     throw new Error(

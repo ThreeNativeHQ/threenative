@@ -988,6 +988,24 @@ function alignAndroidArchive(apkPath, options = {}) {
   const apksigner = zipalign === 'zipalign' ? 'apksigner' : join(dirname(zipalign), 'apksigner');
   const keystore =
     options.keystore ?? join(process.env.HOME ?? homedir(), '.android', 'debug.keystore');
+  // A fresh machine has no default debug key here even after Gradle's own debug build, so it is
+  // created with AGP's documented debug parameters. A keystore the consumer named is never invented.
+  if (options.keystore === undefined && !existsSync(keystore)) {
+    mkdirSync(dirname(keystore), { recursive: true });
+    const javaHome = process.env.JAVA_HOME;
+    const keytool =
+      javaHome && existsSync(join(javaHome, 'bin', 'keytool')) ? join(javaHome, 'bin', 'keytool') : 'keytool';
+    const keyResult = spawn(
+      keytool,
+      ['-genkeypair', '-keystore', keystore, '-storepass', 'android', '-alias', 'androiddebugkey',
+        '-keypass', 'android', '-keyalg', 'RSA', '-keysize', '2048', '-validity', '10000',
+        '-dname', 'CN=Android Debug,O=Android,C=US'],
+      { encoding: 'utf8', stdio: 'inherit' },
+    );
+    if (keyResult.error) throw keyResult.error;
+    if (keyResult.status !== 0)
+      throw new Error(`${keytool} could not create the debug keystore at ${keystore}.`);
+  }
   if (!existsSync(keystore))
     throw new Error(
       `Cannot re-sign the aligned APK: no keystore at ${keystore}. Run a Gradle debug build once ` +
