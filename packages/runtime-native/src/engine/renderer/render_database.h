@@ -138,11 +138,20 @@ class RenderDatabase {
     std::vector<ShadowFrustum> shadowFrustums_;
     std::unordered_map<const Light*, DirectLight::Shadow> shadowByLight_;
     bool shadowPointLightActive_ = false;
+    // Directional, spot and point lights under `shadowLightsRoot_` in walk order, visible or not;
+    // rebuilt when any add/remove/attach/destructor moves Object3D::hierarchyVersion().
+    std::vector<Object3D*> shadowLights_;
+    const Object3D* shadowLightsRoot_ = nullptr;
+    uint64_t shadowLightsVersion_ = ~uint64_t(0);
     void collectShadowFrustums(Object3D& root, const Camera& mainCamera);
     bool boundingSphereOf(Object3D& object, std::string_view type, Sphere& sphere);
     bool inFrustum(Object3D& object, std::string_view type);  // a deque: a draw keeps its slot's address while later slots grow
     bool inShadowFrustum(Object3D& object, std::string_view type);
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
+    // core's DECLINE_RESCAN_FRAMES: a settled projection decline re-judges on this cadence, not per
+    // frame. Starts at the interval so the first batch always scans.
+    static constexpr std::size_t kDeclineRescanFrames = 60;
+    std::size_t framesSinceDeclineScan_ = kDeclineRescanFrames;
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
 
     std::vector<DrawItem> items_;

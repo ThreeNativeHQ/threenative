@@ -553,8 +553,24 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
     shadowPointLightActive_ = false;
     if (!shadowMapEnabled) return;
 
-    auto collect = [&](auto& self, Object3D& obj) -> void {
-        if (!obj.visible()) return;
+    if (shadowLightsRoot_ != &root || shadowLightsVersion_ != Object3D::hierarchyVersion()) {
+        shadowLightsRoot_ = &root;
+        shadowLightsVersion_ = Object3D::hierarchyVersion();
+        shadowLights_.clear();
+        auto collect = [&](auto& self, Object3D& obj) -> void {
+            const std::string_view type = obj.type();
+            if (type == "DirectionalLight" || type == "SpotLight" || type == "PointLight") shadowLights_.push_back(&obj);
+            for (Object3D* child : obj.children)
+                if (child) self(self, *child);
+        };
+        collect(collect, root);
+    }
+    for (Object3D* light : shadowLights_) {
+        // The walk skipped invisible subtrees: a light counts only if it and every ancestor are visible.
+        const Object3D* node = light;
+        while (node->visible() && node != &root) node = node->parent;
+        if (!node->visible()) continue;
+        Object3D& obj = *light;
         const std::string_view type = obj.type();
         if (type == "DirectionalLight") {
             auto& l = static_cast<DirectionalLight&>(obj);
@@ -588,10 +604,7 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
                 shadowPointLightActive_ = true;
             }
         }
-        for (Object3D* child : obj.children)
-            if (child) self(self, *child);
-    };
-    collect(collect, root);
+    }
 }
 
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
@@ -804,8 +817,14 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
 // first member's place.
 void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
                            const std::vector<std::pair<double, const DrawItem*>>& ordered) {
-    const auto decision = std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig; })
-                              ? projection::decide(scene) : projection::Decision{};
+    // A decline writes no verdict, so a settled one is an empty decision until its rescan; an empty
+    // scene (still loading) or a projecting one is judged again next frame, as SceneRenderProjection.
+    projection::Decision decision;
+    if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig; }) &&
+        ++framesSinceDeclineScan_ >= kDeclineRescanFrames) {
+        decision = projection::decide(scene);
+        framesSinceDeclineScan_ = decision.projecting || decision.sourceRenderables == 0 ? kDeclineRescanFrames : 0;
+    }
     skinnedPalettes_.clear();
     batchGroupsList_.clear();
     candidatesByKey_.clear();

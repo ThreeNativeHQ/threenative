@@ -1636,6 +1636,32 @@ void skinnedCrowdPixels() {
     }
 }
 
+// A settled projection decline re-judges every 60 frames, as core's SceneRenderProjection does
+// (DECLINE_RESCAN_FRAMES): a crowd blocked by a render hook draws exactly, and once the hook leaves
+// it batches on the 60th frame after the declining scan. A projecting decision is re-judged every frame.
+void skinnedDeclineCadence() {
+    player::SkinnedCrowd crowd(false);
+    Mesh hooked(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+    hooked.onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [](const RenderCallbackArgs&, std::string&) { return true; });
+    crowd.scene().add(hooked);
+    RenderDatabase database;
+    LightState lights;
+    database.prepare(crowd.scene(), crowd.camera(), lights);
+    CHECK(database.lastBatches().first == 0);
+    crowd.scene().remove(hooked);
+    int frames = 0;
+    do {
+        database.prepare(crowd.scene(), crowd.camera(), lights);
+        ++frames;
+    } while (database.lastBatches().first == 0 && frames < 100);
+    std::printf("skinned decline cadence: batched %d frames after the declining scan\n", frames);
+    CHECK(frames == 60);
+    crowd.scene().add(hooked);
+    database.prepare(crowd.scene(), crowd.camera(), lights);
+    CHECK(database.lastBatches().first == 0);
+}
+
 // PRD-526: glTF stores WEIGHTS_0 as normalized unsigned bytes. The shader reads vec4<f32>, so the
 // vertex format must be Unorm8x4: bound as Float32x4 the buffer reads as zeros and the rig vanishes.
 void skinnedNormalizedWeights() {
@@ -2387,11 +2413,58 @@ void shadowCasterFrustumCulling() {
     (void)inside; (void)farOutside; (void)unculledOutside;
 }
 
+// The shadow-light list is cached across frames; it must still follow the hierarchy and visibility
+// the per-frame walk read: a hidden ancestor, a removed light and a re-added one.
+void shadowLightsFollowHierarchy() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.batching = false;
+    camera.position.set(0, 0, 100);
+    camera.lookAt(0, 0, 200);
+    camera.near = 1; camera.far = 50;
+    camera.updateProjectionMatrix();
+    Group rig;
+    auto light = std::make_shared<DirectionalLight>(Color(1, 1, 1), 1.0);
+    light->setCastShadow(true);
+    light->position.set(0, 10, 0);
+    auto& shadowCam = static_cast<OrthographicCamera&>(*light->shadow.camera);
+    shadowCam.left = -2; shadowCam.right = 2;
+    shadowCam.top = 2; shadowCam.bottom = -2;
+    shadowCam.near = 1; shadowCam.far = 20;
+    shadowCam.updateProjectionMatrix();
+    rig.add(*light);
+    scene.add(rig);
+    const auto geometry = makeBoxGeometry();
+    Mesh caster(geometry, std::make_shared<Material>(MaterialType::Standard));
+    caster.setCastShadow(true);
+    scene.add(caster);
+    const auto shadowOnly = [&] {
+        std::size_t count = 0;
+        for (const auto& item : database.prepare(scene, camera, lights)) count += !item.mainPass;
+        return count;
+    };
+    std::vector<std::size_t> seen;
+    seen.push_back(shadowOnly());
+    rig.setVisible(false);
+    seen.push_back(shadowOnly());
+    rig.setVisible(true);
+    seen.push_back(shadowOnly());
+    rig.remove(*light);
+    seen.push_back(shadowOnly());
+    rig.add(*light);
+    seen.push_back(shadowOnly());
+    light->setCastShadow(false);
+    seen.push_back(shadowOnly());
+    std::printf("shadow lights follow hierarchy: %zu %zu %zu %zu %zu %zu\n", seen[0], seen[1], seen[2], seen[3], seen[4],
+                seen[5]);
+    CHECK((seen == std::vector<std::size_t>{1, 0, 1, 0, 1, 0}));
+}
+
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy})
 
 
 

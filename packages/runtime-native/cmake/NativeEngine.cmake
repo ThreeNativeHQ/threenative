@@ -235,6 +235,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_instanced=instanced
         native_engine_batched_vs_unbatched=batched_vs_unbatched
         native_engine_skinned_batched_vs_unbatched=skinned_crowd
+        native_engine_skinned_decline_cadence=skinned_decline_cadence
         native_engine_skinned_normalized_weights=skinned_normalized_weights
         native_engine_normal_map_tilt=normal_map_tilt
         native_engine_renderer_gpu_mipmaps=gpu_mipmaps
@@ -248,7 +249,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_map_sampleability_changes=map_sampleability_changes
         native_engine_renderer_batch_caches_stay_put=batch_caches_stay_put
         native_engine_renderer_frustum_culling=frustum_culling
-        native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling)
+        native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
+        native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy)
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
