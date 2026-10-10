@@ -927,40 +927,6 @@ export class ComputeDrivenRegistry { … }
 const registry = new ComputeDrivenRegistry(); registry.add(cloth, ctx.renderer.raw);
 ```
 
-### `contactShadow`
-
-`function` — A screen-space contact shadow mask traced over the scene pass's depth. It answers where a small object meets the ground, which a shadow map's texels and bias cannot. It returns a mask and applies nothing: the game multiplies `.r` into the colour or the light term it chooses.
-
-```ts
-export function contactShadow(options: IContactShadowOptions): ContactShadowNode { … }
-```
-
-- **Use when:** a small object, a character's feet or a crate should visibly touch the ground · a shadow map's bias detaches the shadow from the thing that casts it
-- **Constraints:** WebGPU only: one compute dispatch list per frame, read from the scene pass's depth · every appearance value is required: length in pixels, thickness, contrast, which light · the mask is `1` where lit and `0` where shadowed, in `.r`, at the depth texture's resolution
-- **Overrides:** `surfaceThickness`, `bilinearThreshold` and `contrast` stay live on the node
-
-```ts
-const mask = contactShadow({ depth: { node: scenePass.getTextureNode("depth"), size }, camera, direction: () => sun.position, sampleCount: 60, hardSamples: 4, fadeSamples: 8, surfaceThickness: 0.005, bilinearThreshold: 0.02, contrast: 4 });
-stage({ name: "contactShadows", build: (input) => input.mul(mask.r) });
-```
-
-### `ContactShadowNode`
-
-`class` — A screen-space contact shadow mask traced over the scene pass's depth. It answers where a small object meets the ground, which a shadow map's texels and bias cannot. It returns a mask and applies nothing: the game multiplies `.r` into the colour or the light term it chooses.
-
-```ts
-export class ContactShadowNode extends Node { … }
-```
-
-- **Use when:** a small object, a character's feet or a crate should visibly touch the ground · a shadow map's bias detaches the shadow from the thing that casts it
-- **Constraints:** WebGPU only: one compute dispatch list per frame, read from the scene pass's depth · every appearance value is required: length in pixels, thickness, contrast, which light · the mask is `1` where lit and `0` where shadowed, in `.r`, at the depth texture's resolution
-- **Overrides:** `surfaceThickness`, `bilinearThreshold` and `contrast` stay live on the node
-
-```ts
-const mask = contactShadow({ depth: { node: scenePass.getTextureNode("depth"), size }, camera, direction: () => sun.position, sampleCount: 60, hardSamples: 4, fadeSamples: 8, surfaceThickness: 0.005, bilinearThreshold: 0.02, contrast: 4 });
-stage({ name: "contactShadows", build: (input) => input.mul(mask.r) });
-```
-
 ### `counterDeviceOf`
 
 `function` — Count the frame's host-boundary crossings and the bytes it writes into GPU buffers, off unless `TN_FRAME_SPANS` asks for them. On the frame budget's own window as `counters`, so a crossing count and a millisecond split describe the same frames.

@@ -4,8 +4,10 @@ prd_contract: v1
 
 # PRD-561 — Small things touch the ground: contact shadows from screen depth
 
-**Status:** PARKED — mechanism and kernel landed and run on a GPU; the platformer apply decision failed the visual judge twice (see `## Decisions`)
-**Priority:** P2 — AC-1 to AC-3 are open: no template has a screen-space contact shadow, and the platformer fakes one with a blob mesh.
+**Closed:** 2026-10-10 at `791500b1e`, PR #480, declined and archived to `done/`.
+
+**Status:** DECLINED 2026-10-10 after three judged poses (4096 and 1024 key-light maps, two rounds on the first). The stage never grounded the feet and added speckle on coarse maps. The mechanism is deleted; see `## Decisions` for the commits that hold it.
+**Priority:** P2 — declined; the platformer keeps its blob mesh.
 **Complexity:** 5 (MEDIUM) — 1–5 implementation files (1), new mechanism module (+2), a compute pass with workgroup memory and a CPU-built dispatch list (+2); risk override: none
 **Owner:** João
 **Depends on:** None
@@ -187,13 +189,29 @@ flowchart LR
   index with a `uint` value (`flag.element(int(0)).assign(uint(1))`). With the mechanism shipped and no
   template using it, the Integration Ledger rows stay open.
 
-## Blocked on
-
-- AC-3 (Pixel 8, physical device): no stage ships, so there is nothing to measure. Revisit with the
-  follow-up term. The device is shared, so ask the owner before using it.
-- Phase 1 box 2 (Arm A or Arm B): Arm A is built and judged REGRESSION twice. Arm B (analytic from the
-  light, no depth march) is untried. `pnpm visuals:ab --raters 3` was not run: two judge rounds had
-  already failed on the platformer, and the starter has the same key-light shadow window.
-- Phase 2 (templates): waits on a term that passes the judge.
-- Phase 3 (native parity): waits on a stage that ships. The mechanism is unchanged, so a conformance
-  fixture for the kernel alone is possible and was not started.
+- 2026-10-10 — **DECLINED after one falsifier round on a coarse shadow map.** The platformer round
+  said the premise was false because the key-light map resolves the foot gap, so one more pose was
+  judged where it should hold: same platformer, key-light map cut to 1024 over 44 m (about 4.3 cm a
+  texel, coarser than the 2048 mobile tier), headed `--browser-recipe webgpu` on the RTX 2080 (adapter
+  `nvidia` / `turing`, not SwiftShader), two runs per arm, BEFORE / CONTROL / AFTER burned in, a fresh
+  read-only judge. Verdict: **REGRESSION** (AFTER against CONTROL and against BEFORE). The fox's feet were
+  pixel-identical between CONTROL and AFTER, so the stage did not touch the contact it was built for.
+  It did add dotted dark dashes under tower rims, a halo on the windmill silhouette, a stair-stepped
+  dash pattern on the bridge edge and a darker brow on the fox. Frames:
+  `https://raw.githubusercontent.com/ThreeNativeHQ/threenative-engine/2378b8be0a57d50968f18cc2aae009111e799d53/prd-561/round3-coarse-1024/`.
+  Three judged poses, three failures, and the failure moved from "no gain" to "speckle" as the map
+  got coarser, so the gain is not hiding in the map size.
+- 2026-10-10 — **Threshold below which it could pay: not found.** At 4.3 cm a texel the stage still
+  gave no gain at the platformer camera. The only untested region is a far field with texels near or
+  above 10 cm (a distant cascade, or a 1024 map over 100 m), where a contact gap of a few centimetres is
+  below one texel and no key-light PCF can hold it. No template renders that, and nothing the engine
+  measures says a game will. A new PRD needs that scene and its own judge before any code.
+- 2026-10-10 — **The mechanism is deleted, not parked.** Nothing consumes `contactShadow()` and the
+  kill switch says a dead mechanism goes. Phase 1's kernel and dispatch builder are recoverable from
+  commit `9bd6b3c25` (with the WGSL flag-index fix in `c9773d985`) and the stage wiring from `4afd70ca2`,
+  all on branch `feat/prd-561-contact-shadows` and in PR #480. The CHARTER paragraph, the capability
+  entries, the API-surface lines and `THIRD_PARTY_NOTICES.md` went back to their pre-PRD text.
+- 2026-10-10 — **Separate note, not part of this PRD: the fox rig's soles float 0.215 m above y = 0.**
+  The painted blob hides it and the platformer playtest cannot see it. `BODY_REST = 0.377` in
+  `4afd70ca2` (`Fox.ts`, `fox.ts`) corrects it. It changes what reaches the screen, so it needs its own
+  small PRD, its own change and its own visual judge.

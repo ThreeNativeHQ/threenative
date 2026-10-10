@@ -18,7 +18,6 @@ export const RENDER_CHAIN_MARKER = "TN_RENDER_CHAIN";
 /** Canonical order for the stages a game may request. */
 export const RENDER_CHAIN_STAGE_ORDER = [
   "probeVolume",
-  "contactShadows",
   "ambientOcclusion",
   "ssgi",
   "godRays",
