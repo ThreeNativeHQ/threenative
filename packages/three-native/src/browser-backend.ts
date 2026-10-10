@@ -487,13 +487,16 @@ export function defineBrowserClasses(
     // three's storage type. Copying it to a list first cost Midway seconds of texels at load.
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) return value as TypedArray;
     if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
+    // A wrapper, the common argument, first: a JS value class has no REF until it is promoted.
+    if (typeof value === "object" && REF in value) {
+      // A wrapper passed into the engine is held until the next safe point decides (collect()).
+      hold(value);
+      return (value as IWrapped)[REF];
+    }
     const info = valueClasses.get(Object.getPrototypeOf(value) as object);
     if (info !== undefined) {
       if (borrowing) return lend(value as Record<string, number>, info);
       promote(value as Record<string, number>, info);
-    }
-    if (typeof value === "object" && REF in value) {
-      // A wrapper passed into the engine is held until the next safe point decides (collect()).
       hold(value);
       return (value as IWrapped)[REF];
     }
@@ -1374,8 +1377,17 @@ function tslOf(
  * `globalThis.__tnCallCounts` to a Map, every engine get, set and invoke counts under
  * "<kind> <type id>.<name>" (`__tnEngineTypes` names the type ids). Off, it costs one global read.
  */
+let callCounts = (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts;
+// The global is an accessor over a module variable, so a census that is off costs no global lookup.
+Object.defineProperty(globalThis, "__tnCallCounts", {
+  configurable: true,
+  get: () => callCounts,
+  set: (counts: Map<string, number> | undefined) => {
+    callCounts = counts;
+  },
+});
 function countCall(kind: string, self: IEngineRef, name: string): void {
-  const counts = (globalThis as { __tnCallCounts?: Map<string, number> }).__tnCallCounts;
+  const counts = callCounts;
   if (counts === undefined) return;
   const key = `${kind} ${self.type}.${name}`;
   counts.set(key, (counts.get(key) ?? 0) + 1);
