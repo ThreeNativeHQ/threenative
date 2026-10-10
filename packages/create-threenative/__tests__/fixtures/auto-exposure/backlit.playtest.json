@@ -38,11 +38,11 @@
       {
         "atStep": "settled",
         "mean": {
-          "min": 60,
-          "max": 190
+          "min": 80,
+          "max": 180
         },
         "blackFraction": {
-          "max": 0.5
+          "max": 0.05
         }
       }
     ]

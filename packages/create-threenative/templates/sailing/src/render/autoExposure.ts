@@ -27,7 +27,9 @@ import {
   adaptExposure,
   exposureBins,
   exposureTarget,
+  exposureTiles,
   histogramExposure,
+  histogramTiles,
   reduceExposure,
 } from "./exposureGraph.js";
 import { ExposureReadback } from "./exposureReadback.js";
@@ -56,8 +58,10 @@ export class AutoExposureNode extends TempNode<"float"> {
   readonly #quad = new QuadMesh();
   readonly #meterMaterial = new NodeMaterial();
   readonly #reduceMaterial = new NodeMaterial();
+  readonly #tilesMaterial = new NodeMaterial();
   readonly #histogramMaterial = new NodeMaterial();
   readonly #adaptMaterial = new NodeMaterial();
+  readonly #tilesTarget = exposureTarget();
   readonly #histogramTarget = exposureTarget();
   #readTarget = exposureTarget();
   #writeTarget = exposureTarget();
@@ -92,8 +96,10 @@ export class AutoExposureNode extends TempNode<"float"> {
     this.updateBeforeType = NodeUpdateType.FRAME;
     this.#meterMaterial.fragmentNode = reduceExposure(input, this.#sourceSize, meter);
     this.#reduceMaterial.fragmentNode = reduceExposure(this.#reduced, this.#reduceSize);
+    this.#tilesTarget.setSize(exposureBins, exposureTiles);
     this.#histogramTarget.setSize(exposureBins, 1);
-    this.#histogramMaterial.fragmentNode = histogramExposure(this.#blocks, this.#blockSize, policy);
+    this.#tilesMaterial.fragmentNode = histogramTiles(this.#blocks, this.#blockSize, policy);
+    this.#histogramMaterial.fragmentNode = histogramExposure(texture(this.#tilesTarget.texture));
     this.#adaptMaterial.fragmentNode = adaptExposure(
       texture(this.#histogramTarget.texture),
       this.#previous,
@@ -175,6 +181,9 @@ export class AutoExposureNode extends TempNode<"float"> {
       if (final === undefined) throw new Error("Exposure reduction is empty.");
       this.#blocks.value = final.texture;
       this.#blockSize.value.set(final.width, final.height);
+      this.#quad.material = this.#tilesMaterial;
+      renderer.setRenderTarget(this.#tilesTarget);
+      this.#quad.render(renderer);
       this.#quad.material = this.#histogramMaterial;
       renderer.setRenderTarget(this.#histogramTarget);
       this.#quad.render(renderer);
@@ -199,6 +208,7 @@ export class AutoExposureNode extends TempNode<"float"> {
     this.#observation.dispose();
     for (const level of [
       ...this.#levels,
+      this.#tilesTarget,
       this.#histogramTarget,
       this.#readTarget,
       this.#writeTarget,
@@ -207,6 +217,7 @@ export class AutoExposureNode extends TempNode<"float"> {
     this.#levels = [];
     this.#meterMaterial.dispose();
     this.#reduceMaterial.dispose();
+    this.#tilesMaterial.dispose();
     this.#histogramMaterial.dispose();
     this.#adaptMaterial.dispose();
     super.dispose();

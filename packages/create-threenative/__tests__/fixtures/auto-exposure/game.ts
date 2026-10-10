@@ -2,14 +2,14 @@ import {
   ACESFilmicToneMapping,
   AmbientLight,
   BoxGeometry,
+  CircleGeometry,
   Color,
   DirectionalLight,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
-  PlaneGeometry,
-  CircleGeometry,
   type PerspectiveCamera,
+  PlaneGeometry,
   Vector2,
   Vector3,
 } from "three";
@@ -124,7 +124,12 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
           ctx.scene.background = new Color(0x445565).multiplyScalar(intensity);
         };
         applyLight();
-        const backlit = createBacklit(ctx, camera, options.backlit, options.bright ? 3.896 : 0.0019189);
+        const backlit = createBacklit(
+          ctx,
+          camera,
+          options.backlit,
+          options.bright ? 3.896 : 0.0019189,
+        );
         disposeRoom = () => {
           backlit?.dispose();
           floor.dispose();

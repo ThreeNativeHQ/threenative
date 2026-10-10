@@ -52,15 +52,18 @@ export function reduceExposure(
   })();
 }
 
-/** UE's HISTOGRAM_SIZE. Each bin spans (maxStops - minStops) / 64 stops of scene luminance. */
+/** The histogram has 64 bins. Each bin spans (maxStops - minStops) / 64 stops of scene luminance. */
 export const exposureBins = 64;
+/** The gather splits the blocks over 64 tiles, so a bin is summed by 64 short loops, not one long. */
+export const exposureTiles = 64;
 
 /**
- * One texel per bin, drawn as a 64x1 target. Each texel gathers the block means of `blocks`
- * (the second reduction level, about 8 000 texels at 1080p) that fall in its bin.
+ * Stage one of the histogram, drawn as a 64 (bins) x 64 (tiles) target. Texel (bin, tile) gathers
+ * its tile of the block means of `blocks` (the second reduction level, about 8 000 texels at
+ * 1080p, so about 130 per tile) that fall in its bin.
  * r = summed weight, g = summed weight * log2 luminance, so a bin keeps its exact mean.
  */
-export function histogramExposure(
+export function histogramTiles(
   blocks: ColourTexture,
   size: Node<"vec2">,
   policy: Readonly<IExposureSettings>,
@@ -73,24 +76,42 @@ export function histogramExposure(
     const weight = float(0).toVar();
     const logSum = float(0).toVar();
     const width = int(size.x);
-    Loop(int(size.x.mul(size.y)), ({ i }) => {
-      const block = textureLoad(blocks, ivec2(i.mod(width), i.div(width)));
-      const log = block.r
-        .div(block.g.max(1e-20))
-        .max(1e-20)
-        .log2()
-        .clamp(low, low + span);
-      const index = log
-        .sub(low)
-        .mul(exposureBins / span)
-        .floor()
-        .min(exposureBins - 1);
-      If(block.g.greaterThan(0).and(index.equal(bin)), () => {
-        weight.addAssign(block.g);
-        logSum.addAssign(block.g.mul(log));
+    const total = int(size.x.mul(size.y));
+    const perTile = total.add(exposureTiles - 1).div(exposureTiles);
+    const first = int(screenCoordinate.y.floor()).mul(perTile);
+    Loop({ start: 0, end: perTile }, ({ i: offset }) => {
+      const i = first.add(offset);
+      If(i.lessThan(total), () => {
+        const block = textureLoad(blocks, ivec2(i.mod(width), i.div(width)));
+        const log = block.r
+          .div(block.g.max(1e-20))
+          .max(1e-20)
+          .log2()
+          .clamp(low, low + span);
+        const index = log
+          .sub(low)
+          .mul(exposureBins / span)
+          .floor()
+          .min(exposureBins - 1);
+        If(block.g.greaterThan(0).and(index.equal(bin)), () => {
+          weight.addAssign(block.g);
+          logSum.addAssign(block.g.mul(log));
+        });
       });
     });
     return vec4(weight, logSum, 0, 1);
+  })();
+}
+
+/** Stage two, drawn as a 64x1 target: one texel per bin, summing that bin over every tile. */
+export function histogramExposure(tiles: ColourTexture): Node<"vec4"> {
+  return Fn(() => {
+    const bin = int(screenCoordinate.x.floor());
+    const sum = vec2(0).toVar();
+    Loop(exposureTiles, ({ i }) => {
+      sum.addAssign(textureLoad(tiles, ivec2(bin, i)).rg);
+    });
+    return vec4(sum, 0, 1);
   })();
 }
 
