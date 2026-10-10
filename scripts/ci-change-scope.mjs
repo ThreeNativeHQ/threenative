@@ -656,12 +656,9 @@ export function coverageMiss(current, source) {
  * matrix PRD-380 gives it, everything else the full one, and a run owing no lane owes none.
  */
 export function validationProfile({ eventName, baseRef = "", nativeRequired = false }) {
-  const target =
-    baseRef === "main"
-      ? "main"
-      : baseRef === "develop" || eventName === "merge_group"
-        ? "develop"
-        : "other";
+  // Only an explicit target can earn reduced validation; GitHub also reports refs/heads/<name>.
+  const ref = baseRef.replace(/^refs\/heads\//u, "");
+  const target = ref === "main" ? "main" : ref === "develop" ? "develop" : "other";
   const review =
     target === "develop" &&
     (eventName === "pull_request" || eventName === "merge_group" || eventName === undefined);

@@ -245,6 +245,7 @@ describe("impact-driven template coverage", () => {
           env: {
             ...process.env,
             TN_CI_EVENT: "merge_group",
+            TN_CI_BASE_REF: "refs/heads/develop",
             TN_CI_BASE_SHA: f.base,
             TN_CI_HEAD_SHA: head,
             TN_CI_NEEDS: JSON.stringify(needs),

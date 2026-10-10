@@ -197,6 +197,40 @@ describe("exact-candidate qualification minimum", () => {
     }
   });
 
+  it("requires an explicit develop target to keep a reduced queue plan", () => {
+    const f = fixture("docs/inert.md");
+    try {
+      const plan = selectionPlan(
+        "prose",
+        "narrow review",
+        ["docs/inert.md"],
+        f.head,
+        false,
+        0,
+        "develop",
+      );
+      // develop, bare or prefixed, keeps the reduced review the queue earns.
+      for (const baseRef of ["develop", "refs/heads/develop"]) {
+        expect(validateEventPlan(plan, { eventName: "merge_group", baseRef })).toEqual(plan);
+      }
+      // main, bare or prefixed, and any unknown or missing target must reject a review plan.
+      for (const baseRef of [
+        "main",
+        "refs/heads/main",
+        "refs/heads/release",
+        "release",
+        "",
+        undefined,
+      ]) {
+        expect(() => validateEventPlan(plan, { eventName: "merge_group", baseRef })).toThrow(
+          "CI_REQUIRED_QUALIFICATION_MINIMUM",
+        );
+      }
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  });
+
   it.each(["prose", "ci", "warm", "full"])(
     "independently rejects a planner-generated %s exemption outside a develop review",
     (selection) => {
