@@ -182,23 +182,25 @@ const BUG_REPORT_SKILL_PATHS = [
 // PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
+// Recomputed 2026-10-08 for the shooter fix. The normal target now uses the material blend mode
+// in every kit's worldEnvironment.ts. The shooter Rifle.ts gained a scope alpha test and a reticle.
+// All thirteen generated trees changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
-  // merged Three patch changes every kit; starter also carries the merged render source.
-  "action-rpg": "ca3c58ab561319c2c6671a5714019f18b8b2b82dc0be699fbf05b1231504be71",
-  minimal: "44979db5dd573a297c6d66c08d5366fc66f7ddaf0bdc553c4781fae0059fa0fc",
-  platformer: "a0f9f7f33b14041062b0a91789ebdb0cea61f4dd889f67762a14244dbf398266",
-  puzzle: "c92bdc29939c43a8a2bf418f31aabbd2de1b31481eb51286bd834bf2cc9bd84f",
-  racing: "8b7b7cf6b8660790b604d819968f7a48e950823373525660e04f26fe3ef16dba",
-  rain: "e43a82568eb6d6cd0bf069f3db2fe5e77ba92821cf983f018dea78ea40a30080",
-  rts: "d5008c09be975e3dea93ae1c1d19163b7fba7f785d4e031a523b4e9c8a69edac",
-  runner: "b8b4d65a033df2dddffe2462dbbbd42a203d7ff8e1a0c8658c0a22088f5378aa",
-  sailing: "7212532cca11fc11e9346461cc3468a59a92237ca800f2e1fe142681d344ff1b",
-  shooter: "874b9d1a0f053970ad381e3703ac5dc288581ece212f53cbb2f86a095f0df561",
-  snow: "b9ef634e808b6c4a79c8a8768955cb2979ec949cdb147e3c77bca4803089b470",
-  // PRD-572: starter AGENTS.md gained the shadow-movers paragraph; only starter moves.
-  starter: "9e663841c6445b06e5d65ec630d99ce5ec787f28989f4f7990a5aa1b3316dbff",
-  "tower-defense": "4f10541731f30c25b31bb7b5770c1bef1ffe9327d713d980e0847b0ed751f863",
+  // Recomputed on develop 07bcdf8d2 with the shooter fix and PRD-572 merged in; PRD-572 changes
+  // the starter instructions, so only its fingerprint moved from the shooter-fix values.
+  "action-rpg": "cfc4fdaa7aff7713f6cbeea93ef0b680bf665031fe3c04dd2bf3ba32476389d4",
+  minimal: "18d511d041161e706b450496e8b05cd2be8ad7224b75848da463b79ddc88b1f5",
+  platformer: "c31ad80077d41a7ecfcd497f78b36029ee872fe6249f9c71e04da10dff161cb1",
+  puzzle: "90bbb8d0ac5c969fca75ec879301a3adcc2f9cbf65ba52f82835905f07fb50de",
+  racing: "b82ec29cc1dffbdbd2664e396c1406e7d3ec1bfc09fabe1f59193b46163a98fb",
+  rain: "2640179c398fd265363845ffe4c60251658374fcdca5c57320608a5c5432d09a",
+  rts: "6666aea6a03027eec5ffd69fd732b38797afa0c9905ed0512aefdeeeddb5b154",
+  runner: "22b52899b6ba85b9efda315f3a7faea8da4c3d6d4273dcb492c42685eab97230",
+  sailing: "eff0c4b20bffbd1225afa033754d6d3df9cf375e7e9fa8f47e278412cc0ef571",
+  shooter: "91546efa42e694ee61bc1fffc309b4af33e007d94ea7195bb3446fd938addbff",
+  snow: "7e0963fb36ddd4c801c12207178c59a4f03f074a25fd2ed0d3b6fe81f78bed59",
+  starter: "00bb17d96e721f2e8ec977a644b51a0b5ae9b843e2ed34251e779f7ef5364e13",
+  "tower-defense": "0f49ea561767830611cf509c68efa024fab48337ec6e5ba66a729e99d59a1cd5",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
