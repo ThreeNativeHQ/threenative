@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-561 — Small things touch the ground: contact shadows from screen depth
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — dispatch builder and its spec landed; the GPU kernel is unproven until a WebGPU run
 **Priority:** P2 — AC-1 to AC-3 are open: no template has a screen-space contact shadow, and the platformer fakes one with a blob mesh.
 **Complexity:** 5 (MEDIUM) — 1–5 implementation files (1), new mechanism module (+2), a compute pass with workgroup memory and a CPU-built dispatch list (+2); risk override: none
 **Owner:** João
@@ -121,17 +121,32 @@ flowchart LR
 ## Execution Phases
 
 #### Phase 1: Mechanism and the apply decision
-**Status:** NOT STARTED
-**Files:** `packages/core/src/render/contact-shadow.ts` (new), `packages/core/src/render/chain.ts`, `packages/core/src/index.ts`, `packages/core/THIRD_PARTY_NOTICES.md` (new), `packages/core/__tests__/contact-shadow.spec.ts` (new)
-- [ ] The dispatch-list builder covers every on-screen pixel exactly once, for a light in front of, behind and beside the camera, and for viewports that are not multiples of 64. proof: `pnpm exec vitest run packages/core/__tests__/contact-shadow.spec.ts`.
+**Status:** IN PROGRESS — box 1 done; the kernel runs on a GPU next, then the judge
+**Files:** `packages/core/src/render/contact-shadow.ts` (new), `packages/core/src/render/chain.ts`, `packages/core/src/index.ts`, `packages/core/THIRD_PARTY_NOTICES.md` (new), `packages/core/src/render/contact-shadow-dispatch.ts` (new, the CPU dispatch builder), `packages/core/__tests__/contact-shadow-dispatch.spec.ts` (new), `docs/architecture/CHARTER.md`
+- [x] The dispatch-list builder writes every on-screen pixel at least once, except the pixel under the light, for a light in front of, behind, beside and far off screen, and for viewports that are not multiples of 64. Overlap stays bounded (see `## Decisions`). proof: `pnpm exec vitest run packages/core/__tests__/contact-shadow-dispatch.spec.ts` — Evidence: 7 passed (1920x1080, 1001x577, 63x65, 1x1, 130x70, 1024x512, six light placements each; bounds case 301,203 to 700,510).
 - [ ] Arm A or Arm B is chosen with the judge's verdict, and the choice is written under `## Decisions`. proof: `pnpm visuals:ab --before <arm A> --after <arm B> --raters 3` on the starter and the dark-environment fixture.
 
 #### Phase 2: Templates use it
 **Status:** NOT STARTED
-**Files:** `templates/platformer/src/render/fox.ts`, `templates/platformer/src/render/postprocessing.ts`, `templates/starter/src/render/quality.ts`, `templates/starter/src/render/worldEnvironment.ts` (stage only if the shared-source spec allows it, else the starter's own `postprocessing.ts`), `templates/platformer/playtests/contact-shadow.playtest.json` (new)
+**Files:** `packages/create-threenative/templates/platformer/src/render/fox.ts`, `packages/create-threenative/templates/platformer/src/render/postprocessing.ts`, `packages/create-threenative/templates/starter/src/render/quality.ts`, `packages/create-threenative/templates/starter/src/render/worldEnvironment.ts` (stage only if the shared-source spec allows it, else the starter's own `postprocessing.ts`), `packages/create-threenative/templates/platformer/playtests/contact-shadow.playtest.json` (new)
 - [ ] The platformer ships without the blob, and the template gate passes for the platformer and the starter. proof: `pnpm test:templates`.
 
 #### Phase 3: Native
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/conformance/scenes/shared/contact-shadow.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] The desktop native host produces the same mask as the browser within tolerance for a fixed depth fixture and light. proof: `pnpm parity --target desktop --only-tests contact-shadow`.
+
+## Decisions
+
+- 2026-10-09 — **Coverage is "at least once", not "exactly once".** Emulating every (dispatch, group,
+  thread) of the ported builder shows the 64-line fans overlap where they converge on the light and at
+  tile seams: about 8% of pixels at 1080p are written twice, and the pixels next to the light up to 127
+  times. Beyond one wave of the light a pixel is written at most twice, and every write carries the same
+  value because each thread marches its own pixel. The pixel under the light is never written; it is the
+  sun disc, not a surface. The PRD text said "exactly once", which the upstream algorithm does not give.
+- 2026-10-09 — **One deliberate change from the upstream CPU builder.** Upstream makes the bounds
+  relative to `round(light)` while the kernel measures from the centre of `floor(light)`. They differ by a
+  pixel whenever the fraction is 0.5 or more, and the upstream sample hides it by passing `max = viewport
+  size`. The emulation found it: a light at x = 38400 on a 1920-wide target left column 1919 unwritten.
+  The port uses `floor(light)` for both and an inclusive `max = size - 1`, and rounds the light to float32
+  so the CPU and the GPU agree on `floor`. The spec case "far off screen" at 1920x1080 is the red-green.

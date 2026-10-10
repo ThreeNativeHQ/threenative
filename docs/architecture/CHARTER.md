@@ -277,11 +277,15 @@ the load and every response coefficient, and no renderer or GPU encoding is invo
 **`FlightModel`** (lift, drag, thrust, stall,
 control moments and the carrier-deck run for a fixed-wing aircraft; every mass, wing area, power,
 inertia, wind and damage multiplier comes from the game, which the model moves but never dresses);
-and **automatic discrete LOD** (error-driven level selection for a model the asset cook baked a
+**automatic discrete LOD** (error-driven level selection for a model the asset cook baked a
 `TN_discrete_lod` chain into: the loader builds index-only levels sharing the authored vertices and
 the engine swaps to the cheapest one the camera's projected error allows. It owns selection only —
 the geometry, its detail ladder and every material come from the cook and the game, and
-`assets.lod: false` turns the mechanism off without touching a source file).
+`assets.lod: false` turns the mechanism off without touching a source file);
+and **`contactShadow`** (a screen-space shadow trace over the scene pass's depth: the dispatch list, the
+workgroup depth strip and the mask texture, ported from Bend Studio's Apache-2.0 release. It
+returns a mask and applies nothing — the strength, the light, the length in pixels, the thickness
+and where the mask lands all come from the game's `src/render/`, PRD-561).
 
 **Optional portable message transport is also mechanism.** The proposed `core/net`
 (`@threenative/core/net`) subpath may own the browser/native transport seam: connection lifecycle,

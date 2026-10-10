@@ -26,6 +26,7 @@
   "files": [
     "dist",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     "mcp",
     "gpl",
     "scripts/apply-three-patch.mjs",

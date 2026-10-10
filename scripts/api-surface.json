@@ -106,6 +106,8 @@
         "@threenative/core#ClusteredBatch": "export class ClusteredBatch { … }",
         "@threenative/core#ClusteredMesh": "export class ClusteredMesh extends Mesh { … }",
         "@threenative/core#ComputeDrivenRegistry": "export class ComputeDrivenRegistry { … }",
+        "@threenative/core#contactShadow": "export function contactShadow(options: IContactShadowOptions): ContactShadowNode { … }",
+        "@threenative/core#ContactShadowNode": "export class ContactShadowNode extends Node { … }",
         "@threenative/core#counterDeviceOf": "export function counterDeviceOf(raw: unknown): unknown { … }",
         "@threenative/core#createAssetLoader": "export function createAssetLoader(options: IAssetLoaderOptions = { … }",
         "@threenative/core#createPipelineCensus": "export function createPipelineCensus(options: IPipelineCensusOptions): PipelineCensus { … }",

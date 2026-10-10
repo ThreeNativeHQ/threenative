@@ -93,6 +93,13 @@ describe("core constraints", () => {
           // The virtual shadow attaches to a light and renders depth through three's own
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
+          // The contact-shadow mask marches the scene pass's depth towards a direction the game
+          // gives it and writes one 0..1 occlusion value per pixel. "Light" there is the direction
+          // and its projected pixel, never a Light object; it constructs no material, light,
+          // colour or shader, and what the mask multiplies into is the game's. The assertions below
+          // keep that true.
+          file !== "render/contact-shadow.ts" &&
+          file !== "render/contact-shadow-dispatch.ts" &&
           file !== "render/virtual-shadow-pages.ts" &&
           // Alpha antialiasing decides how a cutout edge is RESOLVED, never how it looks: it
           // flips one coverage flag on the game's own material so an alpha-tested silhouette can
@@ -156,6 +163,14 @@ describe("core constraints", () => {
       .join("\n");
 
     expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);
+
+    for (const file of ["render/contact-shadow.ts", "render/contact-shadow-dispatch.ts"]) {
+      const contactShadow = withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8"));
+      expect(contactShadow, file).not.toMatch(
+        /new\s+\w*(Material|Light|Color)|tonemapping|postprocessing|\.wgsl/iu,
+      );
+      expect(contactShadow.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu), file).toBeNull();
+    }
 
     // `assets.ts` assigns compiler-produced textures to game-authored materials. It transports
     // appearance data but originates none: no material, light, colour, or shader may be created.
