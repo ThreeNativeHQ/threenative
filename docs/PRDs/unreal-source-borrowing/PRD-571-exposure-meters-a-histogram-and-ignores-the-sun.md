@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-571 — Exposure meters a histogram and ignores the sun
 
-**Status:** NOT STARTED
-**Priority:** P2 — AC-1 and AC-2 are open: the shipped meter is a clamped linear mean, so a bright sky behind the subject still sets the exposure.
+**Status:** PARTIAL — all 8 boxes ticked on 2026-10-09; the Pixel 8 cost check is under Blocked on.
+**Priority:** P2 — the shipped meter was a clamped linear mean, so a bright sky behind the subject still set the exposure. AC-1 and AC-2 are met in the browser and on the desktop host; the phone cost is blocked on the device.
 **Complexity:** 2 (LOW) — 1–5 files (1): three identical template files, copied to 13 templates by the scaffolder, plus the existing fixture; no new module, no package change. Risk override: none.
 **Owner:** João
 **Depends on:** None. Follows [PRD-339](../done/PRD-339-the-frame-sets-its-own-exposure.md) (done), which shipped the mean meter and says a compute histogram "is a separate PRD if a game ever needs one" (PRD-339:106-107). This is that PRD. Judged with the tone gate of [PRD-341](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md) (done).
@@ -104,8 +104,8 @@ that a sun disc of 1% of the frame does not move the exposure.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: In the auto-exposure fixture, a subject in front of a sky ten stops brighter is metered within the PRD-341 tone band. The current mean meter fails the same scene (red), and the histogram meter passes it (green). proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure-proof.spec.ts` (new `backlit` room).
-- [ ] AC-2 [local]: On the RTX 2080 browser WebGPU lane at 1080p, the histogram meter costs at most 0.1 ms GPU more than the mean meter. proof: `node packages/playtest/dist/runner/cli.js perf` on the fixture, both arms, `--browser-recipe webgpu`.
+- [x] AC-1 [local]: In the auto-exposure fixture, a subject in front of a sky ten stops brighter is metered within the PRD-341 tone band. The current mean meter fails the same scene (red), and the histogram meter passes it (green). proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure-proof.spec.ts` (new `backlit` room; qualifier specs, 43 passed) and the GPU rooms `sh scripts/xvfb.sh pnpm exec tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verify.ts`, exit 0 at a0b7c91bc. Histogram: `backlit-sky` tone mean 129.3, blackFraction 0; `backlit-disc` passes. Red control (the pre-change mean meter served from 9d4b2a67f): `backlit-sky-mean` and `backlit-disc-mean` fail the tone gate and move the target 6.2 and 5.5 stops. A fresh judge subagent rated both rooms AFTER_BETTER (5/5): the mean frame is crushed to black, the histogram frame reads cleanly, no tile seams or banding.
+- [x] AC-2 [local]: On the RTX 2080 browser WebGPU lane at 1080p, the histogram meter costs at most 0.1 ms GPU more than the mean meter. proof: `node packages/playtest/dist/runner/cli.js perf` on the fixture, both arms, `--browser-recipe webgpu`. Measured with `TN_COST_ROUNDS=8 TN_COST_SECONDS=45 sh scripts/xvfb.sh pnpm exec tsx packages/create-threenative/__tests__/fixtures/auto-exposure/measureMeterCost.ts` (alternating arms, the engine's own `TN_FRAME_BUDGET` `gpuMs`, `--enable-webgpu-developer-features`, 1920x1080, adapter nvidia/turing RTX 2080; logs in `artifacts/prd571-cost/`, readable with `perf --file <log> --allow-virtual-display --text`). Paired round deltas (histogram minus mean, ms): -0.123, +0.112, -0.038, +0.040, +0.007, -0.023, -0.164, +0.016; mean -0.021, standard error 0.031. Two earlier 3-round runs gave pooled deltas of -0.024 and +0.080. The meter is below the instrument noise (single rounds swing about 0.1 ms, one resolved sample per 300-frame window), so the claim is "not measurably above the mean meter", not "0.00 ms". The first single-stage gather cost 3.28 ms and was replaced by the tiled one (Decisions).
 
 ## Integration Ledger
 
@@ -120,25 +120,39 @@ that a sun disc of 1% of the frame does not move the exposure.
   default look, and PRD-345 covers the backlit subject from the material side. A game that needs
   it after this PRD gets a separate PRD.
 
+- 2026-10-09 (PRD-571 lane): the Solution's gather arm, as first written (one 64x1 pass looping the
+  second level, about 8 160 texels per bin), cost 3.28 ms GPU at 1080p on the RTX 2080 and missed
+  AC-2 by 30x, because 64 threads each ran the whole loop. The compute arm was not needed. The
+  gather now draws a 64-bin by 64-tile target (each texel loops about 130 block texels) and a 64x1
+  pass sums the tiles. It stays fragment-only and runs on every backend that runs the mean meter.
+  The meter's luminance clamp moved from 8 to 65 504 (half-float overflow guard only), as the
+  Solution says.
+
+## Blocked on
+
+- Pixel 8 cost: the histogram meter costs at most 0.2 ms GPU more than the mean meter, measured
+  with `node packages/playtest/dist/runner/cli.js perf --logcat <serial>` on both builds. Needs the
+  Pixel 8 attached to this desktop (only `emulator-5554` was visible on 2026-10-09). Owner: João.
+  An emulator result cannot stand in for the device.
+
 ## Execution Phases
 
 #### Phase 1: The histogram metric in the fixture
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-09)
 **Files:** `packages/create-threenative/templates/starter/src/render/{exposure,exposureGraph,autoExposure}.ts`; `packages/create-threenative/__tests__/fixtures/auto-exposure/fixedRooms.ts` (new `backlit` room); `packages/create-threenative/__tests__/auto-exposure*.spec.ts`
 **Implementation:** Add `lowPercent` and `highPercent` to `IExposureSettings` and validate them (`0 <= low < high <= 100`). Build the gather arm. Record the gather and compute costs. Keep the compute arm only if the gather arm misses AC-2.
 
-- [ ] The clipped average matches a CPU reference of the UE walk on synthetic histograms: all weight in one bin, a uniform spread, an empty histogram, and `low == high`. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts`.
-- [ ] A sun disc covering 1% of the frame moves the settled exposure by less than 0.1 stop. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure-proof.spec.ts`.
-- [ ] The existing static, cut, cold-boot and lifecycle fixture scenarios still pass with the histogram metric. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure-proof.spec.ts packages/create-threenative/__tests__/auto-exposure-lifecycle.spec.ts`.
+- [x] The clipped average matches a CPU reference of the UE walk on synthetic histograms: all weight in one bin, a uniform spread, an empty histogram, and `low == high`. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts` — 1 file, 33 tests passed. The GPU graph is checked against the same reference by the in-page histogram probe inside `verify.ts` (`histogram-reference` room, exit 0).
+- [x] A sun disc covering 1% of the frame moves the settled exposure by less than 0.1 stop. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure-proof.spec.ts` (43 passed) plus the GPU room `backlit-disc` in `verify.ts` (gate `maxShiftStops` 0.1): the settled target moved 0.035 stop against the disc-free room, exit 0 at a0b7c91bc.
+- [x] The existing static, cut, cold-boot and lifecycle fixture scenarios still pass with the histogram metric. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure-proof.spec.ts packages/create-threenative/__tests__/auto-exposure-lifecycle.spec.ts` — 2 files, 61 tests passed. GPU scenarios at a0b7c91bc, each exit 0: `verify.ts` (23 captures: static, cuts, reverse, snap, mutations), `verifySnap.ts`, `verifyLifecycle.ts`, `verifyColdBoot.ts` (20 launches, limit 0.1). The metered luminance of the bright room changed from 3.896 to 3.058 by design (clipped log mean), so the cold-boot and native references moved with it.
 
 #### Phase 2: All templates, native and the phone
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — templates, native and docs done; the phone cost is under Blocked on
 **Files:** the same three files copied into the 12 other templates; `packages/create-threenative/agent-docs/references/auto-exposure.md`
 **Implementation:** Copy the three files byte for byte. Document `lowPercent` and `highPercent` and say when to change them.
 
-- [ ] All 13 templates ship byte-identical exposure source with the histogram metric, and the scaffold test passes. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure-scaffold.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts`.
-- [ ] The desktop native host settles the static fixture with the histogram metric. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/__tests__/fixtures/auto-exposure/native-static.playtest.json --target desktop`.
-- [ ] On the Pixel 8, the histogram meter costs at most 0.2 ms GPU more than the mean meter. proof: `node packages/playtest/dist/runner/cli.js perf --logcat <serial>` on both builds.
-- [ ] The reference doc names `lowPercent`, `highPercent` and the meter weight, and the doc checks pass. proof: `pnpm check:docs`.
+- [x] All 13 templates ship byte-identical exposure source with the histogram metric, and the scaffold test passes. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure-scaffold.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts` — 2 files, 79 tests passed; `md5sum` of `exposureGraph.ts` in `template-assets/` and the 13 templates gives one hash. `PRD_201_PARENT_SCAFFOLD_HASHES` is re-pinned for the 13 templates.
+- [x] The desktop native host settles the static fixture with the histogram metric. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/__tests__/fixtures/auto-exposure/native-static.playtest.json --target desktop`; run through its qualifier `TN_NATIVE_EXECUTABLE=<tn-linux/mystral built 2026-10-05> sh scripts/xvfb.sh pnpm exec tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verifyNative.ts`, exit 0 at a0b7c91bc: 180 paired GPU readbacks, `native:vulkan/nvidia/NVIDIA GeForce RTX 2080`, terminal luminance 3.05789 (browser 3.05789), settled, scopes clean, validation negative arm fails as required. The host binary was prebuilt (no native rebuild in this lane); the change is template JS, so the host source is not part of this diff.
+- [x] The reference doc names `lowPercent`, `highPercent` and the meter weight, and the doc checks pass. proof: `pnpm check:docs` — checked 2988 relative links across 1331 files, exit 0; `packages/create-threenative/agent-docs/references/auto-exposure.md` names all three.
