@@ -12,19 +12,20 @@ Props pop in on Machinefall's 2 km map in two ways, and both are hard switches i
 than a missing effect:
 
 - **Arrival and cull.** 134 of the 218 assets carry `maxDistance` 70 m, and each is culled hard at
-  `maxDistance − maxDistance/8` (`packages/core/src/world-cells.ts:282`). An instance at the cull
+  `maxDistance − maxDistance/8` (`packages/core/src/world-cells.ts:3140`). An instance at the cull
   distance is in one frame and gone the next.
 - **LOD switch.** The packaged `lods` switch at 60 m is a rebuild into the other level's batch. The
   source says so: *"ponytail: a hard switch, no crossfade — a placement crosses a level boundary by
   being rebuilt into the other level's batch, so the swap pops. A blend needs a per-instance mix the
-  InstancedBatch has no slot for"* (`packages/core/src/world-cells.ts:855`), and the guide repeats it
+  InstancedBatch has no slot for"* (`packages/core/src/world-cells.ts:6131`), and the guide repeats it
   (`docs/guides/world-streaming.md:136`).
 - **Cells at the ring edge** appear at the residency boundary, so a 25-cell ring puts a visible seam
   of new geometry at the edge of view.
 
 Terrain already does this correctly and is the precedent, not the work: a tile's LOD change morphs
-vertex positions over `LOD_TRANSITION_FRAMES = 3` (`packages/core/src/world-tiles.ts:133`, advanced
-at `:1876`). Scatter has no equivalent because the mix is per instance and `InstancedBatch` writes
+vertex positions over `LOD_TRANSITION_FRAMES = 3` (`packages/core/src/world-tiles.ts:219`).
+[PRD-566](../unreal-source-borrowing/PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md) moves that morph to
+the GPU; it stays out of this PRD. Scatter has no equivalent because the mix is per instance and `InstancedBatch` writes
 only `instanceMatrix` (`packages/core/src/instanced-batch.ts:178`).
 
 Three constraints decide the mechanism:
@@ -41,6 +42,28 @@ Three constraints decide the mechanism:
    alpha *is* `alphaHash`, and a material cannot be both alpha-to-coverage and stochastic, so the
    fading surface and the convention must never claim the same material in one frame.
 
+### What Unreal does (UE 5.8.3, read 2026-10-09; clean-room summary, no code copied)
+
+- **A cull fade needs no per-instance state.** Instanced meshes fade by distance alone. Each batch
+  carries a start distance and the reciprocal of the fade span, scaled by the view-distance setting.
+  The shader computes each instance's opacity from its own distance
+  (`Engine/Source/Runtime/Engine/Private/InstancedStaticMesh.cpp:1372-1390`). Nothing is timed and
+  nothing waits for a release.
+- **A LOD or arrival fade is a short timed ramp held per object.** The default is 0.25 s
+  (`r.LODFadeTime`, `Engine/Source/Runtime/Renderer/Private/SceneVisibility.cpp:307-308`). Each fading
+  primitive keeps a linear scale and bias and an end time (`SceneVisibility.cpp:1112-1134`).
+- **A re-crossing mid-fade reverses direction and keeps the current opacity.** The bias is solved
+  so that the opacity is continuous, and the end time is recomputed (`SceneVisibility.cpp:1140-1160`).
+- **Only nearby movement fades.** A fade starts only inside a travel band
+  (`r.DistanceFadeMaxTravel`, 10 m, `SceneVisibility.cpp:310-311`, used at `:492`). A camera cut
+  or a large camera move disables distance fades (`SceneVisibility.cpp:5574-5585`, read at `:864`),
+  so a teleport pops instead of fading everything at once.
+- **Stencil LOD dither is off by default.** `r.StencilForLODDither` (default 0,
+  `Engine/Source/Runtime/Renderer/Private/DepthRendering.cpp:67-71`) trades `clip()`, which disables
+  early-Z, for a stencil test in a full depth prepass. Three's WebGPU path draws no such prepass, so
+  this PRD does not adopt it (see Decisions). The early-Z cost of `discard` on tile GPUs is measured
+  instead.
+
 ## Solution
 
 A per-instance mix slot on every batch, a fade timeline in `WorldCells`, and a crossfade that keeps
@@ -50,15 +73,23 @@ a crossing placement drawn by both levels at complementary mixes.
    drawn) with a settable per-index value and the attribute exposed for a game material to bind. It
    writes no appearance and picks no threshold; a batch with no fade in use carries the same cost as
    today.
-2. **`WorldCells` drives the timeline.** A newly admitted or rebuilt batch ramps its instances
-   0 → 1 over a game-supplied `fadeMs`; an instance leaving the cull distance ramps 1 → 0 and is
-   released only when the ramp finishes, which is what removes the hard cull. Culling and LOD
-   switching both get **hysteresis** — the cull gate moves at `cullDistance` but only re-arms past
-   `cullDistance/2` — so an instance sitting on the gate does not flicker.
+2. **Cull fades by distance; arrivals and level swaps by time.** The cull fade follows Unreal's
+   instanced form: each batch exposes its fade start and the reciprocal of its fade span as
+   uniforms, derived from the asset's `maxDistance` and the existing `maxDistance/8` band. The
+   game's material computes the instance's mix from distance, so a cull needs no per-instance
+   timeline and no held release. An instance is released only beyond the band's far end, where its
+   mix is already 0. **Arrivals** (a newly admitted or rebuilt batch) ramp 0 → 1 over a
+   game-supplied `fadeMs`, and the guide cites Unreal's 0.25 s as a reference value, not as a
+   default. An arrival fades only when the follow point moved less than one cell since the last
+   update. A jump, which PRD-459's admission already detects, admits without a fade. Culling and
+   LOD switching keep **hysteresis**: the gate re-arms only past half the band, so an instance on
+   the gate does not flicker.
 3. **A level switch crossfades instead of rebuilding.** A placement that crosses a level boundary
    is drawn by both levels for `fadeMs` with complementary mixes (summing to 1), then the old level's
-   copy is dropped. This replaces the rebuild-into-the-other-level path at
-   `packages/core/src/world-cells.ts:853`.
+   copy is dropped. A placement that re-crosses mid-crossfade **reverses from its current mix**:
+   the ramp's bias is re-solved so the mix is continuous, as Unreal does. It never restarts from 0
+   or 1. This replaces the rebuild-into-the-other-level path at the hard-switch note
+   (`packages/core/src/world-cells.ts:6131`).
 4. **The dither material is generated game source.** The screen-door threshold, the pattern, the
    colour and the duration are the game's; the example's `src/render/` carries the reference
    implementation the guide points at.
@@ -78,10 +109,10 @@ draws — only how a drawable arrives and leaves.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: agent]: every arriving instance passes through at least two distinct mix values before reaching full coverage, and a culled instance is held at decreasing mix before release — proof: `pnpm --filter @threenative/core test world-cells-fade` — Evidence: pending.
+- [ ] AC-1 [local; actor: agent]: every arriving instance passes through at least two distinct mix values before reaching full coverage, a culled instance's mix falls with distance across the band and it is released only at mix 0, and an arrival after a follow-point jump admits at full coverage with no fade — proof: `pnpm --filter @threenative/core test world-cells-fade` — Evidence: pending.
 - [ ] AC-2 [local; actor: agent]: no instance's mix changes by more than one fade step per frame while it is partially covered, reported through the public path and asserted by a playtest across an admission and a LOD switch — proof: `pnpm --filter @threenative/core test world-cells-fade` and `pnpm --filter abyss-framework playtest:world` — Evidence: pending.
 - [ ] AC-3 [local; actor: agent]: a placement crossing a level boundary is drawn by both levels during the crossfade with complementary mixes summing to 1 ± 0.01, and the pre-change hard switch fails this — proof: `pnpm --filter @threenative/core test world-cells-fade` — Evidence: pending.
-- [ ] AC-4 [local; actor: agent]: a follow path oscillating across the cull gate does not thrash batch rebuilds, and hysteresis holds the mix stable within the band — proof: `pnpm --filter @threenative/core test world-cells-fade` — Evidence: pending.
+- [ ] AC-4 [local; actor: agent]: a follow path oscillating across the cull gate does not thrash batch rebuilds, hysteresis holds the mix stable within the band, and a placement re-crossing a level boundary mid-crossfade reverses with no mix jump larger than one fade step — proof: `pnpm --filter @threenative/core test world-cells-fade` — Evidence: pending.
 - [ ] AC-5 [local; actor: agent]: the fading surface and the alpha-to-coverage convention never claim the same material in one frame, reported through the existing `alpha-antialiasing` report — proof: `pnpm --filter @threenative/core test alpha world-cells-fade` — Evidence: pending.
 - [ ] AC-6 [local; actor: agent]: the `world-flythrough` playtest captures consecutive frames across a cell admission and a LOD switch; no instance goes from 0 to full coverage within one frame, and the captures are reviewed — proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/world-flythrough.playtest.json --url … --browser-recipe webgpu` — Evidence: pending.
 
@@ -94,6 +125,16 @@ draws — only how a drawable arrives and leaves.
 | Dither material | Generated source in `templates/*/src/render/` for a template that streams a world, plus the reference copy in `examples/abyss-framework/src/render/` and the guide | Nothing; a game's own appearance, kept in game source | AC-2, AC-6 |
 | Playtest capture check | The scenario's `steps` + screenshots, asserted through the entity's reported counters | New | AC-6 |
 
+## Decisions
+
+- 2026-10-09 (João, via the Unreal-source review request): the cull fade is distance-driven per
+  batch, as Unreal's instanced meshes do it, instead of a per-instance timeline. This removes the
+  "eviction mid-ramp" state from the cull path. The timed ramp remains only for arrivals and level
+  crossfades.
+- 2026-10-09 (João, via the same request): stencil LOD dither is not adopted. Unreal ships it off by
+  default, and it needs a full depth prepass that three's WebGPU renderer does not draw. The dither
+  stays a `discard` in the game's material; Phase 3 measures its cost.
+
 ## Execution Phases
 
 #### Phase 1: The mix slot and the timeline
@@ -103,7 +144,7 @@ draws — only how a drawable arrives and leaves.
 **Implementation:** the attribute plus a per-index setter; arrival ramps and the held cull ramp; the cull gate re-arms only past the hysteresis band. No material, no threshold, no colour.
 **Verification:** `pnpm --filter @threenative/core test world-cells-fade` — AC-1, AC-4; the existing `world-cells` suite must stay green.
 - [ ] per-instance attribute written and readable per index. proof: `pnpm --filter @threenative/core test instanced-batch`
-- [ ] arrival and cull ramps with hysteresis. proof: `pnpm --filter @threenative/core test world-cells-fade`
+- [ ] distance-driven cull fade, timed arrival ramp skipped on a jump, and hysteresis. proof: `pnpm --filter @threenative/core test world-cells-fade`
 - [ ] cutout convention and the fading surface never overlap. proof: `pnpm --filter @threenative/core test alpha`
 
 **Checkpoint:** pending

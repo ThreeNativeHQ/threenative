@@ -21,6 +21,33 @@ Begin with separately loadable cooked resolution variants or an available portab
 
 Color/normal/roughness texture families in a representative streamed world; preserve color-space, normal-map and material binding semantics. No tile-feedback renderer or unrelated geometry streaming rewrite.
 
+### What Unreal does (UE 5.8.3, read 2026-10-09; clean-room summary, no code copied)
+
+- **Demand comes from screen size.** For each texture, Unreal computes the largest on-screen size in
+  texels over all views. It wants `ceil(1 + log2(max(1, size)))` mips, clamped to the texture's
+  allowed range (`Engine/Source/Runtime/Engine/Private/Streaming/StreamingTexture.cpp:305-311`).
+  A per-group boost scales the size before the log (`StreamingTexture.h:291`).
+- **Over budget, it drops from the top, lowest priority first.** The streamer walks textures from
+  the lowest priority. It first drops the top mip of textures that use their full resolution, then
+  the next mip, and so on, until the total fits
+  (`Engine/Source/Runtime/Engine/Private/Streaming/AsyncTextureStreaming.cpp:444-465`). Each drop is
+  kept as a persistent per-texture `BudgetMipBias` (`StreamingTexture.h:318-320`). It never goes
+  below the minimum allowed mips, and it keeps one step of room so the bias can reset when memory
+  frees (`StreamingTexture.cpp:416-436`).
+- **The pool is a quality setting.** The texture tiers set 400, 600, 800 and 1000 MB pools, and all
+  but the highest tier cap the pool at the device's VRAM (`Engine/Config/BaseScalability.ini:740-783`).
+
+**What changes here.** Demand uses the same screen-size rule, mapped onto cooked variants instead
+of mips: a texture asks for the smallest variant whose size covers its largest on-screen footprint.
+Over budget, the drop order and the persistent per-texture bias above replace an unspecified
+eviction policy. No fixed pool size is adopted: WebGPU exposes no VRAM figure, so the budget stays
+the game's, and the synthetic 256 MiB below remains a fixture value only. **A WebGPU texture cannot
+shrink in place.** A `GPUTexture` has a fixed size and mip count, and a mip cannot be freed. A drop
+or a restore is therefore a new texture of the other variant, swapped into every material that
+binds it, and the old one is destroyed only after the GPU has finished the frames that used it.
+Mobile variants use [PRD-568](../unreal-source-borrowing/PRD-568-mobile-builds-ship-gpu-ready-astc.md)'s ASTC output,
+where it applies.
+
 ## Required behavior
 
 - Shared textures are counted once, and active materials never reference disposed textures.
@@ -39,7 +66,7 @@ All proof paths below are **planned implementation targets**, not existing passi
 
 ### Phase 2 — Bounded demand and safe replacement
 
-- [ ] Add budgeted demand, hysteresis and cancellation while retaining a valid fallback representation. proof: `pnpm exec vitest run packages/core/__tests__/vq-texture-mip-residency.spec.ts`.
+- [ ] Add budgeted demand (smallest variant covering the largest on-screen footprint), lowest-priority-first drops with a persistent per-texture bias that resets when the budget recovers, hysteresis and cancellation, while retaining a valid fallback representation. proof: `pnpm exec vitest run packages/core/__tests__/vq-texture-mip-residency.spec.ts`.
 - [ ] Wire atomic material replacement and verify repeated streaming/teleport cycles release actual high-detail allocations. proof: `pnpm exec vitest run packages/core/__tests__/vq-texture-mip-residency.spec.ts`.
 
 ### Phase 3 — Qualify the visible result

@@ -186,8 +186,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // in every kit's worldEnvironment.ts. The shooter Rifle.ts gained a scope alpha test and a reticle.
 // All thirteen generated trees changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-09 on develop 708612e12 with the shooter fix merged in. Every kit's
-  // generated tree changed, so all thirteen fingerprints moved.
+  // Recomputed on develop 07bcdf8d2 with the shooter fix and PRD-572 merged in; PRD-572 changes
+  // the starter instructions, so only its fingerprint moved from the shooter-fix values.
   "action-rpg": "cfc4fdaa7aff7713f6cbeea93ef0b680bf665031fe3c04dd2bf3ba32476389d4",
   minimal: "18d511d041161e706b450496e8b05cd2be8ad7224b75848da463b79ddc88b1f5",
   platformer: "c31ad80077d41a7ecfcd497f78b36029ee872fe6249f9c71e04da10dff161cb1",
@@ -199,7 +199,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "eff0c4b20bffbd1225afa033754d6d3df9cf375e7e9fa8f47e278412cc0ef571",
   shooter: "91546efa42e694ee61bc1fffc309b4af33e007d94ea7195bb3446fd938addbff",
   snow: "7e0963fb36ddd4c801c12207178c59a4f03f074a25fd2ed0d3b6fe81f78bed59",
-  starter: "3c9044cd1629d3e8ce51d1eaa0920c10e00c11047046e6e2e665f9a997796e84",
+  starter: "00bb17d96e721f2e8ec977a644b51a0b5ae9b843e2ed34251e779f7ef5364e13",
   "tower-defense": "0f49ea561767830611cf509c68efa024fab48337ec6e5ba66a729e99d59a1cd5",
 };
 
