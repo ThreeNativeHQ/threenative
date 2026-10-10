@@ -1,6 +1,6 @@
 import {
-  type ICtx,
   FrameBudget,
+  type ICtx,
   Scene,
   debugFlag,
   defineGame,
