@@ -26,6 +26,12 @@ const moves = mode === "virtual" || params.get("move") === "1";
 // `lead=N` holds the ball still for N frames first, so every level has baked it in place before
 // it moves: the stale shadow a missed mover leaves is the thing under test.
 const lead = Number(params.get("lead") ?? "0");
+// `settle=N` keeps the frame loop going for N frames after the ball's last move, so a caster the
+// node demoted can be read in the cached levels again; `staticAfter` shortens the quiet-frame count
+// that demotion waits for, and `mover` sets the mover map's texels per edge.
+const settle = Number(params.get("settle") ?? "0");
+const staticAfter = params.get("staticAfter");
+const moverSize = params.get("mover");
 const renderer = new WebGPURenderer({ antialias: false });
 renderer.setSize(512, 512);
 renderer.setPixelRatio(1);
@@ -81,6 +87,8 @@ if (mode === "virtual") {
     clipExtents: clip === null ? [6, 18, 54] : clip.split(",").map(Number),
     mapSize: 1024,
     marker: 5,
+    ...(staticAfter === null ? {} : { staticAfterFrames: Number(staticAfter) }),
+    ...(moverSize === null ? {} : { moverMapSize: Number(moverSize) }),
     ...(near ? { depthRange: 30, lightDistance: 12 } : {}),
   });
   const counts: Record<string, number> = { inner: 0, innerRender: 0, outer: 0 };
@@ -145,7 +153,7 @@ const history: Array<{
 // animation loop, and a shadow requested in a frame already answered is skipped.
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve()));
-for (let frame = 0; frame < lead + 12; frame += 1) {
+for (let frame = 0; frame < lead + 12 + settle; frame += 1) {
   if (stepped) {
     const gate = window as unknown as { __GO__?: () => void; __WAITING__?: number };
     gate.__WAITING__ = frame;
@@ -153,7 +161,7 @@ for (let frame = 0; frame < lead + 12; frame += 1) {
       gate.__GO__ = resolve;
     });
   }
-  if (moves && frame >= lead) {
+  if (moves && frame >= lead && frame < lead + 12) {
     const phase = ((frame - lead + 1) * Math.PI) / 6;
     ball.position.x = Math.sin(phase) * 0.75;
     ball.position.z = Math.sin(phase * 2) * 0.35;

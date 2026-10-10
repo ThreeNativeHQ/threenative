@@ -1454,8 +1454,8 @@ describe("virtual shadow target lifetime", () => {
   );
 
   it.each([
-    [[24, 96, 320], 512, 7.5],
-    [[24, 320], 4096, 320],
+    [[24, 96, 320], 512, 12],
+    [[24, 320], 4096, 512],
   ] as const)(
     "accounts for the default PCF target storage of %s at %s",
     (clipExtents, mapSize, mebibytes) => {
@@ -2937,6 +2937,35 @@ describe("VirtualShadowNode automatic movers", () => {
     expect(built.node.stats.perLevel.map((level) => level.invalidated)).toEqual([0, 1]);
     expect(built.mesh.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(true);
     expect(built.mesh.castShadow).toBe(true);
+  });
+
+  it("should redraw every level that selects a caster's old spot on the frame it starts to move", () => {
+    const built = scene20();
+    // 7.5 m out: inside the fine level's 8 m extent but past its 6.2 m guarded window, so the old
+    // blob is partly read from the coarse level. Both maps must lose it that frame, or the stale
+    // blob and the mover's new one overlap into a double shadow until the coarse level catches up.
+    built.mesh.position.x = 7.5;
+    steady(built);
+    built.mesh.position.x = 8.5;
+    step(built);
+    expect(built.node.stats.perLevel.map((level) => level.rendered)).toEqual([1, 1]);
+    expect(built.node.stats.rendered).toBe(2);
+  });
+
+  it("should keep one render for a caster whose old spot the fine level holds alone", () => {
+    const built = scene20();
+    built.mesh.position.x = 2;
+    steady(built);
+    built.mesh.position.x = 3;
+    step(built);
+    // Level 0 holds the whole blob inside its guarded window, so the coarse level never selects
+    // it; that level waits behind the frame's one render as before.
+    expect(built.node.stats.perLevel.map((level) => level.rendered)).toEqual([1, 0]);
+  });
+
+  it("should give a mover the same texel density as the cached levels by default", () => {
+    const built = scene20();
+    expect(built.node.options.moverMapSize).toBe(OPTIONS.mapSize);
   });
 
   it("should keep a mover out of the cached level render while it moves", () => {

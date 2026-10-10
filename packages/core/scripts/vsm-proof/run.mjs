@@ -195,15 +195,13 @@ const changedRatio = (a, b) => {
  * the node already did for a game that read the docs.
  */
 const AUTO_TRACK_BOUND = 0.01;
-// The frame a caster starts moving is bounded apart: the node redraws the old shadow's region one
-// level per frame, finest first, so that one frame can still show the baked shadow from a coarser
-// level (0.0106 measured). The `pinned` arm is above this bound on that frame too (0.0213).
-const DETECTION_BOUND = 0.015;
 // These arms pass `near=1` (depthRange 30, lightDistance 12): the original arms track the ball and so
 // never read a cached level, and the node's default depth reach puts this 40 m scene's casters
 // outside its cached maps, which would hide the stale shadow this check exists to see.
 /** Still frames before the ball moves, long enough for every level to bake it in place. */
 const LEAD = 4;
+/** Quiet frames after the last move, enough for a `staticAfter=4` demotion and its redraws. */
+const SETTLE = 14;
 const assertAutoTrack = async (frames) => {
   // Only the 12 frames in which the ball moves are compared; the lead-in is the cold start every
   // arm shares.
@@ -217,7 +215,6 @@ const assertAutoTrack = async (frames) => {
   const round = (list) => list.map((value) => Number(value.toFixed(4)));
   results.autoTrack = {
     bound: AUTO_TRACK_BOUND,
-    detectionBound: DETECTION_BOUND,
     auto: round(auto),
     manual: round(manual),
     pinned: round(pinned),
@@ -226,16 +223,29 @@ const assertAutoTrack = async (frames) => {
   console.log(JSON.stringify(results.autoTrack));
   requireProof(auto.length === 12, "auto arm did not capture 12 frames");
   auto.forEach((ratio, index) => {
-    const bound = index === 0 ? DETECTION_BOUND : AUTO_TRACK_BOUND;
+    const bound = AUTO_TRACK_BOUND;
     requireProof(
       ratio <= bound,
       `auto frame ${index} differs from the stock shadow by ${ratio.toFixed(4)} (bound ${bound})`,
     );
   });
+  // Back at rest the caster is in the cached levels again, and the stock shadow is what they must
+  // show: a settled caster left at the mover map's density would read softer than the stock edge.
+  const settled = frames.autoSettle
+    .slice(LEAD + 12)
+    .map((shot, index) => changedRatio(frames.stockSettle[LEAD + 12 + index], shot));
+  results.autoTrack.settled = round(settled);
+  await writeFile(`${DIR}out/results.json`, JSON.stringify(results, null, 1));
+  console.log(JSON.stringify({ settled: results.autoTrack.settled }));
+  requireProof(settled.length === SETTLE, "autoSettle arm did not capture the settle frames");
+  requireProof(
+    Math.max(...settled.slice(-4)) <= AUTO_TRACK_BOUND,
+    `settled caster differs from the stock shadow by ${Math.max(...settled.slice(-4)).toFixed(4)} (bound ${AUTO_TRACK_BOUND})`,
+  );
   // A still-pinned caster is stale on every frame it is away from where it was baked; the bound is
   // only worth anything if it catches that on each of those frames.
   pinned.forEach((ratio, index) => {
-    const bound = index === 0 ? DETECTION_BOUND : AUTO_TRACK_BOUND;
+    const bound = AUTO_TRACK_BOUND;
     if (ratio > 0.001) {
       requireProof(
         ratio > bound,
@@ -257,6 +267,13 @@ try {
     ["stockMove", `mode=stock&move=1&step=1&lead=${LEAD}`],
     ["manual", `mode=virtual&near=1&track=manual&step=1&lead=${LEAD}`],
     ["auto", `mode=virtual&near=1&track=auto&step=1&lead=${LEAD}`],
+    // The ball stops at its baked spot and the loop runs on: `autoSettle` has demoted it by then
+    // (`staticAfter=4`), and its last frames are the cached levels again, not the mover maps.
+    ["stockSettle", `mode=stock&move=1&step=1&lead=${LEAD}&settle=${SETTLE}`],
+    [
+      "autoSettle",
+      `mode=virtual&near=1&track=auto&step=1&lead=${LEAD}&settle=${SETTLE}&staticAfter=4`,
+    ],
     ["pinned", `mode=virtual&near=1&track=pinned&step=1&lead=${LEAD}`],
   ]) {
     const page = await browser.newPage({ viewport: { width: 512, height: 512 } });
@@ -267,7 +284,8 @@ try {
     if (query.includes("step=1")) {
       // The page holds each frame until told to go, so every frame can be screenshot.
       frames[mode] = [];
-      for (let frame = 0; frame < LEAD + 12; frame += 1) {
+      const total = LEAD + 12 + Number(new URLSearchParams(query).get("settle") ?? 0);
+      for (let frame = 0; frame < total; frame += 1) {
         await page.waitForFunction((f) => window.__WAITING__ === f, frame, { timeout: 60_000 });
         await page.evaluate(() => window.__GO__());
         await page.waitForFunction((f) => window.__DONE__ === f + 1, frame, { timeout: 60_000 });
@@ -335,7 +353,17 @@ try {
   results.changedPixelRatio = Number((changed / (a.width * a.height)).toFixed(4));
   await writeFile(`${DIR}out/results.json`, JSON.stringify(results, null, 1));
   console.log(JSON.stringify(results, null, 1));
-  for (const mode of ["stock", "virtual", "one", "stockMove", "manual", "auto", "pinned"]) {
+  for (const mode of [
+    "stock",
+    "virtual",
+    "one",
+    "stockMove",
+    "manual",
+    "auto",
+    "pinned",
+    "stockSettle",
+    "autoSettle",
+  ]) {
     const result = results[mode];
     requireProof(isRecord(result), `${mode} result missing`);
     assertRealAdapter(result.adapter, mode);

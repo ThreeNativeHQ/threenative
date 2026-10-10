@@ -86,8 +86,9 @@ export interface IVirtualShadowOptions {
   readonly mapSize?: number;
   /**
    * Texels per edge of each level's mover map — the map tracked casters draw into every frame.
-   * Default: half of `mapSize`, never below 256. Movers are few and close, so half the texels
-   * over the same window reads as the same shadow at a quarter of the fill.
+   * Default: `mapSize`, the cached levels' own density, so a caster keeps the edge it had at rest
+   * while it moves and does not pop to a crisper one when it settles. Lower it to buy back fill
+   * on a weak GPU; the soft edge it costs is on the mover only.
    */
   readonly moverMapSize?: number;
   /**
@@ -425,7 +426,6 @@ export const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
  * it is not one half of a choice: a key is the whole of what a keyed map draws of the world.
  */
 export const VIRTUAL_SHADOW_KEY_LAYER = 25;
-const MIN_MOVER_MAP_SIZE = 256;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
 const DEFAULT_MARKER_EVERY = 300;
 /** Frames between markers while `?tnShadowStats=1` is on the URL: about a second a walk is long. */
@@ -967,8 +967,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         `TN_VIRTUAL_SHADOW_INVALID: mapSize must be a positive integer, got ${String(mapSize)}.`,
       );
     }
-    const moverMapSize =
-      options.moverMapSize ?? Math.max(MIN_MOVER_MAP_SIZE, Math.floor(mapSize / 2));
+    const moverMapSize = options.moverMapSize ?? mapSize;
     if (!Number.isInteger(moverMapSize) || moverMapSize <= 0) {
       throw new RangeError(
         `TN_VIRTUAL_SHADOW_INVALID: moverMapSize must be a positive integer, got ${String(moverMapSize)}.`,
@@ -2666,6 +2665,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         cu: (window.minX + half) * window.pageWorldSize,
         cv: (window.minY + half) * window.pageWorldSize,
       });
+      const finer: { cu: number; cv: number; half: number }[] = [];
       this.#levels.forEach((level, index) => {
         const window = windows[index];
         if (window === undefined) return;
@@ -2677,6 +2677,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
         let regionDirty = false;
         // An ask the node made about a caster it just measured moving, which no delay should hold.
         let urgent = false;
+        // The same ask, when a fragment of the old spot is read from *this* level: a finer level's
+        // guarded window did not take all of it, so the finer map being redrawn does not clear it.
+        let urgentSelected = false;
         for (const region of projected) {
           if (
             region.u.low <= cu + level.extent &&
@@ -2687,10 +2690,21 @@ export class VirtualShadowNode extends ShadowBaseNode {
             regionDirty = true;
             if (region.urgent) {
               urgent = true;
-              break;
+              urgentSelected ||= !finer.some(
+                (held) =>
+                  region.u.low >= held.cu - held.half &&
+                  region.u.high <= held.cu + held.half &&
+                  region.v.low >= held.cv - held.half &&
+                  region.v.high <= held.cv + held.half,
+              );
             }
           }
         }
+        finer.push({
+          cu,
+          cv,
+          half: level.extent * (this.options.selectionGuard[index] ?? 0),
+        });
         const asked =
           invalidateAll || invalidatedLevels.has(index) || regionDirty || source.shadow.needsUpdate;
         if (windowMoved) moved += 1;
@@ -2716,7 +2730,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
         const due = canRender && reason !== REASON_NONE;
         // Finest first: the loop walks the levels in that order, so the first due level takes the
         // frame's single render and every other due level is deferred behind it.
-        const grant = due && !budgetSpent;
+        // One exception: a caster that has just been measured moving leaves its old shadow in every
+        // map that selects it, and the frame's first mover render is the only one the mover layer
+        // can hide it from. A level that reads part of that spot draws on this frame too, so the
+        // blob never stands next to the mover's new shadow. It fires once per caster, on the frame
+        // the node classifies it, and at most one render per level.
+        const grant = due && (!budgetSpent || (urgentSelected && matured));
         if (grant) {
           // A level's first render places its window; only later renders are travel.
           if (Number.isFinite(level.minX)) {
