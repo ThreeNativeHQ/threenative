@@ -897,7 +897,7 @@
     },
     {
       "id": "terrain-splat-array",
-      "title": "sixteen-layer terrain splat through four array textures",
+      "title": "sixteen-layer terrain splat and a height set through five array textures",
       "category": "world",
       "status": "implemented",
       "scene": "conformance/scenes/shared/terrain-splat-array.js",
