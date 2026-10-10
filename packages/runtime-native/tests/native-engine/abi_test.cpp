@@ -651,6 +651,36 @@ void children() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// The walk with parents: each object, then its parent's index in the walk (-1 for the root), so a
+// back end learns every `parent` in the subtree from the one crossing.
+void walk_parents() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, group{}, mesh{}, other{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &other, &d.value) == TN_OK);
+    tn_value_t result{};
+    const tn_value_t children[2] = {ref(group), ref(other)};
+    CHECK(tn_invoke(scene, "add", children, 2, &result, &d.value) == TN_OK);
+    const tn_value_t child = ref(mesh);
+    CHECK(tn_invoke(group, "add", &child, 1, &result, &d.value) == TN_OK);
+    const tn_value_t args[2] = {boolean(false), boolean(true)};
+    CHECK(tn_invoke(scene, "__walk", args, 2, &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_ARRAY && result.count == 8);
+    if (result.count != 8) return;
+    const tn_handle_t order[4] = {scene, group, mesh, other};
+    const double parents[4] = {-1, 0, 1, 0};
+    for (int i = 0; i < 4; ++i) {
+        CHECK(result.values[2 * i].kind == TN_VALUE_HANDLE && same(result.values[2 * i].handle, order[i]));
+        CHECK(result.values[2 * i + 1].kind == TN_VALUE_NUMBER && result.values[2 * i + 1].number == parents[i]);
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // PRD-540: TSL by name through the C ABI, the table the V8 back end shares. Midway's first call is
 // a class field `uniform(0)`; its graph then reaches a node material and compiles.
 void tsl_call() {
@@ -904,4 +934,4 @@ void layers_field() {
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents})

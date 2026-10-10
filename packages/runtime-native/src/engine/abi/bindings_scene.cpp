@@ -35,6 +35,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -222,14 +223,25 @@ void registerObject3D(ClassBinding& b) {
     // over it, so a walk costs one crossing, not two per object (children and visible).
     // ponytail: a snapshot; an object a callback adds or removes mid-walk is not revisited, as three's
     // live walk would. Walk live if a game depends on it.
+    // `__walk(visibleOnly, withParents)`: with parents, each object is followed by its parent's index
+    // in the walk (-1 when the parent is outside it), so a back end learns every `parent` it walked.
     b.methods["__walk"] = [](void* self, const Args& a, Store& store) {
         std::vector<Object3D*> objects;
         const auto collect = [](Object3D& object, void* out) { static_cast<std::vector<Object3D*>*>(out)->push_back(&object); };
         if (boolean(a, 0, false)) as<Object3D>(self)->traverseVisible(collect, &objects);
         else as<Object3D>(self)->traverse(collect, &objects);
+        const bool withParents = boolean(a, 1, false);
+        std::unordered_map<const Object3D*, double> index;
+        if (withParents) index.reserve(objects.size());
         Args walked;
-        walked.reserve(objects.size());
-        for (Object3D* object : objects) walked.push_back(foundObject(store, object));
+        walked.reserve(objects.size() * (withParents ? 2 : 1));
+        for (Object3D* object : objects) {
+            walked.push_back(foundObject(store, object));
+            if (!withParents) continue;
+            const auto parent = index.find(object->parent);
+            walked.push_back(Value::of(parent == index.end() ? -1.0 : parent->second));
+            index.emplace(object, double(index.size()));
+        }
         return Value::array(std::move(walked));
     };
     // Engine-internal: core's projected-size cull in one call (scene/projected_cull.h), its state kept

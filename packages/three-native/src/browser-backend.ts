@@ -243,14 +243,26 @@ function defineTraversal(
   className: string,
   hasChildren: boolean,
   walks: boolean,
+  seen: (object: object, parent: object) => void,
 ) {
   const childrenOf = (object: object): object[] => {
     if (!hasChildren) throw new TypeError(`TN_BROWSER_UNBOUND: ${className}.children`);
     return (object as { children: object[] }).children;
   };
-  // The engine's walk: one crossing for the whole subtree, in three's order (`__walk`).
-  const walk = (object: object, visibleOnly: boolean): object[] =>
-    (object as { __walk(visibleOnly: boolean): object[] }).__walk(visibleOnly);
+  // The engine's walk: one crossing for the whole subtree, in three's order (`__walk`), each object
+  // followed by its parent's index in the walk, which `seen` keeps.
+  const walk = (object: object, visibleOnly: boolean): object[] => {
+    const walked = (
+      object as { __walk(visibleOnly: boolean, withParents: boolean): (object | number)[] }
+    ).__walk(visibleOnly, true);
+    const objects: object[] = [];
+    for (let i = 0; i < walked.length; i += 2) {
+      const parent = walked[i + 1] as number;
+      objects.push(walked[i] as object);
+      if (parent >= 0) seen(walked[i] as object, objects[parent] as object);
+    }
+    return objects;
+  };
   const methods: Record<string, (this: object, callback: TraverseCallback) => void> = {
     traverse(callback) {
       if (walks) {
@@ -319,6 +331,11 @@ export function defineBrowserClasses(
     "__attributeNames",
   ]);
   const labels = new WeakMap<object, Map<string, unknown>>();
+  // `parent`, which games walk to the root per mesh inside traverse, kept from the walks and the
+  // `children` reads that saw it, until add, remove, attach, removeFromParent or clear moves it.
+  // ponytail: an engine call that reparents under any other name is missed; none does today.
+  let parents = new WeakMap<object, unknown>();
+  const moves = new Set(["add", "remove", "attach", "removeFromParent", "clear"]);
   // An attribute's shape, in the order its `__shape` getter answers it: one call fills all four.
   const shapeKeys = ["count", "itemSize", "normalized", "gpuType"];
   const fastGetter = (binding: IRegistryClass, property: string) => {
@@ -595,6 +612,14 @@ export function defineBrowserClasses(
       const bumps = writesAttributes && !/^(get|has|clone|equals|toJSON)/u.test(method);
       // A geometry's attribute lookups are kept with its labels, until anything else runs on it.
       const query = method === "getAttribute" || method === "hasAttribute";
+      // Forgotten before the call too, so an `added` listener reads the new parent.
+      const forget = moves.has(method)
+        ? (self: object, args: unknown[]) => {
+            if (method === "clear") parents = new WeakMap();
+            for (const moved of method === "removeFromParent" ? [self] : args)
+              parents.delete(moved as object);
+          }
+        : undefined;
       Object.defineProperty(prototype, method, {
         configurable: true,
         writable: true,
@@ -606,6 +631,7 @@ export function defineBrowserClasses(
           if (!query) labels.delete(this);
           const mark = loans.length;
           let result: unknown;
+          forget?.(this, args);
           try {
             result = fromEngine(
               runtime.invoke(
@@ -615,6 +641,7 @@ export function defineBrowserClasses(
               ),
             );
           } finally {
+            forget?.(this, args);
             if (loans.length > mark) result = repay(mark, result);
           }
           if (bumps) epoch++;
@@ -925,11 +952,30 @@ export function defineBrowserClasses(
           userData.set(this, value);
         },
       });
+      const hasChildren =
+        binding.members.includes("children") || binding.getters.includes("children");
+      Object.defineProperty(prototype, "parent", {
+        configurable: true,
+        get(this: object) {
+          if (!parents.has(this)) parents.set(this, fromEngine(runtime.get(refOf(this), "parent")));
+          return parents.get(this);
+        },
+      });
+      if (hasChildren)
+        Object.defineProperty(prototype, "children", {
+          configurable: true,
+          get(this: object) {
+            const children = fromEngine(runtime.get(refOf(this), "children")) as object[];
+            for (const child of children) parents.set(child, this);
+            return children;
+          },
+        });
       defineTraversal(
         prototype,
         name,
-        binding.members.includes("children") || binding.getters.includes("children"),
+        hasChildren,
         binding.methods.includes("__walk"),
+        (object, parent) => parents.set(object, parent),
       );
     }
     if (name.endsWith("Material")) {
