@@ -196,7 +196,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "7212532cca11fc11e9346461cc3468a59a92237ca800f2e1fe142681d344ff1b",
   shooter: "874b9d1a0f053970ad381e3703ac5dc288581ece212f53cbb2f86a095f0df561",
   snow: "b9ef634e808b6c4a79c8a8768955cb2979ec949cdb147e3c77bca4803089b470",
-  starter: "76c53dd1337161dcfadda2ff25867f47007ce4242148687c5db37ac5184e6f6d",
+  // PRD-572: starter AGENTS.md gained the shadow-movers paragraph; only starter moves.
+  starter: "9e663841c6445b06e5d65ec630d99ce5ec787f28989f4f7990a5aa1b3316dbff",
   "tower-defense": "4f10541731f30c25b31bb7b5770c1bef1ffe9327d713d980e0847b0ed751f863",
 };
 

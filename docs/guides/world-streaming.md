@@ -255,6 +255,27 @@ by frustum only. It was declined twice on measured headroom and is now a single 
 on the GPU scene. Read it before assuming a cell is free to stream wide; the answer today is that it
 is not.
 
+### Terrain layers that blend by their own height
+
+`loadTerrainSplat` mixes each table layer over the ones below it by that layer's mask weight, so a
+mask edge is only as detailed as the mask. A layer whose table row says `"height": true` also loads
+`<id>_h.jpg` as linear data, stacked into one more array texture (the marker then reports
+`samplers=5` for a sixteen-layer package). The package owns no curve. It hands each layer's
+weight and height sample to a function you pass as `layerWeight`:
+
+```ts
+import { loadTerrainSplat } from "@threenative/core/world";
+import { heightBlend } from "./render/heightBlend.js";
+
+const surface = await loadTerrainSplat({ assets, layerWeight: heightBlend, renderer, url });
+```
+
+`layerWeight(weight, { height, index, layer })` returns the weight the mix chain uses, and `height`
+is `undefined` for a layer with no height set. Leave it out and the weight is the mask, unchanged.
+[`heightBlend.ts`](../../examples/prd493-terrain-splat/src/render/heightBlend.ts) is the reference
+curve: a half-painted layer holds the crests of its relief first, a fully painted layer covers, and
+an unpainted one stays hidden. Edit or replace it to change the look. The package does not decide it.
+
 ## 4. Prove it
 
 The in-repo fixture

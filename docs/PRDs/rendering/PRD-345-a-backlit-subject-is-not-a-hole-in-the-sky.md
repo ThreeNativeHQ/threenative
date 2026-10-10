@@ -350,4 +350,19 @@ source-first architecture requires an explicit coherent policy change before pac
 Anything in `packages/`, and any change to the tonemapper — PRD-339 and PRD-343 own exposure and the
 white point.
 
+## Decisions
+
+- 2026-10-09 (João, via the Unreal source review): Unreal treats a backlit subject from the exposure
+  side as well. It meters a 64-bin luminance histogram and ignores the darkest 10% and brightest 10%
+  (`UE 5.8.3: Engine/Source/Runtime/Engine/Private/Scene.cpp:494-496`,
+  `Engine/Shaders/Private/PostProcessHistogramCommon.ush:89-90`). It also ships a bilateral-grid
+  local exposure that can lift a dark subject against a bright sky without flattening the sky. That
+  feature is neutral by default: both contrast scales are 1.0, and a project opts in by lowering
+  them (`Scene.cpp:525-534`, `Engine/Source/Runtime/Engine/Private/SceneView.cpp:210-218`,
+  `Engine/Shaders/Private/PostProcessLocalExposure.usf`). Neither enters
+  this PRD: this PRD's scope is the material terms, and "Out of scope" above hands exposure to
+  PRD-339. PRD-339 is done with mean metering, and it defers a histogram to "a separate PRD"
+  (`done/PRD-339-the-frame-sets-its-own-exposure.md:106-107`). The Unreal evidence goes to that
+  separate PRD. No box here changes.
+
 Historical GPU evidence limitation: lease ownership is scoped to process TMPDIR; durable-temp runs used private namespaces and manual own-job serialization. Shared global exclusion was not established. See benchmark PRD-345 capture coordination notes; future timing uses an explicit outer shared lease. Original acceptance remains partial.

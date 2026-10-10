@@ -487,6 +487,12 @@ def export_terrain_layers(out, table_path, root=None):
                 terrain_layer_texture(table_dir, textures, layer["id"], "orm"),
                 os.path.join(tex, "%s_orm.jpg" % layer["id"]),
             )
+        if layer.get("height"):
+            # The layer's own height, which the game's `layerWeight` reads; fails closed like orm.
+            shutil.copyfile(
+                terrain_layer_texture(table_dir, textures, layer["id"], "h"),
+                os.path.join(tex, "%s_h.jpg" % layer["id"]),
+            )
 
     shipped = {key: table[key] for key in ("base", "breakup", "macro", "layers")}
     shipped["splat"] = {"masks": placed, "planes": len(planes), "size": size}

@@ -841,7 +841,8 @@ export type { IVelocityRenderPass } from "./render/velocity.js";
  * @situation shadows shimmer when the camera moves
  * @constraint the light must be a DirectionalLight with `castShadow` and a target in the scene
  * @constraint clipExtents are half-widths in world units, finest first, strictly increasing
- * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves
+ * @constraint movers sort themselves: a layer-0 caster whose world matrix, instance matrix or deformation changed draws through the mover maps and leaves the cached levels, and returns to them after `staticAfterFrames` quiet frames; the cache redraws only the region it left
+ * @constraint `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region
  * @constraint call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does
  * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement
  * @example

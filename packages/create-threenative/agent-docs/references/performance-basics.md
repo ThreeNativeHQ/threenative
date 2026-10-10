@@ -84,7 +84,7 @@ A GPU that is idle with a slow `render` phase is an object-count problem, not a 
 | A particle surface | `GPUParticles3D` | Pooled dispatch, game-owned appearance |
 | Bullet streaks | `TracerPool3D` | Pooled travelling meshes |
 | A sprite that faces the camera | `Billboard3D` | No hand-written per-frame orientation |
-| One directional shadow over an open world | `VirtualShadowNode` | Camera-centred, texel-snapped clip levels; `trackCaster` for movers |
+| One directional shadow over an open world | `VirtualShadowNode` | Camera-centred, texel-snapped clip levels; movers sort themselves; `trackCaster` pins one, `pinStatic` excludes one |
 | Distance detail swaps | three's `LOD` | Standard, and the engine can still batch it |
 | Raycasts over a large static scene | `GPUSceneBVH` / `ScenePicker` | Built once, queried many times |
 
