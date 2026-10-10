@@ -302,7 +302,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_tsl_statements=tsl_statements
     native_engine_abi_tsl_effect_parameter=tsl_effect_parameter
     native_engine_abi_mixer_time_field=mixer_time_field
-    native_engine_abi_visible_field=visible_field)
+    native_engine_abi_visible_field=visible_field
+    native_engine_abi_layers_field=layers_field)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 # PRD-508 phase 3: the geometry edges a JS caller reaches that no fixture states.

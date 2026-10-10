@@ -664,8 +664,9 @@ export function defineBrowserClasses(
         Object.hasOwn(accessors, property)
       )
         continue;
-      // A value class's lane is written in place: its engine setter is a plain store.
-      const lane = valueClass !== undefined ? binding.fields?.[property] : undefined;
+      // A value class's lane is written in place: its engine setter is a plain store (Layers' too).
+      const lane =
+        valueClass !== undefined || name === "Layers" ? binding.fields?.[property] : undefined;
       // A bool field (`visible`, which games set every frame) skips a set that changes nothing.
       const flag = binding.fields?.[property];
       const readFlag = flag?.[1] === 0 ? runtime.readByte : undefined;
@@ -715,6 +716,39 @@ export function defineBrowserClasses(
               }
             : {}),
       });
+    }
+    // Games enable and disable layers on every mesh while they load: with the mask read and written
+    // in place, three's Layers.js bit operations need no engine call.
+    if (name === "Layers" && binding.fields?.mask !== undefined && runtime.readDoubles && write) {
+      type Mask = { mask: number };
+      const layerMethods: Record<string, (this: Mask, argument: number & Mask) => unknown> = {
+        set(channel) {
+          this.mask = ((1 << channel) | 0) >>> 0;
+        },
+        enable(channel) {
+          this.mask |= (1 << channel) | 0;
+        },
+        enableAll() {
+          this.mask = 0xffffffff | 0;
+        },
+        toggle(channel) {
+          this.mask ^= (1 << channel) | 0;
+        },
+        disable(channel) {
+          this.mask &= ~((1 << channel) | 0);
+        },
+        disableAll() {
+          this.mask = 0;
+        },
+        test(layers) {
+          return (this.mask & layers.mask) !== 0;
+        },
+        isEnabled(channel) {
+          return (this.mask & ((1 << channel) | 0)) !== 0;
+        },
+      };
+      for (const [method, value] of Object.entries(layerMethods))
+        Object.defineProperty(prototype, method, { configurable: true, writable: true, value });
     }
     // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
     // a holder made per read, as the V8 adapter makes it: each tail reads and writes the full path.

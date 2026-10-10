@@ -9,6 +9,8 @@
 #include "engine/scene/object3d.h"
 #include "engine/scene/nodes.h"
 
+#include <cstring>
+
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -881,8 +883,25 @@ void visible_field() {
     }
 }
 
+void layers_field() {
+    tn::binding::Registry classes;
+    tn::binding::registerAll(classes);
+    const tn::binding::ClassBinding& binding = classes.at("Layers");
+    CHECK(binding.fields.count("mask") == 1);
+    if (binding.fields.count("mask") == 0) return;
+    const auto [offset, count] = binding.fields.at("mask");
+    CHECK(count == 1);
+    tn::engine::Layers layers;
+    void* self = &layers;
+    CHECK(binding.getters.at("__address")(self).number == double(reinterpret_cast<uintptr_t>(self)));
+    layers.enable(1);
+    double mask = 0;
+    std::memcpy(&mask, reinterpret_cast<const char*>(self) + offset, sizeof mask);
+    CHECK(mask == 3);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field})

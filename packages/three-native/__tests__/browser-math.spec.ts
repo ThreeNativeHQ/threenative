@@ -309,6 +309,45 @@ describe("three's math values on the browser back end", () => {
     expect(invokes).toEqual(["hasAttribute instanceColor"]);
   });
 
+  it("runs three's Layers bit operations on the engine's mask in place", () => {
+    const { runtime, calls } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, runtime);
+    interface ILayers {
+      mask: number;
+      set(channel: number): void;
+      enable(channel: number): void;
+      enableAll(): void;
+      toggle(channel: number): void;
+      disable(channel: number): void;
+      disableAll(): void;
+      test(layers: ILayers): boolean;
+      isEnabled(channel: number): boolean;
+    }
+    const Layers = classes.Layers as new () => ILayers;
+    const a = new Layers();
+    const b = new Layers();
+    a.mask = 1;
+    a.enable(1);
+    expect(a.mask).toBe(3);
+    a.disable(0);
+    a.toggle(31);
+    expect(a.mask).toBe(2 | (1 << 31)); // three keeps the signed result of `|=`
+    expect(a.isEnabled(31)).toBe(true);
+    a.set(31);
+    expect(a.mask).toBe(2147483648);
+    b.enableAll();
+    expect(b.mask).toBe(-1);
+    expect(a.test(b)).toBe(true);
+    b.disableAll();
+    expect(a.test(b)).toBe(false);
+    expect(calls).toEqual([
+      "construct Layers",
+      "construct Layers",
+      "get __address",
+      "get __address",
+    ]);
+  });
+
   it.each(["visible", "castShadow", "receiveShadow"])(
     "reads `%s` in place and skips an unchanged set",
     (flag) => {

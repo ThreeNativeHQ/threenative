@@ -3125,13 +3125,13 @@
         "test",
         "toggle"
       ],
-      "getters": ["mask"],
+      "getters": ["__address", "mask"],
       "setters": ["mask"],
       "members": [],
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {}
+      "fields": { "mask": [0, 1] }
     },
     "Line": {
       "constructor": true,

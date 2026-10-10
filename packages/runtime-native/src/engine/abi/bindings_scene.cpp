@@ -800,6 +800,10 @@ void registerLayers(ClassBinding& b) {
     b.ctor = [](const Args&, Store&) { return std::make_shared<Layers>(); };
     b.getters["mask"] = [](void* self) { return Value::of(double(as<Layers>(self)->mask)); };
     b.setters["mask"] = [](void* self, const Value& v) { as<Layers>(self)->mask = number(v); };
+    // Games enable and disable layers on every mesh while they load; the Wasm back end runs three's
+    // bit operations on the mask in place.
+    b.fields = {{"mask", {uint32_t(offsetof(Layers, mask)), 1}}};
+    b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
     for (const auto name : {"set", "enable", "toggle", "disable"}) {
         b.methods[name] = [name](void* self, const Args& a, Store&) {
             const int layer = layerIndex(number(a.at(0)));
