@@ -187,7 +187,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // merged Three patch changes every kit; starter also carries the merged render source.
   "action-rpg": "ca3c58ab561319c2c6671a5714019f18b8b2b82dc0be699fbf05b1231504be71",
   minimal: "44979db5dd573a297c6d66c08d5366fc66f7ddaf0bdc553c4781fae0059fa0fc",
-  platformer: "89dbdd47bdc8fc8dc44fb0155bc6ba9a0112d0a7bae6831de8f6cb5c1058053b",
+  platformer: "a0f9f7f33b14041062b0a91789ebdb0cea61f4dd889f67762a14244dbf398266",
   puzzle: "c92bdc29939c43a8a2bf418f31aabbd2de1b31481eb51286bd834bf2cc9bd84f",
   racing: "8b7b7cf6b8660790b604d819968f7a48e950823373525660e04f26fe3ef16dba",
   rain: "e43a82568eb6d6cd0bf069f3db2fe5e77ba92821cf983f018dea78ea40a30080",
@@ -197,7 +197,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "874b9d1a0f053970ad381e3703ac5dc288581ece212f53cbb2f86a095f0df561",
   snow: "b9ef634e808b6c4a79c8a8768955cb2979ec949cdb147e3c77bca4803089b470",
   // PRD-572: starter AGENTS.md gained the shadow-movers paragraph; only starter moves.
-  starter: "2727181db61235b19cb3cef13849d86651dd281651e9b811f2ad128689305389",
+  starter: "9e663841c6445b06e5d65ec630d99ce5ec787f28989f4f7990a5aa1b3316dbff",
   "tower-defense": "4f10541731f30c25b31bb7b5770c1bef1ffe9327d713d980e0847b0ed751f863",
 };
 
@@ -297,7 +297,6 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
-  "src/render/contactShadowStage.ts",
   "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
@@ -384,14 +383,12 @@ const PLATFORMER_PATHS = [
   "src/render/palette.ts",
   "src/render/pickups.ts",
   "src/render/postprocessing.ts",
-  "src/render/contactShadowStage.ts",
   "src/render/props.ts",
   "src/render/sky.ts",
   "src/render/scenery.ts",
   "src/render/walkers.ts",
   "src/render/waterfall.ts",
   "public/icon.png",
-  "playtests/contact-shadow.playtest.json",
   "playtests/coyote.playtest.json",
   "playtests/collect.playtest.json",
   "playtests/damage.playtest.json",

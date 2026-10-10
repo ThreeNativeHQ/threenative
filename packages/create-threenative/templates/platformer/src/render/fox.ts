@@ -8,21 +8,25 @@ import {
   BoxGeometry,
   type BufferGeometry,
   CapsuleGeometry,
+  CircleGeometry,
   ConeGeometry,
   CylinderGeometry,
   Group,
   type Material,
   MathUtils,
   Mesh,
+  type MeshBasicMaterial,
   SphereGeometry,
   TorusGeometry,
 } from "three";
-import { toon } from "./materials.js";
+import { flat, toon } from "./materials.js";
 import { C } from "./palette.js";
 
 export interface IFoxPose {
   readonly dashing: boolean;
   readonly dt: number;
+  /** Metres between the fox's feet and the surface under it, for the contact shadow. */
+  readonly drop: number;
   readonly grounded: boolean;
   readonly speed: number;
   readonly vy: number;
@@ -39,10 +43,6 @@ function part(geometry: BufferGeometry, material: Material, x = 0, y = 0, z = 0)
   return mesh;
 }
 
-// The body group's height at rest. The shoes sit 0.215 m under it and the idle sway is 0.012 m, so
-// the soles stand on y = 0 instead of hovering above it where a contact shadow would show the gap.
-const BODY_REST = 0.377;
-
 export function createFox(): IFox {
   const root = new Group();
   const fur = toon(C.fur);
@@ -52,7 +52,7 @@ export function createFox(): IFox {
   const ink = toon(C.ink);
 
   const body = new Group();
-  body.position.y = BODY_REST;
+  body.position.y = 0.58;
   root.add(body);
 
   // Torso, then the jacket's hem and collar: not one solid tube.
@@ -144,6 +144,16 @@ export function createFox(): IFox {
     previous = segment;
   }
 
+  // The contact shadow: a blob that shrinks with the drop, which is what keeps the fox planted on
+  // a bright grass cap where the shadow map's own shadow is easy to lose.
+  const blob = new Mesh(
+    new CircleGeometry(0.42, 16),
+    flat(0x0a2436, { depthWrite: false, opacity: 0.3 }),
+  );
+  blob.rotation.x = -Math.PI / 2;
+  blob.renderOrder = 2;
+  root.add(blob);
+
   let time = 0;
   return {
     group: root,
@@ -158,7 +168,7 @@ export function createFox(): IFox {
         limbs.armL.rotation.z = -swing * 0.85;
         limbs.armR.rotation.z = swing * 0.85;
         body.position.y =
-          BODY_REST + Math.abs(Math.sin(cycle)) * 0.06 * run + Math.sin(time * 2.2) * 0.012;
+          0.58 + Math.abs(Math.sin(cycle)) * 0.06 * run + Math.sin(time * 2.2) * 0.012;
         body.rotation.z = -0.06 - run * 0.16 - (pose.dashing ? 0.16 : 0);
       } else {
         const rise = MathUtils.clamp(pose.vy / 9, -1, 1);
@@ -166,7 +176,7 @@ export function createFox(): IFox {
         limbs.legR.rotation.z = MathUtils.lerp(limbs.legR.rotation.z, -0.2 + rise * 0.4, 0.25);
         limbs.armL.rotation.z = MathUtils.lerp(limbs.armL.rotation.z, -1.5 - rise * 0.6, 0.2);
         limbs.armR.rotation.z = MathUtils.lerp(limbs.armR.rotation.z, -1.2 - rise * 0.5, 0.2);
-        body.position.y = BODY_REST;
+        body.position.y = 0.58;
         body.rotation.z = MathUtils.lerp(body.rotation.z, -0.12, 0.15);
       }
       head.rotation.z = Math.sin(cycle * 0.5) * 0.04 - run * 0.08;
@@ -176,6 +186,11 @@ export function createFox(): IFox {
         segment.rotation.z = Math.sin(time * (5 + run * 4) - index * 0.7) * (0.1 + run * 0.14);
         segment.rotation.y = Math.sin(time * 2.4 - index * 0.5) * 0.1;
       }
+      blob.position.y = -pose.drop + 0.02;
+      blob.visible = pose.drop < 7;
+      const k = MathUtils.clamp(1 - pose.drop / 7, 0.25, 1);
+      blob.scale.setScalar(k);
+      (blob.material as MeshBasicMaterial).opacity = 0.3 * k;
     },
   };
 }

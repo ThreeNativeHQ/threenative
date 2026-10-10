@@ -11,7 +11,6 @@
 // `setupPost(renderer, scene, camera, { tier: "low" })`. Overriding does not silence the report:
 // `TN_QUALITY_TIER` names the tier that ran either way.
 import type { Camera, DirectionalLight, Scene } from "three";
-import { contactShadowLook, contactShadowStages } from "./contactShadowStage.js";
 import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
 import type { OutputRenderer } from "./worldEnvironment.js";
 import { WorldEnvironment } from "./worldEnvironment.js";
@@ -54,15 +53,7 @@ export function setupPost(
       environment.software === true
     } source=${source}`,
   );
-  // The fox's contact with the ground: `contactShadowStage.ts` builds it and sets how long
-  // and how dark it is per tier, and the chain drops it below `medium` by name. It traces
-  // toward the same sun the god rays do, so a game that passes none gets a named refusal.
-  const world = new WorldEnvironment({
-    ...qualityPreset(tier),
-    authoredStageNames: ["contactShadows"],
-    authoredStages: (stage) =>
-      contactShadowStages(stage, environment.godraysLight, contactShadowLook(tier)),
-  });
+  const world = new WorldEnvironment(qualityPreset(tier));
   const applied = world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
   environment.onTierChanged?.(tier);
   let disposed = false;

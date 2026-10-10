@@ -146,6 +146,7 @@ export class Fox {
     this.rig.update({
       dashing: this.#dashTimer > 0,
       dt,
+      drop: this.mesh.position.y - FOOT_OFFSET - this.#groundY,
       grounded: this.body.grounded,
       speed: Math.hypot(this.body.velocity.x, this.body.velocity.z),
       vy: this.body.velocity.y,

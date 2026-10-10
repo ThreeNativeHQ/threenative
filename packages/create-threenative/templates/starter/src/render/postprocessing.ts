@@ -18,7 +18,6 @@ import {
   createAdaptiveQuality,
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
-import { contactShadowLook, contactShadowStages } from "./contactShadowStage.js";
 import { type IGradeTable, gradeStages } from "./grade.js";
 import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
@@ -89,13 +88,11 @@ export function setupPost(
     const settings = qualityPreset(policy.tier);
     const world = new WorldEnvironment({
       ...settings,
-      // Stages this game owns, not the chain's: `grade.ts` builds the first two, `WorldEnvironment`
+      // Two stages this game owns, not the chain's: `grade.ts` builds them, `WorldEnvironment`
       // orders and reports them, and `quality.ts` decides whether each tier runs them. The opt-in
-      // `traa` stage is offered beside them and runs only when a tier names it. `contactShadows`
-      // traces toward the key light the god rays use; a scene that passes none gets a named refusal.
-      authoredStageNames: ["contactShadows", "grade", "grain"],
+      // `traa` stage is offered beside them and runs only when a tier names it.
+      authoredStageNames: ["grade", "grain"],
       authoredStages: (stage) => [
-        ...contactShadowStages(stage, environment.godraysLight, contactShadowLook(policy.tier)),
         ...gradeStages(gradePreset(policy.tier), table),
         ...temporalAAStages(stage, {
           onProvider: (provider) => {
