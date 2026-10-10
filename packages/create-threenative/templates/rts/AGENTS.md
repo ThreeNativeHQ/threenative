@@ -76,8 +76,8 @@ the map at its widest zoom, so `terrain.ts` draws a plain under it (grow it with
 the horizon goes with it) and `materials.ts` tiles the ground grid every 16 m — a 4 m line, a faint 1 m
 one inside each square — because a metre grid crosshatches the map into wireframe. Every model is a
 custom TSL material, so an instanced batch's geometry is what you see — change `render/models.ts`, not
-the material. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`,
-otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and
+the material. `src/render/quality.ts` owns `low`, `medium`, `high`; the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()` chooses `low`,
+otherwise `high` when the family is `unknown`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and
 `TN_QUALITY_TIER` reports the source. `pnpm test` proves behavior, never the look.
 
 Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.

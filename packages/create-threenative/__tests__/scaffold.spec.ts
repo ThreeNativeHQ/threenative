@@ -183,22 +183,23 @@ const BUG_REPORT_SKILL_PATHS = [
 // package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
 // generated file remains byte-identical. Fingerprints still cover the complete tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
   // merged Three patch changes every kit; starter also carries the merged render source.
-  "action-rpg": "ca3c58ab561319c2c6671a5714019f18b8b2b82dc0be699fbf05b1231504be71",
-  minimal: "44979db5dd573a297c6d66c08d5366fc66f7ddaf0bdc553c4781fae0059fa0fc",
-  platformer: "a0f9f7f33b14041062b0a91789ebdb0cea61f4dd889f67762a14244dbf398266",
-  puzzle: "c92bdc29939c43a8a2bf418f31aabbd2de1b31481eb51286bd834bf2cc9bd84f",
-  racing: "8b7b7cf6b8660790b604d819968f7a48e950823373525660e04f26fe3ef16dba",
-  rain: "e43a82568eb6d6cd0bf069f3db2fe5e77ba92821cf983f018dea78ea40a30080",
-  rts: "d5008c09be975e3dea93ae1c1d19163b7fba7f785d4e031a523b4e9c8a69edac",
-  runner: "b8b4d65a033df2dddffe2462dbbbd42a203d7ff8e1a0c8658c0a22088f5378aa",
-  sailing: "7212532cca11fc11e9346461cc3468a59a92237ca800f2e1fe142681d344ff1b",
-  shooter: "874b9d1a0f053970ad381e3703ac5dc288581ece212f53cbb2f86a095f0df561",
-  snow: "b9ef634e808b6c4a79c8a8768955cb2979ec949cdb147e3c77bca4803089b470",
+  "action-rpg": "ee453770ae6059468729cf802b5bb6c1b580ba9d70c1216edd7ebe7202133f42",
+  minimal: "d51a2527cec822e8bb48016d57adefb82c788f948ed3a6be3e5c3baf3f653c88",
+  platformer: "0d52b3ee6c75cfe6b9a7cec3a82de2f5a53b0a698c654bfdede94176daa0b34f",
+  puzzle: "1be6ceb7d045ff4b19a6003ad2900c47bf47605fa8a01c331e49639fbde88438",
+  racing: "dcfbec8a9a847cadf630b736e2ceaa417f8495b0c5bd6393af445b8525a39340",
+  rain: "958656dcf3ba515514b52fd776a3f5f3758da3df8e06c76425bb2ac7405c5dab",
+  rts: "6146830062275ce41a6efa080367e9c0dd20b86c7494f2aace4d7346dc946e85",
+  runner: "5ea301344611e0d080d0699d80cd7508fb576d13a2adaa81d20cb38bad96fd63",
+  sailing: "4f9f7da69857041320ea101fc833cb13a1641c4fa062d7129efc556781f64903",
+  shooter: "04c7854cf9ca25bbf96e2754ba8ca9a2c5c5e745784808982b3fe984bf341a13",
+  snow: "4f0175fc105ec83ca6f13ef03b0886f383a1ba775bf39b1ce87ac68d90d70d5c",
   // PRD-572: starter AGENTS.md gained the shadow-movers paragraph; only starter moves.
-  starter: "9e663841c6445b06e5d65ec630d99ce5ec787f28989f4f7990a5aa1b3316dbff",
-  "tower-defense": "4f10541731f30c25b31bb7b5770c1bef1ffe9327d713d980e0847b0ed751f863",
+  starter: "f892fbe222c78aa6846fbc4c0d516da198884c853c7ca3516d0c4f8b099e9d10",
+  "tower-defense": "8291e0eddb52c53f10dc8bbf7b0910e46525cef862a8c3fd5f4a1a468685b8e0",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

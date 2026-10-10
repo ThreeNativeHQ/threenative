@@ -69,8 +69,8 @@ is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it 
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
 `src/render/sky.ts` makes `assets/sky.jpg` (Poly Haven, CC0) background, environment light and fog
-colour (re-aim `SUN_DIRECTION` when you swap it); WebGPU adds a `VirtualShadowNode`. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()`
-chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers
+colour (re-aim `SUN_DIRECTION` when you swap it); WebGPU adds a `VirtualShadowNode`. `src/render/quality.ts` owns `low`, `medium`, `high`; the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()`
+chooses `low`, otherwise `high` when the family is `unknown`; override with `setupPost(..., { tier: "low" })`. Unknown tiers
 throw and `TN_QUALITY_TIER` reports the source. `pnpm test` proves behavior, never the look.
 
 When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a

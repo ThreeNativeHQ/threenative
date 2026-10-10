@@ -54,6 +54,8 @@ export function setupPost(
     mobile?: boolean;
     /** The renderer named a software adapter; this game's answer is its `low` tier. */
     software?: boolean;
+    /** The renderer's GPU family (`ctx.renderer.gpuClass?.class`); `quality.ts` maps it to a start tier. */
+    gpuClass?: string;
     /** Forces a tier while keeping its costs observed. Unknown names throw. */
     tier?: QualityTier;
     /** Scene-owned material assignments follow the same resolved tier. */

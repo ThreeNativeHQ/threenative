@@ -19,6 +19,7 @@ const names = await templateNames(templatesDir);
 interface IQualityModule {
   readonly qualityPreset: (tier: string) => Record<string, unknown>;
   readonly resolveQualityTier: (request?: {
+    gpuClass?: string;
     mobile?: boolean;
     software?: boolean;
     tier?: string;
@@ -137,7 +138,12 @@ describe("template quality tiers", () => {
             renderer: unknown,
             scene: unknown,
             camera: unknown,
-            environment?: { mobile?: boolean; software?: boolean; tier?: string },
+            environment?: {
+              gpuClass?: string;
+              mobile?: boolean;
+              software?: boolean;
+              tier?: string;
+            },
           ) => { dispose?: () => void };
         };
         const renderer = {
@@ -175,6 +181,16 @@ describe("template quality tiers", () => {
         expect(reported({ mobile: true, software: false }), `${name}: phone`).toContain(
           "TN_QUALITY_TIER low",
         );
+        // PRD-563: the family the renderer named reaches the resolver through each call site.
+        expect(reported({ gpuClass: "integrated", mobile: false }), `${name}: iGPU`).toContain(
+          "TN_QUALITY_TIER medium",
+        );
+        expect(reported({ gpuClass: "discrete", mobile: false }), `${name}: card`).toContain(
+          "TN_QUALITY_TIER high",
+        );
+        expect(reported({ gpuClass: "unknown", mobile: true }), `${name}: unknown`).toContain(
+          "TN_QUALITY_TIER low",
+        );
       }
     } finally {
       info.mockRestore();
@@ -187,6 +203,49 @@ describe("template quality tiers", () => {
       expect(resolveQualityTier({ software: false }), `${name}: reads absence as hardware`).toBe(
         "high",
       );
+    }
+  });
+
+  // PRD-563: the renderer names a GPU family and the game maps it to a start tier. `unknown` is
+  // every adapter no rule matched (Apple Silicon, a new vendor), so it must give today's answer.
+  it("should resolve an unknown or absent GPU family exactly as before in every template", async () => {
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      for (const base of [
+        {},
+        { mobile: true },
+        { mobile: false },
+        { software: true },
+        { mobile: true, tier: "medium" },
+      ]) {
+        const before = resolveQualityTier(base);
+        expect(resolveQualityTier({ ...base, gpuClass: "unknown" }), `${name} unknown`).toBe(
+          before,
+        );
+        expect(resolveQualityTier({ ...base, gpuClass: undefined }), `${name} absent`).toBe(before);
+      }
+    }
+  });
+
+  it("should start each GPU family on the tier the game names for it in every template", async () => {
+    const expected: Record<string, string> = {
+      discrete: "high",
+      integrated: "medium",
+      "mobile-high": "medium",
+      "mobile-low": "low",
+      "mobile-mid": "low",
+      software: "low",
+    };
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      for (const [gpuClass, tier] of Object.entries(expected)) {
+        expect(resolveQualityTier({ gpuClass }), `${name} ${gpuClass}`).toBe(tier);
+        // A family is a start: the explicit tier and the software fact keep outranking it.
+        expect(resolveQualityTier({ gpuClass, tier: "high" }), `${name} ${gpuClass} pinned`).toBe(
+          "high",
+        );
+      }
+      expect(resolveQualityTier({ gpuClass: "discrete", software: true }), `${name}`).toBe("low");
     }
   });
 
