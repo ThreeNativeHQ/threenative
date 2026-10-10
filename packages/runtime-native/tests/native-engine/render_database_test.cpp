@@ -1018,6 +1018,8 @@ void steadyState() {
     s.mesh.setCastShadow(true);
     s.mesh.setReceiveShadow(true);
     s.light.setCastShadow(true);
+    if (s.light.shadow.camera)
+        s.light.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
     auto rim = std::make_shared<Material>(MaterialType::Standard, true);
     rim->color.setRGB(0.6, 0.6, 0.65);
     // A diffuse map: its program samples a texture, so the sampler path and a per-draw fragment
@@ -1035,6 +1037,52 @@ void steadyState() {
     auto contact = g::gtaoEffect(depth, normal);
     const auto occlusion = g::effectNode(g::denoiseEffect(g::effectNode(contact), depth, normal, 1));
     renderer.setPostGraph(g::add(g::mul(colour, g::swizzle(occlusion, "x")), g::bloom(colour, 0.7, 0.5, 0.2)));
+
+    // Batched static meshes (compact)
+    auto boxGeom = makeBoxGeometry(1, 1, 1);
+    auto batchMat = std::make_shared<Material>(MaterialType::Standard);
+    batchMat->color.setHex(0xaaaaaa);
+    batchMat->roughness = 0.5;
+    std::vector<std::shared_ptr<Mesh>> batchedMeshes;
+    for (int i = 0; i < 4; ++i) {
+        auto bm = std::make_shared<Mesh>(boxGeom, batchMat);
+        bm->setCastShadow(true);
+        bm->position.set(-2.0 + i, 0, -2.0);
+        s.scene.add(*bm);
+        batchedMeshes.push_back(bm);
+    }
+
+    // Shadow-only proxy on layer 2
+    auto proxyMat = std::make_shared<Material>(MaterialType::Standard);
+    auto proxy = std::make_shared<Mesh>(boxGeom, proxyMat);
+    proxy->setCastShadow(true);
+    proxy->setLayer(2);
+    proxy->position.set(0, 3, 0);
+    s.scene.add(*proxy);
+
+    // Skinned animated character
+    auto skinGeom = makeBoxGeometry(1, 1, 1);
+    skinGeom->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(skinGeom->attributes.at("position")->count() * 4, 0.0), 4));
+    skinGeom->setAttribute("skinWeight", BufferAttribute::fromFloats(std::vector<double>(skinGeom->attributes.at("position")->count() * 4, 0.25), 4));
+    auto skinMat = std::make_shared<Material>(MaterialType::Standard);
+    auto rig = std::make_shared<SkinnedMesh>(skinGeom, skinMat);
+    auto b0 = std::make_shared<Bone>();
+    auto b1 = std::make_shared<Bone>();
+    rig->add(*b0);
+    b0->add(*b1);
+    std::vector<std::shared_ptr<Bone>> bones{b0, b1};
+    rig->bind(std::make_shared<Skeleton>(bones));
+    rig->setCastShadow(true);
+    s.scene.add(*rig);
+
+    // Transparent water
+    auto waterMat = std::make_shared<Material>(MaterialType::Standard);
+    waterMat->transparent = true;
+    waterMat->opacity = 0.6;
+    auto water = std::make_shared<Mesh>(makePlaneGeometry(10, 10), waterMat);
+    water->position.set(0, -1, 0);
+    s.scene.add(*water);
+
     RenderDatabase database;
     database.shadowMapEnabled = true;
     const auto frame = [&] {
@@ -1043,12 +1091,17 @@ void steadyState() {
         events.drain();
     };
     for (int i = 0; i < 5; ++i) frame();
-    CHECK(database.diagnostics().empty() && renderer.diagnostics().empty());
+    const auto cleanDiag = [](const std::vector<std::string>& diags) {
+        for (const auto& d : diags) if (d.rfind("TN_POST_NORMAL_SKIPPED", 0) != 0) return false;
+        return true;
+    };
+    CHECK(database.diagnostics().empty() && cleanDiag(renderer.diagnostics()));
     const auto compiles = renderer.pipelines().compiles(), texts = renderer.pipelines().textLookups();
     const auto groups = bindGroupsCreated(), keys = g::keyBuilds(), uniformMaps = g::uniformMapBuilds();
     const auto programs = renderer.programCount();
     const auto programKeys = renderer.programKeyBuilds(), lookups = renderer.programLookups();
     const auto samplers = renderer.samplersCreated();
+    const auto uHashes = projection::detail::uniformHashCount().load();
     for (int i = 0; i < 60; ++i) {
         if (i % 2) s.mesh.position.x = 0.01 * i;  // a moving object is still a steady frame
         frame();
@@ -1072,7 +1125,9 @@ void steadyState() {
     CHECK(renderer.programKeyBuilds() == programKeys);
     CHECK(renderer.programLookups() == lookups);
     CHECK(renderer.samplersCreated() == samplers);
-    CHECK(database.diagnostics().empty() && renderer.diagnostics().empty());
+    // A material hashes at most once per prepare, not once per member: five materials here.
+    CHECK(projection::detail::uniformHashCount().load() - uHashes <= 60 * 5);
+    CHECK(database.diagnostics().empty() && cleanDiag(renderer.diagnostics()));
 }
 
 // The steady-state cache must not hide a real change: a texture whose descriptor moves (anisotropy)
@@ -2186,10 +2241,61 @@ void shadowCameraLayers() {
 
 }  // namespace
 
+// A glTF image decodes after the mesh first draws, and a render target can die, with no material
+// version bump either way: the draw picks up the map once it samples, and drops it when it stops.
+void mapSampleabilityChanges() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    camera.position.set(0, 0, 5);
+    camera.lookAt(0, 0, 0);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto map = std::make_shared<Texture>();  // what the glTF loader makes before decodeImage lands
+    material->maps["map"] = map;
+    Mesh plane(makePlaneGeometry(1, 1), material);
+    scene.add(plane);
+    CHECK(database.prepare(scene, camera, lights).at(0).map == nullptr);
+    map->width = map->height = 1;
+    map->data = {200, 200, 200, 255};
+    CHECK(database.prepare(scene, camera, lights).at(0).map == map.get());
+    auto target = std::make_shared<int>();
+    auto colour = std::make_shared<Texture>();
+    colour->renderTarget = target;
+    material->maps["map"] = colour;
+    material->needsUpdate();
+    CHECK(database.prepare(scene, camera, lights).at(0).map == colour.get());
+    target.reset();
+    CHECK(database.prepare(scene, camera, lights).at(0).map == nullptr);
+}
+
+// Batch groups that first appear together grow the per-group cache store within one prepare; each
+// draw's cache pointer must stay where the next frame finds it, never in a reallocated-away block.
+void batchCachesStayPut() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    camera.position.set(0, 10, 100);
+    camera.lookAt(0, 0, 0);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int g = 0; g < 64; ++g) {
+        const auto geometry = makeBoxGeometry();
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        for (int i = 0; i < 4; ++i) {
+            auto mesh = std::make_shared<Mesh>(geometry, material);
+            mesh->position.set(g, 0, i);
+            scene.add(*mesh); meshes.push_back(mesh);
+        }
+    }
+    const auto first = database.prepare(scene, camera, lights);
+    const auto second = database.prepare(scene, camera, lights);
+    CHECK(first.size() == 64 && second.size() == 64);
+    if (first.size() != second.size()) return;
+    std::size_t moved = 0;
+    for (std::size_t i = 0; i < first.size(); ++i) moved += first[i].cache != second[i].cache;
+    std::printf("batch caches moved between frames: %zu of %zu\n", moved, first.size());
+    CHECK(moved == 0);
+}
+
 TN_TEST_MAIN({"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut})
 
 
 

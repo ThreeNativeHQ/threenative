@@ -92,6 +92,8 @@ public:
     void needsUpdate() { ++version_; }
     [[nodiscard]] uint32_t version() const { return version_; }
 
+    mutable std::size_t cachedUniformHash_ = 0;  // projection::detail::uniformHash, valid for one prepare
+    mutable uint64_t uniformHashEpoch_ = 0;
 };
 
 }  // namespace tn::engine

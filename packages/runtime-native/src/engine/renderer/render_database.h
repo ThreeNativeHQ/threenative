@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -40,7 +41,7 @@ class RenderDatabase {
                     std::array<double, 2>* cpuMs = nullptr);
 
     /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
-    std::vector<DrawItem> prepare(Object3D& scene, Camera& camera, LightState& lights);
+    const std::vector<DrawItem>& prepare(Object3D& scene, Camera& camera, LightState& lights);
 
     /** Float32 copies of quantized attributes held for live sources (dead ones are swept). */
     [[nodiscard]] std::size_t convertedCount() const { return converted_.size(); }
@@ -126,8 +127,20 @@ class RenderDatabase {
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
     std::vector<std::shared_ptr<BufferStore>> batchColors_;
     std::vector<shader::StandardMaterial> batchParams_;
+    std::deque<DrawCache> batchCaches_;  // a deque: a draw keeps its slot's address while later slots grow
     std::vector<std::unique_ptr<SkinnedPalette>> skinnedPalettes_; // borrowed by this frame's draws
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
+
+    std::vector<DrawItem> items_;
+    std::vector<DrawItem> twoPasses_;
+    std::vector<std::vector<std::size_t>> batchGroupsList_;
+    std::unordered_map<std::size_t, std::vector<std::size_t>> candidatesByKey_;
+    std::vector<bool> absorbed_;
+    std::vector<DrawItem> merged_;
+    std::vector<DrawItem> batchedOut_;
+    LightState lights_;
+    CameraState cameraState_;
+
     Record& record(const Mesh& mesh, bool materialize = true);
     Record& record(const Mesh& mesh, Record& cached, bool materialize = true);
     DrawItem& refresh(const Mesh& mesh, Record& record);

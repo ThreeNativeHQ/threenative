@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <atomic>
 
 #include "engine/animation/skinning/palette.h"
 #include "engine/animation/skinning/skeleton.h"
@@ -122,8 +123,22 @@ inline bool sameUniforms(const Material& a, const Material& b) {
            a.maps == b.maps;
 }
 
+// Bumped at the start of every prepare. No material changes while one runs, so a hash computed in it
+// holds until it ends; a version alone would miss three's plain writes (roughness = x) that bump none.
+inline uint64_t& uniformEpoch() {
+    static uint64_t epoch = 1;
+    return epoch;
+}
+
+inline std::atomic<uint64_t>& uniformHashCount() {
+    static std::atomic<uint64_t> count{0};
+    return count;
+}
+
 // Base colour travels per instance. Hash every other equality input; equality still resolves collisions.
 inline std::size_t uniformHash(const Material& m) {
+    if (m.uniformHashEpoch_ == uniformEpoch()) return m.cachedUniformHash_;
+    uniformHashCount().fetch_add(1, std::memory_order_relaxed);
     std::size_t h = 0;
     const auto mix = [&](uint64_t v) { h = (h ^ v) * 0x9e3779b1u; };
     for (double v : {double(m.type),
@@ -181,6 +196,8 @@ inline std::size_t uniformHash(const Material& m) {
         mix(std::hash<std::string>{}(name));
         mix(reinterpret_cast<std::uintptr_t>(texture.get()));
     }
+    m.cachedUniformHash_ = h;
+    m.uniformHashEpoch_ = uniformEpoch();
     return h;
 }
 

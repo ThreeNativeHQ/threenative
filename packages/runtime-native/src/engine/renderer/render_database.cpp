@@ -15,6 +15,7 @@
 #include <bit>
 #include <typeinfo>
 #include "engine/scene/geometries.h"
+#include <atomic>
 
 namespace tn::engine {
 
@@ -268,6 +269,7 @@ BufferStore* store(const BufferGeometry& g, const char* name) {
 }
 
 } // namespace
+
 
 // The renderer binds position, normal, uv and skin weights as float32. glTF stores quantized models
 // with normalized 8/16-bit attributes (GLTFExporter writes int8 normals, WEIGHTS_0 is unsigned byte
@@ -530,7 +532,6 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             r.seen = frame_;
             if (r.drawable && r.material->visible) {
                 if (compact) {
-                    if (r.materialized) { r.draw.reset(); r.materialized = false; }
                     addBatchMesh(mesh, r, mainPass);
                 } else {
                     DrawItem& d = refresh(mesh, r);
@@ -699,8 +700,8 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     const auto decision = std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig; })
                               ? projection::decide(scene) : projection::Decision{};
     skinnedPalettes_.clear();
-    std::vector<std::vector<std::size_t>> groups;
-    std::unordered_map<std::size_t, std::vector<std::size_t>> candidatesByKey;
+    batchGroupsList_.clear();
+    candidatesByKey_.clear();
     for (const auto& [depth, item] : ordered) {
         const std::size_t i = item - items.data();
         const DrawItem& d = items[i];
@@ -736,19 +737,19 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             hash ^= std::hash<const void*>{}(d.skinnedRig->geometry.get()) ^
                     std::hash<double>{}(projection::detail::batchFlags(*d.skinnedRig)) ^
                     d.skinnedRig->skeleton->bones.size();
-        auto& candidates = candidatesByKey[hash];
-        auto it = std::find_if(candidates.begin(), candidates.end(), [&](std::size_t group) { return same(groups[group]); });
+        auto& candidates = candidatesByKey_[hash];
+        auto it = std::find_if(candidates.begin(), candidates.end(), [&](std::size_t group) { return same(batchGroupsList_[group]); });
         if (it == candidates.end()) {
-            candidates.push_back(groups.size());
-            groups.push_back({i});
+            candidates.push_back(batchGroupsList_.size());
+            batchGroupsList_.push_back({i});
         } else {
-            groups[*it].push_back(i);
+            batchGroupsList_[*it].push_back(i);
         }
     }
-    std::vector<bool> absorbed(items.size(), false);
-    std::vector<DrawItem> merged;
-    batchParams_.resize(groups.size());
-    for (const std::vector<std::size_t>& g : groups) {
+    absorbed_.assign(items.size(), false);
+    merged_.clear();
+    batchParams_.resize(batchGroupsList_.size());
+    for (const std::vector<std::size_t>& g : batchGroupsList_) {
         const bool skinned = items[g.front()].skinnedRig != nullptr;
         if (!skinned && g.size() < kMinBatchMembers)
             continue;
@@ -786,11 +787,12 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             for (double e : palette ? identity : items[i].matrixWorld)
                 matrices[matrixOffset++] = static_cast<float>(e);
             if (colors) for (float c : items[i].material->color) colors[colorOffset++] = c;
-            absorbed[i] = true;
+            absorbed_[i] = true;
         }
         store.needsUpdate();
         DrawItem d = items[g.front()];
-        d.cache = nullptr;  // a merged draw's state is its own; never write it back to the first member's record
+        if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
+        d.cache = &batchCaches_[slot];
         d.sortOrigin = {d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]};
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         d.instanceMatrices = &store;
@@ -809,18 +811,18 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             d.boneStride = palette->bones();
             d.bindMatrix = d.bindMatrixInverse = d.matrixWorld;
         }
-        merged.push_back(d);
+        merged_.push_back(d);
         batchMembers_ += g.size();
     }
-    if (merged.empty())
+    if (merged_.empty())
         return;
-    std::vector<DrawItem> out;
-    out.reserve(items.size() - batchMembers_ + merged.size());
+    batchedOut_.clear();
+    batchedOut_.reserve(items.size() - batchMembers_ + merged_.size());
     for (std::size_t i = 0; i < items.size(); ++i)
-        if (!absorbed[i])
-            out.push_back(items[i]);
-    out.insert(out.end(), merged.begin(), merged.end());
-    items = std::move(out);
+        if (!absorbed_[i])
+            batchedOut_.push_back(items[i]);
+    batchedOut_.insert(batchedOut_.end(), merged_.begin(), merged_.end());
+    items.swap(batchedOut_);
 }
 
 // Capture members while their scene/material cache lines are hot. DrawItems are made only for
@@ -969,8 +971,9 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         DrawItem d = refresh(first, record(first, *firstMember.record));
         d.mainPass = firstMember.mainPass;
         d.layers = firstMember.layers;
-        d.cache = nullptr;  // a merged draw's state is its own; never write it back to the first member's record
         const auto slot = batchGroups_++;
+        if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
+        d.cache = &batchCaches_[slot];
         if (batchStores_.size() <= slot)
             batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
         auto& matrices = *batchStores_[slot];
@@ -1021,10 +1024,11 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
     }
 }
 
-std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, LightState& lights) {
+const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& camera, LightState& lights) {
     using Clock = std::chrono::steady_clock;
     const auto start = profiling ? Clock::now() : Clock::time_point{};
     ++frame_;
+    ++projection::detail::uniformEpoch();
     diagnostics_.clear();
     hemisphere_ = 0;
     // Renderer.render: world matrices first, then the camera in the renderer's coordinate system.
@@ -1070,8 +1074,9 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
             o->updateProjectionMatrix();
     }
     flatParentIdentity_ = flat && scene.matrixWorld.elements == Matrix4{}.elements;
-    std::vector<DrawItem> items;
-    items.reserve(previousDrawCount_);
+    items_.clear();
+    items_.reserve(previousDrawCount_);
+    auto& items = items_;
     const auto matrices = profiling ? Clock::now() : Clock::time_point{};
     lights = LightState{};
     lights.hemisphereSky = lights.hemisphereGround = {0, 0, 0};
@@ -1177,19 +1182,19 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
     // twice, its BackSide pass and then its FrontSide pass, so the far half composites under the near.
     const auto twoPass = [](const DrawItem& d) { return d.transparent && d.side == 2 && !d.forceSinglePass; };
     if (std::any_of(items.begin(), items.end(), twoPass)) {
-        std::vector<DrawItem> passes;
-        passes.reserve(items.size() + 8);
+        twoPasses_.clear();
+        twoPasses_.reserve(items.size() + 8);
         for (DrawItem& item : items) {
             if (twoPass(item)) {
-                DrawItem& back = passes.emplace_back(item);
+                DrawItem& back = twoPasses_.emplace_back(item);
                 back.side = 1;
                 back.key ^= kBackSidePassKey;  // its own GPU record beside the front pass's
                 back.castShadow = false;
                 item.side = 0;
             }
-            passes.push_back(std::move(item));
+            twoPasses_.push_back(std::move(item));
         }
-        items = std::move(passes);
+        items_.swap(twoPasses_);
     }
     if (world && world->backgroundTexture) {
         if (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0)
@@ -1225,27 +1230,25 @@ std::vector<DrawItem> RenderDatabase::prepare(Object3D& scene, Camera& camera, L
         std::chrono::duration<double, std::milli>(batched - beforeBatch).count(),
         std::chrono::duration<double, std::milli>((beforeBatch - projected) + (Clock::now() - batched)).count()};
     previousDrawCount_ = items.size();
-    return items;
+    return items_;
 }
 
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear, std::array<double, 2>* cpuMs) {
     using Clock = std::chrono::steady_clock;
     const auto start = cpuMs ? Clock::now() : Clock::time_point{};
-    LightState lights;
-    auto items = prepare(scene, camera, lights);
-    if (!reflecting_) renderReflections(renderer, scene, camera, items, clear);
-    CameraState state;
-    state.matrixWorld = toArray(camera.matrixWorld);
-    state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
-    state.projectionMatrix = toArray(camera.projectionMatrix);
+    prepare(scene, camera, lights_);
+    if (!reflecting_) renderReflections(renderer, scene, camera, items_, clear);
+    cameraState_.matrixWorld = toArray(camera.matrixWorld);
+    cameraState_.matrixWorldInverse = toArray(camera.matrixWorldInverse);
+    cameraState_.projectionMatrix = toArray(camera.projectionMatrix);
     if (const auto* perspective = dynamic_cast<const PerspectiveCamera*>(&camera))
-        std::tie(state.near, state.far) = std::pair{perspective->near, perspective->far};
+        std::tie(cameraState_.near, cameraState_.far) = std::pair{perspective->near, perspective->far};
     else if (const auto* orthographic = dynamic_cast<const OrthographicCamera*>(&camera))
-        std::tie(state.near, state.far) = std::pair{orthographic->near, orthographic->far};
+        std::tie(cameraState_.near, cameraState_.far) = std::pair{orthographic->near, orthographic->far};
     if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
         clear = {world->background->r, world->background->g, world->background->b, 1};
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};
-    const auto result = renderer.render(items, state, lights, clear);
+    const auto result = renderer.render(items_, cameraState_, lights_, clear);
     if (cpuMs) *cpuMs = {std::chrono::duration<double, std::milli>(prepared - start).count(),
                         std::chrono::duration<double, std::milli>(Clock::now() - prepared).count()};
     return result;

@@ -244,7 +244,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_gpu_timer_covers_shadows=gpu_timer_covers_shadows
         native_engine_renderer_overlay_over_frame=overlay_over_frame
         native_engine_gpu_timer_is_opt_in=gpu_timer_is_opt_in
-        native_engine_shadow_camera_layers=shadow_camera_layers)
+        native_engine_shadow_camera_layers=shadow_camera_layers
+        native_engine_renderer_map_sampleability_changes=map_sampleability_changes
+        native_engine_renderer_batch_caches_stay_put=batch_caches_stay_put)
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
