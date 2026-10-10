@@ -1101,6 +1101,25 @@ describe("CI pipeline structure", () => {
         "android-v8-source",
       ]),
     ],
+    [
+      ".github/workflows/integration.yml",
+      // PRD-550: these generic lanes run hosted so they do not queue behind the local build/test pool.
+      new Set([
+        "animation",
+        "capture",
+        "cold-boot",
+        "csg",
+        "decals",
+        "exposure",
+        "fluid-collision",
+        "fog",
+        "ik",
+        "temporal",
+        "tone",
+        "vegetation",
+        "velocity",
+      ]),
+    ],
   ]);
   it.each([
     ["web-reference", "native-web-reference-${{ needs.scope.outputs.candidate_sha }}"],
@@ -1236,6 +1255,43 @@ describe("CI pipeline structure", () => {
           ).toBe(onLight);
         }
       }
+    }
+  });
+
+  // PRD-550: pin the generic lanes hosted to split the pool; the light switch and native ARM labels stay.
+  it("pins generic Integration lanes to hosted while the light and native legs keep their routing", async () => {
+    const source = await readFile(path.join(repo, ".github/workflows/integration.yml"), "utf8");
+    const runsOn = (job: string) => requiredJob(source, job).match(/^ {4}runs-on: (.+)$/mu)?.[1];
+    for (const job of [
+      "animation",
+      "capture",
+      "cold-boot",
+      "csg",
+      "decals",
+      "exposure",
+      "fluid-collision",
+      "fog",
+      "ik",
+      "temporal",
+      "tone",
+      "vegetation",
+      "velocity",
+    ] as const) {
+      expect(runsOn(job), `integration ${job} must not share the local build/test pool`).toBe(
+        "ubuntu-24.04",
+      );
+    }
+    for (const job of ["paths", "completion"] as const) {
+      expect(runsOn(job), `integration ${job} keeps the light routing switch`).toBe(lightRouting);
+    }
+    for (const job of [
+      "animation-native",
+      "decals-native",
+      "fluid-collision-native",
+      "fog-native",
+      "packaged-quickjs",
+    ] as const) {
+      expect(runsOn(job), `integration ${job} keeps its native ARM label`).toBe("ubuntu-24.04-arm");
     }
   });
 
