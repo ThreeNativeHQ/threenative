@@ -856,19 +856,28 @@ void mixer_time_field() {
 void visible_field() {
     tn::binding::Registry classes;
     tn::binding::registerAll(classes);
+    using tn::engine::Object3D;
+    const std::pair<const char*, void (Object3D::*)(bool)> flags[] = {
+        {"visible", &Object3D::setVisible}, {"castShadow", &Object3D::setCastShadow}, {"receiveShadow", &Object3D::setReceiveShadow}};
     for (const char* name : {"Object3D", "Group", "Mesh", "SkinnedMesh"}) {
         const tn::binding::ClassBinding& binding = classes.at(name);
-        CHECK(binding.fields.count("visible") == 1);
-        if (binding.fields.count("visible") == 0) return;
-        const auto [offset, count] = binding.fields.at("visible");
-        CHECK(count == 0);
-        tn::engine::Object3D object;
-        void* self = &object;
-        CHECK(binding.getters.at("__address")(self).number == double(reinterpret_cast<uintptr_t>(self)));
-        const auto* byte = reinterpret_cast<const unsigned char*>(self) + offset;
-        CHECK(*byte == 1);
-        object.setVisible(false);
-        CHECK(*byte == 0);
+        for (const auto& [flag, set] : flags) {
+            CHECK(binding.fields.count(flag) == 1);
+            if (binding.fields.count(flag) == 0) return;
+            const auto [offset, count] = binding.fields.at(flag);
+            CHECK(count == 0);
+            Object3D object;
+            void* self = &object;
+            CHECK(binding.getters.at("__address")(self).number == double(reinterpret_cast<uintptr_t>(self)));
+            const auto* byte = reinterpret_cast<const unsigned char*>(self) + offset;
+            const bool before = *byte != 0;
+            (object.*set)(!before);
+            CHECK((*byte != 0) == !before);
+            // An unchanged set leaves the revision, so the children keep their world matrices.
+            const uint64_t revision = object.revision();
+            (object.*set)(!before);
+            CHECK(object.revision() == revision);
+        }
     }
 }
 

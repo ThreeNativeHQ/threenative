@@ -181,17 +181,22 @@ void Object3D::setVisible(bool value) {
     bump();
 }
 
-uint32_t Object3D::visibleOffset() {
+Object3D::FlagOffsets Object3D::flagOffsets() {
     static const Object3D probe;
-    return uint32_t(reinterpret_cast<const char*>(&probe.visible_) - reinterpret_cast<const char*>(&probe));
+    const auto at = [](const bool& flag) {
+        return uint32_t(reinterpret_cast<const char*>(&flag) - reinterpret_cast<const char*>(&probe));
+    };
+    return {at(probe.visible_), at(probe.castShadow_), at(probe.receiveShadow_)};
 }
 
 void Object3D::setCastShadow(bool value) {
+    if (castShadow_ == value) return;
     castShadow_ = value;
     bump();
 }
 
 void Object3D::setReceiveShadow(bool value) {
+    if (receiveShadow_ == value) return;
     receiveShadow_ = value;
     bump();
 }

@@ -271,8 +271,12 @@ void registerObject3D(ClassBinding& b) {
     // The renderer's flat inputs. Every setter that bumps `revision` is one of these.
     b.getters["visible"] = [](void* self) { return Value::of(as<Object3D>(self)->visible()); };
     b.setters["visible"] = [](void* self, const Value& v) { as<Object3D>(self)->setVisible(flag(v)); };
-    // Games set `visible` every frame; the Wasm back end reads the byte and skips an unchanged set.
-    b.fields["visible"] = {Object3D::visibleOffset(), 0};
+    // Games set `visible` every frame, and the shadow flags on every mesh while they load; the Wasm
+    // back end reads each byte and skips an unchanged set.
+    const Object3D::FlagOffsets flags = Object3D::flagOffsets();
+    b.fields["visible"] = {flags.visible, 0};
+    b.fields["castShadow"] = {flags.castShadow, 0};
+    b.fields["receiveShadow"] = {flags.receiveShadow, 0};
     b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
     b.getters["castShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->castShadow()); };
     b.setters["castShadow"] = [](void* self, const Value& v) { as<Object3D>(self)->setCastShadow(flag(v)); };

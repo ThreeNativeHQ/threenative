@@ -309,19 +309,22 @@ describe("three's math values on the browser back end", () => {
     expect(invokes).toEqual(["hasAttribute instanceColor"]);
   });
 
-  it("reads `visible` in place and skips an unchanged set", () => {
-    const { runtime, calls, heap } = memoryRuntime();
-    const bytes = new Uint8Array(heap.buffer);
-    const { classes } = defineBrowserClasses(registry, {
-      ...runtime,
-      readByte: (address) => bytes[address] as number,
-    });
-    const group = new (classes.Group as new () => { visible: boolean })();
-    const [offset = 0] = registry.classes.Group?.fields?.visible ?? [];
-    bytes[offset] = 1; // the only object sits at address 0
-    expect(group.visible).toBe(true);
-    group.visible = true;
-    group.visible = false;
-    expect(calls.filter((call) => call.includes("visible"))).toEqual(["set visible"]);
-  });
+  it.each(["visible", "castShadow", "receiveShadow"])(
+    "reads `%s` in place and skips an unchanged set",
+    (flag) => {
+      const { runtime, calls, heap } = memoryRuntime();
+      const bytes = new Uint8Array(heap.buffer);
+      const { classes } = defineBrowserClasses(registry, {
+        ...runtime,
+        readByte: (address) => bytes[address] as number,
+      });
+      const group = new (classes.Group as new () => Record<string, boolean>)();
+      const [offset = -1] = registry.classes.Group?.fields?.[flag] ?? [];
+      bytes[offset] = 1; // the only object sits at address 0
+      expect(group[flag]).toBe(true);
+      group[flag] = true;
+      group[flag] = false;
+      expect(calls.filter((call) => call.includes(flag))).toEqual([`set ${flag}`]);
+    },
+  );
 });
