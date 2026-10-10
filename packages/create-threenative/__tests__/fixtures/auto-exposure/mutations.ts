@@ -70,7 +70,7 @@ export function exposureMutationPlugin(
 }
 
 /** Pre-PRD-571 template sources: the clamped 1x1 mean meter, the red control for the histogram. */
-export const meanMeterBaselineRef = "9d4b2a67f";
+export const meanMeterBaselineRef = "2d212479255cf725f64343dc72aa2eafe9b7b92d";
 const baselineFiles = ["autoExposure", "exposure", "exposureGraph"];
 
 /** Serves the baseline meter from git for one disposable fixture build; shipped source is untouched. */
