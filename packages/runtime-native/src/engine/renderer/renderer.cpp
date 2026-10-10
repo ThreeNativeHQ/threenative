@@ -496,6 +496,9 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
 }
 
 Renderer::~Renderer() {
+    if (mipEncoder_) wgpuCommandEncoderRelease(mipEncoder_);
+    for (WGPUBindGroup group : mipGroups_) wgpuBindGroupRelease(group);
+    for (WGPUTextureView view : mipViews_) wgpuTextureViewRelease(view);
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
     if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
     mainBundle_ = viewportBundle_ = nullptr;
@@ -1073,7 +1076,7 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
         wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass);
         wgpuRenderPassEncoderRelease(pass); wgpuTextureViewRelease(destination); wgpuBindGroupRelease(group);
     }
-    gpu_.submit(wgpuCommandEncoderFinish(encoder, nullptr)); wgpuCommandEncoderRelease(encoder);
+    submit(wgpuCommandEncoderFinish(encoder, nullptr)); wgpuCommandEncoderRelease(encoder);
     for (auto handle : uniforms) gpu_.destroy(handle);
     wgpuBindGroupLayoutRelease(layout);
     cube.version = texture.version();
@@ -1440,7 +1443,7 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
         wgpuBindGroupRelease(group);
     }
     WGPUCommandBufferDescriptor commandDesc = {};
-    gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
     return env;
 }
@@ -2730,7 +2733,7 @@ uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& un
     outputPass(encoder, timed, presentTarget, presentFormat);
     if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 6, gpu_.buffer(timestampResolve_), 0);
     WGPUCommandBufferDescriptor commandDesc = {};
-    gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
     if (timed) {
         timing_->pending = true;
@@ -2824,7 +2827,7 @@ GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done) {
     const WGPUExtent3D extent{width, height, 1};
     wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &extent);
     WGPUCommandBufferDescriptor command{};
-    gpu_.submit(wgpuCommandEncoderFinish(encoder, &command));
+    submit(wgpuCommandEncoderFinish(encoder, &command));
     wgpuCommandEncoderRelease(encoder);
     const auto result = gpu_.readBuffer(staging, 0, uint64_t(pitch) * height,
         [width, height, row, pitch, done = std::move(done)](GpuStatus status, std::vector<uint8_t> bytes) {
@@ -2878,10 +2881,12 @@ void Renderer::generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, ui
     WGPURenderPipeline pipeline = copyPipeline(format, 0);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_TEXTURE_MIPMAPS_FAILED: no copy pipeline");
     WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
-    WGPUCommandEncoderDescriptor encoderDesc = {};
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
+    if (!mipEncoder_) {
+        WGPUCommandEncoderDescriptor encoderDesc = {};
+        mipEncoder_ = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
+    }
+    WGPUCommandEncoder encoder = mipEncoder_;
     std::vector<WGPUTextureView> views;
-    std::vector<WGPUBindGroup> groups;
     for (uint32_t level = 0; level < levels; ++level) {
         WGPUTextureViewDescriptor desc = {};
         desc.dimension = WGPUTextureViewDimension_2D;
@@ -2894,7 +2899,7 @@ void Renderer::generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, ui
     for (uint32_t level = 1; level < levels; ++level) {
         WGPUBindGroup group = bindGroup(layout, blitFragment_, outputUniforms_, views[level - 1], linearClampSampler());
         if (!group) throw std::runtime_error("TN_NATIVE_TEXTURE_MIPMAPS_FAILED: no bind group");
-        groups.push_back(group);
+        mipGroups_.push_back(group);
         WGPURenderPassColorAttachment color = {};
         color.view = views[level];
         color.loadOp = WGPULoadOp_Clear;
@@ -2913,12 +2918,27 @@ void Renderer::generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, ui
         wgpuRenderPassEncoderEnd(pass);
         wgpuRenderPassEncoderRelease(pass);
     }
-    WGPUCommandBufferDescriptor commandDesc = {};
-    gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
-    wgpuCommandEncoderRelease(encoder);
     wgpuBindGroupLayoutRelease(layout);
-    for (WGPUBindGroup group : groups) wgpuBindGroupRelease(group);
-    for (WGPUTextureView view : views) wgpuTextureViewRelease(view);
+    for (WGPUTextureView view : views) mipViews_.push_back(view);
+}
+
+// One submit for every chain recorded since the last flush: a submit costs a queue call and a
+// work-done callback each, and a scene load uploads hundreds of mipmapped textures.
+void Renderer::flushMipmaps() {
+    if (!mipEncoder_) return;
+    WGPUCommandBufferDescriptor commandDesc = {};
+    gpu_.submit(wgpuCommandEncoderFinish(mipEncoder_, &commandDesc));
+    wgpuCommandEncoderRelease(mipEncoder_);
+    mipEncoder_ = nullptr;
+    for (WGPUBindGroup group : mipGroups_) wgpuBindGroupRelease(group);
+    for (WGPUTextureView view : mipViews_) wgpuTextureViewRelease(view);
+    mipGroups_.clear();
+    mipViews_.clear();
+}
+
+void Renderer::submit(WGPUCommandBuffer commands) {
+    flushMipmaps();
+    gpu_.submit(commands);
 }
 
 bool Renderer::blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat format) {
@@ -2972,7 +2992,7 @@ bool Renderer::blitTo(WGPUQueue queue, WGPUTextureView target, WGPUTextureFormat
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     WGPUCommandBufferDescriptor commandDesc = {};
-    gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
     wgpuBindGroupRelease(group);
     if (overlayGroup) wgpuBindGroupRelease(overlayGroup);

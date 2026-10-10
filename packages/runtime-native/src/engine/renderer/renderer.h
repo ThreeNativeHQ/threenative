@@ -465,7 +465,12 @@ private:
     struct MaterialTexture;
     /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */
     WGPURenderPipeline copyPipeline(WGPUTextureFormat format, uint8_t blend);
+    /** Records a texture's mip chain into the pending mip encoder; `submit` flushes it first. */
     void generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels);
+    /** Submits the mip passes of every texture uploaded since the last submit, as one command buffer. */
+    void flushMipmaps();
+    /** Every frame, readback and pass submit goes through here so a sampled texture's mips exist first. */
+    void submit(WGPUCommandBuffer commands);
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler,
                             WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr,
@@ -528,6 +533,11 @@ private:
     std::unique_ptr<Renderer> probeCapture_;
     WGPUDevice device_;
     WGPUQueue queue_;
+    // Mip passes recorded since the last submit: one encoder for every texture uploaded in between,
+    // with the views and bind groups its passes hold until the buffer is finished.
+    WGPUCommandEncoder mipEncoder_ = nullptr;
+    std::vector<WGPUTextureView> mipViews_;
+    std::vector<WGPUBindGroup> mipGroups_;
     EventQueue& events_;
     GpuResources gpu_;
     GeometryCache geometry_;

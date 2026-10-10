@@ -2,6 +2,7 @@
 #include "fixture/traa_dump.h"
 #include "engine/renderer/render_database.h"
 #include "engine/scene/geometries.h"
+#include "engine/scene/texture.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/post/traa.h"
 #include "mystral/webgpu/context.h"
@@ -743,6 +744,52 @@ void alphaTest() {
     CHECK(worst <= 2 && off < 0.001);
 }
 
+// Every uploaded mipmapped texture used to cost its own queue submit and work-done callback; the
+// chains of all textures uploaded before a frame now go out as one command buffer. The first frame
+// of five distinct textures submits exactly what one texture's does.
+void mipmapsShareOneSubmit() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    const auto firstFrameSubmits = [&](int textureCount) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(64, 32);
+        const auto geometry = plane(0.4, 0.4);
+        BufferStore uvs(Scalar::F32, 8);
+        const float uv[8] = {0, 1, 1, 1, 0, 0, 1, 0};
+        uvs.write(0, uv, sizeof uv);
+        std::vector<std::shared_ptr<DataTexture>> textures;
+        shader::StandardMaterial materials[8];
+        std::vector<DrawItem> items(textureCount);
+        for (int k = 0; k < textureCount; ++k) {
+            auto texture = std::make_shared<DataTexture>();
+            texture->width = texture->height = 32;
+            texture->generateMipmaps = true;
+            texture->minFilter = static_cast<uint16_t>(TextureFilter::LinearMipmapLinear);
+            texture->data.assign(32 * 32 * 4, static_cast<uint8_t>(40 * k + 20));
+            texture->needsUpdate();
+            textures.push_back(texture);
+            DrawItem& d = items[k];
+            d.key = d.id = k + 1;
+            d.kind = MaterialKind::Basic;
+            d.positions = &geometry->positions;
+            d.indices = &geometry->indices;
+            d.uvs = &uvs;
+            d.material = &materials[k];
+            d.map = texture.get();
+            d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.1 * k, 0, 0, 1};
+        }
+        const uint64_t before = renderer.gpu().submittedSerial();
+        renderer.render(items, wideOrtho(), LightState{}, {0.1, 0.1, 0.1, 1});
+        return renderer.gpu().submittedSerial() - before;
+    };
+    const uint64_t one = firstFrameSubmits(1), five = firstFrameSubmits(5);
+    std::printf("first-frame submits: 1 texture %llu, 5 textures %llu\n", (unsigned long long)one,
+                (unsigned long long)five);
+    CHECK(one > 0);
+    CHECK(five == one);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
@@ -756,4 +803,5 @@ TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
              {"phong_reference", phongReference},
              {"physical_reference", physicalReference},
              {"alpha_transparency", alphaTransparency},
-             {"alpha_test", alphaTest})
+             {"alpha_test", alphaTest},
+             {"mipmaps_share_one_submit", mipmapsShareOneSubmit})

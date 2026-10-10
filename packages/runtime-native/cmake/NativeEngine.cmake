@@ -130,6 +130,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_physical_reference=physical_reference
         native_engine_renderer_alpha_transparency=alpha_transparency
         native_engine_renderer_alpha_test=alpha_test
+        native_engine_renderer_mipmaps_share_one_submit=mipmaps_share_one_submit
         native_engine_traa_alpha=traa_alpha
         native_engine_traa_reset_seed=traa_reset_seed)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
