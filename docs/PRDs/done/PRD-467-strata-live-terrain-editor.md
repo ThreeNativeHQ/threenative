@@ -1,11 +1,11 @@
 # PRD-467 — Live terrain editor, shape editing, and spatial surface diagnostics
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Priority:** P2 — Remaining editor reassignment and portable bake/export consumption.
 **Complexity:** 9 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466 phases 1–2 public authoring/rendering contract
-**Progress:** 9/9 required boxes verified
+**Progress:** 3/3 phases verified (8/8 phase boxes); 1/1 acceptance box verified; prd:100%.
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
