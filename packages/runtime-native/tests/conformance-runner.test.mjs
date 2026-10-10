@@ -406,13 +406,7 @@ test("dry run validates and bundles implemented rows without a browser or native
       MYSTRAL_BIN: "",
     });
 
-    assert.equal(
-      proc.status,
-      0,
-      proc.status === null
-        ? `dry run has no exit status: error=${proc.error?.code ?? "none"} signal=${proc.signal ?? "none"}`
-        : proc.stderr || proc.stdout,
-    );
+    assert.equal(proc.status, 0, proc.stderr || proc.stdout);
     const report = JSON.parse(readFileSync(out, "utf8"));
     const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
     const implemented = registry.tests.filter((entry) => entry.status === "implemented").length;
