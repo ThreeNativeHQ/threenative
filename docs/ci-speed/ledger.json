@@ -1726,6 +1726,325 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": 19,
+      "at": "2026-10-10T07:20:48.411Z",
+      "commit": "77bb0ee57",
+      "label": "PR476 candidate 77bb in CI — unmerged baseline",
+      "notes": "Fresh develop baseline while PR476 remains unmerged. CI run38033595736 targets candidate77bb; verification is pending. This audit does not measure PR476 effect.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 475.9,
+        "lastPushToMergeP90Min": 1090.9,
+        "firstAttemptSuccessPct": 25,
+        "boardWallMedianMin": 107.9,
+        "queueWaitP90Min": 42
+      },
+      "extra": {
+        "prCount": 8,
+        "mergeGroupRuns": 44,
+        "mergeGroupRunSuccessPct": 23.8,
+        "enqueueToMergeMedianMin": 409.4,
+        "queueWaitJobs": 3035
+      },
+      "prs": [
+        {
+          "number": 479,
+          "title": "PRD-567: terrain layers blend by their own height, and the game owns the curve",
+          "lastPushToMergeMin": 66.4,
+          "enqueueToMergeMin": 64.9,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 477,
+          "title": "feat(core): shadow casters sort themselves into static and moving (PRD-572)",
+          "lastPushToMergeMin": 91.8,
+          "enqueueToMergeMin": 56.5,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 473,
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "lastPushToMergeMin": 317.9,
+          "enqueueToMergeMin": 454.8,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        },
+        {
+          "number": 472,
+          "title": "PRD-297: capability recall is a gated number, PRD done",
+          "lastPushToMergeMin": 1228.1,
+          "enqueueToMergeMin": 1160.9,
+          "attempts": 12,
+          "firstAttempt": "failure",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 471,
+          "title": "fix(capabilities): every manifest import resolves in every scaffolded template (PRD-354)",
+          "lastPushToMergeMin": 1011.6,
+          "enqueueToMergeMin": 1015.5,
+          "attempts": 8,
+          "firstAttempt": "success",
+          "firstFailingJob": "test-playtest"
+        },
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 468,
+          "title": "feat(core): ship threenative-sculpt-mcp 0.2.1",
+          "lastPushToMergeMin": 1032.1,
+          "enqueueToMergeMin": 631.5,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-browser"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 7
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "at": "2026-10-10T12:55:25.811Z",
+      "commit": "77bb0ee57",
+      "label": "Current queue comparison — PR476 still unmerged",
+      "notes": "Refreshed after user requested current queue comparison and continued speed work. PR476 remains unmerged; no measured impact attribution.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 474.3,
+        "lastPushToMergeP90Min": 1071.3,
+        "firstAttemptSuccessPct": 22.2,
+        "boardWallMedianMin": 95.1,
+        "queueWaitP90Min": 39.6
+      },
+      "extra": {
+        "prCount": 9,
+        "mergeGroupRuns": 50,
+        "mergeGroupRunSuccessPct": 27.7,
+        "enqueueToMergeMedianMin": 454.8,
+        "queueWaitJobs": 3449
+      },
+      "prs": [
+        {
+          "number": 479,
+          "title": "PRD-567: terrain layers blend by their own height, and the game owns the curve",
+          "lastPushToMergeMin": 66.4,
+          "enqueueToMergeMin": 64.9,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 477,
+          "title": "feat(core): shadow casters sort themselves into static and moving (PRD-572)",
+          "lastPushToMergeMin": 91.8,
+          "enqueueToMergeMin": 56.5,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 473,
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "lastPushToMergeMin": 317.9,
+          "enqueueToMergeMin": 454.8,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        },
+        {
+          "number": 472,
+          "title": "PRD-297: capability recall is a gated number, PRD done",
+          "lastPushToMergeMin": 1228.1,
+          "enqueueToMergeMin": 1160.9,
+          "attempts": 12,
+          "firstAttempt": "failure",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 471,
+          "title": "fix(capabilities): every manifest import resolves in every scaffolded template (PRD-354)",
+          "lastPushToMergeMin": 1011.6,
+          "enqueueToMergeMin": 1015.5,
+          "attempts": 8,
+          "firstAttempt": "success",
+          "firstFailingJob": "test-playtest"
+        },
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 469,
+          "title": "fix(shooter): clear ADS sight window, remove GTAO square behind smoke",
+          "lastPushToMergeMin": 125.9,
+          "enqueueToMergeMin": 1091.6,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        },
+        {
+          "number": 468,
+          "title": "feat(core): ship threenative-sculpt-mcp 0.2.1",
+          "lastPushToMergeMin": 1032.1,
+          "enqueueToMergeMin": 631.5,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-browser"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 7
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
     }
   ]
 }
