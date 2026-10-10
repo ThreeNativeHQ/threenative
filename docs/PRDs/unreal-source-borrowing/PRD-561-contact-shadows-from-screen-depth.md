@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-561 — Small things touch the ground: contact shadows from screen depth
 
-**Status:** IN PROGRESS — dispatch builder and its spec landed; the GPU kernel is unproven until a WebGPU run
+**Status:** PARKED — mechanism and kernel landed and run on a GPU; the platformer apply decision failed the visual judge twice (see `## Decisions`)
 **Priority:** P2 — AC-1 to AC-3 are open: no template has a screen-space contact shadow, and the platformer fakes one with a blob mesh.
 **Complexity:** 5 (MEDIUM) — 1–5 implementation files (1), new mechanism module (+2), a compute pass with workgroup memory and a CPU-built dispatch list (+2); risk override: none
 **Owner:** João
@@ -107,9 +107,9 @@ flowchart LR
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: In a platformer scenario, with the blob mesh removed and the stage on, the region under the standing fox's feet has a dark-pixel ratio at least 0.3. The same scenario fails with the stage off. proof: `node packages/playtest/dist/runner/cli.js playtests/contact-shadow.playtest.json --url <dev url> --browser-recipe webgpu` with a `region` `minDarkPixelRatio` assertion — Evidence: pending.
-- [ ] AC-2 [local]: The stage costs at most 0.3 ms GPU at 1080p on the RTX 2080 browser WebGPU lane. proof: `TN_FRAME_BUDGET` p50 delta, stage on against stage off, from `node packages/playtest/dist/runner/cli.js perf` — Evidence: pending.
-- [ ] AC-3 [local]: On the Pixel 8, the stage costs at most 0.5 ms GPU at the starter's mobile resolution, or the `low` tier refuses it by name. proof: `node packages/playtest/dist/runner/cli.js perf --logcat <serial>` stage on against stage off — Evidence: pending.
+- [ ] AC-1 [local]: In a platformer scenario, with the blob mesh removed and the stage on, the region under the standing fox's feet has a dark-pixel ratio at least 0.3. The same scenario fails with the stage off. proof: `node packages/playtest/dist/runner/cli.js playtests/contact-shadow.playtest.json --url <dev url> --browser-recipe webgpu` with a `region` `minDarkPixelRatio` assertion — Evidence: open. Arm A at this camera scale did not produce it; two judge rounds REGRESSION (see `## Decisions`).
+- [ ] AC-2 [local]: The stage costs at most 0.3 ms GPU at 1080p on the RTX 2080 browser WebGPU lane. proof: `TN_FRAME_BUDGET` p50 delta, stage on against stage off, from `node packages/playtest/dist/runner/cli.js perf` — Evidence: open. Informal gpuCompute 0.1 to 0.2 ms; the `perf` p50 delta was not run on a shipped stage.
+- [ ] AC-3 [local]: On the Pixel 8, the stage costs at most 0.5 ms GPU at the starter's mobile resolution, or the `low` tier refuses it by name. proof: `node packages/playtest/dist/runner/cli.js perf --logcat <serial>` stage on against stage off — Evidence: open. Physical device, no shipped stage to measure (see `## Blocked on`).
 
 ## Integration Ledger
 
@@ -121,18 +121,18 @@ flowchart LR
 ## Execution Phases
 
 #### Phase 1: Mechanism and the apply decision
-**Status:** IN PROGRESS — box 1 done; the kernel runs on a GPU next, then the judge
+**Status:** PARKED — box 1 done; the kernel runs on a GPU; Arm A judged REGRESSION twice (see `## Decisions`)
 **Files:** `packages/core/src/render/contact-shadow.ts` (new), `packages/core/src/render/chain.ts`, `packages/core/src/index.ts`, `packages/core/THIRD_PARTY_NOTICES.md` (new), `packages/core/src/render/contact-shadow-dispatch.ts` (new, the CPU dispatch builder), `packages/core/__tests__/contact-shadow-dispatch.spec.ts` (new), `docs/architecture/CHARTER.md`
 - [x] The dispatch-list builder writes every on-screen pixel at least once, except the pixel under the light, for a light in front of, behind, beside and far off screen, and for viewports that are not multiples of 64. Overlap stays bounded (see `## Decisions`). proof: `pnpm exec vitest run packages/core/__tests__/contact-shadow-dispatch.spec.ts` — Evidence: 7 passed (1920x1080, 1001x577, 63x65, 1x1, 130x70, 1024x512, six light placements each; bounds case 301,203 to 700,510).
 - [ ] Arm A or Arm B is chosen with the judge's verdict, and the choice is written under `## Decisions`. proof: `pnpm visuals:ab --before <arm A> --after <arm B> --raters 3` on the starter and the dark-environment fixture.
 
 #### Phase 2: Templates use it
-**Status:** NOT STARTED
+**Status:** BLOCKED — the stage was withdrawn after two REGRESSION verdicts (see `## Blocked on`)
 **Files:** `packages/create-threenative/templates/platformer/src/render/fox.ts`, `packages/create-threenative/templates/platformer/src/render/postprocessing.ts`, `packages/create-threenative/templates/starter/src/render/quality.ts`, `packages/create-threenative/templates/starter/src/render/worldEnvironment.ts` (stage only if the shared-source spec allows it, else the starter's own `postprocessing.ts`), `packages/create-threenative/templates/platformer/playtests/contact-shadow.playtest.json` (new)
 - [ ] The platformer ships without the blob, and the template gate passes for the platformer and the starter. proof: `pnpm test:templates`.
 
 #### Phase 3: Native
-**Status:** NOT STARTED
+**Status:** BLOCKED — waits on a stage that ships (see `## Blocked on`)
 **Files:** `packages/runtime-native/conformance/scenes/shared/contact-shadow.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] The desktop native host produces the same mask as the browser within tolerance for a fixed depth fixture and light. proof: `pnpm parity --target desktop --only-tests contact-shadow`.
 
@@ -150,3 +150,50 @@ flowchart LR
   size`. The emulation found it: a light at x = 38400 on a 1920-wide target left column 1919 unwritten.
   The port uses `floor(light)` for both and an inclusive `max = size - 1`, and rounds the light to float32
   so the CPU and the GPU agree on `floor`. The spec case "far off screen" at 1920x1080 is the red-green.
+- 2026-10-10 — **Arm A is built, and it is withdrawn from the templates.** The platformer and starter
+  stages (commit `4afd70ca2`, PR #480) ran the Bend march, then multiplied the mask into the frame. Two
+  gates were needed before the result stopped speckling: an N·L gate (back-facing and grazing surfaces
+  self-shadow in a screen-space march) and a silhouette gate (a depth jump between neighbours reads as a
+  shadow edge). Both gates read a view-space normal rebuilt from depth, so the stage needs no normal
+  target. Asking the scene pass for `normal()` is not an option: it creates an MRT target that nothing
+  writes unless SSGI, SSR or GTAO is on, and the frame goes black.
+- 2026-10-10 — **Finding: a post stage must use its pass camera's projection inverse.** In a stage the
+  global `cameraProjectionMatrixInverse` belongs to the post quad's orthographic camera, so every
+  rebuilt normal was degenerate and every gate returned zero. `uniform(context.camera.projectionMatrixInverse)`
+  fixes it. This holds for any future depth-reading stage.
+- 2026-10-10 — **Two fresh judges returned REGRESSION; Phase 2 is not shipped.** Same pose, headed
+  `--browser-recipe webgpu`, two runs per arm, BEFORE (painted blob), CONTROL (blob removed, stage off)
+  and AFTER (blob removed, stage on). Round 1 judged `final3`, round 2 judged `final8` (`silhouetteJump`
+  4, `strength` 1). In both rounds AFTER did not beat CONTROL, and both lost to BEFORE under the feet.
+  The cause is measured, not guessed. The key-light shadow map is 4096 over a 44 m window that follows
+  the player, about 1 cm per texel. It already resolves the foot-to-ground gap, so the premise in the
+  Motivation ("shadow-map texels wider than the gap") does not hold at the platformer camera. What the
+  blob gives is an omnidirectional darkening under the sole that a sun-direction march cannot produce.
+  The stage was removed from the default wiring instead of being explained away.
+- 2026-10-10 — **AC-1 is unreachable with this arm at this camera scale.** The 0.3 dark-pixel ratio
+  needs under-foot darkening that the directional march does not make with the blob removed. The
+  scenario file was dropped with the stage. A follow-up needs a different term (ambient-occlusion style,
+  not sun direction) or a scene with no shadow map in range (far field, or a tier that drops the key
+  light shadow), and it needs its own judge.
+- 2026-10-10 — **Side finding, deferred: the fox's soles float 0.215 m above y = 0.** The blob hid it.
+  A `BODY_REST = 0.377` correction exists in `4afd70ca2` (`Fox.ts`, `fox.ts`). It changes what reaches
+  the screen, so it needs its own visual judge and its own change, not a ride in this PR.
+- 2026-10-10 — **Cost, informal.** The arms that logged `gpuCompute` read 0.1 to 0.2 ms at 1080p on the
+  desktop RTX 2080 lane with the stage on, and CPU render time rose about 1.7 ms. This is not the
+  `perf` p50 delta AC-2 asks for, so AC-2 stays open. The scenario p95 of 32 to 70 ms in those runs was
+  load-driven (other lanes shared the GPU) and says nothing about the stage.
+- 2026-10-10 — **What stays.** The kernel, the CPU dispatch builder and its spec (Phase 1 box 1), the
+  `contactShadow()` export, and one WGSL fix found on the GPU: the `flag` buffer element needs an `int`
+  index with a `uint` value (`flag.element(int(0)).assign(uint(1))`). With the mechanism shipped and no
+  template using it, the Integration Ledger rows stay open.
+
+## Blocked on
+
+- AC-3 (Pixel 8, physical device): no stage ships, so there is nothing to measure. Revisit with the
+  follow-up term. The device is shared, so ask the owner before using it.
+- Phase 1 box 2 (Arm A or Arm B): Arm A is built and judged REGRESSION twice. Arm B (analytic from the
+  light, no depth march) is untried. `pnpm visuals:ab --raters 3` was not run: two judge rounds had
+  already failed on the platformer, and the starter has the same key-light shadow window.
+- Phase 2 (templates): waits on a term that passes the judge.
+- Phase 3 (native parity): waits on a stage that ships. The mechanism is unchanged, so a conformance
+  fixture for the kernel alone is possible and was not started.
