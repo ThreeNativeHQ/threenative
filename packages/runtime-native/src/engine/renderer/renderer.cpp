@@ -892,6 +892,11 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
     return createBindGroup(device_, &desc);
 }
 
+void Renderer::initTexture(const Texture& texture) {
+    materialTexture(texture);
+    flushMipmaps();
+}
+
 const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
     // A render target's texture is that target's last render, borrowed from its own renderer.
     if (const auto target = std::static_pointer_cast<RenderTarget>(texture.renderTarget.lock())) {
@@ -1786,7 +1791,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     if (!compilation) virtualCut_ = false;
     std::string lightKinds, unshadowedKinds;
-    bool shadowMapsChanged = false;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const DirectLight& l = lights.direct[i];
         const char kind = l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
@@ -1807,7 +1811,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             shadow.map.texture = wgpuDeviceCreateTexture(device_, &desc);
             shadow.map.view = view2d(shadow.map.texture, desc.format);
             shadow.map.width = shadow.map.height = desc.size.width;
-            shadowMapsChanged = true;
+            shadowMapsChanged_ = true;
             continue;
         }
         if (!l.shadow) continue;
@@ -1848,7 +1852,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         map.width = l.shadow->width;
         map.height = l.shadow->height;
-        shadowMapsChanged = true;
+        shadowMapsChanged_ = true;
     }
 
     // Each skinned draw's palette, appended once to the frame's bone buffer; its draws (main and shadow)
@@ -2428,9 +2432,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         uniformCapacity_ = std::max<uint64_t>(frameUniforms_.size() * 2, 64 * 1024);
         uniformBuffer_ = gpu_.createBuffer(uniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
         rebuildGroups();
-    } else if (shadowMapsChanged) {
+    } else if (shadowMapsChanged_) {
         rebuildGroups();
     }
+    shadowMapsChanged_ = false;
     if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
     for (auto& [name, storage] : storages_) {
         if (storage.data.size() * 4 > storage.capacity) {

@@ -332,6 +332,8 @@ public:
     uint64_t overlayUploads() const { return overlayUploads_; }
     /** Bytes of map pixels written from the CPU by this renderer and its siblings: level 0 only, the GPU builds the mips. */
     uint64_t textureUploadBytes() const { return textures_->uploadBytes; }
+    /** Upload through the draw path now, including submission of generated mipmaps. */
+    void initTexture(const Texture& texture);
     /**
      * How the host copies its decoded image (Texture::external) into level 0 of `texture`, flipped
      * when `flipY`: the web host's copyExternalImageToTexture. Returns false when it cannot.
@@ -572,6 +574,7 @@ private:
     // 2D maps and cube maps in separate slots, so a program built while light i was a directional
     // light still binds a 2D map after light i becomes a point light.
     std::vector<ShadowMap> shadowMaps_, cubeShadowMaps_;
+    bool shadowMapsChanged_ = false;  // compilation changes survive until a real frame rebuilds groups
     struct VirtualShadow {
         shadows::PageAtlas atlas;
         ShadowMap map;

@@ -41,7 +41,15 @@ WGPURenderPipeline PipelineCompilation::get() const {
     return pipeline_;
 }
 
-void PipelineCompilation::complete(WGPURenderPipeline pipeline, const std::string& error) {
+void PipelineCompilation::complete(WGPURenderPipeline pipeline, const std::string& error, bool replace) {
+#ifndef __EMSCRIPTEN__
+    std::lock_guard lock(completionMutex_);
+#endif
+    if (ready() && !replace) {
+        if (pipeline) wgpuRenderPipelineRelease(pipeline);
+        return;
+    }
+    if (pipeline_) wgpuRenderPipelineRelease(pipeline_);
     pipeline_ = pipeline;
     error_ = error;
     status_.store(pipeline && error.empty() ? 1 : -1, std::memory_order_release);
@@ -66,9 +74,12 @@ PipelineCache::~PipelineCache() {
     {
         std::lock_guard lock(workMutex_);
         stopping_ = true;
+        pending_.clear();
     }
     workReady_.notify_all();
     for (auto& worker : workers_) if (worker.joinable()) worker.join();
+    for (auto& [key, request] : compiling_)
+        if (!request->ready()) request->complete(nullptr, "compile cancelled during shutdown");
 #endif
     for (auto& [key, pipeline] : pipelines_) {
         if (pipeline) wgpuRenderPipelineRelease(pipeline);
@@ -144,7 +155,8 @@ void PipelineCache::poll() {
         auto ready = it++;
         const std::string key = ready->first;
         compiling_.erase(ready);
-        const auto pipeline = request->get();  // a failed compile is a failure, never a cached null
+        if (request->status_.load(std::memory_order_acquire) < 0) continue;  // only its ticket rejects
+        const auto pipeline = request->get();
         const auto [stored, inserted] = pipelines_.emplace(key, pipeline);
         if (inserted) wgpuRenderPipelineAddRef(pipeline);  // cache and completion each own a reference
         if (request->named) byId_.emplace(request->id, stored->second);
@@ -165,10 +177,14 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
         return found->second;
     }
     const auto pipeline = create(device_, vertex, fragment, target);
-    ++compiles_;
+    if (!compiling_.contains(key)) ++compiles_;  // an in-flight key and its draw fallback count once
     if (!pipeline) return nullptr;
     pipelines_.emplace(key, pipeline);
     if (named) byId_.emplace(id, pipeline);
+    if (const auto found = compiling_.find(key); found != compiling_.end()) {
+        wgpuRenderPipelineAddRef(pipeline);
+        found->second->complete(pipeline, {}, true);  // the draw fulfills the speculative ticket too
+    }
     return pipeline;
 }
 
@@ -215,8 +231,10 @@ std::shared_ptr<PipelineCompilation> PipelineCache::getAsync(const shader::Stage
         });
     }
     pending_.push_back([pending, vertex, fragment = fragment ? std::optional(*fragment) : std::nullopt, target] {
+        if (pending->ready()) return;  // a draw may have fulfilled this key while it was queued
         try { pending->complete(create(pending->device, vertex, fragment ? &*fragment : nullptr, target)); }
         catch (const std::exception& error) { pending->complete(nullptr, error.what()); }
+        catch (...) { pending->complete(nullptr, "unknown pipeline compilation exception"); }
     });
     workReady_.notify_all();
 #endif
@@ -249,6 +267,9 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
         buffers[i].attributeCount = 1;
         buffers[i].attributes = &attributes[i];
     }
+#ifdef __EMSCRIPTEN__
+    if (pending) wgpuDevicePushErrorScope(device, WGPUErrorFilter_Validation);
+#endif
     WGPUShaderModule vs = module(device, vertex.wgsl.code);
     WGPUShaderModule fs = fragment ? module(device, fragment->wgsl.code) : nullptr;
     WGPURenderPipelineDescriptor desc = {};
@@ -309,6 +330,22 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
         pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
     wgpuShaderModuleRelease(vs);
     if (fs) wgpuShaderModuleRelease(fs);
+#ifdef __EMSCRIPTEN__
+    if (pending) {
+        WGPUPopErrorScopeCallbackInfo callback = {};
+        callback.mode = WGPUCallbackMode_AllowProcessEvents;
+        callback.userdata1 = new std::shared_ptr<Pending>(pending);
+        callback.callback = [](WGPUPopErrorScopeStatus status, WGPUErrorType type, WGPUStringView message,
+                               void* data, void*) {
+            std::unique_ptr<std::shared_ptr<Pending>> request(static_cast<std::shared_ptr<Pending>*>(data));
+            if (status == WGPUPopErrorScopeStatus_Success && type == WGPUErrorType_NoError) return;
+            (*request)->complete(nullptr, message.data
+                ? std::string(message.data, message.length == WGPU_STRLEN ? std::char_traits<char>::length(message.data) : message.length)
+                : "shader validation failed");
+        };
+        wgpuDevicePopErrorScope(device, callback);
+    }
+#endif
     return pipeline;
 }
 

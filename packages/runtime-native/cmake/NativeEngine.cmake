@@ -284,8 +284,17 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-renderer-caches-test tests/native-engine/renderer_caches_test.cpp
         native_engine_renderer_geometry_cache=geometry
         native_engine_renderer_pipeline_cache=pipelines
-        native_engine_renderer_pipeline_compile_async=compile_before_render)
+        native_engine_renderer_pipeline_compile_async=compile_before_render
+        native_engine_renderer_init_texture=init_texture)
     target_link_libraries(tn-native-engine-renderer-caches-test PRIVATE tn_engine_renderer tn_host_services)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MYSTRAL_USE_DAWN)
+        target_compile_definitions(tn-native-engine-renderer-caches-test PRIVATE TN_TEST_PIPELINE_WORKERS)
+        target_link_options(tn-native-engine-renderer-caches-test PRIVATE "-Wl,--wrap=wgpuDeviceCreateRenderPipeline")
+        foreach(case failed_ticket synchronous_adoption shutdown_queue nonstandard_exception)
+            add_test(NAME native_engine_renderer_pipeline_${case} COMMAND tn-native-engine-renderer-caches-test ${case})
+            set_tests_properties(native_engine_renderer_pipeline_${case} PROPERTIES LABELS "native-engine" TIMEOUT 10)
+        endforeach()
+    endif()
 
     tn_native_engine_test(tn-native-engine-package-load-test tests/native-engine/package_load_test.cpp
         native_engine_cooked_package_load=load)

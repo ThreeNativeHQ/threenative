@@ -19,6 +19,7 @@ type HostCall =
   | "_tnw_web_render"
   | "_tnw_web_compile"
   | "_tnw_web_compile_poll"
+  | "_tnw_web_init_texture"
   | "_tnw_web_renderer_state"
   | "_tnw_web_frame"
   | "_tnw_web_render_target"
@@ -338,6 +339,13 @@ export function defineWebRenderer(
         status = module._tnw_web_compile_poll(id);
       }
       check(status === READY ? 0 : 1);
+    }
+
+    async initTexture(texture: unknown): Promise<void> {
+      await this.init();
+      beforeRender();
+      writeHandle(0, texture, "texture");
+      check(module._tnw_web_init_texture(handles));
     }
 
     getRenderTarget(): null {

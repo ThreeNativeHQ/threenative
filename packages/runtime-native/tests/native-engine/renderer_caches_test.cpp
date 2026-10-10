@@ -10,6 +10,26 @@
 #include <chrono>
 #include <cstring>
 #include <thread>
+#include <atomic>
+#include <stdexcept>
+
+#ifdef TN_TEST_PIPELINE_WORKERS
+namespace {
+std::thread::id frameThread;
+std::atomic<int> workerCreates{0}, refusal{0};
+std::atomic<bool> holdWorkers{false};
+}
+extern "C" WGPURenderPipeline __real_wgpuDeviceCreateRenderPipeline(WGPUDevice, const WGPURenderPipelineDescriptor*);
+extern "C" WGPURenderPipeline __wrap_wgpuDeviceCreateRenderPipeline(WGPUDevice device, const WGPURenderPipelineDescriptor* desc) {
+    if (std::this_thread::get_id() != frameThread) {
+        ++workerCreates;
+        while (holdWorkers) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (refusal == 1) throw std::runtime_error("test pipeline refusal");
+        if (refusal == 2) throw 42;
+    }
+    return __real_wgpuDeviceCreateRenderPipeline(device, desc);
+}
+#endif
 
 using namespace tn::engine;
 
@@ -298,6 +318,23 @@ void compileBeforeRender() {
     compileScene(database, renderer, scene, camera);
     CHECK(renderer.pipelines().compiles() == compiled);  // repeated compile is a lookup
 
+    DirectionalLight added;
+    added.setCastShadow(true);
+    scene.add(added);
+    compileScene(database, renderer, scene, camera);
+    const auto groupsBeforeAddedLight = bindGroupsCreated();
+    const auto compiledWithAddedLight = renderer.pipelines().compiles();
+    database.render(renderer, scene, camera);
+    CHECK(bindGroupsCreated() > groupsBeforeAddedLight);
+    CHECK(renderer.pipelines().compiles() == compiledWithAddedLight);
+
+    // Preparing a resized shadow after a real frame must invalidate its cached bind groups.
+    sun.shadow.mapSize.set(256, 256);
+    compileScene(database, renderer, scene, camera);
+    const auto groupsBeforeResize = bindGroupsCreated();
+    database.render(renderer, scene, camera);
+    CHECK(bindGroupsCreated() > groupsBeforeResize);
+
     // The frame's synchronous fallback still builds a newly introduced material variant.
     auto changed = std::make_shared<Material>(MaterialType::Phong);
     transparent.material = changed;
@@ -317,8 +354,153 @@ void compileBeforeRender() {
     const auto withContext = renderer.pipelines().compiles();
     database.render(renderer, context, camera);
     CHECK(renderer.pipelines().compiles() == withContext);
+
+    // The same invalidation is required when compilation first allocates a virtual atlas.
+    shadows::AtlasOptions atlas;
+    atlas.clipExtents = {8}; atlas.mapSize = 256; atlas.pageTexels = 64;
+    atlas.lightDistance = 20; atlas.depthRange = 40;
+    renderer.setVirtualShadow(0, atlas);
+    compileScene(database, renderer, scene, camera);
+    const auto groupsBeforeAtlas = bindGroupsCreated();
+    database.render(renderer, scene, camera);
+    CHECK(bindGroupsCreated() > groupsBeforeAtlas);
+}
+
+#ifdef TN_TEST_PIPELINE_WORKERS
+void waitFor(const auto& ready) {
+    for (int i = 0; i < 2000 && !ready(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK(ready());
+}
+
+void failedTicket() {
+    CompileDevice d;
+    CHECK(d.device);
+    if (!d.device) return;
+    frameThread = std::this_thread::get_id();
+    refusal = 1;
+    const auto standard = shader::buildStandard(shader::StandardMaterial{});
+    const auto vs = shader::buildStage(standard.vertex, 0), fs = shader::buildStage(standard.fragment, 1);
+    PipelineCache cache(d.device);
+    const auto failed = cache.getAsync(vs, &fs, PipelineTarget{});
+    waitFor([&] { return failed->ready(); });
+    bool rejected = false;
+    try { failed->get(); } catch (const std::exception&) { rejected = true; }
+    CHECK(rejected);
+    bool unrelatedSucceeded = false;
+    try { unrelatedSucceeded = cache.get(vs, nullptr, PipelineTarget{WGPUTextureFormat_Undefined}) != nullptr; }
+    catch (const std::exception&) {}
+    CHECK(unrelatedSucceeded);
+}
+
+void synchronousAdoption() {
+    CompileDevice d;
+    CHECK(d.device);
+    if (!d.device) return;
+    frameThread = std::this_thread::get_id();
+    workerCreates = 0; holdWorkers = true;
+    const auto standard = shader::buildStandard(shader::StandardMaterial{});
+    const auto vs = shader::buildStage(standard.vertex, 0), fs = shader::buildStage(standard.fragment, 1);
+    auto cache = std::make_unique<PipelineCache>(d.device);
+    const auto pending = cache->getAsync(vs, &fs, PipelineTarget{});
+    waitFor([] { return workerCreates == 1; });
+    PipelineTarget queuedTarget; queuedTarget.depthBias = 1;
+    const auto other = cache->getAsync(vs, &fs, queuedTarget);
+    waitFor([] { return workerCreates == 2; });
+    queuedTarget.depthBias = 2;
+    const auto queued = cache->getAsync(vs, &fs, queuedTarget);
+    const auto queuedFallback = cache->get(vs, &fs, queuedTarget);
+    const auto fallback = cache->get(vs, &fs, PipelineTarget{});
+    CHECK(fallback);
+    CHECK(pending->ready());
+    CHECK(queued->ready());
+    refusal = 1;  // the speculative worker may refuse after a draw has already succeeded
+    holdWorkers = false;
+    waitFor([&] { return pending->ready(); });
+    waitFor([&] { return other->ready(); });
+    cache->poll();
+    CHECK(cache->get(vs, &fs, PipelineTarget{}) == fallback);
+    bool adopted = false;
+    try { adopted = pending->get() == fallback && queued->get() == queuedFallback; }
+    catch (const std::exception&) {}
+    CHECK(adopted);
+    CHECK(cache->compiles() == 3);
+    CHECK(cache->size() == 2);
+    queuedTarget.depthBias = 3;
+    const auto barrier = cache->getAsync(vs, &fs, queuedTarget);
+    waitFor([&] { return barrier->ready(); });  // FIFO dequeue has passed the fulfilled queued key
+    cache.reset();
+    CHECK(workerCreates == 3);  // two active jobs plus the barrier; the fulfilled queued job was skipped
+}
+
+void shutdownQueue() {
+    CompileDevice d;
+    CHECK(d.device);
+    if (!d.device) return;
+    frameThread = std::this_thread::get_id();
+    workerCreates = 0; holdWorkers = true;
+    const auto standard = shader::buildStandard(shader::StandardMaterial{});
+    const auto vs = shader::buildStage(standard.vertex, 0), fs = shader::buildStage(standard.fragment, 1);
+    auto cache = std::make_unique<PipelineCache>(d.device);
+    std::vector<std::shared_ptr<PipelineCompilation>> tickets;
+    for (int i = 0; i < 20; ++i) {
+        PipelineTarget target; target.depthBias = i;
+        tickets.push_back(cache->getAsync(vs, &fs, target));
+    }
+    waitFor([] { return workerCreates == 2; });
+    std::thread shutdown([&] { cache.reset(); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    holdWorkers = false;
+    shutdown.join();
+    CHECK(workerCreates == 2);
+    CHECK(tickets.back()->ready());
+    bool cancelled = false;
+    try { tickets.back()->get(); } catch (const std::exception&) { cancelled = true; }
+    CHECK(cancelled);
+}
+
+void nonStandardException() {
+    CompileDevice d;
+    CHECK(d.device);
+    if (!d.device) return;
+    frameThread = std::this_thread::get_id();
+    refusal = 2;
+    const auto standard = shader::buildStandard(shader::StandardMaterial{});
+    const auto vs = shader::buildStage(standard.vertex, 0), fs = shader::buildStage(standard.fragment, 1);
+    PipelineCache cache(d.device);
+    const auto pending = cache.getAsync(vs, &fs, PipelineTarget{});
+    waitFor([&] { return pending->ready(); });
+    bool rejected = false;
+    try { pending->get(); } catch (const std::exception&) { rejected = true; }
+    CHECK(rejected);
+}
+#endif
+
+template <class R>
+void uploadTexture(R& renderer, const Texture& texture) {
+    if constexpr (requires { renderer.initTexture(texture); }) renderer.initTexture(texture);
+}
+
+void initializeTexture() {
+    CompileDevice d;
+    CHECK(d.device);
+    if (!d.device) return;
+    Renderer renderer(d.instance, d.device, d.queue, d.events);
+    Texture texture;
+    texture.width = texture.height = 2;
+    texture.data.assign(16, 255);
+    uploadTexture(renderer, texture);
+    CHECK(renderer.textureUploadBytes() == 16);
+    CHECK(renderer.materialTextureCount() == 1);
+    uploadTexture(renderer, texture);
+    CHECK(renderer.textureUploadBytes() == 16);
+    CHECK(renderer.lastFrame().draws == 0);
 }
 
 }  // namespace
 
-TN_TEST_MAIN({"geometry", geometry}, {"pipelines", pipelines}, {"compile_before_render", compileBeforeRender})
+TN_TEST_MAIN({"geometry", geometry}, {"pipelines", pipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}
+#ifdef TN_TEST_PIPELINE_WORKERS
+    , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
+    {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException}
+#endif
+)

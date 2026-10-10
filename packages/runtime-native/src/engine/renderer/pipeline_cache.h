@@ -30,7 +30,10 @@ public:
     WGPURenderPipeline get() const;
 private:
     friend class PipelineCache;
-    void complete(WGPURenderPipeline pipeline, const std::string& error = {});
+    void complete(WGPURenderPipeline pipeline, const std::string& error = {}, bool replace = false);
+#ifndef __EMSCRIPTEN__
+    std::mutex completionMutex_;  // publication only; GPU creation never holds this lock
+#endif
     WGPURenderPipeline pipeline_ = nullptr;
     std::string error_;
     std::atomic<int> status_{0};

@@ -52,7 +52,17 @@ Facts read 2026-10-09 at `76989167f`:
    each key goes through `wgpuDeviceCreateRenderPipelineAsync` (the browser's
    `createRenderPipelineAsync`). On native, each key goes to a small compile pool that calls the
    synchronous create, the same design the legacy host proved on wgpu-native. The frame path keeps
-   its synchronous fallback for a key that `compileAsync` did not see.
+   its synchronous fallback for a key that `compileAsync` did not see or that is still compiling.
+   When a draw races an in-flight compile, its synchronous pipeline remains cached and fulfills the
+   speculative ticket. Queued work skips fulfilled tickets; already-active work releases its late
+   result without changing that ticket, the cache entry or the compile count. `compiles()` counts
+   that key once; two physical creates can overlap to keep the draw correct.
+   Failed speculative tickets reject independently, and shutdown cancels queued work after joining
+   the two active workers. Speculative Wasm shader validation is captured in an error scope, so it
+   cannot latch the host's global device failure. Shadow-map changes invalidate the next frame's
+   bind groups. The Wasm compile walk uses a separate database, preserving the render scene's records.
+   Browser `initTexture()` calls the host's renderer upload path and submits generated mipmaps before
+   its promise resolves; repeated calls at the same texture version upload no bytes.
 2. **The native cache persists.** Dawn's blob cache (load and store callbacks on device creation)
    writes compiled pipelines under the player's cache directory, keyed by adapter and driver.
    A wgpu-native build records `persistent: false` and works as today.
@@ -67,6 +77,7 @@ Facts read 2026-10-09 at `76989167f`:
 **Files:** `packages/three-native/src/browser-renderer.ts`, `src/engine/renderer/pipeline_cache.{h,cpp}`, `src/engine/wasm/web_host.cpp`, `tests/native-engine/renderer/` (pipeline cache test)
 - [x] **[QW ≤4 h]** On native desktop, `compileAsync` builds every missing pipeline on a compile pool, and the next `render` compiles zero pipelines. proof: red-green case in `ctest --test-dir packages/runtime-native/build/tn-linux -R native_engine_renderer_pipeline_cache` (`compiles()` unchanged across the first render after `compileAsync`). Verified 2026-10-09 in this task’s `build/tn-linux-engine` with `ctest -L native-engine -R pipeline`: baseline `native_engine_renderer_pipeline_compile_async` failed; modified case passes on Dawn Null with no GPU. Both pipeline cases pass; the next render creates 0 pipelines, and an unseen material still uses the synchronous fallback.
 - [ ] On the web, `compileAsync` builds every missing pipeline through the async entry, and the first frame after it compiles zero pipelines. proof: red-green case in `ctest --test-dir packages/runtime-native/build/wasm -R native_engine_wasm_browser_backend`. Implementation and requested GPU-stubbed facade proof verified 2026-10-09: baseline 4 failures, modified 4 passes; 1/2/3-argument calls await all creates and the next frame creates none. `tn-native-engine-web` builds using the available async API. This box remains open for actual Wasm/browser execution, excluded by this task’s no-browser/no-GPU rule.
+  Review repairs verified 2026-10-10: 8/8 focused native/source CTest cases, 130/130 package Vitest tests (excluding `run-native.spec.ts`), tsc and touched-file Biome passed; native and Wasm rebuilt. Covers shadow invalidation across render/compile/render, isolated failures, queue cancellation, synchronous ticket adoption, catch-all rejection and texture upload. Wasm host database/error-scope contracts are source-tested; browser/GPU runtime proof remains open. Command results are in `PROGRESS-577.md`.
 - [ ] Midway's native page reaches `ready` sooner against its own base build, frames pixel-identical. proof: `pnpm profile:wasm-page -- --url <native Midway, this build> --control <native Midway, base build> --load --gpu-calls` with subject/control `ready` below 1.0 and at least 1 async compile counted on the subject
 
 #### Phase 2: Native pipelines survive a relaunch

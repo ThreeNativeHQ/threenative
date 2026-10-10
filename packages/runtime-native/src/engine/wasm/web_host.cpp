@@ -267,32 +267,33 @@ std::map<uint32_t, std::vector<std::shared_ptr<PipelineCompilation>>> compilatio
 extern "C" uint32_t tnw_web_compile(const tn_handle_t* rootHandle, const tn_handle_t* cameraHandle,
                                      const tn_handle_t* targetSceneHandle) {
     tnw_web_poll();
-    if (state != Ready) { fail("TN_WASM_COMPILE: device not ready"); return 0; }
+    if (state != Ready) { failure = "TN_WASM_COMPILE: device not ready"; return 0; }
     auto* root = rootOf(rootHandle);
     Camera defaultCamera;
     auto* camera = cameraHandle ? cameraOf(cameraHandle) : &defaultCamera;
     auto* targetScene = targetSceneHandle ? rootOf(targetSceneHandle) : nullptr;
     if (!root || !camera || (targetSceneHandle && !targetScene)) {
-        fail("TN_WASM_COMPILE: root, camera or target scene handle invalid"); return 0;
+        failure = "TN_WASM_COMPILE: root, camera or target scene handle invalid"; return 0;
     }
     try {
         if (outputChanged) renderer->setOutput(output);
         outputChanged = false;
-        database.shadowMapEnabled = shadowMap;
-        database.shadowMapType = shadowMapType;
-        auto pending = database.compileAsync(*renderer, *root, *camera, targetScene, surfaceFormat);
+        RenderDatabase compileDatabase;
+        compileDatabase.shadowMapEnabled = shadowMap;
+        compileDatabase.shadowMapType = shadowMapType;
+        auto pending = compileDatabase.compileAsync(*renderer, *root, *camera, targetScene, surfaceFormat);
         const uint32_t id = ++nextCompilation;
         compilations.emplace(id, std::move(pending));
         return id;
     } catch (const std::exception& error) {
-        fail(error.what()); return 0;
+        failure = error.what(); return 0;
     }
 }
 
 /** 0 pending, 1 complete (consumes the request), -1 failed. */
 extern "C" int tnw_web_compile_poll(uint32_t id) {
     const auto found = compilations.find(id);
-    if (found == compilations.end()) { fail("TN_WASM_COMPILE: unknown request"); return -1; }
+    if (found == compilations.end()) { failure = "TN_WASM_COMPILE: unknown request"; return -1; }
     if (state == Failed) { compilations.erase(found); return -1; }
     try {
         bool pending = false;
@@ -304,7 +305,20 @@ extern "C" int tnw_web_compile_poll(uint32_t id) {
         compilations.erase(found);
         return 1;
     } catch (const std::exception& error) {
-        compilations.erase(found); fail(error.what()); return -1;
+        compilations.erase(found); failure = error.what(); return -1;
+    }
+}
+
+/** three's initTexture: the same upload and mip submission as a draw, without a frame. */
+extern "C" int tnw_web_init_texture(const tn_handle_t* textureHandle) {
+    if (state != Ready) { failure = "TN_WASM_TEXTURE: device not ready"; return 1; }
+    auto* texture = objectAs<Texture>(textureHandle, "Texture");
+    if (!texture) { failure = "TN_WASM_TEXTURE: texture handle invalid"; return 1; }
+    try {
+        renderer->initTexture(*texture);
+        return 0;
+    } catch (const std::exception& error) {
+        failure = error.what(); return 1;
     }
 }
 

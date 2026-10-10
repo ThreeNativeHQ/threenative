@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { type IBrowserRuntime, defineBrowserClasses } from "../src/browser-backend.js";
@@ -7,6 +8,7 @@ interface IRenderer {
   init(): Promise<unknown>;
   compileAsync(root: unknown, camera?: unknown, scene?: unknown): Promise<void>;
   render(root: unknown, camera: unknown): void;
+  initTexture(texture: unknown): Promise<void>;
 }
 
 function fixture() {
@@ -19,7 +21,7 @@ function fixture() {
     callbacks: [],
   };
   const runtime: IBrowserRuntime = {
-    typeId: (name) => (name === "Scene" ? 1 : 2),
+    typeId: (name) => (name === "Scene" ? 1 : name === "PerspectiveCamera" ? 2 : 3),
     construct: () => {
       throw new Error("unused constructor");
     },
@@ -30,12 +32,13 @@ function fixture() {
     setCallback: () => {},
   };
   const { wrap } = defineBrowserClasses(
-    { classes: { Scene: empty, PerspectiveCamera: empty } },
+    { classes: { Scene: empty, PerspectiveCamera: empty, Texture: empty } },
     runtime,
   );
   const root = wrap({ type: 1, key: "1:1:1:1" });
   const camera = wrap({ type: 2, key: "2:1:2:1" });
   const scene = wrap({ type: 1, key: "1:1:3:1" });
+  const texture = wrap({ type: 3, key: "3:1:4:1" });
   let pointer = 48;
   let completed = 0;
   let syncCreates = 0;
@@ -62,6 +65,7 @@ function fixture() {
     _tnw_web_resize: () => 0,
     _tnw_web_error: () => 0,
     _tnw_web_renderer_state: () => 0,
+    _tnw_web_init_texture: vi.fn((_texture: number) => 0),
     _tnw_web_frame: () => syncCreates,
     _tnw_web_compile: vi.fn(() => {
       for (let i = 0; i < 2; ++i)
@@ -91,6 +95,7 @@ function fixture() {
     root,
     camera,
     scene,
+    texture,
     creates,
     releases,
     syncCreates: () => syncCreates,
@@ -144,5 +149,62 @@ describe("compileAsync on the browser renderer", () => {
     f.fail("TN_NATIVE_PIPELINE_REFUSED");
     await rejection;
     expect(f.module._tnw_web_render).not.toHaveBeenCalled();
+    expect(() => f.renderer.render(f.root, f.camera)).not.toThrow();
+  });
+
+  it("uploads a texture through the host before resolving initTexture", async () => {
+    const f = fixture();
+    await f.renderer.initTexture(f.texture);
+    expect(f.module._tnw_web_init_texture).toHaveBeenCalledTimes(1);
+    const pointer = f.module._tnw_web_init_texture.mock.calls[0]?.[0] as number | undefined;
+    expect(new DataView(f.module.HEAPU8.buffer).getUint32((pointer ?? 0) + 4, true)).toBe(4);
+    expect(f.module._tnw_web_render).not.toHaveBeenCalled();
+  });
+
+  it("rejects texture upload failures and invalid engine objects", async () => {
+    const f = fixture();
+    f.module._tnw_web_init_texture.mockReturnValue(1);
+    f.fail("TN_NATIVE_TEXTURE_INVALID");
+    await expect(f.renderer.initTexture(f.texture)).rejects.toThrow("TN_NATIVE_TEXTURE_INVALID");
+    await expect(f.renderer.initTexture({})).rejects.toThrow("not an engine object");
+  });
+
+  it("keeps speculative failures local", () => {
+    const host = readFileSync(
+      new URL("../../runtime-native/src/engine/wasm/web_host.cpp", import.meta.url),
+      "utf8",
+    );
+    const compile = host.slice(
+      host.indexOf('extern "C" uint32_t tnw_web_compile('),
+      host.indexOf('extern "C" int tnw_web_render_target('),
+    );
+    expect(compile).not.toMatch(/\bfail\(/);
+  });
+
+  it("uses a separate compile database to preserve render scene records", () => {
+    const host = readFileSync(
+      new URL("../../runtime-native/src/engine/wasm/web_host.cpp", import.meta.url),
+      "utf8",
+    );
+    const compile = host.slice(
+      host.indexOf('extern "C" uint32_t tnw_web_compile('),
+      host.indexOf('extern "C" int tnw_web_compile_poll('),
+    );
+    expect(compile).toMatch(/RenderDatabase\s+\w+;/);
+    expect(compile).not.toMatch(/\bdatabase\.compileAsync/);
+  });
+
+  it("captures speculative shader validation before it reaches the global device error handler", () => {
+    const cache = readFileSync(
+      new URL("../../runtime-native/src/engine/renderer/pipeline_cache.cpp", import.meta.url),
+      "utf8",
+    );
+    const creation = cache.slice(cache.indexOf("WGPURenderPipeline PipelineCache::create("));
+    expect(creation.indexOf("wgpuDevicePushErrorScope")).toBeGreaterThan(-1);
+    expect(creation.indexOf("wgpuDevicePushErrorScope")).toBeLessThan(
+      creation.indexOf("WGPUShaderModule vs"),
+    );
+    expect(creation).toContain("wgpuDevicePopErrorScope");
+    expect(creation.match(/std::unique_ptr<std::shared_ptr<Pending>> request/g)).toHaveLength(2);
   });
 });
