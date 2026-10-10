@@ -548,7 +548,8 @@ tn_native_engine_test(tn-native-engine-animation-interpolants-test tests/native-
 target_link_libraries(tn-native-engine-animation-interpolants-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-interpolants-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 tn_native_engine_test(tn-native-engine-animation-binding-test tests/native-engine/animation/property_binding_test.cpp
-    native_engine_animation_binding_parse=parse native_engine_animation_binding=binding)
+    native_engine_animation_binding_parse=parse native_engine_animation_binding=binding
+    native_engine_animation_binding_released=released)
 target_link_libraries(tn-native-engine-animation-binding-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-binding-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
 tn_native_engine_test(tn-native-engine-animation-mixer-test tests/native-engine/animation/mixer_test.cpp

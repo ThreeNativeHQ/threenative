@@ -156,6 +156,26 @@ void binding() {
     CHECK(bindings[7].diagnostic.rfind("TN_NATIVE_ANIMATION_PATH_UNSUPPORTED", 0) == 0);
 }
 
+// A bound node that is released afterwards turns get and set into no-ops: the binding keeps a raw
+// pointer for the hot path, so this is the case that would read freed memory if the check went.
+void released() {
+    auto root = std::make_shared<Object3D>();
+    auto hand = std::make_shared<Object3D>();
+    hand->name = "hand";
+    root->add(*hand);
+    PropertyBinding binding(root, "hand.position");
+    const double in[3] = {1, 2, 3};
+    binding.setValue(in, 0);
+    CHECK(binding.bound() && hand->position.y == 2);
+    root->remove(*hand);
+    hand.reset();
+    double out[3] = {7, 7, 7};
+    binding.setValue(in, 0);
+    binding.getValue(out, 0);
+    CHECK(out[0] == 7 && out[1] == 7 && out[2] == 7);
+    CHECK(binding.targetNode() == nullptr);
+}
+
 } // namespace
 
-TN_TEST_MAIN({"parse", parse}, {"binding", binding})
+TN_TEST_MAIN({"parse", parse}, {"binding", binding}, {"released", released})

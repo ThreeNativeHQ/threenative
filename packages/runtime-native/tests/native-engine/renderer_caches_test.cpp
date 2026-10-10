@@ -99,6 +99,10 @@ void geometry() {
     CHECK(cache.entries() == held - 1);
     cache.sync(*shared, usage);
     CHECK(cache.entries() == held && cache.stats().fullUploads == uploads + 1);
+    // A released store's copy goes at the next sweep, which reads no field of the freed store.
+    shared.reset();
+    cache.sweep();
+    CHECK(cache.entries() == held - 1);
 }
 
 void pipelines() {

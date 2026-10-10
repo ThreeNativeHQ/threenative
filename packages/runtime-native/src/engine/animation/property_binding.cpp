@@ -95,6 +95,7 @@ PropertyBinding::PropertyBinding(const std::shared_ptr<Object3D>& root, std::str
     // Like three, the node is looked up once here; bind() searches again only after unbind().
     if (Object3D* found = findNode(*root, parsed_.nodeName))
         node_ = found->weak_from_this();
+    raw_ = node_.lock().get();
 }
 
 namespace {
@@ -167,6 +168,7 @@ void PropertyBinding::bind() {
         node = found ? found->weak_from_this().lock() : nullptr;
         node_ = node; // an object no shared_ptr owns cannot be held, so it reads as not found
     }
+    raw_ = node.get();
     if (!node) {
         diagnostic = "PropertyBinding: No target node found for track: " + path + ".";
         return;
@@ -254,7 +256,7 @@ void PropertyBinding::unbind() {
 void PropertyBinding::getValue(double* buffer, std::size_t offset) {
     if (!bindAttempted_)
         bind();
-    const std::shared_ptr<Object3D> node = node_.lock();
+    Object3D* node = node_.expired() ? nullptr : raw_;
     if (!node)
         return;
     const auto put = [&](const auto& array) { std::copy(array.begin(), array.end(), buffer + offset); };
@@ -305,7 +307,7 @@ void PropertyBinding::getValue(double* buffer, std::size_t offset) {
 void PropertyBinding::setValue(const double* buffer, std::size_t offset) {
     if (!bindAttempted_)
         bind();
-    const std::shared_ptr<Object3D> node = node_.lock();
+    Object3D* node = node_.expired() ? nullptr : raw_;
     if (!node || target_ == Target::Unavailable)
         return;
     const int at = static_cast<int>(offset);

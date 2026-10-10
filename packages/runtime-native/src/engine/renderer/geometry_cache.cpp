@@ -75,9 +75,12 @@ void GeometryCache::forget(const BufferStore& store) {
 }
 
 void GeometryCache::sweep() {
+    // Every frame walks every entry, so no lock() per entry: a live owner is the store at the key.
+    // ponytail: single-thread safe only; PRD-574 needs a strong reference if a second thread
+    // can release stores.
     for (auto it = entries_.begin(); it != entries_.end();) {
-        const auto owner = it->second.owner.lock();
-        if (it->second.tracked && (owner == nullptr || owner->gpuReleases() != it->second.releases)) {
+        const Entry& e = it->second;
+        if (e.tracked && (e.owner.expired() || it->first->gpuReleases() != e.releases)) {
             gpu_.destroy(it->second.buffer);
             it = entries_.erase(it);
         } else {

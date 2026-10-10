@@ -77,6 +77,10 @@ class PropertyBinding {
 
     std::weak_ptr<Object3D> root_;
     std::weak_ptr<Object3D> node_;
+    // node_'s object, read after a node_.expired() check instead of a lock() per apply.
+    // ponytail: safe while one thread owns the scene; PRD-574 swaps in a frame-scoped strong
+    // reference if a second thread can release nodes.
+    Object3D* raw_ = nullptr;
     ParsedPath parsed_;
     bool parsedOk_ = false;
     bool bindAttempted_ = false; // three's `_getValue_unbound`: the first get or set binds
