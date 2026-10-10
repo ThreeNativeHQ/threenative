@@ -70,6 +70,10 @@ const SHEEN = new Color(0x8fa2b1);
 /** Deep water's own colour; the bed shows through where the lake is shallow. */
 const BODY = new Color(0x1c3d3f);
 const RIVER = new Color(0x2a4b4c);
+/** The pale, silty band where the water thins over the bank; it reads as a wet shore, not a cut edge. */
+const SHORE = new Color(0xb8c2b2);
+/** Water thinner than this many metres takes the SHORE colour, fading in as it thins. */
+const SHORE_BAND = 2;
 
 /** The heightfield's sample grid in world metres: one node per column and row, the first at (x0, z0). */
 function gridOf(field: Heightfield): { stepX: number; stepZ: number; x0: number; z0: number } {
@@ -178,7 +182,9 @@ function lakeMaterial(surface: WaterSurface3D): MeshBasicNodeMaterial {
   // The HDR mirror is compressed, then tinted: its horizon is neutral, the water should not be.
   const mirror = surface.reflectionAt();
   const compressed = mirror.div(mirror.add(vec3(1, 1, 1)));
-  material.colorNode = mix(submerged, compressed.mul(vec3(SHEEN.r, SHEEN.g, SHEEN.b)), fresnel);
+  const open = mix(submerged, compressed.mul(vec3(SHEEN.r, SHEEN.g, SHEEN.b)), fresnel);
+  const edge = float(1).sub(smoothstep(float(0.05), float(SHORE_BAND), thickness));
+  material.colorNode = mix(open, vec3(SHORE.r, SHORE.g, SHORE.b), edge.mul(0.16));
   material.opacityNode = smoothstep(float(0), float(SHORE_DEPTH), thickness);
   return material;
 }

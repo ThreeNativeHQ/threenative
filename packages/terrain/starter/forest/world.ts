@@ -16,6 +16,7 @@ import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenativ
 import {
   type Box3,
   type BufferGeometry,
+  Color,
   EquirectangularReflectionMapping,
   type Material,
   type Mesh,
@@ -46,7 +47,9 @@ export const COLLIDERS: Readonly<
 };
 
 /** How strongly the sky lights the props; the sun stays the dominant light on a crown. */
-export const PROP_SKY_LIGHT = 0.5;
+export const PROP_SKY_LIGHT = 0.65;
+/** Multiplies every boulder's albedo: the CC0 scan photographed pink-orange, the forest's stone is cool grey. */
+export const BOULDER_TINT = new Color(0.6, 0.74, 0.86);
 
 export interface IForestWorld {
   readonly world: WorldCells;
@@ -168,30 +171,39 @@ async function lightProps(
   assertCurrent();
   if (skyUrl === undefined) throw new Error("Forest world: 'sky.hdr' is not served.");
   const sky = await new HDRLoader().loadAsync(skyUrl);
-  const originals = new Map<MeshStandardMaterial, { envMap: Texture | null; intensity: number }>();
+  const originals = new Map<
+    MeshStandardMaterial,
+    { color: Color; envMap: Texture | null; intensity: number }
+  >();
   const dispose = () => {
     for (const [material, original] of originals) {
       if (material.envMap !== sky) continue;
       material.envMap = original.envMap;
       material.envMapIntensity = original.intensity;
+      material.color.copy(original.color);
     }
     sky.dispose();
   };
   try {
     assertCurrent();
     sky.mapping = EquirectangularReflectionMapping;
-    for (const asset of Object.values(manifest.assets)) {
-      const model = await ctx.assets.model<{ scene: Object3D }>(base + asset.glb);
+    // Every LOD of an asset, not only its nearest: a far boulder left undressed shows its raw scan.
+    const models = Object.entries(manifest.assets).flatMap(([id, asset]) =>
+      [asset.glb, ...(asset.lods ?? []).map((lod) => lod.glb)].map((glb) => ({ id, glb })),
+    );
+    for (const { id, glb } of models) {
+      const model = await ctx.assets.model<{ scene: Object3D }>(base + glb);
       assertCurrent();
       model.scene.traverse((object) => {
         const mesh = object as Mesh;
         for (const material of [mesh.material ?? []].flat() as MeshStandardMaterial[])
           if (!originals.has(material))
             originals.set(material, {
+              color: material.color.clone(),
               envMap: material.envMap,
               intensity: material.envMapIntensity,
             });
-        dressProp(mesh, sky);
+        dressProp(mesh, sky, id.startsWith("boulder") ? BOULDER_TINT : undefined, originals);
       });
     }
     return dispose;
@@ -202,12 +214,20 @@ async function lightProps(
 }
 
 /** One prop mesh: the sky as its envMap, and matte, crown-shaded foliage. */
-function dressProp(mesh: Mesh, sky: Texture): void {
+function dressProp(
+  mesh: Mesh,
+  sky: Texture,
+  tint: Color | undefined,
+  originals: ReadonlyMap<MeshStandardMaterial, { color: Color }>,
+): void {
   const surfaces = [mesh.material ?? []].flat() as MeshStandardMaterial[];
   const foliage = surfaces.some((material) => material.alphaTest > 0);
   for (const material of surfaces) {
     material.envMap = sky;
     material.envMapIntensity = foliage ? FOLIAGE_SKY_LIGHT : PROP_SKY_LIGHT;
+    const original = originals.get(material);
+    if (tint !== undefined && original !== undefined)
+      material.color.copy(original.color).multiply(tint);
     if (material.alphaTest <= 0) continue;
     material.roughness = 0.85;
     (material as MeshStandardMaterial & { specularIntensity?: number }).specularIntensity = 0.15;
@@ -216,7 +236,7 @@ function dressProp(mesh: Mesh, sky: Texture): void {
 }
 
 /** How strongly the sky lights foliage, which the sun alone leaves near-black from most sides. */
-export const FOLIAGE_SKY_LIGHT = 1;
+export const FOLIAGE_SKY_LIGHT = 2.2;
 /** 0 keeps each card's own normal, 1 points every normal straight out from the crown's axis. */
 export const CROWN_NORMAL_BEND = 0.7;
 
