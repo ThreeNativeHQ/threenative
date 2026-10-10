@@ -12,7 +12,7 @@ multi-package (`scripts/`, the round ledger, the detector from PRD-355) = **6 �
 
 **Depends on** [PRD-355](PRD-355-the-reinvention-gate-sees-one-capability-in-fifty.md) — there is
 no score without a detector that sees more than 1.8% of the engine.
-**Depends on** [PRD-297](PRD-297-capability-recall-is-a-measured-number.md) — a
+**Depends on** [PRD-297](../done/PRD-297-capability-recall-is-a-measured-number.md) — a
 reinvention count beside an unmeasured recall cannot be attributed to either.
 
 ## 1. Context
@@ -51,7 +51,7 @@ had*** — which is the mechanism by which the other three are supposed to impro
 
 **Overlap check.** Every open PRD surveyed 2026-09-04.
 
-- **PRD-297** ([`authoring/PRD-297`](PRD-297-capability-recall-is-a-measured-number.md)) — recall as a number. Measures the *pull* side against a corpus of
+- **PRD-297** ([`authoring/PRD-297`](../done/PRD-297-capability-recall-is-a-measured-number.md)) — recall as a number. Measures the *pull* side against a corpus of
   phrasings. This measures the *outcome* on real generated game source. Hard dependency, not
   overlap: without 297's number, a reinvention count cannot be attributed to search quality versus
   search absence.

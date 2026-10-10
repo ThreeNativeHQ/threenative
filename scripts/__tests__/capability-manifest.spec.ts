@@ -701,18 +701,18 @@ describe("capability manifest generator", () => {
     const aliases = manifest.entries.flatMap((entry) => entry.aliases ?? []);
     const predecessorRows = {
       "third-person camera": { ids: ["request.third-person-camera"], owners: ["defineGame"] },
-      "restart the run without a page reload": {
+      "restart run without page reload": {
         ids: ["brief.endless-runner.5"],
         owners: ["defineGame"],
       },
       "field of view while aiming": { ids: ["brief.fps.2"], owners: ["defineGame"] },
-      "firing line nearest target crosshair": { ids: ["brief.fps.4"], owners: ["defineGame"] },
+      "nearest target crosshair spawns": { ids: ["brief.fps.4"], owners: ["defineGame"] },
       "obstacles collectibles increasing pace": {
         ids: ["brief.endless-runner.3"],
         owners: ["InstancedBatch"],
       },
       "readable world lighting": { ids: ["brief.exploration.5"], owners: ["ProbeVolume"] },
-      "different props in each area": {
+      "different area props": {
         ids: ["brief.exploration.3"],
         owners: ["createAssetLoader"],
       },
@@ -761,7 +761,7 @@ describe("capability manifest generator", () => {
         ids: ["brief.platformer.3"],
         owners: ["CharacterBody3D"],
       },
-      "bright sky saturated green platforms": {
+      "green platforms bright saturated sky": {
         ids: ["brief.platformer.4"],
         owners: ["Atmosphere"],
       },
