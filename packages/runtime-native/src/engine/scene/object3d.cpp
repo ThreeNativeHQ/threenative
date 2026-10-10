@@ -184,7 +184,7 @@ void Object3D::setVisible(bool value) {
 Object3D::FlagOffsets Object3D::flagOffsets() {
     static const Object3D probe;
     const auto at = [](const bool& flag) {
-        return uint32_t(reinterpret_cast<const char*>(&flag) - reinterpret_cast<const char*>(&probe));
+        return uint32_t(reinterpret_cast<const char*>(&flag) - reinterpret_cast<const char*>(probe.flags()));
     };
     return {at(probe.visible_), at(probe.castShadow_), at(probe.receiveShadow_)};
 }

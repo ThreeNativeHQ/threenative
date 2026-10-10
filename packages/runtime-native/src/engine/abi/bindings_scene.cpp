@@ -289,12 +289,14 @@ void registerObject3D(ClassBinding& b) {
     b.fields["visible"] = {flags.visible, 0};
     b.fields["castShadow"] = {flags.castShadow, 0};
     b.fields["receiveShadow"] = {flags.receiveShadow, 0};
-    b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
+    // The flags sit after pointers, so they count from the first flag: the registry is dumped by a
+    // 64-bit build and read by the 32-bit Wasm one.
+    b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(as<Object3D>(self)->flags()))); };
     // Every kept member's `__address` in one call: the Wasm back end asks once per object, not per member.
     b.getters["__addresses"] = [](void* self) {
         auto* o = as<Object3D>(self);
         const auto at = [](const void* member) { return Value::of(double(reinterpret_cast<uintptr_t>(member))); };
-        return Value::record({{"__address", at(self)}, {"position", at(&o->positionValue())}, {"rotation", at(&o->rotationValue())},
+        return Value::record({{"__address", at(o->flags())}, {"position", at(&o->positionValue())}, {"rotation", at(&o->rotationValue())},
             {"quaternion", at(&o->quaternionValue())}, {"scale", at(&o->scaleValue())},
             {"up", at(&o->up)}, {"matrix", at(&o->matrixValue())}, {"matrixWorld", at(&o->matrixWorldValue())},
             {"layers", at(&o->layers())}});

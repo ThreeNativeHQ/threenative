@@ -299,9 +299,11 @@ public:
     /** The renderer's inputs. Each setter bumps `revision()`; a direct field write cannot. */
     [[nodiscard]] bool visible() const { return visible_; }
     void setVisible(bool value);
-    /** Where each flag sits in every object, for a back end that reads it in place (Wasm). */
+    /** Where each flag sits from `flags()`, for a back end that reads it in place (Wasm). The
+     *  offsets count from the first flag, not the object, so they hold for every pointer size. */
     struct FlagOffsets { uint32_t visible, castShadow, receiveShadow; };
     static FlagOffsets flagOffsets();
+    [[nodiscard]] const void* flags() const { return &visible_; }
     [[nodiscard]] bool castShadow() const { return castShadow_; }
     void setCastShadow(bool value);
     [[nodiscard]] bool receiveShadow() const { return receiveShadow_; }

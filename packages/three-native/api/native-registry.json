@@ -154,7 +154,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "AnimationAction": {
       "constructor": false,
@@ -542,7 +542,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Bone": {
       "constructor": true,
@@ -687,7 +687,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Box3": {
       "constructor": true,
@@ -1079,7 +1079,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "CanvasTexture": {
       "constructor": true,
@@ -1787,7 +1787,7 @@
         "shadow",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "DirectionalLightShadow": {
       "constructor": false,
@@ -2235,7 +2235,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "HemisphereLight": {
       "constructor": true,
@@ -2400,7 +2400,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "IcosahedronGeometry": {
       "constructor": true,
@@ -2892,7 +2892,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "LOD": {
       "constructor": true,
@@ -3045,7 +3045,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "LatheGeometry": {
       "constructor": true,
@@ -3419,7 +3419,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "LineBasicMaterial": {
       "constructor": true,
@@ -3754,7 +3754,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "MathUtils": {
       "constructor": true,
@@ -4130,7 +4130,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "MeshBasicMaterial": {
       "constructor": true,
@@ -4896,7 +4896,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "OctahedronGeometry": {
       "constructor": true,
@@ -5142,7 +5142,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Path": {
       "constructor": true,
@@ -5346,7 +5346,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Plane": {
       "constructor": true,
@@ -5633,7 +5633,7 @@
         "shadow",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "PointLightShadow": {
       "constructor": false,
@@ -6077,7 +6077,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Shape": {
       "constructor": true,
@@ -6493,7 +6493,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Source": {
       "constructor": false,
@@ -6798,7 +6798,7 @@
         "target",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "SpotLightShadow": {
       "constructor": false,
@@ -7094,7 +7094,7 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [345, 0], "receiveShadow": [346, 0], "visible": [344, 0] }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "SpriteMaterial": {
       "constructor": true,

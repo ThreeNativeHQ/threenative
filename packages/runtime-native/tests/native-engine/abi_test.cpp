@@ -924,7 +924,8 @@ void mixer_time_field() {
 }
 
 // A game sets `visible` every frame; the Wasm back end reads it in place, one byte (count 0), and
-// skips the engine call when it is unchanged.
+// skips the engine call when it is unchanged. The Wasm build reads the offsets this 64-bit build
+// dumps, so a flag counts from the first flag, not from the object (344 here, 192 in Wasm).
 void visible_field() {
     tn::binding::Registry classes;
     tn::binding::registerAll(classes);
@@ -938,10 +939,10 @@ void visible_field() {
             if (binding.fields.count(flag) == 0) return;
             const auto [offset, count] = binding.fields.at(flag);
             CHECK(count == 0);
+            CHECK(offset < 3);
             Object3D object;
-            void* self = &object;
-            CHECK(binding.getters.at("__address")(self).number == double(reinterpret_cast<uintptr_t>(self)));
-            const auto* byte = reinterpret_cast<const unsigned char*>(self) + offset;
+            const auto address = static_cast<uintptr_t>(binding.getters.at("__address")(&object).number);
+            const auto* byte = reinterpret_cast<const unsigned char*>(address) + offset;
             const bool before = *byte != 0;
             (object.*set)(!before);
             CHECK((*byte != 0) == !before);
