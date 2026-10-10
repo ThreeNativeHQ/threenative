@@ -192,6 +192,45 @@ describe("three's math values on the browser back end", () => {
     expect(calls.filter((call) => call === "construct Vector3")).toHaveLength(1);
   });
 
+  it("answers a curve's point with a JS vector when the game gives no target", () => {
+    const { runtime, calls, heap } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      invoke(self, method, args) {
+        if (method !== "getPoint" && method !== "getTangent")
+          return runtime.invoke(self, method, args);
+        calls.push(`invoke ${method} ${String(args.length)}`);
+        const target = args[1] as IEngineRef | undefined;
+        if (target === undefined) return runtime.construct("Vector3", [1, 2, 3]);
+        const at = Number(target.key.split(":")[1]) * 8; // object n sits at n * 64 bytes
+        heap.set([1, 2, 3], at);
+        return target;
+      },
+    });
+    const Curve = classes.CatmullRomCurve3 as new (
+      points: IVec[],
+    ) => {
+      getPoint(t: number, target?: IVec): IVec;
+      getTangent(t: number): IVec;
+    };
+    const Vector3 = classes.Vector3 as new (x?: number, y?: number, z?: number) => IVec;
+    const curve = new Curve([]);
+    curve.getPoint(0);
+    calls.length = 0;
+    const point = curve.getPoint(0.5);
+    const tangent = curve.getTangent(0.5);
+    expect(point).toBeInstanceOf(Vector3);
+    expect(engineRef(point)).toBeUndefined();
+    expect(tangent).not.toBe(point);
+    expect([point.x, point.y, point.z, tangent.x, tangent.y, tangent.z]).toEqual([
+      1, 2, 3, 1, 2, 3,
+    ]);
+    // The lent engine vector is the pool's: no new engine object, no address asked.
+    expect(calls).toEqual(["invoke getPoint 2", "invoke getTangent 2"]);
+    const own = new Vector3();
+    expect(curve.getPoint(0.5, own)).toBe(own);
+  });
+
   it("turns a value a constructor keeps into an engine object in place", () => {
     const { runtime, heap } = memoryRuntime();
     const { classes } = defineBrowserClasses(registry, runtime);

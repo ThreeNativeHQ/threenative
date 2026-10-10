@@ -680,6 +680,9 @@ export function defineBrowserClasses(
       // A geometry's attribute lookups are kept with its labels, until anything else runs on it.
       const query = method === "getAttribute" || method === "hasAttribute";
       const homed = method === "getAttribute" && binding.getters.includes("__shapes");
+      // Without a target the curve answers a new engine vector, whose lanes cost an `__address` call;
+      // a JS target, lent to the call, answers a JS vector instead.
+      const targeted = name === "CatmullRomCurve3" && /^get(Point|Tangent)(At)?$/u.test(method);
       // Forgotten before the call too, so an `added` listener reads the new parent.
       const forget = moves.has(method)
         ? (self: object, args: unknown[]) => {
@@ -702,6 +705,7 @@ export function defineBrowserClasses(
           }
           if (pending.size > 0) writeBack();
           if (!query) labels.delete(this);
+          if (targeted && args[1] === undefined) args[1] = new (math.Vector3 as new () => object)();
           const mark = loans.length;
           let result: unknown;
           forget?.(this, args);
