@@ -284,4 +284,44 @@ describe("three's math values on the browser back end", () => {
       "hasAttribute uv",
     ]);
   });
+
+  it("keeps a geometry's attribute lookups across a setter of another property", () => {
+    const { runtime } = memoryRuntime();
+    const invokes: string[] = [];
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      set: () => undefined,
+      invoke(_self, method, args) {
+        invokes.push(`${method} ${String(args[0])}`);
+        return true;
+      },
+    });
+    const geometry = new (
+      classes.InstancedBufferGeometry as new () => {
+        instanceCount: number;
+        hasAttribute(name: string): boolean;
+      }
+    )();
+    for (let i = 0; i < 3; i++) {
+      geometry.instanceCount = i;
+      geometry.hasAttribute("instanceColor");
+    }
+    expect(invokes).toEqual(["hasAttribute instanceColor"]);
+  });
+
+  it("reads `visible` in place and skips an unchanged set", () => {
+    const { runtime, calls, heap } = memoryRuntime();
+    const bytes = new Uint8Array(heap.buffer);
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      readByte: (address) => bytes[address] as number,
+    });
+    const group = new (classes.Group as new () => { visible: boolean })();
+    const [offset = 0] = registry.classes.Group?.fields?.visible ?? [];
+    bytes[offset] = 1; // the only object sits at address 0
+    expect(group.visible).toBe(true);
+    group.visible = true;
+    group.visible = false;
+    expect(calls.filter((call) => call.includes("visible"))).toEqual(["set visible"]);
+  });
 });

@@ -4,6 +4,8 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/shader/graph/graph.h"
 #include "engine/abi/pooled_shared.h"
+#include "engine/abi/bindings.h"
+#include "engine/animation/mixer.h"
 #include "engine/scene/object3d.h"
 #include "engine/scene/nodes.h"
 
@@ -834,8 +836,44 @@ void tsl_effect_parameter() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// A game reads `mixer.time` every frame; the Wasm back end reads it in place through its field.
+void mixer_time_field() {
+    tn::binding::Registry classes;
+    tn::binding::registerAll(classes);
+    const tn::binding::ClassBinding& binding = classes.at("AnimationMixer");
+    CHECK(binding.fields.count("time") == 1);
+    if (binding.fields.count("time") == 0) return;
+    tn::engine::animation::AnimationMixer mixer(std::make_shared<tn::engine::Object3D>());
+    mixer.update(0.5);
+    const auto [offset, count] = binding.fields.at("time");
+    CHECK(count == 1);
+    CHECK(binding.getters.at("__address")(&mixer).number == double(reinterpret_cast<uintptr_t>(&mixer)));
+    CHECK(*reinterpret_cast<const double*>(reinterpret_cast<const char*>(&mixer) + offset) == 0.5);
+}
+
+// A game sets `visible` every frame; the Wasm back end reads it in place, one byte (count 0), and
+// skips the engine call when it is unchanged.
+void visible_field() {
+    tn::binding::Registry classes;
+    tn::binding::registerAll(classes);
+    for (const char* name : {"Object3D", "Group", "Mesh", "SkinnedMesh"}) {
+        const tn::binding::ClassBinding& binding = classes.at(name);
+        CHECK(binding.fields.count("visible") == 1);
+        if (binding.fields.count("visible") == 0) return;
+        const auto [offset, count] = binding.fields.at("visible");
+        CHECK(count == 0);
+        tn::engine::Object3D object;
+        void* self = &object;
+        CHECK(binding.getters.at("__address")(self).number == double(reinterpret_cast<uintptr_t>(self)));
+        const auto* byte = reinterpret_cast<const unsigned char*>(self) + offset;
+        CHECK(*byte == 1);
+        object.setVisible(false);
+        CHECK(*byte == 0);
+    }
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter})
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field})

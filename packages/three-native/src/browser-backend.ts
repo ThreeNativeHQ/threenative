@@ -72,6 +72,8 @@ export interface IBrowserRuntime {
   readDoubles?(address: number, count: number): number | number[];
   /** Writes one double at `address` in the engine's memory; Wasm only. */
   writeDouble?(address: number, value: number): void;
+  /** The byte at `address` in the engine's memory (a field of count 0, a bool); Wasm only. */
+  readByte?(address: number): number;
   /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
   attributeArray?(self: IEngineRef): TypedArray;
   /** Writes `array` into the attribute's data; present with attributeArray. */
@@ -322,6 +324,13 @@ export function defineBrowserClasses(
   const fastGetter = (binding: IRegistryClass, property: string) => {
     const field = binding.fields?.[property];
     const read = runtime.readDoubles;
+    const readByte = runtime.readByte;
+    if (field?.[1] === 0)
+      return readByte === undefined
+        ? undefined
+        : function (this: object) {
+            return readByte(addressOf(this) + (field[0] ?? 0)) !== 0;
+          };
     if (field !== undefined && read !== undefined) {
       const [offset = 0, count = 1] = field;
       return function (this: object) {
@@ -657,6 +666,9 @@ export function defineBrowserClasses(
         continue;
       // A value class's lane is written in place: its engine setter is a plain store.
       const lane = valueClass !== undefined ? binding.fields?.[property] : undefined;
+      // A bool field (`visible`, which games set every frame) skips a set that changes nothing.
+      const flag = binding.fields?.[property];
+      const readFlag = flag?.[1] === 0 ? runtime.readByte : undefined;
       Object.defineProperty(accessors, property, {
         configurable: true,
         get:
@@ -690,7 +702,14 @@ export function defineBrowserClasses(
           : setters.has(property)
             ? {
                 set(this: object, value: unknown) {
-                  labels.delete(this);
+                  if (
+                    readFlag !== undefined &&
+                    typeof value === "boolean" &&
+                    (readFlag(addressOf(this) + (flag?.[0] ?? 0)) !== 0) === value
+                  )
+                    return;
+                  // A setter changes only its own property; the kept lookups stay.
+                  labels.get(this)?.delete(property);
                   runtime.set(refOf(this), property, toEngine(value));
                 },
               }
@@ -1719,6 +1738,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     writeDouble: (address, value) => {
       abi.HEAPF64[address / 8] = value;
     },
+    readByte: (address) => abi.HEAPU8[address] as number,
     readDoubles: (address, count) => {
       const at = address / 8;
       return count === 1

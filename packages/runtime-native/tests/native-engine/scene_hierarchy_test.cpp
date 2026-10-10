@@ -189,6 +189,9 @@ void hierarchy() {
     const uint64_t start = watched.revision();
     watched.setVisible(false);
     CHECK(watched.revision() == start + 1);
+    // A game sets the same `visible` every frame; only a change reaches the renderer.
+    watched.setVisible(false);
+    CHECK(watched.revision() == start + 1);
     watched.setRenderOrder(3);
     watched.setCastShadow(true);
     watched.setReceiveShadow(true);

@@ -271,6 +271,9 @@ void registerObject3D(ClassBinding& b) {
     // The renderer's flat inputs. Every setter that bumps `revision` is one of these.
     b.getters["visible"] = [](void* self) { return Value::of(as<Object3D>(self)->visible()); };
     b.setters["visible"] = [](void* self, const Value& v) { as<Object3D>(self)->setVisible(flag(v)); };
+    // Games set `visible` every frame; the Wasm back end reads the byte and skips an unchanged set.
+    b.fields["visible"] = {Object3D::visibleOffset(), 0};
+    b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
     b.getters["castShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->castShadow()); };
     b.setters["castShadow"] = [](void* self, const Value& v) { as<Object3D>(self)->setCastShadow(flag(v)); };
     b.getters["receiveShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->receiveShadow()); };
@@ -1131,6 +1134,10 @@ void registerAnimationMixer(ClassBinding& b) {
     b.getters["time"] = [](void* self) { return Value::of(as<AnimationMixer>(self)->time); };
     b.getters["timeScale"] = [](void* self) { return Value::of(as<AnimationMixer>(self)->timeScale); };
     b.setters["timeScale"] = [](void* self, const Value& v) { as<AnimationMixer>(self)->timeScale = number(v); };
+    // A game reads `time` every frame (Midway: 71 a frame); the Wasm back end reads it in place.
+    static const AnimationMixer probe(std::make_shared<Object3D>());
+    b.fields = {{"time", {uint32_t(reinterpret_cast<const char*>(&probe.time) - reinterpret_cast<const char*>(&probe)), 1}}};
+    b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(self))); };
 }
 
 /**

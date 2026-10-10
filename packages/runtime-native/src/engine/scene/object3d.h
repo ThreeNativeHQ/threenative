@@ -299,6 +299,8 @@ public:
     /** The renderer's inputs. Each setter bumps `revision()`; a direct field write cannot. */
     [[nodiscard]] bool visible() const { return visible_; }
     void setVisible(bool value);
+    /** Where `visible` sits in every object, for a back end that reads it in place (Wasm). */
+    static uint32_t visibleOffset();
     [[nodiscard]] bool castShadow() const { return castShadow_; }
     void setCastShadow(bool value);
     [[nodiscard]] bool receiveShadow() const { return receiveShadow_; }

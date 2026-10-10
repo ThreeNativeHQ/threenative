@@ -176,8 +176,14 @@ void Object3D::onQuaternionChange(void* context) {
 }
 
 void Object3D::setVisible(bool value) {
+    if (visible_ == value) return;
     visible_ = value;
     bump();
+}
+
+uint32_t Object3D::visibleOffset() {
+    static const Object3D probe;
+    return uint32_t(reinterpret_cast<const char*>(&probe.visible_) - reinterpret_cast<const char*>(&probe));
 }
 
 void Object3D::setCastShadow(bool value) {

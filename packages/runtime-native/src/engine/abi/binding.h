@@ -154,8 +154,9 @@ struct ClassBinding {
     // that can be reassigned (`mesh.material`, `geometry.attributes.position`) is never listed.
     std::set<std::string> fixedMembers;
     // Doubles the object holds in place (`x`, `r`, `radius`, `elements`): byte offset from `self` and
-    // count. A back end that shares the engine's memory (Wasm) reads them there instead of calling
-    // the getter of the same name; writes still go through the setter, which the engine reacts to.
+    // count; a count of 0 is one bool byte (`visible`). A back end that shares the engine's memory
+    // (Wasm) reads them there instead of calling the getter of the same name; writes still go
+    // through the setter, which the engine reacts to.
     // A class with fields also answers the engine-internal getter `__address` (self, as a number).
     std::map<std::string, std::pair<uint32_t, uint32_t>> fields;
     // Callbacks a language sets on the object (`onBeforeRender`): set through tn_set_callback, never
