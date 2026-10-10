@@ -3,7 +3,13 @@ import { playtest } from "@threenative/core/playtest";
 import { WorldCells, loadTerrainSplat } from "@threenative/core/world";
 import { Color, DirectionalLight, type PerspectiveCamera } from "three";
 import { heightBlend } from "./render/heightBlend.js";
-import { SKY_COLOR, addDaylight, frameTerrain, orbitPose } from "./render/terrain-look.js";
+import {
+  CLOSE_POSE,
+  SKY_COLOR,
+  addDaylight,
+  frameTerrain,
+  orbitPose,
+} from "./render/terrain-look.js";
 
 const BUDGETS = { bytes: 8_000_000, instances: 2_000, residentCells: 9 };
 
@@ -23,13 +29,16 @@ class TerrainSplatScene extends Scene {
   #sun = new DirectionalLight();
   #elapsed = 0;
   #heightBlend = true;
+  #close = false;
 
   override async load(ctx: ICtx): Promise<void> {
     // The renderer is what stacks the uncompressed layers: one GPU copy per layer into one array
     // texture per set, so the surface samples four textures instead of forty-eight.
     // `?heightBlend=off` is the identity seam: the plain mask mix the layers had before, for a
     // side-by-side capture and the cost comparison.
-    this.#heightBlend = !(globalThis.location?.search ?? "").includes("heightBlend=off");
+    const query = globalThis.location?.search ?? "";
+    this.#heightBlend = !query.includes("heightBlend=off");
+    this.#close = query.includes("pose=close");
     this.#surface = await loadTerrainSplat({
       assets: ctx.assets,
       layerWeight: this.#heightBlend ? heightBlend : undefined,
@@ -53,6 +62,7 @@ class TerrainSplatScene extends Scene {
     ctx.add(world);
     ctx.scene.background = new Color(SKY_COLOR);
     addDaylight(ctx.scene, this.#sun);
+    if (this.#close) this.#sun.position.copy(CLOSE_POSE.sun);
     frameTerrain(ctx.camera as PerspectiveCamera);
     ctx.entities.add("splat", {
       debug: () => ({
@@ -68,7 +78,7 @@ class TerrainSplatScene extends Scene {
 
   override update(ctx: ICtx, dt: number): void {
     this.#elapsed += dt;
-    const pose = orbitPose(this.#elapsed);
+    const pose = this.#close ? CLOSE_POSE : orbitPose(this.#elapsed);
     ctx.camera.position.copy(pose.position);
     ctx.camera.lookAt(pose.target);
   }

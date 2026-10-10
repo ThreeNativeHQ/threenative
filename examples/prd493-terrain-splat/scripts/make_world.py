@@ -26,6 +26,7 @@ import bpy
 LAYER_COUNT = 16
 TEXTURE_SIZE = 128
 SPLAT_SIZE = 128
+MASK_RAMP = 8.0
 HEIGHT_COLUMNS = 64
 HEIGHT_ROWS = 64
 SPACING = 2.0
@@ -126,15 +127,24 @@ def write_layer_maps(tex, layer):
 
 
 def write_height_map(tex, layer):
-    """The layer's own height in 0..1: stones with grout between, so an edge has relief to follow."""
+    """The layer's own height in 0..1: stones with grout between, so an edge has relief to follow.
+
+    Whole cycles per tile in both axes, so the map wraps without a seam where the tile repeats.
+    """
     seed = layer["_seed"]
+    turn = 2.0 * math.pi / TEXTURE_SIZE
+    phase = seed * 0.9
+
+    def stones(x, y):
+        beads = math.sin(x * turn * 5 + phase) * math.sin(y * turn * 4 - phase)
+        drift = math.sin((x * 3 + y * 2) * turn + phase * 2.0)
+        return min(1.0, max(0.0, 0.5 + 0.9 * (0.65 * beads + 0.35 * drift)))
+
     write_image(
         os.path.join(tex, "%s_h.jpg" % layer["id"]),
         TEXTURE_SIZE,
         TEXTURE_SIZE,
-        lambda x, y: (lambda v: (v, v, v))(
-            min(1.0, max(0.0, 0.5 + 1.3 * noise(x * 2.1, y * 2.1, seed + 17)))
-        ),
+        lambda x, y: (lambda v: (v, v, v))(stones(x, y)),
         file_format="JPEG",
         quality=90,
     )
@@ -172,7 +182,20 @@ def build(out):
         if layer["height"]:
             write_height_map(tex, layer)
 
-    # Fifteen masked layers over three channels per mask image: five planes, each band a gradient.
+    # Fifteen masked layers over three channels per mask image: five planes, each band a gradient
+    # MASK_RAMP texels across, so a layer's own height map has room to decide where it takes over.
+    # Layers composite over the one below, so a layer reaches MASK_RAMP texels under the edge of the
+    # layer above it: weights that merely sum to one would let the layer beneath show through.
+    def band(position, start, stop):
+        """0..1 across MASK_RAMP texels centred on each edge of the periodic band [start, stop)."""
+        along = (position - start) % SPLAT_SIZE
+        width = stop - start
+        if along < width:
+            inside = min(along, width - along)
+        else:
+            inside = -min(along - width, SPLAT_SIZE - along)
+        return min(1.0, max(0.0, 0.5 + inside / MASK_RAMP))
+
     for plane in range(5):
         name = "mask-%d" % plane
         masks[name] = {"image": "%s.png" % name, "channels": "rgb"}
@@ -181,9 +204,9 @@ def build(out):
             SPLAT_SIZE,
             SPLAT_SIZE,
             lambda x, y, plane=plane: (
-                1.0 if (x + plane * 24) % SPLAT_SIZE < SPLAT_SIZE / 3 else 0.0,
-                1.0 if (x + plane * 24) % SPLAT_SIZE < 2 * SPLAT_SIZE / 3 else 0.0,
-                1.0 if (x + plane * 24) % SPLAT_SIZE >= SPLAT_SIZE / 3 else 0.0,
+                band(x + plane * 24, 0.0, SPLAT_SIZE / 3),
+                band(x + plane * 24, -MASK_RAMP, 2 * SPLAT_SIZE / 3),
+                band(x + plane * 24, SPLAT_SIZE / 3, SPLAT_SIZE + MASK_RAMP),
             ),
             file_format="PNG",
         )
