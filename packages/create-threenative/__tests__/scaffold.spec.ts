@@ -229,20 +229,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // merged Three patch changes every kit; starter also carries the merged render source.
   // Recomputed 2026-10-09 on the merge of develop (31 commits, PRD-494 sharded bundles) into the
   // strata branch: measured through createProject on the merged tree.
-  "action-rpg": "4f3fc59d0968f66a943458c44c93cb5cfeaa6806099d02a28962aa166f247289",
-  minimal: "1e93fe009432283d08630395d03e80cbc08491f840d002ab6f7f6f38a94347ee",
-  platformer: "4eee373e68444718da5fc8dc2139741ae8a3cf6926edf7eb6cbe9dffa6f08bdf",
-  puzzle: "360adf72ec0dfb09d97f3d59aadf1cbed5f66ff860783ec476438463b45492a4",
-  racing: "f8e92b3ffe32f33f139edf08da70fc62c2b4a2aaca100a8f3f42bc8c0f3eab7a",
-  rain: "5a9ed126758973499fdea015ef67d3ae836474a14b39d7dc23146eb58d72eb39",
-  rts: "28ee9b2f8edffb877350f32e4e2a3981a127b8d7198c91804c422e573f103e29",
-  runner: "deed79b7bb247e14b071502978cc16c5e6a9553ce53dd2f90142fe4d3c1bb098",
+  // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
+  // the merged tree, including its latest template changes.
+  "action-rpg": "29a2e2f8a8e1dbe84bed6b9752f9b50bc359c0526649b74236cab66e3ce5beec",
+  minimal: "29de540167ba97c5fd3883c0cf8c3a5435686312a97826426871b21a76f18607",
+  platformer: "ca93bd64f1efedd927b9cc428e1a20742a89d82930f8296fe0054ddb1d934ab8",
+  puzzle: "6b6896141c66be49c8a1a519b6c53039cfacb337fa816ad212b80c65daa864d7",
+  racing: "fd9affe9069f72f1c3a93eb1b126caeb156cb56e342c0768c646cbf1a831af34",
+  rain: "38302a90e87c5c1e4f864a75a6d4e8bdf108059df470798741a74cc6d3d990e0",
+  rts: "d7f3f1e9c3664386d32f99a8bdb8b5267632843f5dd2ed1804128fe3ddd0752d",
+  runner: "11a74a807e5e2f80c703098f3059bef04d3b8b42170b9ba68e37f71c247f5b27",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "c4d3209511daa8a674ce717b84586f4d45c7da3d529944b5a856bf96f8b48d3f",
-  shooter: "8d7a54b4ac68e0ceea625aaa1c127f49be84e6695542b1a57ba74f0ab4724089",
-  snow: "4b4a6fa0007a0f9a8b7f951ae7c1f4554bbc822c3a3642b7d7548da3ba7368e7",
-  starter: "8c1d1950decd3371662256ec8603b245a341d8b32bd73d6efa6785e4089b9364",
-  "tower-defense": "24385a8e97412f8e1f6feeca4954f9c5f49979d9e299c4f4d5584af6607032f1",
+  sailing: "3303a84c672a02dbbb5100cc4d647940c83c8a119e55c8cebf498b710cdd3e43",
+  shooter: "b856407fa828dc9ac76991cbffc4da8d327179a7f901229ccb2670cd4a486bd8",
+  snow: "0d3c4003a00e9b0772a877359ee204cffde78d2be21449e97ccc6e93ef941248",
+  starter: "27e4be7581d9ba96af39e2263c7645678aa30de6cb7b8fda4e0abb8195d6ee0b",
+  "tower-defense": "ff1a494154b4d2db224143046d4b2ffb02dd9cf74ad602b38af7eb72071042b3",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

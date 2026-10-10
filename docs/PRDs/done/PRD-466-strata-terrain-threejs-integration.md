@@ -4184,3 +4184,10 @@ zero diagnostics, and the full workspace typecheck passed. Two before/after capt
 reviewed by a fresh judge: ground, edge, overview and lake all **NEUTRAL**, with no visible asset
 quality regression. The kit wrapper's default port 5187 was occupied by an unrelated process; the
 same scenario passed directly on port 5188.
+After integrating develop `1a5314a1`, all thirteen no-install scaffold trees were remeasured and the
+The merged tree passed `pnpm typecheck`, `pnpm lint`, `pnpm ci:fast`, `pnpm check:docs` plus 244
+documentation tests, and 104 focused asset/scaffold tests. `pnpm test` built the workspace, then
+its package-test phase stopped at eight absent native host executables; the unit phase did not run.
+The separate unit phase recorded 9,870 passed, 6 failed, 19 skipped, and one Vitest error across
+five files. Its gate artifact preserved only the exit status, so those six failures remain
+unclassified; the native build is opt-in.
