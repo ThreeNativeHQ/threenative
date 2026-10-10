@@ -63,9 +63,9 @@ describe("defineObjectSurface", () => {
     expect(attributes.position).toBe("p");
     expect(attributes.normal).toBeUndefined();
     expect(geometry.calls).toBe(2);
-    // Listing asks the engine for every name at once, not one name at a time.
+    // Listing asks the engine for every name at once and reads no attribute.
     expect(Object.keys(attributes)).toEqual(["position"]);
-    expect(geometry.calls).toBe(3);
+    expect(geometry.calls).toBe(2);
   });
 
   it("keeps a material flag the back end already defined read-only", () => {

@@ -110,12 +110,17 @@ function defineGeometrySurface(
             return true;
           },
           ownKeys: () => names(),
-          getOwnPropertyDescriptor: (_, name) => {
-            const value = typeof name === "string" ? this.getAttribute(name) : undefined;
-            return value === null || value === undefined
-              ? undefined
-              : { value, writable: true, enumerable: true, configurable: true };
-          },
+          // Object.keys asks for every name's descriptor: answer from the name list and read the
+          // attribute only if the descriptor's getter runs.
+          getOwnPropertyDescriptor: (_, name) =>
+            typeof name === "string" && names().includes(name)
+              ? {
+                  get: () => this.getAttribute(name),
+                  set: (attribute: unknown) => this.setAttribute(name, attribute),
+                  enumerable: true,
+                  configurable: true,
+                }
+              : undefined,
         },
       );
       attributeViews.set(this, view);

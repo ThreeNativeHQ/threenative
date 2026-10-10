@@ -65,6 +65,7 @@ is hardened with a counter (engine calls per frame), never a timing gate.
 - [ ] New geometry reaches the GPU without queue-write waits: Midway's queue writes before `ready` stay under 10 MB. proof: the `.midway-uploads.ts` method (`writeBuffer` bytes and time over the load), both pages
   2026-10-09 (b4cb98bf6, cpu-opus; not yet re-run here): `GeometryCache` creates new buffers mapped and copies the store into them, as three's WebGPU backend does. Queue writes 240.8 MB / 7908 ms -> 6.5 MB / 10 ms; mapped creation 231.6 MB / 12 ms (three: 131.6 MB mapped plus 96.8 MB queued). `ctest -L native-engine` 288/290 (the two known reds).
 - [ ] Midway's `enter` window makes at most half the engine calls it made at d67b757f0 (175,190). proof: the opt-in call census in `packages/three-native/src/browser-backend.ts`, counted between the `scene-load-total` and `enter` markers
+  2026-10-09: 151,547 at bf456a1f1 (a geometry lists its attribute names with one call); 137,572 at 16c0f0d91 (an attribute's count, itemSize, normalized and gpuType with one call). Target 87,595. Largest left: PropertyBinding bind (4 calls per track, 11.3k), `Layers.enable`/`disable` from the game's traversals (7.3k), `getAttribute` first lookups (9.3k), `parent` gets (7.5k), shadow-flag sets (5.9k), `Vector3.__address` first reads (5.1k).
 
 ## Known gaps
 
