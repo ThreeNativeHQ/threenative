@@ -72,7 +72,7 @@ Paths are under `Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/`.
   (`VirtualShadowMapCacheManager.cpp:142-147`, `:1767-1800`). Here a game must call `trackCaster`
   for every mover (`packages/core/src/render/virtual-shadow.ts:707`), a manual call that the
   auto-by-default rule disfavors. That is a separate change and is not in this PRD: see
-  [PRD-572](../unreal-source-borrowing/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md).
+  [PRD-572](../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md).
 - **Soft shadows by shadow-map ray marching** (7 rays of 8 samples for a directional light,
   fewer in fully lit or fully shadowed areas; `VirtualShadowMapArray.cpp:674-678`, `:728-740`)
   are a desktop look option. They are out of scope here.
