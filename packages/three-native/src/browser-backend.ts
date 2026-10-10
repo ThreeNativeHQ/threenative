@@ -318,7 +318,8 @@ export function defineBrowserClasses(
   const kept = new WeakMap<object, Map<string, unknown>>();
   // Properties only the object's own setter or methods change: `name` and `type` (read per track and
   // per bone while a game binds animations), an attribute's shape (read per merge), a mesh's
-  // geometry and material. The answer is kept until JS sets it or calls a method on that object.
+  // geometry and material, a geometry's index. The answer is kept until JS sets it or calls a method
+  // on that object.
   // ponytail: an engine call on another object that changes one of these is missed; none does today.
   const labelled = new Set([
     "name",
@@ -328,6 +329,7 @@ export function defineBrowserClasses(
     "gpuType",
     "geometry",
     "material",
+    "index",
     "__attributeNames",
   ]);
   const labels = new WeakMap<object, Map<string, unknown>>();
@@ -701,6 +703,8 @@ export function defineBrowserClasses(
       const query = method === "getAttribute" || method === "hasAttribute";
       const listed = query && binding.members.includes("__attributes");
       const homed = listed && method === "getAttribute";
+      // Removing one attribute forgets only that attribute's lookups; the rest stay listed.
+      const deletes = method === "deleteAttribute" && binding.members.includes("__attributes");
       // Without a target the curve answers a new engine vector, whose lanes cost an `__address` call;
       // a JS target, lent to the call, answers a JS vector instead.
       const targeted = name === "CatmullRomCurve3" && /^get(Point|Tangent)(At)?$/u.test(method);
@@ -730,7 +734,14 @@ export function defineBrowserClasses(
             return listAttributes(this).get(key) ?? (method === "getAttribute" ? null : false);
           }
           if (pending.size > 0) writeBack();
-          if (!query) labels.delete(this);
+          const known = deletes ? labels.get(this) : undefined;
+          if (known?.has("__attributes")) {
+            const removed = String(args[0]);
+            known.delete(`getAttribute ${removed}`);
+            known.delete(`hasAttribute ${removed}`);
+            const names = String(known.get("__attributeNames")).split("\n");
+            known.set("__attributeNames", names.filter((name) => name !== removed).join("\n"));
+          } else if (!query) labels.delete(this);
           if (targeted && args[1] === undefined) args[1] = new (math.Vector3 as new () => object)();
           const mark = loans.length;
           let result: unknown;

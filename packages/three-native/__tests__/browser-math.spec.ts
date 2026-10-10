@@ -356,6 +356,7 @@ describe("three's math values on the browser back end", () => {
       getAttribute(name: string): Attribute | null;
       hasAttribute(name: string): boolean;
       translate(...xyz: number[]): void;
+      deleteAttribute(name: string): void;
     };
     const geometry = new (classes.BufferGeometry as new () => Geometry)();
     const position = geometry.getAttribute("position");
@@ -375,6 +376,13 @@ describe("three's math values on the browser back end", () => {
       "position\nnormal\nuv",
     ]);
     expect(reads).toEqual(["__attributes"]);
+    // Removing one attribute keeps the others listed.
+    geometry.deleteAttribute("uv");
+    expect([geometry.getAttribute("uv"), geometry.hasAttribute("position")]).toEqual([null, true]);
+    expect([geometry.__attributeNames, reads]).toEqual([
+      "position\nnormal",
+      ["__attributes", "deleteAttribute"],
+    ]);
     // After a method that may change attributes, the record is asked for again.
     geometry.translate(1, 0, 0);
     reads.length = 0;
@@ -401,6 +409,33 @@ describe("three's math values on the browser back end", () => {
     expect(reads).toEqual(["geometry", "geometry"]);
   });
 
+  it("keeps a geometry's index until a method changes it", () => {
+    const { runtime } = memoryRuntime();
+    const reads: string[] = [];
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      get(self, property) {
+        reads.push(property);
+        return self;
+      },
+      invoke: (_self, method) => {
+        reads.push(method);
+        return null;
+      },
+    });
+    const geometry = new (
+      classes.BufferGeometry as new () => {
+        index: unknown;
+        setIndex(index: unknown): void;
+      }
+    )();
+    for (let i = 0; i < 3; i++) geometry.index;
+    expect(reads).toEqual(["index"]);
+    geometry.setIndex(null);
+    geometry.index;
+    expect(reads).toEqual(["index", "setIndex", "index"]);
+  });
+
   it("keeps a geometry's attribute lookups until a method changes it", () => {
     const { runtime } = memoryRuntime();
     const calls: string[] = [];
@@ -408,7 +443,9 @@ describe("three's math values on the browser back end", () => {
       ...runtime,
       get(_self, property) {
         calls.push(property);
-        return { position: [{ key: "a", type: runtime.typeId("BufferAttribute") }, [4, 3, 0, 1015]] };
+        return {
+          position: [{ key: "a", type: runtime.typeId("BufferAttribute") }, [4, 3, 0, 1015]],
+        };
       },
       invoke(_self, method, args) {
         calls.push(`${method} ${String(args[0])}`);
@@ -439,7 +476,9 @@ describe("three's math values on the browser back end", () => {
       set: () => undefined,
       get(_self, property) {
         reads.push(property);
-        return { instanceColor: [{ key: "a", type: runtime.typeId("BufferAttribute") }, [4, 3, 0, 1015]] };
+        return {
+          instanceColor: [{ key: "a", type: runtime.typeId("BufferAttribute") }, [4, 3, 0, 1015]],
+        };
       },
     });
     const geometry = new (
