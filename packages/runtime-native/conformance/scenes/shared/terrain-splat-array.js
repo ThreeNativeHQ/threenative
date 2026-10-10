@@ -1,3 +1,4 @@
+import { saturate } from "three/tsl";
 import { loadTerrainSplat } from "../../../../core/src/world-terrain-splat.ts";
 import { assertCondition, startVisualScene, THREE } from "./scene-support.js";
 
@@ -5,7 +6,9 @@ import { assertCondition, startVisualScene, THREE } from "./scene-support.js";
  * A sixteen-layer splat package whose 48 maps are uncompressed and the same size — the shape
  * Android and iOS get, having no KTX2 transcoder. `loadTerrainSplat` stacks each set into one
  * array texture by GPU copy, so the surface binds four sampled textures instead of forty-nine;
- * this row is what says the native host agrees with the browser.
+ * this row is what says the native host agrees with the browser. Two layers also ship a height
+ * set, which stacks into a fifth array and reaches the game's weight seam, so the row proves the
+ * height-blend path too.
  */
 
 const LAYERS = 16;
@@ -13,9 +16,18 @@ const PLANE = 4; // mask texels a side; each layer owns one, and cell 0 is left 
 const PLANES = 4;
 const MAP = 8; // map texels a side
 const HALF = 4; // the ground spans HALF metres either side of the origin
+const HEIGHT_LAYERS = [0, 1]; // slots whose table entry names a height map
+
+/** The game's curve, as `examples/prd493-terrain-splat/src/render/heightBlend.ts` writes it. */
+const heightBlend = (weight, { height }) =>
+  height === undefined ? weight : saturate(weight.mul(2).sub(1).add(height));
 
 /** Every fixture byte is a pure function of its cell: both lanes must derive the same one. */
 function mapRgb(layer, kind, x, y) {
+  if (kind === "h") {
+    const crest = (Math.floor(x / 2) + Math.floor(y / 2) + layer) % 2 === 0;
+    return crest ? [230, 230, 230] : [25, 25, 25];
+  }
   if (kind === "nrm") return [128 + (layer % 5) * 24, 128 + (((layer >> 1) % 5) * 20) % 127, 255];
   if (kind === "orm") return [255, 40 + ((layer * 17) % 200), (layer % 3) * 40];
   const step = 2 + (layer % 4);
@@ -60,6 +72,7 @@ function layersTable() {
     layers.push({
       channel: ["r", "g", "b", "a"][slot % 4],
       hi: 0.75,
+      height: HEIGHT_LAYERS.includes(slot) ? true : undefined,
       id: `layer${slot}`,
       lo: 0.25,
       mask: `m${slot}`,
@@ -100,7 +113,7 @@ function packageAssets() {
       return [URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }))];
     },
     texture: async (path, options = {}) => {
-      const match = /^layers\/(?:base|layer(\d+))_(diff|nrm|orm)\.jpg$/u.exec(path);
+      const match = /^layers\/(?:base|layer(\d+))_(diff|nrm|orm|h)\.jpg$/u.exec(path);
       assertCondition(match !== null, `terrain-splat-array: unexpected map '${path}'`);
       const texture = layerTexture(
         match[1] === undefined ? 0 : Number(match[1]),
@@ -121,21 +134,22 @@ export async function startScene(canvas, dimensions) {
     async ({ renderer, scene }) => {
       const material = await loadTerrainSplat({
         assets: packageAssets(),
+        layerWeight: heightBlend,
         renderer: { raw: renderer },
         url: "world.json",
       });
       const marker = String(material.userData.TN_TERRAIN_SPLAT);
       const number = (key) => Number(new RegExp(`${key}=(\\d+)`, "u").exec(marker)?.[1] ?? -1);
       assertCondition(number("layers") === LAYERS, `sixteen layers expected, got ${marker}`);
-      assertCondition(number("stacked") === 3, `three stacked sets expected, got ${marker}`);
-      assertCondition(number("samplers") === 4, `four sampled textures expected, got ${marker}`);
+      assertCondition(number("stacked") === 4, `four stacked sets expected, got ${marker}`);
+      assertCondition(number("samplers") === 5, `five sampled textures expected, got ${marker}`);
 
       const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, HALF * 2), material);
       ground.rotation.x = -Math.PI / 2;
       const sun = new THREE.DirectionalLight(0xffffff, 2.6);
       sun.position.set(2, 6, 3);
       scene.add(ground, sun, new THREE.AmbientLight(0xa8c0ff, 0.6));
-      return { detail: { layers: LAYERS, samplers: 4, stacked: 3 }, ground, material };
+      return { detail: { layers: LAYERS, samplers: 5, stacked: 4 }, ground, material };
     },
     {
       background: 0x0d1520,

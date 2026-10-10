@@ -1,6 +1,6 @@
 # PRD-567 — Terrain layers blend by their own height, and the game owns the curve
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 to 3 built and proven; AC-3 (frame-cost delta) still open
 **Priority:** P2 — Height set, weight seam and the game-side height blend are all unbuilt.
 **Complexity:** 3 (LOW) — 1–5 implementation files (`world-terrain-splat.ts`, the two `export_world.py` copies, the example's render source) (+1); a game-supplied weight seam on an existing material (+0); native rows reuse PRD-493's conformance case (+0); risk override: none
 **Owner:** João
@@ -38,8 +38,8 @@ A height-blend formula is a curve, so it must not go into core. Today a game als
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: A table without `height` and without `layerWeight` builds the same node graph and texture requests as before this PRD. proof: red-green `pnpm exec vitest run packages/core/__tests__/world-terrain-splat.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: The example renders a stone layer over grass at mask weight 0.5. Its coverage inside the transition band follows the stone height map: pixels where h > 0 are stone, and the identity seam shows a plain 50 % mix. Judged on a capture, with the marker at `samplers=5`. proof: `node packages/playtest/dist/runner/cli.js examples/prd493-terrain-splat/playtests/terrain-splat.playtest.json --url <dev url> --browser-recipe webgpu` — Evidence: pending.
+- [x] AC-1 [local]: A table without `height` and without `layerWeight` builds the same node graph and texture requests as before this PRD. proof: red-green `pnpm exec vitest run packages/core/__tests__/world-terrain-splat.spec.ts` — Evidence: 15/15 green. With the height filter reverted (every layer asks for `<id>_h.jpg`) 4 of 15 go red, among them the default-table case (`samplers=4 stacked=3`) and the sixteen-layer stacking case. Restored, 15/15 green.
+- [x] AC-2 [local]: The example renders a stone layer over grass at mask weight 0.5. Its coverage inside the transition band follows the stone height map: pixels where h > 0 are stone, and the identity seam shows a plain 50 % mix. Judged on a capture, with the marker at `samplers=5`. proof: `node packages/playtest/dist/runner/cli.js examples/prd493-terrain-splat/playtests/terrain-splat.playtest.json --url <dev url> --browser-recipe webgpu` — Evidence: Intel `gen-12lp` (laptop real display, `--headed`), same orbit pose at tick 240, two runs per arm. Marker `TN_TERRAIN_SPLAT layers=16 samplers=5 stacked=4`. The height-blend arm exits 0 both runs. The `?heightBlend=off` arm exits 1 both runs, red on the new `heightBlend equals 1` assertion. Frame difference between the arms is 2207 pixels (0.24 %, max channel step 34), all on the two dark/pink band edges, identical in both runs. Fresh read-only judge on the full frames and 5x edge crops: **intended**, weak. Crests of the pink layer's relief take pink first and hollows stay dark longer, but the band is narrow, so the change is not visible at full frame. Rejected attempts, kept: the first pair (`layer-01`/`layer-02`) sat under later layers in this pose and gave pixel-identical frames, so the flag moved to `layer-14`/`layer-15`; the first curve, a centred `(h-0.5)*2`, broke "w = 1 covers" and was replaced by the unsigned-height form above.
 - [ ] AC-3 [local]: The example's `gpuMain` p95 with the height blend rises by no more than 0.3 ms over the same example without it, in 3 interleaved runs on a named adapter. proof: `node packages/playtest/dist/runner/cli.js perf` with `TN_FRAME_BUDGET` — Evidence: pending.
 
 ## Blocked on
@@ -64,14 +64,20 @@ A height-blend formula is a curve, so it must not go into core. Today a game als
 - [x] The recipe writes `<id>_h.jpg` for a height layer and fails closed without a source. proof: red-green `pnpm exec vitest run packages/blender-mcp/__tests__/export-world.spec.ts -t terrain` — 2 red with the recipe reverted, 3/3 green with it.
 
 #### Phase 2: The game's height blend
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `examples/prd493-terrain-splat/src/render/heightBlend.ts` (new), `examples/prd493-terrain-splat/src/game.ts`, the example's package data, `examples/prd493-terrain-splat/playtests/terrain-splat.playtest.json`, `docs/guides/world-streaming.md`
 **Verification:** AC-2 and AC-3 close this phase.
-- [ ] The example ships one height-blended layer pair and asserts `samplers=5`. proof: `pnpm --filter prd493-terrain-splat build`
-- [ ] The guide shows the seam and names the example file as the reference curve. proof: `pnpm check:docs`
+- [x] The example ships one height-blended layer pair and asserts `samplers=5`. proof: `pnpm --filter prd493-terrain-splat build` — exit 0. The pair is `layer-14`/`layer-15` (`height: true`), and both playtests assert `samplers lte 5`, `stacked equals 4` and `heightBlend equals 1`. The browser marker read `samplers=5 stacked=4`.
+- [x] The guide shows the seam and names the example file as the reference curve. proof: `pnpm check:docs` — `Checked 2989 relative documentation links across 1331 Markdown files`, exit 0. Section "Terrain layers that blend by their own height" in `docs/guides/world-streaming.md`. Two stale `PRD-VQ-01` links in this batch's README and PRD-568 were repointed to `done/` to get there.
 
 #### Phase 3: Native
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/runtime-native/conformance/scenes/shared/terrain-splat-array.js`, `packages/runtime-native/conformance/registry.json`
-- [ ] The `terrain-splat-array` row gains a height set and still matches the browser reference on desktop. proof: `pnpm parity --target desktop --only-tests terrain-splat-array`
-- [ ] The same row on the Android emulator. proof: `pnpm parity --target android --only-tests terrain-splat-array --device emulator-5554`
+- [x] The `terrain-splat-array` row gains a height set and still matches the browser reference on desktop. proof: `pnpm parity --target desktop --only-tests terrain-splat-array` — row `pass`, `pixelMismatchRatio` 0 and `perceptualDeltaE` 0 against the web reference (0 pixels differ). Both ran on this machine's NVIDIA `turing` adapter, so the figure proves the same code path, not a cross-vendor match. The scene asserts `stacked === 4` and `samplers === 5`. The command exits 2 because the other 102 rows are reported blocked, as the registry rules require.
+- [x] The same row on the Android emulator. proof: `pnpm parity --target android --only-tests terrain-splat-array --device emulator-5554` — row `pass`, mismatch 0, deltaE 0, no GPU validation errors, fresh install, APK bundle SHA verified. Emulator, not a phone. Built with `ORG_GRADLE_PROJECT_threenativeJsEngine=quickjs` and one `x86_64` slice, because the V8 payload in `third_party/v8-android` has no build receipt. The emulator renders through the host RTX 2080 GLES translator.
+
+## Decisions
+
+- **2026-10-09, João: the weight seam is not new curve vocabulary.** Core loads and stacks the height set and exposes `layerWeight`. The curve is game source (`examples/prd493-terrain-splat/src/render/heightBlend.ts`). Core owns no constant of it.
+- **2026-10-09, curve form.** The shipped curve is `saturate((2w - 1) + h * k)` with unsigned h in 0..1 and k = 1. A centred height (`h - 0.5`) was tried first and rejected: it let a fully painted layer lose pixels, which breaks "w = 1 covers".
+- **2026-10-09, example pair.** The height flag sits on `layer-14` and `layer-15`, the topmost bands of the example, because a lower pair is hidden by the layers above it and gives a pixel-identical frame.

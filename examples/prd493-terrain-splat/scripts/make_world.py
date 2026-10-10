@@ -126,7 +126,7 @@ def write_layer_maps(tex, layer):
 
 
 def write_height_map(tex, layer):
-    """The layer's own height, 0.5 being zero: sharp stones with grout, so an edge has relief to follow."""
+    """The layer's own height in 0..1: stones with grout between, so an edge has relief to follow."""
     seed = layer["_seed"]
     write_image(
         os.path.join(tex, "%s_h.jpg" % layer["id"]),
@@ -155,8 +155,8 @@ def build(out):
                 "_hsv": (hue, 0.25 + 0.05 * (index % 4), 0.35 + 0.03 * (index % 5)),
                 "_seed": index + 1,
                 "_weave": index % 3 == 0,
-                # The first masked pair blends by its own height: stone over the base's grass.
-                "height": index in (1, 2),
+                # The two topmost layers blend by their own height, so the band they bound has relief on its edge.
+                "height": index in (14, 15),
                 "id": "layer-%02d" % index,
                 "metalness": 0.0 if index % 5 else 0.35,
                 "normal": True,

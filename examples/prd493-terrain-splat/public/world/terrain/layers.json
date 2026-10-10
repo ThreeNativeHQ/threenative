@@ -19,7 +19,6 @@
   "layers": [
     {
       "channel": "g",
-      "height": true,
       "hi": 0.75,
       "id": "layer-01",
       "lo": 0.2,
@@ -37,7 +36,6 @@
     },
     {
       "channel": "b",
-      "height": true,
       "hi": 0.55,
       "id": "layer-02",
       "lo": 0.2,
@@ -242,6 +240,7 @@
     },
     {
       "channel": "b",
+      "height": true,
       "hi": 0.55,
       "id": "layer-14",
       "lo": 0.2,
@@ -259,6 +258,7 @@
     },
     {
       "channel": "r",
+      "height": true,
       "hi": 0.65,
       "id": "layer-15",
       "lo": 0.2,
