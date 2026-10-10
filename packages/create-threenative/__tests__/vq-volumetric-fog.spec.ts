@@ -20,11 +20,11 @@ import {
 import { pass } from "three/tsl";
 import { type Node, WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { setupSky } from "../templates/starter/src/render/sky.js";
 import {
   type IVolumetricFogOptions,
   createVolumetricFog,
 } from "../templates/starter/src/render/volumetricFog.js";
-import { setupSky } from "../templates/starter/src/render/sky.js";
 
 import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
 

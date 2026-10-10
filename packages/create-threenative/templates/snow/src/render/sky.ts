@@ -16,7 +16,6 @@ import { palette } from "./palette.js";
 const CLEAR_FOG = new Color(palette.skyLow);
 const STORM_FOG = new Color(0xafc3d1);
 
-/** A graded dome with a warm sun glow, plus the haze; returns how to darken both for a storm. */
 /** The look this fog replaced: FogExp2 at 0.016, measured at 40 m from 2 m up. */
 const EYE_LEVEL = { density: 0.016, distance: 40, cameraHeight: 2 };
 
@@ -33,6 +32,7 @@ function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
   return Math.sqrt(Math.max(0, old - height)) / distance;
 }
 
+/** A graded dome with a warm sun glow, plus the haze; returns how to darken both for a storm. */
 export function setupSky(scene: Scene): (storm: number) => void {
   const RADIUS = 450;
   const geometry = new SphereGeometry(RADIUS, 40, 24);

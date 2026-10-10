@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { type FogExp2, Scene, Texture } from "three";
 import { describe, expect, it } from "vitest";
 import {
@@ -83,5 +85,56 @@ describe("height fog", () => {
       const distanceT = 1 - smooth(128, 256, z);
       expect(distanceT * transmittance(params, 2, 2, z)).toBeLessThanOrEqual(distanceT);
     }
+  });
+});
+
+// Every FogExp2 kit keeps the eye-level haze its fog had before the height term: at the
+// `EYE_LEVEL` distance and camera height, the distance term and the height term together transmit
+// what the old FogExp2 did, within 2%.
+const FOG_KITS = [
+  "action-rpg",
+  "minimal",
+  "platformer",
+  "puzzle",
+  "racing",
+  "rts",
+  "runner",
+  "sailing",
+  "shooter",
+  "snow",
+  "starter",
+] as const;
+
+describe.each(FOG_KITS)("%s height fog", (kit) => {
+  const root = path.join(import.meta.dirname, "..", "templates", kit, "src", "render");
+
+  it("should keep its old eye-level haze within 2%", async () => {
+    const sky = await readFile(path.join(root, "sky.ts"), "utf8");
+    const eye = /EYE_LEVEL = \{ density: ([\w.]+), distance: (\d+), cameraHeight: (\d+) \}/u.exec(
+      sky,
+    );
+    expect(eye, `${kit} must name its eye-level fog`).not.toBeNull();
+    const named = new RegExp(`${eye?.[1]} = (\\d+(?:\\.\\d+)?);`, "u").exec(sky);
+    const old = Number(named?.[1] ?? eye?.[1]);
+    const [distance, cameraHeight] = [Number(eye?.[2]), Number(eye?.[3])];
+    const { HEIGHT_FOG: kitParams, heightFogDepth: depth } = (await import(
+      /* @vite-ignore */ path.join(root, "heightFog.ts")
+    )) as typeof import("../templates/starter/src/render/heightFog.js");
+    const mod = (await import(/* @vite-ignore */ path.join(root, "sky.ts"))) as {
+      loadSky?: (assets: { texture(path: string): Promise<Texture> }) => Promise<void>;
+      setupSky: (scene: Scene, arg?: unknown) => unknown;
+    };
+    await mod.loadSky?.({ texture: async () => new Texture() });
+    const scene = new Scene();
+    mod.setupSky(scene, new Texture());
+    const distanceFog = scene.fog as FogExp2 | null;
+    expect(distanceFog, `${kit} keeps FogExp2 as the distance term`).toBeTruthy();
+    expect(scene.fogNode).toBeTruthy();
+    const params: HeightFogParams = { ...kitParams };
+    const total =
+      Math.exp(-(((distanceFog?.density ?? 0) * distance) ** 2)) *
+      2 ** -depth(params, cameraHeight, cameraHeight, distance);
+    const before = Math.exp(-((old * distance) ** 2));
+    expect(Math.abs(total - before)).toBeLessThan(0.02 * before);
   });
 });

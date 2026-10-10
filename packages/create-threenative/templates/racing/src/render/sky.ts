@@ -28,13 +28,6 @@ const SKY_RANGE = 2.5;
 /** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
 export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 
-/**
- * Puts the sky on the scene, or a plain gradient if the photograph has not decoded yet.
- *
- * The second argument is optional because `Race.load()` does not wait for the JPEG: the scene has
- * to enter on the first frame or the playtest bridge describes nothing. Passing `undefined` here is
- * the fallback the scene starts in, and calling it again with the texture is the swap.
- */
 /** The look this fog replaced: FogExp2 at 0.0024, measured at 150 m from 2 m up. */
 const EYE_LEVEL = { density: 0.0024, distance: 150, cameraHeight: 2 };
 
@@ -51,6 +44,13 @@ function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
   return Math.sqrt(Math.max(0, old - height)) / distance;
 }
 
+/**
+ * Puts the sky on the scene, or a plain gradient if the photograph has not decoded yet.
+ *
+ * The second argument is optional because `Race.load()` does not wait for the JPEG: the scene has
+ * to enter on the first frame or the playtest bridge describes nothing. Passing `undefined` here is
+ * the fallback the scene starts in, and calling it again with the texture is the swap.
+ */
 export function setupSky(scene: Scene, sky?: Texture): void {
   if (sky === undefined) {
     scene.background = new Color(palette.skyHigh);
