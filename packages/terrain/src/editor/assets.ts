@@ -400,6 +400,7 @@ export function validateAsset(input: unknown): IProjectAsset {
       throw new Error("Asset.diagnostics must list at most 16 messages");
     out.diagnostics = value.diagnostics.map((entry) => text(entry, "Asset.diagnostics", 256));
   }
+  // quality-allow: required fields are validated before this key-indexed record is returned
   return out as unknown as IProjectAsset;
 }
 

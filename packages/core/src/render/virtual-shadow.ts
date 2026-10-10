@@ -787,11 +787,13 @@ function rendered<T>(node: T): T {
  * Registering at creation makes that first registration happen before anything is bound.
  */
 function registeredOnCreate<T>(node: T): T {
+  // quality-allow: Three's public node type omits the target setup hook this wrapper must replace
   const stock = node as unknown as IStockShadowTarget;
   const create = stock.setupRenderTarget.bind(stock);
   stock.setupRenderTarget = (lightShadow, builder) => {
     const made = create(lightShadow, builder);
     // A renderer without three's texture manager (a test double) registers on first render.
+    // quality-allow: Three's public renderer type hides the manager that must register this target early
     const host = builder.renderer as unknown as {
       _textures?: { updateRenderTarget?(target: RenderTarget): void };
     };
@@ -2250,9 +2252,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       light.name = `VirtualShadowLevel${String(index)}`;
       // quality-allow: the stock shadow node reads only position, target and shadow off its light
       const node = registeredOnCreate(shadow(light as unknown as DirectionalLight, levelShadow));
-      // quality-allow: the stock shadow node reads only position, target and shadow off its light
       const moverNode = registeredOnCreate(
-        shadow(light as unknown as DirectionalLight, moverShadow),
+        shadow(light as unknown as DirectionalLight, moverShadow), // quality-allow: the stock node reads only position, target and shadow
       );
       if (this.options.receiverPlaneBias) {
         for (const entry of [

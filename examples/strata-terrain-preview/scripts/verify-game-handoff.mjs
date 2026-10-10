@@ -22,14 +22,6 @@ import {
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const GAME_PACKAGES = [
-  ["@threenative/core", "core"],
-  ["@threenative/physics", "physics"],
-  ["@threenative/assets", "assets"],
-  ["@threenative/playtest", "playtest"],
-  ["create-threenative", "create-threenative"],
-];
-
 /** Write a handoff to an explicit destination; an existing file is a conflict, never overwritten. */
 export function writeHandoff(destination, files) {
   const conflicts = Object.keys(files).filter((name) => existsSync(join(destination, name)));
@@ -72,9 +64,26 @@ export async function verifyGameHandoff({ repo, temporary, polished, withPage })
   const packs = join(temporary, "game-packs");
   mkdirSync(packs);
   const archives = {};
-  for (const [name, directory] of GAME_PACKAGES) {
+  const templateManifest = JSON.parse(
+    readFileSync(join(repo, "packages/create-threenative/templates/minimal/package.json"), "utf8"),
+  );
+  const dependencies = new Set(
+    Object.keys({
+      ...templateManifest.dependencies,
+      ...templateManifest.devDependencies,
+      ...templateManifest.optionalDependencies,
+    }),
+  );
+  const packages = JSON.parse(
+    execFileSync("pnpm", ["exec", "tsx", "scripts/workspace-packages.ts", "--json"], {
+      cwd: repo,
+      encoding: "utf8",
+    }),
+  ).filter(({ name }) => dependencies.has(name));
+  assert(packages.length > 0, "minimal template has no workspace packages to pack");
+  for (const { name, directory } of packages) {
     const before = new Set(readdirSync(packs));
-    run("pnpm", ["pack", "--pack-destination", packs], { cwd: join(repo, "packages", directory) });
+    run("pnpm", ["pack", "--pack-destination", packs], { cwd: join(repo, directory) });
     archives[name] = join(
       packs,
       [...readdirSync(packs)].find((file) => !before.has(file)),

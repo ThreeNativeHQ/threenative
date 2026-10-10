@@ -253,7 +253,6 @@ export function instanceSyncEvent(
   source: InstancedBufferAttribute,
   derived: InstancedInterleavedBuffer,
 ): EventNode {
-  // quality-allow: Three handles FRAME, but @types/three's constructor union omits it.
   return new EventNode(EventNode.FRAME as ConstructorParameters<typeof EventNode>[0], () =>
     syncInstanceRanges(source, derived),
   );

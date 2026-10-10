@@ -228,7 +228,7 @@ export async function createStreamedProps(options: IStreamOptions) {
               group.add(mesh);
             }
             group.updateMatrixWorld(true);
-            bounds.union(new Box3().setFromObject(group));
+            bounds.union(new Box3().setFromObject(group)); // engine-override: measure generated LOD bounds for the streamed manifest
             models.set(`${record.key}/${level}.glb`, group);
           }
           definitions[record.key] = {

@@ -1,5 +1,5 @@
 /** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
-import { type IAssetLoader, baseGeometryOf } from "@threenative/core";
+import { type IAssetLoader, baseGeometryOf, normaliseToMetres } from "@threenative/core";
 import {
   Box3,
   BufferAttribute,
@@ -615,9 +615,7 @@ function scaleGeometry(
   asset: string,
   world: WorldName,
   size: Vector3,
-  factor: number,
 ): void {
-  geometry.scale(factor, factor, factor);
   const worldScale = WORLD_ASSET_SCALES[world]?.[asset];
   if (worldScale) geometry.scale(worldScale[0], worldScale[1], worldScale[2]);
   const assetScale = ASSET_SCALES[asset];
@@ -625,7 +623,7 @@ function scaleGeometry(
   // Alpine peaks are pinned to a 24 m longest axis after their mountain reshape.
   if (world === "alpine" && asset === "mountain") {
     geometry.scale(0.65, 1.45, 1.8);
-    const longest = Math.max(size.x * 0.65, size.y * 1.45, size.z * 1.8) * factor;
+    const longest = Math.max(size.x * 0.65, size.y * 1.45, size.z * 1.8);
     geometry.scale(24 / longest, 24 / longest, 24 / longest);
   }
 }
@@ -684,7 +682,6 @@ function prepareGeometry(
   one: IPackSpecies,
   world: WorldName,
   stone: boolean,
-  factor: number,
   box: Box3,
   size: Vector3,
   group?: { start: number; count: number },
@@ -702,7 +699,7 @@ function prepareGeometry(
   const centre = box.getCenter(new Vector3());
   const centredStone = stone && (world === "forest" || world === "coastal");
   geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
-  scaleGeometry(geometry, one.asset, world, size, factor);
+  scaleGeometry(geometry, one.asset, world, size);
   repairNormals(geometry);
   return geometry;
 }
@@ -786,13 +783,13 @@ export async function loadPack(
     const one = selected[index];
     const root = gltf?.scene;
     if (!root || !one) return;
-    root.updateWorldMatrix(true, true);
-    const box = new Box3().setFromObject(root);
+    normaliseToMetres(root, {
+      metres: one.metres,
+      axis: STONE.has(one.asset) ? "longest" : "height",
+    });
+    const box = new Box3().setFromObject(root); // engine-override: center baked geometry after unit normalization
     const size = box.getSize(new Vector3());
     const stone = STONE.has(one.asset);
-    const current = stone ? Math.max(size.x, size.y, size.z) : size.y;
-    if (!(current > 1e-6)) return;
-    const factor = one.metres / current;
     const entry = parts.get(`${one.asset}:${one.variant}`) ?? [];
     root.traverse((object) => {
       const mesh = object as Mesh;
@@ -813,7 +810,7 @@ export async function loadPack(
             ? entry.find((part) => (part.level ?? 0) === 0 && part.role === role)?.material
             : undefined;
         if (!source.map && one.level && !(inherited instanceof MeshPhysicalNodeMaterial)) continue;
-        const geometry = prepareGeometry(mesh, one, world, stone, factor, box, size, section.group);
+        const geometry = prepareGeometry(mesh, one, world, stone, box, size, section.group);
         if (source.alphaTest > 0 && (one.asset === "spruce" || one.asset === "sapling"))
           addRadialCoverage(geometry, one.metres, world, comparison);
         const material =

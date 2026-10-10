@@ -362,7 +362,8 @@ export function focusCamera(
   request: IFocusRequest,
   resolve: IFocusResolver,
 ): IFocusOutcome {
-  const target = object(request, "Focus request") as unknown as IFocusRequest;
+  object(request, "Focus request");
+  const target = request;
   const aspect = positive(target.aspect, "Focus aspect");
   const margin =
     target.margin === undefined ? DEFAULT_MARGIN : positive(target.margin, "Focus margin");

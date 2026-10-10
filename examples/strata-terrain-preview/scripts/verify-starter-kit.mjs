@@ -25,13 +25,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const GAME_PACKAGES = [
-  ["@threenative/core", "core"],
-  ["@threenative/physics", "physics"],
-  ["@threenative/assets", "assets"],
-  ["@threenative/playtest", "playtest"],
-  ["create-threenative", "create-threenative"],
-];
 /** Packed with the rest, installed by the agent step below rather than by the scaffolder. */
 const TERRAIN = "@threenative/terrain";
 const PORT = 5187;
@@ -119,6 +112,24 @@ const run = (command, args, options = {}) => {
     );
   return result.stdout ?? "";
 };
+
+const minimal = JSON.parse(
+  readFileSync(join(REPO, "packages/create-threenative/templates/minimal/package.json"), "utf8"),
+);
+const dependencies = new Set(
+  Object.keys({
+    ...minimal.dependencies,
+    ...minimal.devDependencies,
+    ...minimal.optionalDependencies,
+  }),
+);
+const WORKSPACE_PACKAGES = JSON.parse(
+  run("pnpm", ["exec", "tsx", "scripts/workspace-packages.ts", "--json"]),
+);
+const GAME_PACKAGES = WORKSPACE_PACKAGES.filter(({ name }) => dependencies.has(name));
+const TERRAIN_PACKAGE = WORKSPACE_PACKAGES.find(({ name }) => name === TERRAIN);
+assert(GAME_PACKAGES.length > 0, "minimal template has no workspace packages to pack");
+assert(TERRAIN_PACKAGE, `workspace package is missing: ${TERRAIN}`);
 
 /** Total bytes of every file under a directory, or 0 when it does not exist. */
 function bytesUnder(directory) {
@@ -309,9 +320,9 @@ async function main() {
   const packs = join(temporary, "packs");
   mkdirSync(packs);
   const archives = {};
-  for (const [name, directory] of [...GAME_PACKAGES, [TERRAIN, "terrain"]]) {
+  for (const { name, directory } of [...GAME_PACKAGES, TERRAIN_PACKAGE]) {
     const before = new Set(readdirSync(packs));
-    run("pnpm", ["pack", "--pack-destination", packs], { cwd: join(REPO, "packages", directory) });
+    run("pnpm", ["pack", "--pack-destination", packs], { cwd: join(REPO, directory) });
     archives[name] = join(
       packs,
       [...readdirSync(packs)].find((file) => !before.has(file)),
@@ -324,7 +335,7 @@ async function main() {
     await createProject(
       {
         install: true,
-        packageSources: Object.fromEntries(GAME_PACKAGES.map(([name]) => [name, archives[name]])),
+        packageSources: Object.fromEntries(GAME_PACKAGES.map(({ name }) => [name, archives[name]])),
         target: "kit-game",
         template: "minimal",
       },

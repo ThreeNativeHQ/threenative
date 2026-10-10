@@ -81,7 +81,7 @@ export class Handoff extends Scene<GameState, IPhysicsContext> {
       }),
     });
     // The camera is the game's: framed from the world's measured bounds, never from saved state.
-    const bounds = new Box3().setFromObject(this.#world);
+    const bounds = new Box3().setFromObject(this.#world); // engine-override: frame the camera from full world bounds
     const at = bounds.getCenter(new Vector3());
     const radius = bounds.getSize(new Vector3()).length() / 2;
     const camera = ctx.camera as PerspectiveCamera;

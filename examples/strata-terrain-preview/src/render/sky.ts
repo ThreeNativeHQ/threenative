@@ -160,7 +160,7 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   atmosphere.setSunDirection(direction);
   daylight.sky.cloudCoverage.value = 0;
   daylight.sky.material.colorNode = skyColour(atmosphere, SUN_VECTOR, biome ?? BIOMES.forest);
-  daylight.sun.visible = false;
+  daylight.sun.visible = false; // engine-override: omit the sun disc while retaining directional lighting
   daylight.add(sun.target);
 
   const sunDirection = SUN_VECTOR;

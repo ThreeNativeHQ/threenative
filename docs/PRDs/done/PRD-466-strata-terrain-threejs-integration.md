@@ -4173,3 +4173,14 @@ adds `albedo × mix(down, up, n.y) × 0.6` as its diffuse sky term (no sampler).
 the elevated view 6 → 6.5 (lighter, cooler, still readable tree shadows; no glow or wash-out) and
 the meadow unchanged at 7.5 ([elevated](../../benchmark/strata-loading-2026-10-06/ground-sky-light-player.jpg),
 [meadow](../../benchmark/strata-loading-2026-10-06/ground-sky-light-meadow.jpg)).
+
+### 2026-10-10 — clean-checkout CI and starter asset caps
+
+CI now bakes the strata preview before typecheck and full-selection unit tests, so the ignored generated
+`horizon.json` exists in a clean checkout. Recompressed the starter JPEGs and quantized GLBs without
+metadata stripping; the fresh forest kit is 24.1 MB total and 10.7 MB cooked, within the package and
+kit caps. Terrain package tests passed (234 tests), the fresh-kit WebGPU playtest passed twice with
+zero diagnostics, and the full workspace typecheck passed. Two before/after captures per view were
+reviewed by a fresh judge: ground, edge, overview and lake all **NEUTRAL**, with no visible asset
+quality regression. The kit wrapper's default port 5187 was occupied by an unrelated process; the
+same scenario passed directly on port 5188.

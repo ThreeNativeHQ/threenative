@@ -478,7 +478,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         new MeshStandardMaterial({ color: 0xd3a168 }),
       );
       probeMesh.position.x = 600;
-      probeMesh.visible = false;
+      probeMesh.visible = false; // engine-override: the physics fixture must not render
       ctx.add(probeMesh);
       const probeBody = new RigidBody3D({
         object: probeMesh,

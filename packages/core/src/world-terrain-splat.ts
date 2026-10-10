@@ -56,6 +56,11 @@ export interface ITerrainSplatLayer {
   /** Box-projected, for cliffs a top-down projection smears. */
   readonly triplanar?: boolean;
   /**
+   * `<id>_h.jpg`: the layer's own height in r, read as linear data and handed to `layerWeight`.
+   * Read only on a masked layer; the base has no weight to bend.
+   */
+  readonly height?: boolean;
+  /**
    * The same map again at a larger `tile`, mixed in by up to `amount` as camera distance goes from
    * `from` to `to` metres, so a repeated pattern stops reading as a grid at grazing angles.
    * Top-down layers only; every value is the game's.
@@ -66,11 +71,6 @@ export interface ITerrainSplatLayer {
     readonly to: number;
     readonly amount: number;
   };
-  /**
-   * `<id>_h.jpg`: the layer's own height in r, read as linear data and handed to `layerWeight`.
-   * Read only on a masked layer; the base has no weight to bend.
-   */
-  readonly height?: boolean;
 }
 
 /** A layer blended over what is below it by one mask channel, remapped from `lo..hi`. */
@@ -103,8 +103,17 @@ export interface ITerrainSplatTable {
     readonly planes: number;
     readonly masks: Readonly<Record<string, readonly [number, Channel | "rgb"]>>;
   };
-  /** Package-relative folder of `<id>_diff.jpg`, `<id>_nrm.jpg` and `<id>_orm.jpg`. */
+  /** Package-relative folder of `<id>_diff.jpg`, `<id>_nrm.jpg`, `<id>_orm.jpg` and `<id>_h.jpg`. */
   readonly textures: string;
+}
+
+/** What `ILoadTerrainSplatOptions.layerWeight` is told about the layer whose weight it returns. */
+export interface ITerrainSplatWeightContext {
+  readonly layer: ITerrainSplatMaskedLayer;
+  /** The layer's height sample, projected as its albedo is; `undefined` when it ships no `height`. */
+  readonly height: Node<"float"> | undefined;
+  /** The layer's index in `table.layers`. */
+  readonly index: number;
 }
 
 export interface ILoadTerrainSplatOptions {
@@ -114,6 +123,15 @@ export interface ILoadTerrainSplatOptions {
    * which need one; without it every layer keeps its own sampler and the marker says so.
    */
   readonly renderer?: IRendererLike;
+  /**
+   * Replaces each layer's blend weight, given the mask's own (remapped, 0..1) and the layer's
+   * height sample. The game owns the curve, for example a height blend; the package mixes colour,
+   * normal and ORM by whatever this returns. Absent, the mask weight is used unchanged.
+   */
+  readonly layerWeight?: (
+    weight: Node<"float">,
+    context: ITerrainSplatWeightContext,
+  ) => Node<"float">;
   /** The world package's `world.json`, as `WorldCells.load` takes it. */
   readonly url: string;
 }
@@ -384,7 +402,7 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
 
   const load = async (
     layer: ITerrainSplatLayer,
-    kind: "diff" | "nrm" | "orm",
+    kind: "diff" | "nrm" | "orm" | "h",
   ): Promise<Texture> => {
     const map = await assets.texture(`${dir}${table.textures}/${layer.id}_${kind}.jpg`, {
       data: kind !== "diff",
@@ -400,6 +418,8 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
   const diffuseMaps = await Promise.all(all.map((layer) => load(layer, "diff")));
   const normalMaps = await Promise.all(withNormals.map((layer) => load(layer, "nrm")));
   const ormMaps = await Promise.all(withOrm.map((layer) => load(layer, "orm")));
+  const withHeight = table.layers.filter((layer) => layer.height === true);
+  const heightMaps = await Promise.all(withHeight.map((layer) => load(layer, "h")));
 
   // One sampler per set when the layers stack; separate textures (and a warning) when they do not.
   let samplers = 1;
@@ -424,6 +444,7 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
   const diffuseAt = sampler(diffuseMaps, "albedo");
   const normalAt = withNormals.length === 0 ? undefined : sampler(normalMaps, "normal");
   const ormAt = withOrm.length === 0 ? undefined : sampler(ormMaps, "ORM");
+  const heightAt = withHeight.length === 0 ? undefined : sampler(heightMaps, "height");
 
   const ground = vec2(positionWorld.x, positionWorld.z.negate());
   const maskOf = (layer: ITerrainSplatMaskedLayer): Node<"float"> => {
@@ -483,11 +504,19 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
     return vec3(1, layer.roughness ?? DEFAULT_ROUGHNESS, layer.metalness ?? 0);
   };
 
+  /** A height-carrying layer's own height, on the projection its albedo uses. */
+  const heightOf = (layer: ITerrainSplatMaskedLayer): Node<"float"> | undefined => {
+    const slot = withHeight.indexOf(layer);
+    if (slot === -1 || heightAt === undefined) return undefined;
+    const at = (uv: Node<"vec2">): Node<"vec3"> => heightAt(slot, uv);
+    return (layer.triplanar === true ? triplanar(at, layer.tile) : at(ground.div(layer.tile))).r;
+  };
+
   let color = albedo(table.base, 0);
   let normalSample: Node<"vec3"> = normalOf(table.base) ?? vec3(0.5, 0.5, 1);
   let ormSample: Node<"vec3"> = ormOf(table.base);
   table.layers.forEach((layer, offset) => {
-    const weight = clamp(
+    const masked = clamp(
       maskOf(layer)
         .add(push)
         .sub(layer.lo)
@@ -495,6 +524,10 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
       0,
       1,
     );
+    const weight =
+      options.layerWeight === undefined
+        ? masked
+        : options.layerWeight(masked, { height: heightOf(layer), index: offset, layer });
     color = mix(color, albedo(layer, offset + 1), weight);
     const nrm = normalOf(layer);
     if (nrm !== undefined) normalSample = mix(normalSample, nrm, weight);
