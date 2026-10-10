@@ -137,6 +137,42 @@ describe("three's math values on the browser back end", () => {
     expect(calls.filter((call) => call.startsWith("get __address"))).toEqual(["get __addresses"]);
   });
 
+  it("hands a later object's members without asking the engine for them", () => {
+    const { runtime, calls, heap } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      get(self, property) {
+        if (property !== "__addresses") return runtime.get(self, property);
+        calls.push("get __addresses");
+        // The engine's record holds every member, read or not.
+        const at = 4096 + Number(self.key.split(":")[1]) * 64;
+        return { __address: at, position: at + 16, layers: at + 48 };
+      },
+    });
+    type Owner = { position: IVec; layers: { mask: number; enable(channel: number): void } };
+    const Object3D = classes.Object3D as new () => Owner & { lookAt(v: IVec): void };
+    const Vector3 = classes.Vector3 as new (x?: number, y?: number, z?: number) => IVec;
+    const first = new Object3D();
+    expect(first.position).toBeInstanceOf(Vector3);
+    expect(first.layers.mask).toBe(0); // read where the record says
+    calls.length = 0;
+    const second = new Object3D(); // the third engine object: its record starts at 4096 + 3 * 64
+    const { position, layers } = second;
+    expect(position).toBeInstanceOf(Vector3);
+    expect(second.position).toBe(position);
+    position.set(1, 2, 3);
+    layers.enable(1);
+    expect([...heap.subarray(4096 / 8 + 24 + 2, 4096 / 8 + 24 + 5)]).toEqual([1, 2, 3]);
+    expect(heap[4096 / 8 + 24 + 6]).toBe(2);
+    expect(calls).toEqual(["construct Object3D", "get __addresses"]);
+    // A call that takes the member as an engine object asks for its Ref then, once.
+    calls.length = 0;
+    first.lookAt(position);
+    first.lookAt(position);
+    expect(calls.filter((call) => call === "get position")).toEqual(["get position"]);
+    expect(second.position).toBe(position);
+  });
+
   it("lends an engine call a vector and copies its lanes back, answering the JS value", () => {
     const { runtime, calls } = memoryRuntime();
     const { classes } = defineBrowserClasses(registry, runtime);

@@ -367,22 +367,50 @@ export function defineBrowserClasses(
         return read(addressOf(this, whole) + offset, count);
       };
     }
-    if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property))
+    if (binding.fixedMembers?.includes(property) && !binding.setters.includes(property)) {
+      // The member's class, from the first object of this class that asked the engine for it.
+      let memberPrototype: object | undefined;
+      const fetch = (owner: object): object => {
+        if (whole && memberPrototype !== undefined) {
+          const member = deferred(owner, property, memberPrototype);
+          within.set(member, [owner, property]);
+          return member;
+        }
+        const member = fromEngine(runtime.get(refOf(owner), property)) as object;
+        if (whole) {
+          memberPrototype = Object.getPrototypeOf(member) as object;
+          within.set(member, [owner, property]);
+        }
+        return member;
+      };
       return function (this: object) {
         let members = kept.get(this);
         if (members === undefined) {
           members = new Map();
           kept.set(this, members);
         }
-        if (!members.has(property)) {
-          const member = fromEngine(runtime.get(refOf(this), property));
-          members.set(property, member);
-          if (binding.getters.includes("__addresses"))
-            within.set(member as object, [this, property]);
-        }
+        if (!members.has(property)) members.set(property, fetch(this));
         return members.get(property);
       };
+    }
     return undefined;
+  };
+  // A kept member of an object that answers `__addresses` reads and writes its lanes where the
+  // owner's record says, so the engine is asked for its Ref only when a call takes the member.
+  // ponytail: a Ref to it the engine hands out before then gets a second wrapper; none does today.
+  const deferred = (owner: object, property: string, prototype: object): object => {
+    const member = Object.create(prototype) as object;
+    Object.defineProperty(member, REF, {
+      configurable: true,
+      get() {
+        const ref = runtime.get(refOf(owner), property) as IEngineRef;
+        delete (member as Partial<IWrapped>)[REF];
+        adopt(member, ref);
+        hold(member);
+        return ref;
+      },
+    });
+    return member;
   };
   // `whole`: the object answers `__addresses`, whose record also holds its own `__address`.
   const addressOf = (self: object, whole = false): number => {
