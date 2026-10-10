@@ -245,6 +245,11 @@ BufferAttribute& BufferAttribute::setXY(uint64_t index, double x, double y) {
 }
 
 BufferAttribute& BufferAttribute::setXYZ(uint64_t index, double x, double y, double z) {
+    if (float* at = floatXYZ(index)) {
+        const float xyz[3] = {static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)};
+        std::memcpy(at, xyz, sizeof(xyz));
+        return *this;
+    }
     index *= static_cast<uint64_t>(itemSize);
     setRaw(index + 0, normalize(x));
     setRaw(index + 1, normalize(y));
@@ -261,7 +266,24 @@ BufferAttribute& BufferAttribute::setXYZW(uint64_t index, double x, double y, do
     return *this;
 }
 
+// The three floats of an in-range item of a Float32, unnormalized attribute with itemSize >= 3 (the
+// position and normal layout): the element path converts these exactly as a direct float read does.
+float* BufferAttribute::floatXYZ(uint64_t index) const {
+    if (store->scalar() != Scalar::F32 || normalized || itemSize < 3) return nullptr;
+    const uint64_t stride = static_cast<uint64_t>(itemSize) * sizeof(float);
+    if (index >= store->byteLength() / stride) return nullptr;
+    return reinterpret_cast<float*>(store->data() + index * stride);
+}
+
 Vector3& BufferAttribute::getXYZ(uint64_t index, Vector3& target) const {
+    if (const float* at = floatXYZ(index)) {
+        float xyz[3];
+        std::memcpy(xyz, at, sizeof(xyz));
+        target.x = xyz[0];
+        target.y = xyz[1];
+        target.z = xyz[2];
+        return target;
+    }
     target.x = getX(index);
     target.y = getY(index);
     target.z = getZ(index);
@@ -295,7 +317,7 @@ BufferAttribute& BufferAttribute::applyMatrix3(const Matrix3& m) {
 
 BufferAttribute& BufferAttribute::applyMatrix4(const Matrix4& m) {
     Vector3 vector;
-    for (uint64_t i = 0; i < count(); ++i) {
+    for (uint64_t i = 0, n = count(); i < n; ++i) {
         getXYZ(i, vector).applyMatrix4(m);
         setXYZ(i, vector.x, vector.y, vector.z);
     }
@@ -304,7 +326,7 @@ BufferAttribute& BufferAttribute::applyMatrix4(const Matrix4& m) {
 
 BufferAttribute& BufferAttribute::applyNormalMatrix(const Matrix3& m) {
     Vector3 vector;
-    for (uint64_t i = 0; i < count(); ++i) {
+    for (uint64_t i = 0, n = count(); i < n; ++i) {
         getXYZ(i, vector).applyNormalMatrix(m);
         setXYZ(i, vector.x, vector.y, vector.z);
     }
@@ -313,7 +335,7 @@ BufferAttribute& BufferAttribute::applyNormalMatrix(const Matrix3& m) {
 
 BufferAttribute& BufferAttribute::transformDirection(const Matrix4& m) {
     Vector3 vector;
-    for (uint64_t i = 0; i < count(); ++i) {
+    for (uint64_t i = 0, n = count(); i < n; ++i) {
         getXYZ(i, vector).transformDirection(m);
         setXYZ(i, vector.x, vector.y, vector.z);
     }
@@ -382,7 +404,7 @@ void BufferGeometry::setDrawRange(double start, double count) {
 Box3& Box3::setFromBufferAttribute(const BufferAttribute& attribute) {
     makeEmpty();
     Vector3 point;
-    for (uint64_t i = 0; i < attribute.count(); ++i) expandByPoint(attribute.getXYZ(i, point));
+    for (uint64_t i = 0, n = attribute.count(); i < n; ++i) expandByPoint(attribute.getXYZ(i, point));
     return *this;
 }
 
@@ -414,10 +436,11 @@ void BufferGeometry::computeBoundingSphere() {
     Box3 box;
     box.makeEmpty();
     Vector3 point;
-    for (uint64_t i = 0; i < position->count(); ++i) box.expandByPoint(position->getXYZ(i, point));
+    const uint64_t vertices = position->count();
+    for (uint64_t i = 0; i < vertices; ++i) box.expandByPoint(position->getXYZ(i, point));
     box.getCenter(center);
     double maxRadiusSq = 0;
-    for (uint64_t i = 0; i < position->count(); ++i) {
+    for (uint64_t i = 0; i < vertices; ++i) {
         position->getXYZ(i, point);
         // Math.max propagates NaN; std::max would drop it and report a finite radius.
         const double d = center.distanceToSquared(point);
@@ -480,7 +503,7 @@ void BufferGeometry::normalizeNormals() {
     std::shared_ptr<BufferAttribute> normals = getAttribute("normal");
     if (normals == nullptr) return;
     Vector3 vector;
-    for (uint64_t i = 0; i < normals->count(); ++i) {
+    for (uint64_t i = 0, n = normals->count(); i < n; ++i) {
         normals->getXYZ(i, vector).normalize();
         normals->setXYZ(i, vector.x, vector.y, vector.z);
     }
@@ -547,9 +570,19 @@ std::shared_ptr<BufferGeometry> BufferGeometry::toNonIndexed() const {
         const uint64_t size = static_cast<uint64_t>(attribute->itemSize);
         auto copy = std::make_shared<BufferAttribute>(attribute->store->scalar(), indices.size() * size,
                                                       attribute->itemSize, attribute->normalized);
+        // An in-range item is its bytes; only an index past the end goes element by element.
+        const uint64_t elementBytes = scalarSize(attribute->store->scalar());
+        const uint64_t itemBytes = size * elementBytes;
+        const uint64_t items = attribute->count();
         uint64_t out = 0;
         for (const double vertex : indices) {
-            for (uint64_t j = 0; j < size; ++j) copy->setRaw(out++, attribute->raw(static_cast<uint64_t>(vertex) * size + j));
+            const auto item = static_cast<uint64_t>(vertex);
+            if (item < items) {
+                std::memcpy(copy->store->data() + out * elementBytes, attribute->store->data() + item * itemBytes, itemBytes);
+                out += size;
+            } else {
+                for (uint64_t j = 0; j < size; ++j) copy->setRaw(out++, attribute->raw(item * size + j));
+            }
         }
         geometry->setAttribute(name, copy);
     }

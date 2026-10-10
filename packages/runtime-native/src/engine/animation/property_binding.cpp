@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <regex>
+#include <unordered_map>
 #include <utility>
 
 #include "engine/scene/camera.h"
@@ -41,7 +42,15 @@ Object3D* searchNodeSubtree(const std::vector<Object3D*>& children, const std::s
 } // namespace
 
 bool parseTrackName(std::string_view trackName, ParsedPath& out, std::string& error) {
+    // Every action binds the same few track names again and the regex costs more than the bind.
+    // ponytail: the cache is dropped whole when it fills; an LRU if a game cycles more names.
+    thread_local std::unordered_map<std::string, ParsedPath> parsed;
     const std::string name(trackName);
+    if (const auto hit = parsed.find(name); hit != parsed.end()) {
+        out = hit->second;
+        return true;
+    }
+    if (parsed.size() >= 4096) parsed.clear();
     std::smatch m;
     if (!std::regex_match(name, m, trackRe())) {
         error = "THREE.PropertyBinding: Cannot parse trackName: " + name;
@@ -65,6 +74,7 @@ bool parseTrackName(std::string_view trackName, ParsedPath& out, std::string& er
         error = "THREE.PropertyBinding: can not parse propertyName from trackName: " + name;
         return false;
     }
+    parsed.emplace(name, out);
     return true;
 }
 

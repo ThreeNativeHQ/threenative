@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 using namespace tn::engine;
 
@@ -104,7 +105,55 @@ void fromDoublesMatchesSetRaw() {
     }
 }
 
+bool sameNumber(double a, double b) { return (std::isnan(a) && std::isnan(b)) || (a == b && std::signbit(a) == std::signbit(b)); }
+
+// getXYZ, setXYZ, applyMatrix4 and toNonIndexed read Float32 items in place: each must store exactly
+// what the element path (raw, setRaw, Vector3 math) stores, for itemSize 3 and 4, past the end too.
+void floatItemsMatchElements() {
+    const std::vector<double> values = {0, -0.0, 0.1, -3.9, 1e39, -1e39, std::nan(""), INFINITY, 1e-46, 7, 8, 9};
+    Matrix4 m;
+    m.set(2, 0.5, 0, 3, 0, 1, -1, 0.1, 0.25, 0, 3, -2, 0, 0, 0, 1);
+    for (const int itemSize : {3, 4}) {
+        const auto attribute = BufferAttribute::fromDoubles(Scalar::F32, values, itemSize);
+        const auto reference = BufferAttribute::fromDoubles(Scalar::F32, values, itemSize);
+        const uint64_t items = values.size() / static_cast<uint64_t>(itemSize);
+        Vector3 got;
+        for (uint64_t i = 0; i < items; ++i) {
+            attribute->getXYZ(i, got);
+            const uint64_t at = i * static_cast<uint64_t>(itemSize);
+            CHECK(sameNumber(got.x, reference->raw(at)) && sameNumber(got.y, reference->raw(at + 1)) && sameNumber(got.z, reference->raw(at + 2)));
+        }
+        attribute->getXYZ(items, got);
+        CHECK(std::isnan(got.x) && std::isnan(got.y) && std::isnan(got.z));
+        attribute->applyMatrix4(m);
+        for (uint64_t i = 0; i < items; ++i) {
+            const uint64_t at = i * static_cast<uint64_t>(itemSize);
+            Vector3 v(reference->raw(at), reference->raw(at + 1), reference->raw(at + 2));
+            v.applyMatrix4(m);
+            reference->setRaw(at, v.x);
+            reference->setRaw(at + 1, v.y);
+            reference->setRaw(at + 2, v.z);
+        }
+        attribute->setXYZ(items, 1, 2, 3);  // past the end: ignored
+        for (uint64_t e = 0; e < values.size(); ++e) {
+            if (!sameNumber(attribute->raw(e), reference->raw(e)))
+                std::fprintf(stderr, "itemSize %d element %llu: %.17g, element path %.17g\n", itemSize,
+                             static_cast<unsigned long long>(e), attribute->raw(e), reference->raw(e));
+            CHECK(sameNumber(attribute->raw(e), reference->raw(e)));
+        }
+
+        BufferGeometry geometry;
+        geometry.setAttribute("position", attribute);
+        geometry.setIndexFromArray({2, 0, static_cast<uint32_t>(items), 1});  // one index past the end
+        const auto flat = geometry.toNonIndexed()->getAttribute("position");
+        const uint32_t order[] = {2, 0, static_cast<uint32_t>(items), 1};
+        for (uint64_t k = 0; k < 4; ++k)
+            for (uint64_t j = 0; j < static_cast<uint64_t>(itemSize); ++j)
+                CHECK(sameNumber(flat->raw(k * itemSize + j), attribute->raw(order[k] * static_cast<uint64_t>(itemSize) + j)));
+    }
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"from_doubles_matches_set_raw", fromDoublesMatchesSetRaw}, {"js_numbers", jsNumbers}, {"typed_writes", typedWrites}, {"normalized", normalized},
+TN_TEST_MAIN({"float_items_match_elements", floatItemsMatchElements}, {"from_doubles_matches_set_raw", fromDoublesMatchesSetRaw}, {"js_numbers", jsNumbers}, {"typed_writes", typedWrites}, {"normalized", normalized},
              {"out_of_range", outOfRange}, {"nan_bounds", nanBounds})

@@ -25,6 +25,8 @@ std::string show(const std::optional<std::string>& value) { return value ? *valu
 
 void parse() {
     std::size_t mismatched = 0;
+    // Twice: the second pass answers every name from parseTrackName's cache.
+    for (int pass = 0; pass < 2; ++pass)
     for (const auto& [name, expected] : kParse) {
         ParsedPath p;
         std::string error;
