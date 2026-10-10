@@ -4,11 +4,13 @@ prd_contract: v1
 
 # PRD-571 — Exposure meters a histogram and ignores the sun
 
-**Status:** PARTIAL — all 8 boxes ticked on 2026-10-09; the Pixel 8 cost check is under Blocked on.
+**Blocked:** 2026-10-10, filed under `BLOCKED/requires-physical-device/` — only the `## Blocked on` items remain.
+
+**Status:** BLOCKED — 2026-10-10. Every box is ticked; only the `## Blocked on` items remain.
 **Priority:** P2 — the shipped meter was a clamped linear mean, so a bright sky behind the subject still set the exposure. AC-1 and AC-2 are met in the browser and on the desktop host; the phone cost is blocked on the device.
 **Complexity:** 2 (LOW) — 1–5 files (1): three identical template files, copied to 13 templates by the scaffolder, plus the existing fixture; no new module, no package change. Risk override: none.
 **Owner:** João
-**Depends on:** None. Follows [PRD-339](../done/PRD-339-the-frame-sets-its-own-exposure.md) (done), which shipped the mean meter and says a compute histogram "is a separate PRD if a game ever needs one" (PRD-339:106-107). This is that PRD. Judged with the tone gate of [PRD-341](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md) (done).
+**Depends on:** None. Follows [PRD-339](../../done/PRD-339-the-frame-sets-its-own-exposure.md) (done), which shipped the mean meter and says a compute histogram "is a separate PRD if a game ever needs one" (PRD-339:106-107). This is that PRD. Judged with the tone gate of [PRD-341](../../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md) (done).
 
 ## Context
 
@@ -32,7 +34,7 @@ sun aureole over a tenth of the frame set the exposure, and the ground sat three
 The clamp at 8 and the bottom weight reduce that error but do not remove it. A backlit subject
 in front of a bright sky is still exposed for the sky.
 
-[PRD-345](../rendering/PRD-345-a-backlit-subject-is-not-a-hole-in-the-sky.md) fixes the backlit subject from the
+[PRD-345](../../rendering/PRD-345-a-backlit-subject-is-not-a-hole-in-the-sky.md) fixes the backlit subject from the
 material side. Its "Out of scope" section gives exposure to PRD-339 and PRD-343, and its
 2026-10-09 decision points here for the metering side.
 
@@ -149,7 +151,7 @@ that a sun disc of 1% of the frame does not move the exposure.
 
 #### Phase 2: All templates, native and the phone
 
-**Status:** PARTIAL — templates, native and docs done; the phone cost is under Blocked on
+**Status:** DONE — 2026-10-10.
 **Files:** the same three files copied into the 12 other templates; `packages/create-threenative/agent-docs/references/auto-exposure.md`
 **Implementation:** Copy the three files byte for byte. Document `lowPercent` and `highPercent` and say when to change them.
 
