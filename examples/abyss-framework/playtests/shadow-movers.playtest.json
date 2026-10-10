@@ -27,7 +27,7 @@
       "kind": "wait",
       "label": "settle",
       "release": true,
-      "waitTicks": 400
+      "waitTicks": 800
     }
   ],
   "assert": {
