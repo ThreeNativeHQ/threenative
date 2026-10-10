@@ -691,11 +691,15 @@ export function defineBrowserClasses(
     if (valueClass !== undefined && binding.fields !== undefined)
       valueClasses.set(prototype, {
         name,
-        lanes: Object.keys(binding.fields ?? {}),
+        // In memory order, which is the constructor's (the registry lists Color's as b, g, r).
+        lanes: Object.entries(binding.fields)
+          .sort(([, a], [, b]) => (a[0] ?? 0) - (b[0] ?? 0))
+          .map(([lane]) => lane),
         engine: accessors,
         pool: [],
         top: 0,
       });
+    const info = valueClasses.get(prototype);
     for (const method of binding.methods) {
       if (valueClass !== undefined && Object.hasOwn(prototype, method)) continue;
       const bumps = writesAttributes && !/^(get|has|clone|equals|toJSON)/u.test(method);
@@ -734,6 +738,11 @@ export function defineBrowserClasses(
             return listAttributes(this).get(key) ?? (method === "getAttribute" ? null : false);
           }
           if (pending.size > 0) writeBack();
+          // A JS value runs a method only the engine has (`color.setStyle`) as an engine object.
+          if (info !== undefined && !(REF in this)) {
+            promote(this as Record<string, number>, info);
+            hold(this);
+          }
           const known = deletes ? labels.get(this) : undefined;
           if (known?.has("__attributes")) {
             const removed = String(args[0]);

@@ -45,6 +45,32 @@ interface IQuaternionScratch extends IQuat {
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 
+interface IRgb {
+  r: number;
+  g: number;
+  b: number;
+}
+// three's ColorManagement over the two spaces the engine knows; it throws on any other, as the
+// engine does.
+const SRGB = "srgb";
+const LINEAR = "srgb-linear";
+const space = (name: string): boolean => {
+  if (name === SRGB) return true;
+  if (name === LINEAR || name === "linear") return false;
+  throw new TypeError(`unknown colour space ${name}`);
+};
+const SRGBToLinear = (c: number): number =>
+  c < 0.04045 ? c * 0.0773993808 : (c * 0.9478672986 + 0.0521327014) ** 2.4;
+const LinearToSRGB = (c: number): number =>
+  c < 0.0031308 ? c * 12.92 : 1.055 * c ** 0.41666 - 0.055;
+const toWorking = <T extends IRgb>(color: T, colorSpace: string): T => {
+  if (!space(colorSpace)) return color;
+  color.r = SRGBToLinear(color.r);
+  color.g = SRGBToLinear(color.g);
+  color.b = SRGBToLinear(color.b);
+  return color;
+};
+
 /** The JS classes; `quaternion` makes the engine Quaternion `applyEuler` and `applyAxisAngle` use. */
 export function defineMath(quaternion: () => IQuaternionScratch) {
   let rotation: IQuaternionScratch | undefined;
@@ -428,6 +454,157 @@ export function defineMath(quaternion: () => IQuaternionScratch) {
     }
   }
 
+  /**
+   * three r185's Color arithmetic and its sRGB conversions. The working space is linear-sRGB, as in
+   * the engine. Any other method (`setStyle`, the HSL family) turns the value into an engine Color
+   * in place and crosses.
+   */
+  class Color implements IRgb {
+    declare r: number;
+    declare g: number;
+    declare b: number;
+    constructor(r?: unknown, g?: number, b?: number) {
+      this.r = 1;
+      this.g = 1;
+      this.b = 1;
+      this.set(r, g, b);
+    }
+    set(r?: unknown, g?: number, b?: number): this {
+      if (g !== undefined || b !== undefined)
+        return this.setRGB(r as number, g as number, b as number);
+      const value = r as (IRgb & { isColor?: boolean }) | number | string | undefined;
+      if (value instanceof Color || (typeof value === "object" && value?.isColor === true))
+        return this.copy(value);
+      if (typeof value === "number") return this.setHex(value);
+      if (typeof value === "string")
+        (this as unknown as { setStyle(style: string): void }).setStyle(value);
+      return this;
+    }
+    setScalar(scalar: number): this {
+      this.r = scalar;
+      this.g = scalar;
+      this.b = scalar;
+      return this;
+    }
+    setHex(hex: number, colorSpace = SRGB): this {
+      const whole = Math.floor(hex);
+      this.r = ((whole >> 16) & 255) / 255;
+      this.g = ((whole >> 8) & 255) / 255;
+      this.b = (whole & 255) / 255;
+      return toWorking(this, colorSpace);
+    }
+    setRGB(r: number, g: number, b: number, colorSpace = LINEAR): this {
+      this.r = r;
+      this.g = g;
+      this.b = b;
+      return toWorking(this, colorSpace);
+    }
+    clone(): Color {
+      return new Color(this.r, this.g, this.b);
+    }
+    copy(color: IRgb): this {
+      this.r = color.r;
+      this.g = color.g;
+      this.b = color.b;
+      return this;
+    }
+    copySRGBToLinear(color: IRgb): this {
+      this.r = SRGBToLinear(color.r);
+      this.g = SRGBToLinear(color.g);
+      this.b = SRGBToLinear(color.b);
+      return this;
+    }
+    copyLinearToSRGB(color: IRgb): this {
+      this.r = LinearToSRGB(color.r);
+      this.g = LinearToSRGB(color.g);
+      this.b = LinearToSRGB(color.b);
+      return this;
+    }
+    convertSRGBToLinear(): this {
+      return this.copySRGBToLinear(this);
+    }
+    convertLinearToSRGB(): this {
+      return this.copyLinearToSRGB(this);
+    }
+    getHex(colorSpace = SRGB): number {
+      const srgb = space(colorSpace);
+      const [r, g, b] = [this.r, this.g, this.b].map((c) => (srgb ? LinearToSRGB(c) : c));
+      const byte = (c = 0) => Math.round(clamp(c * 255, 0, 255));
+      return byte(r) * 65536 + byte(g) * 256 + byte(b);
+    }
+    getHexString(colorSpace = SRGB): string {
+      return `000000${this.getHex(colorSpace).toString(16)}`.slice(-6);
+    }
+    add(color: IRgb): this {
+      this.r += color.r;
+      this.g += color.g;
+      this.b += color.b;
+      return this;
+    }
+    addColors(color1: IRgb, color2: IRgb): this {
+      this.r = color1.r + color2.r;
+      this.g = color1.g + color2.g;
+      this.b = color1.b + color2.b;
+      return this;
+    }
+    addScalar(s: number): this {
+      this.r += s;
+      this.g += s;
+      this.b += s;
+      return this;
+    }
+    sub(color: IRgb): this {
+      this.r = Math.max(0, this.r - color.r);
+      this.g = Math.max(0, this.g - color.g);
+      this.b = Math.max(0, this.b - color.b);
+      return this;
+    }
+    multiply(color: IRgb): this {
+      this.r *= color.r;
+      this.g *= color.g;
+      this.b *= color.b;
+      return this;
+    }
+    multiplyScalar(s: number): this {
+      this.r *= s;
+      this.g *= s;
+      this.b *= s;
+      return this;
+    }
+    lerp(color: IRgb, alpha: number): this {
+      this.r += (color.r - this.r) * alpha;
+      this.g += (color.g - this.g) * alpha;
+      this.b += (color.b - this.b) * alpha;
+      return this;
+    }
+    lerpColors(color1: IRgb, color2: IRgb, alpha: number): this {
+      this.r = color1.r + (color2.r - color1.r) * alpha;
+      this.g = color1.g + (color2.g - color1.g) * alpha;
+      this.b = color1.b + (color2.b - color1.b) * alpha;
+      return this;
+    }
+    equals(c: IRgb): boolean {
+      return c.r === this.r && c.g === this.g && c.b === this.b;
+    }
+    fromArray(array: ArrayLike<number>, offset = 0): this {
+      this.r = array[offset] as number;
+      this.g = array[offset + 1] as number;
+      this.b = array[offset + 2] as number;
+      return this;
+    }
+    toArray(array: number[] = [], offset = 0): number[] {
+      array[offset] = this.r;
+      array[offset + 1] = this.g;
+      array[offset + 2] = this.b;
+      return array;
+    }
+    *[Symbol.iterator](): Generator<number> {
+      yield this.r;
+      yield this.g;
+      yield this.b;
+    }
+  }
+
   /** three's MathUtils functions the engine binds, as JS: a clamp is not worth an engine call. */
   class MathUtils {
     clamp(value: number, min: number, max: number): number {
@@ -444,5 +621,5 @@ export function defineMath(quaternion: () => IQuaternionScratch) {
     }
   }
 
-  return { Vector3, MathUtils };
+  return { Vector3, Color, MathUtils };
 }

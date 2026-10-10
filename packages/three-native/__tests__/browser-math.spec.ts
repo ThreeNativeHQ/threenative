@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { Euler, Quaternion, Vector3 as ThreeVector3 } from "three";
+import { Euler, Quaternion, Color as ThreeColor, Vector3 as ThreeVector3 } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -689,4 +689,64 @@ describe("three's math values on the browser back end", () => {
       expect(calls.filter((call) => call.startsWith("get __address"))).toEqual(["get __addresses"]);
     },
   );
+
+  it("runs three's colour math in JS and makes a colour an engine object for an engine-only method", () => {
+    const { runtime, calls, heap } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      invoke(self, method, args) {
+        if (method !== "setStyle") return runtime.invoke(self, method, args);
+        calls.push(`invoke setStyle ${String(args[0])}`);
+        return self;
+      },
+    });
+    interface IColor {
+      r: number;
+      g: number;
+      b: number;
+      setHex(hex: number, colorSpace?: string): IColor;
+      setRGB(r: number, g: number, b: number, colorSpace?: string): IColor;
+      convertSRGBToLinear(): IColor;
+      convertLinearToSRGB(): IColor;
+      lerp(color: IColor, alpha: number): IColor;
+      multiplyScalar(s: number): IColor;
+      addScalar(s: number): IColor;
+      sub(color: IColor): IColor;
+      clone(): IColor;
+      equals(color: IColor): boolean;
+      toArray(): number[];
+      getHex(colorSpace?: string): number;
+      getHexString(): string;
+      setStyle(style: string): IColor;
+    }
+    type ColorClass = new (...args: unknown[]) => IColor;
+    const script = (C: ColorClass) => {
+      const a = new C(0xc0dce1).convertSRGBToLinear();
+      const b = new C(0.2, 0.5, 0.9);
+      const c = new C().setHex(0x123456, "srgb-linear").setRGB(0.3, 0.6, 0.1, "srgb");
+      a.lerp(b, 0.3).multiplyScalar(1.7).addScalar(0.1).sub(c);
+      const d = a.clone().convertLinearToSRGB();
+      return [
+        ...[a, b, c, d].flatMap((color) => color.toArray()),
+        a.getHex(),
+        d.getHex("srgb-linear"),
+        b.getHexString(),
+        a.equals(a.clone()),
+        new C(b).equals(b),
+      ];
+    };
+    const Color = classes.Color as ColorClass;
+    expect(script(Color)).toEqual(script(ThreeColor as unknown as ColorClass));
+    expect(calls).toEqual([]);
+    // setStyle is the engine's: the JS value becomes an engine object in place, lanes in r, g, b order.
+    const named = new Color(0.1, 0.2, 0.3);
+    expect(named.setStyle("white")).toBe(named);
+    expect(engineRef(named)).toBeDefined();
+    expect(calls.filter((call) => !call.startsWith("get"))).toEqual([
+      "construct Color",
+      "invoke setStyle white",
+    ]);
+    const at = (runtime.get(engineRef(named) as IEngineRef, "__address") as number) / 8;
+    expect([...heap.subarray(at, at + 3)]).toEqual([0.1, 0.2, 0.3]);
+  });
 });

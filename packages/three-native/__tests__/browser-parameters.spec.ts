@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { Color } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -30,6 +31,7 @@ function recordingRuntime(calls: string[]): IBrowserRuntime {
     type: types.get(type) ?? 0,
   });
   const colors = new Map<string, IEngineRef>();
+  const values = new Map<string, EngineValue>();
   return {
     typeId(name) {
       if (!types.has(name)) types.set(name, types.size + 1);
@@ -44,13 +46,15 @@ function recordingRuntime(calls: string[]): IBrowserRuntime {
       return null;
     },
     get(self, property): EngineValue {
-      if (property !== "color" && property !== "emissive") return 0;
+      if (property !== "color" && property !== "emissive")
+        return values.get(`${self.key}.${property}`) ?? 0;
       const key = `${self.key}.${property}`;
       if (!colors.has(key)) colors.set(key, ref("Color"));
       return colors.get(key) as IEngineRef;
     },
     set(self, property, value) {
       calls.push(`set ${self.key.split(":")[0]}.${property} ${JSON.stringify(value)}`);
+      values.set(`${self.key}.${property}`, value);
     },
     release() {},
     setCallback() {},
@@ -63,9 +67,16 @@ describe("browser back end parameters objects", () => {
     const { classes } = defineBrowserClasses(registry, recordingRuntime(calls));
     const Material = classes.MeshStandardMaterial as new (...args: unknown[]) => object;
     new Material({ color: 0xff8030, emissive: "#102030", roughness: 0.5, map: undefined });
+    // A hex runs three's setHex in JS: its sRGB lanes, then the working (linear) ones.
+    const { r, g, b } = new Color(0xff8030);
     expect(calls).toEqual([
       "construct MeshStandardMaterial []",
-      `invoke Color.setHex [${0xff8030}]`,
+      "set Color.r 1",
+      `set Color.g ${128 / 255}`,
+      `set Color.b ${48 / 255}`,
+      `set Color.r ${r}`,
+      `set Color.g ${g}`,
+      `set Color.b ${b}`,
       'invoke Color.setStyle ["#102030"]',
       "set MeshStandardMaterial.roughness 0.5",
     ]);
