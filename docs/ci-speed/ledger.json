@@ -1589,6 +1589,143 @@
           "count": 1
         }
       ]
+    },
+    {
+      "id": 18,
+      "at": "2026-10-10T05:58:22.141Z",
+      "commit": "1652670ee",
+      "label": "PR476 unmerged baseline refresh",
+      "notes": "PR476 remains unmerged. This is a fresh observation of develop, not a measured effect of PR476. Candidate CI run 38025989864 failed sailing diagnostics; ci-required correctly rejected it.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-09",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 744.5,
+        "lastPushToMergeP90Min": 1130.1,
+        "firstAttemptSuccessPct": 33.3,
+        "boardWallMedianMin": 107.9,
+        "queueWaitP90Min": 42.3
+      },
+      "extra": {
+        "prCount": 6,
+        "mergeGroupRuns": 43,
+        "mergeGroupRunSuccessPct": 23.8,
+        "enqueueToMergeMedianMin": 543.2,
+        "queueWaitJobs": 2963
+      },
+      "prs": [
+        {
+          "number": 473,
+          "title": "fix(world): PRD-494 — bundle-safety walk stops reading pixels; main pass draw budget measured",
+          "lastPushToMergeMin": 317.9,
+          "enqueueToMergeMin": 454.8,
+          "attempts": 5,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / macOS desktop core"
+        },
+        {
+          "number": 472,
+          "title": "PRD-297: capability recall is a gated number, PRD done",
+          "lastPushToMergeMin": 1228.1,
+          "enqueueToMergeMin": 1160.9,
+          "attempts": 12,
+          "firstAttempt": "failure",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 471,
+          "title": "fix(capabilities): every manifest import resolves in every scaffolded template (PRD-354)",
+          "lastPushToMergeMin": 1011.6,
+          "enqueueToMergeMin": 1015.5,
+          "attempts": 8,
+          "firstAttempt": "success",
+          "firstFailingJob": "test-playtest"
+        },
+        {
+          "number": 470,
+          "title": "PRD-461: view distance basics — terrain radius, near-only colliders, recipe fog",
+          "lastPushToMergeMin": 477.4,
+          "enqueueToMergeMin": 363.9,
+          "attempts": 4,
+          "firstAttempt": "success",
+          "firstFailingJob": "integration / velocity"
+        },
+        {
+          "number": 468,
+          "title": "feat(core): ship threenative-sculpt-mcp 0.2.1",
+          "lastPushToMergeMin": 1032.1,
+          "enqueueToMergeMin": 631.5,
+          "attempts": 7,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-browser"
+        },
+        {
+          "number": 458,
+          "title": "test(PRD-536): tests close the fail-open and regression holes",
+          "lastPushToMergeMin": 474.3,
+          "enqueueToMergeMin": 143.1,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "test-unit (2/4)"
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "integration / velocity",
+          "count": 7
+        },
+        {
+          "job": "test-unit (2/4)",
+          "count": 5
+        },
+        {
+          "job": "test-unit (3/4)",
+          "count": 5
+        },
+        {
+          "job": "test-browser",
+          "count": 3
+        },
+        {
+          "job": "integration / auto-exposure",
+          "count": 2
+        },
+        {
+          "job": "integration / auto-exposure cold boot",
+          "count": 2
+        },
+        {
+          "job": "test-unit (1/4)",
+          "count": 2
+        },
+        {
+          "job": "golden-path-template (platformer)",
+          "count": 1
+        },
+        {
+          "job": "integration / capture",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / iOS simulator runtime and no-Xcode consumer handoff",
+          "count": 1
+        },
+        {
+          "job": "native-platforms / macOS desktop core",
+          "count": 1
+        },
+        {
+          "job": "template-nonvisual (platformer)",
+          "count": 1
+        },
+        {
+          "job": "test-playtest",
+          "count": 1
+        }
+      ]
     }
   ]
 }
