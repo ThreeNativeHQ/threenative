@@ -148,6 +148,26 @@ surface above, stop and file one narrow mechanism PRD. It must include:
 `VFXSystemAsset`, `CompiledVFXSystemIR`, `ModuleRegistry`, `VFXBackend`, `VFXWorld`,
 `createVFXPreset` and a new package remain forbidden even if the gallery is difficult.
 
+### Unreal reference: culling, budget and sorting (2026-10-09)
+
+João asked for a review of Unreal 5.8.3's Niagara source. The review found mechanism that this PRD
+does not own. It does not change this PRD's thesis: effect looks stay generated source.
+
+- **Culling and budget go to
+  [PRD-569](../unreal-source-borrowing/PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md).**
+  Niagara culls an effect after it stays out of view for a grace time (1 s default). It applies a
+  per-effect reaction, such as pause or kill. It ranks effects by significance against a damped FX
+  budget (`UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraEffectType.h:23-35, 115-230`).
+  PRD-569 is the measured route that the archive table's `budgets.ts` row ("reject until measured")
+  asks for. It must pass the admission gate above. Its first consumer is `examples/vfx-gallery`,
+  whose hand-written `emitting = visible` page gate it replaces. The gallery effects in this PRD
+  then choose their own cull reaction in `src/render/`, and keep no gate of their own.
+- **GPU depth sorting is not proposed.** Niagara sorts on the GPU above a particle-count threshold,
+  and sorts on the CPU below it
+  (`UE 5.8.3: Engine/Plugins/FX/Niagara/Source/NiagaraVertexFactories/Private/NiagaraSortingGPU.cpp:13-15`).
+  No effect here has a measured sort artifact, and WebGPU core has no wave operations for the
+  sort's fast path. File a mechanism PRD only after an effect shows a visible order error.
+
 ## 4. Execution phases
 
 #### Phase 1: Make the intake count and provenance fail closed — every one of 46 names has an honest source row

@@ -32,6 +32,7 @@ flowchart TD
 | 3 | PRD-480 phase 3 | In #404: Linux native legs routed; the Android emulator stays hosted (CPU-bound SwiftShader overran its 45 min) | a green `native-platforms` run |
 | 4 | PRD-482 phase 2 | Done in #403: push rule, ponytail once per session, playtest AGENTS.md 1,113 words | — |
 | 5 | Flaky template lanes | NEW. `tower-defense` (SwiftShader `DEVICE_LOST`, timeouts) and `rain` (`CAPTURE_PROVENANCE_MISSING`) fail about half the time on hosted and local. They have bounced the merge queue three times. Needs a fix in the template or the playtest bridge, not a quarantine | an owner for the lane |
+| 6 | [PRD-550](PRD-550-a-change-merges-within-30-minutes.md) | NEW 2026-10-09. Last push → merge is 2–15 h; target 30 min. Merge groups fail 62% and wait ~50 min for runners | owner: merge-path policy and `TN_RUNNER` |
 
 Each PRD's 7-day runner-minute acceptance (PRD-380, 481, 482 AC-1) can only be measured a week after its phases land.
 PRD-480 AC-2 (summed queue wait < 60 min) is measured and not met: 317 min, with 42 min wall against 39 hosted.

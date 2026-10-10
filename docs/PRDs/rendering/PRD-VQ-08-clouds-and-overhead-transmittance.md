@@ -21,6 +21,35 @@ Inventory the actual rain render source first; keep everything that already meet
 
 One regional cloud layer and one directional attenuation field. No global weather simulation, lightning rewrite, astronomical ephemeris rewrite or universal multi-scattering solver. An optional 2D fallback must be named as such.
 
+## Reference design from the Unreal source (2026-10-09)
+
+Unreal 5.8.3 solves the same "cloud and ground shade share one field" problem with a light-space
+2D **cloud shadow map**. It does not store a single transmittance value per texel. Each texel stores
+three numbers: the depth along the light where the cloud starts (km), the mean extinction inside the
+cloud (1/m), and the maximum optical depth through it. A receiver then reconstructs its own optical
+depth as `meanExtinction × max(0, receiverDepth − frontDepth)`, clamped by the maximum, and takes
+`exp(−opticalDepth)`. One map is therefore correct for ground, props and a flying camera at any
+height, including receivers inside the slab. A strength value lerps the result toward 1.
+`UE 5.8.3: Engine/Shaders/Private/VolumetricCloudCommon.ush:15-67`.
+
+The same factor dims the sun's contribution to the sky, and a second map of the same type (sky
+AO, 10 trace samples) dims sky light under clouds.
+`UE 5.8.3: Engine/Shaders/Private/SkyAtmosphere.usf:735-742`,
+`Engine/Source/Runtime/Renderer/Private/VolumetricCloudRendering.cpp:139-164`.
+
+Defaults and guards (`VolumetricCloudRendering.cpp:171-224`):
+
+- The maximum resolution is 2048². A ray march takes up to 128 samples, and twice that when the sun
+  nears the horizon.
+- The map origin snaps to a 20 km grid and to its own texel grid, so camera motion does not shimmer.
+- One spatial blur iteration is the default, and four is the maximum.
+- Temporal accumulation is off by default, because Unreal marks it experimental.
+- A sun rotation over 10° restarts any accumulated history.
+
+For this PRD, the rain slab spans 145–815 m (`templates/rain/src/render/clouds-shader.ts:7-8`), so
+receivers sit both below and inside it. A plain 2D transmittance map would be wrong for one of the
+two. Phase 1 therefore adopts the three-channel encoding.
+
 ## Required behavior
 
 - Zero coverage preserves the existing sky and unit ground transmittance; density is finite and transmittance stays in [0,1].
@@ -35,12 +64,12 @@ All proof paths below are **planned implementation targets**, not existing passi
 ### Phase 1 — One cloud field with reusable inputs
 
 - [ ] Reuse or extend kit cloud rendering so density, wind and lighting are driven by one declared game-owned parameter set. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-clouds-and-overhead-transmittance.spec.ts`.
-- [ ] Produce bounded directional transmittance from that same field, admitting shared capture machinery only when it reduces duplicate code. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-clouds-and-overhead-transmittance.spec.ts`.
+- [ ] Produce bounded directional transmittance from that same field as a light-space map of front depth, mean extinction and maximum optical depth (Unreal's encoding, above), so a receiver at any height below or inside the slab reconstructs its own attenuation. Admit shared capture machinery only when it reduces duplicate code. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-clouds-and-overhead-transmittance.spec.ts`.
 
 ### Phase 2 — Stable world-space composition
 
 - [ ] Integrate cloud radiance and direct-sun attenuation with the existing atmosphere and lighting graph. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-clouds-and-overhead-transmittance.spec.ts`.
-- [ ] Implement complete-generation publication, coverage invalidation and quality/resource limits for moving viewpoints. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-clouds-and-overhead-transmittance.spec.ts`.
+- [ ] Implement complete-generation publication, coverage invalidation and quality/resource limits for moving viewpoints. The map origin snaps to its texel grid, and a sun rotation over 10° restarts any accumulated history. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-clouds-and-overhead-transmittance.spec.ts`.
 
 ### Phase 3 — Qualify the visible result
 
@@ -59,6 +88,10 @@ Measure the visible volume and overhead-field capture separately. Do not enable 
 ## Blocked on
 
 The optional shared overhead-field extraction is gated by PRD-381 reuse/admission rules; missing artistic noise assets need license-clear substitutes.
+
+## Decisions
+
+- 2026-10-09 (João, via the Unreal source review): the attenuation field uses Unreal's three-channel cloud-shadow encoding instead of a single transmittance value per texel, because the rain slab has receivers both below and inside it. Phase 1 box 2 and Phase 2 box 2 now name the encoding, the texel snap and the 10° history cut. No box was added or removed.
 
 ## Completion record
 
