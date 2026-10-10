@@ -791,7 +791,8 @@ export function defineBrowserClasses(
     if (name === "Euler" && order && quaternion && read && readByte && write) {
       const angles = ["x", "y", "z"].map((lane) => binding.fields?.[lane]?.[0] ?? 0);
       const targets = ["x", "y", "z", "w"].map((lane) => quaternion[lane]?.[0] ?? 0);
-      // three's setFromEuler: each order (XYZ, YXZ, ZXY, ZYX, YZX, XZY) only signs the second terms.
+      // three's setFromEuler: each order only signs the second terms, in the engine enum's order.
+      const names = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"];
       const signs = [
         [1, -1, 1, -1],
         [1, -1, -1, 1],
@@ -834,10 +835,13 @@ export function defineBrowserClasses(
       Object.defineProperty(prototype, "set", {
         configurable: true,
         writable: true,
-        value(this: object, ...args: number[]) {
+        value(this: object, ...args: unknown[]) {
           const owner = rotations.get(this);
-          if (owner === undefined || args[3] !== undefined) return set.apply(this, args);
+          if (owner === undefined) return set.apply(this, args);
           const at = addressOf(this);
+          // Games pass their one order on every set; only a new order goes to the engine.
+          if (args[3] !== undefined && args[3] !== names[readByte(at + (order[0] ?? 0))])
+            return set.apply(this, args);
           angles.forEach((offset, i) => write(at + offset, args[i] as number));
           sync(this, owner);
           return this;
