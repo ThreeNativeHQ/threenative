@@ -71,36 +71,36 @@ BufferAttribute::BufferAttribute(Scalar scalar, uint64_t count, int itemSize, bo
       normalized(normalized),
       id(nextAttributeId()) {}
 
-std::shared_ptr<BufferAttribute> BufferAttribute::fromDoubles(Scalar scalar,
-                                                              const std::vector<double>& values,
-                                                              int itemSize, bool normalized) {
-    auto attribute = std::make_shared<BufferAttribute>(scalar, values.size(), itemSize, normalized);
-    for (size_t i = 0; i < values.size(); ++i) attribute->setRaw(i, values[i]);
-    return attribute;
-}
-
 std::shared_ptr<BufferAttribute> BufferAttribute::fromFloats(const std::vector<double>& values,
                                                              int itemSize, bool normalized) {
     return fromDoubles(Scalar::F32, values, itemSize, normalized);
-}
-
-std::shared_ptr<BufferAttribute> BufferAttribute::fromIndices(const std::vector<uint32_t>& values) {
-    const Scalar scalar = arrayNeedsUint32(values) ? Scalar::U32 : Scalar::U16;
-    auto attribute = std::make_shared<BufferAttribute>(scalar, values.size(), 1);
-    for (size_t i = 0; i < values.size(); ++i) attribute->setRaw(i, static_cast<double>(values[i]));
-    return attribute;
 }
 
 namespace {
 
 /** ECMAScript ToInt8/16/32 and ToUint8/16/32: truncate, wrap modulo 2^bits, then read as signed. */
 int64_t jsToInteger(double value, int bits, bool isSigned) {
+    // In range, truncation is the whole conversion; NaN fails both comparisons and falls through.
+    const double lo = isSigned ? -std::ldexp(1.0, bits - 1) : 0.0;
+    const double hi = isSigned ? std::ldexp(1.0, bits - 1) : std::ldexp(1.0, bits);
+    if (value > lo - 1 && value < hi) return static_cast<int64_t>(value);
     if (!std::isfinite(value)) return 0;
     const double modulus = std::ldexp(1.0, bits);
     double wrapped = std::fmod(std::trunc(value), modulus);
     if (wrapped < 0) wrapped += modulus;
     if (isSigned && wrapped >= modulus / 2) wrapped -= modulus;
     return static_cast<int64_t>(wrapped);
+}
+
+// One typed write loop for a freshly sized store: `values.size()` equals the store's count, so
+// the per-element bounds check and validate of `setRaw` are dead weight over a million elements.
+template <typename T, typename Source, typename Convert>
+void fillStore(BufferStore& store, const std::vector<Source>& values, Convert convert) {
+    std::byte* out = store.data();
+    for (size_t i = 0; i < values.size(); ++i) {
+        const T value = convert(values[i]);
+        std::memcpy(out + i * sizeof(T), &value, sizeof(T));
+    }
 }
 
 template <typename T>
@@ -116,6 +116,33 @@ void storeValue(BufferStore& store, uint64_t element, T value) {
 }
 
 }  // namespace
+
+std::shared_ptr<BufferAttribute> BufferAttribute::fromDoubles(Scalar scalar,
+                                                              const std::vector<double>& values,
+                                                              int itemSize, bool normalized) {
+    auto attribute = std::make_shared<BufferAttribute>(scalar, values.size(), itemSize, normalized);
+    BufferStore& store = *attribute->store;
+    switch (scalar) {
+        case Scalar::F32: fillStore<float>(store, values, [](double v) { return static_cast<float>(v); }); break;
+        case Scalar::F64: fillStore<double>(store, values, [](double v) { return v; }); break;
+        case Scalar::I8: fillStore<int8_t>(store, values, [](double v) { return static_cast<int8_t>(jsToInteger(v, 8, true)); }); break;
+        case Scalar::U8: fillStore<uint8_t>(store, values, [](double v) { return static_cast<uint8_t>(jsToInteger(v, 8, false)); }); break;
+        case Scalar::I16: fillStore<int16_t>(store, values, [](double v) { return static_cast<int16_t>(jsToInteger(v, 16, true)); }); break;
+        case Scalar::U16: fillStore<uint16_t>(store, values, [](double v) { return static_cast<uint16_t>(jsToInteger(v, 16, false)); }); break;
+        case Scalar::I32: fillStore<int32_t>(store, values, [](double v) { return static_cast<int32_t>(jsToInteger(v, 32, true)); }); break;
+        case Scalar::U32: fillStore<uint32_t>(store, values, [](double v) { return static_cast<uint32_t>(jsToInteger(v, 32, false)); }); break;
+    }
+    return attribute;
+}
+
+std::shared_ptr<BufferAttribute> BufferAttribute::fromIndices(const std::vector<uint32_t>& values) {
+    const Scalar scalar = arrayNeedsUint32(values) ? Scalar::U32 : Scalar::U16;
+    auto attribute = std::make_shared<BufferAttribute>(scalar, values.size(), 1);
+    BufferStore& store = *attribute->store;
+    if (scalar == Scalar::U32) fillStore<uint32_t>(store, values, [](uint32_t v) { return v; });
+    else fillStore<uint16_t>(store, values, [](uint32_t v) { return static_cast<uint16_t>(v); });
+    return attribute;
+}
 
 // A typed array read: NaN past the end (where JS reads `undefined`, which arithmetic turns to NaN),
 // never uninitialised bytes.

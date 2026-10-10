@@ -81,7 +81,30 @@ void nanBounds() {
     CHECK(std::isnan(geometry.boundingSphere->radius));
 }
 
+// fromDoubles is the bulk path of every `new BufferAttribute(array, n)`: it must store exactly what
+// the element-wise typed-array write (setRaw) stores, edges included.
+void fromDoublesMatchesSetRaw() {
+    const std::vector<double> values = {0,      -0.0,    1,        -1,     0.5,     -0.5,    127,   127.9,  128,
+                                        -128,   -128.5,  -129,     255,    255.9,   256,     -0.99, 32767, 32768,
+                                        65535,  65536,   -32768,   -32769, 2147483647.0, 2147483648.0, -2147483648.0,
+                                        4294967295.0, 4294967296.0, 1e20,  -1e20,   std::nan(""), INFINITY, -INFINITY,
+                                        3.4e38, 1e-46,  0.1,      -3.9};
+    for (const Scalar scalar : {Scalar::F32, Scalar::F64, Scalar::I8, Scalar::U8, Scalar::I16, Scalar::U16,
+                                Scalar::I32, Scalar::U32}) {
+        const auto bulk = BufferAttribute::fromDoubles(scalar, values, 1, false);
+        BufferAttribute each(scalar, values.size(), 1);
+        for (std::size_t i = 0; i < values.size(); ++i) each.setRaw(i, values[i]);
+        CHECK(bulk->store->count() == values.size());
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            const double a = bulk->raw(i), b = each.raw(i);
+            const bool same = (std::isnan(a) && std::isnan(b)) || (a == b && std::signbit(a) == std::signbit(b));
+            if (!same) std::fprintf(stderr, "scalar %d element %zu (%.17g): bulk %.17g, setRaw %.17g\n", int(scalar), i, values[i], a, b);
+            CHECK(same);
+        }
+    }
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"js_numbers", jsNumbers}, {"typed_writes", typedWrites}, {"normalized", normalized},
+TN_TEST_MAIN({"from_doubles_matches_set_raw", fromDoublesMatchesSetRaw}, {"js_numbers", jsNumbers}, {"typed_writes", typedWrites}, {"normalized", normalized},
              {"out_of_range", outOfRange}, {"nan_bounds", nanBounds})
