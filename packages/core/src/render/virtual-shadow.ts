@@ -1413,7 +1413,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       }
       const instanced = (mesh as { isInstancedMesh?: boolean }).isInstancedMesh === true;
       if (instanced) {
-        const version = (mesh as unknown as InstancedMesh).instanceMatrix.version;
+        const version = (mesh as Partial<InstancedMesh>).instanceMatrix?.version ?? 0;
         if (version !== state.instanceVersion) {
           moved = true;
           state.instanceVersion = version;
