@@ -1151,11 +1151,13 @@ describe("CI pipeline structure", () => {
     },
   );
 
-  // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build,
-  // no `pnpm install` and no test suite. `scope` classifies the diff, `build` and `golden-path`
+  // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build
+  // and no test suite; a JSON aggregator may still `pnpm install` its own toolchain. `scope`
+  // classifies the diff, `build` and `golden-path`
   // assert an upstream verdict, `ci-required` is the merge verdict and `run-summary` writes the
   // report; in native-platforms.yml `networking-matrix` is the one join that needs no toolchain, and
-  // `release-reports` only downloads artifacts and writes JSON (no compile or GPU leg). They join on
+  // `release-reports` and `performance-coverage` only download artifacts and write JSON (no compile
+  // or GPU leg). They join on
   // `tn-local-light` (1 CPU, 2 GB) so a ten-second verdict does not queue behind
   // five twenty-minute builds. Both directions are load-bearing and both are asserted below: a
   // heavy job here would build the workspace in one core, and a light job off the list would queue
@@ -1167,6 +1169,7 @@ describe("CI pipeline structure", () => {
     "golden-path",
     "networking-matrix",
     "paths",
+    "performance-coverage",
     "release-reports",
     "run-summary",
     "scope",
